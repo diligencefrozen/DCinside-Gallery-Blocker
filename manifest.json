@@ -12,7 +12,7 @@
         "*://gall.dcinside.com/board/lists*",
         "*://gall.dcinside.com/mgallery/board/lists*"
       ],
-      "js": ["content-script.js"],
+      "js": ["content_script.js"],
       "run_at": "document_idle"
     }
   ]
