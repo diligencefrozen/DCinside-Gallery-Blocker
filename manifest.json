@@ -14,7 +14,7 @@
         "*://gall.dcinside.com/mgallery/board/lists*",
         "*://gall.dcinside.com/mgallery/board/view*"
       ],
-      "js": ["content-script.js"],
+      "js": ["content_script.js"],
       "run_at": "document_idle"
     }
   ]
