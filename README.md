@@ -5,7 +5,7 @@
 > 디시인사이드에서 보고 싶지 않은 갤러리에 접속하면 **5 초 뒤** 자동으로 `www.dcinside.com` 메인 페이지로 리다이렉트해 주는 Chrome 확장 프로그램입니다.
 
 ## 설치
-### 웹스토어 1-클릭
+### 웹스토어 - 클릭
 [Chrome Web Store에서 설치하기](https://chrome.google.com/webstore/detail/gfibaeldbchmlopmcpdeklbfplcdgapf)
 
 ### 수동 설치(개발자용)
