@@ -1,47 +1,71 @@
 (async () => {
-  /* ===== 유틸 ===== */
-  /** URLSearchParams에서 id 값 반환 (없으면 null) */
+  /** 차단된 갤러리 ID 가져오기 */
   function getGalleryId() {
     try {
       const url = new URL(location.href);
-      return url.searchParams.get("id"); // 문자열 또는 null
+      return url.searchParams.get("id");
     } catch {
       return null;
     }
   }
 
-  /* ===== 차단 검사 ===== */
   const { blockedIds = [] } = await chrome.storage.sync.get("blockedIds");
   const gid = getGalleryId();
+  if (!gid || !blockedIds.includes(gid)) return;
 
-  if (!gid || !blockedIds.includes(gid)) return; // 차단 대상 아님 → 즉시 종료
+  /** 리다이렉트까지 대기 시간 (초 단위) */
+  const delaySeconds = 5;
+  const redirectUrl = "https://www.dcinside.com";
 
-  /* ===== 화면 가리기 ===== */
-  document.documentElement.innerHTML = ""; // 깜빡임 최소화를 위해 document_start에서 실행
+  document.documentElement.innerHTML = ""; // 깜빡임 방지
+
   const style = document.createElement("style");
   style.textContent = `
-    html,body{height:100%;margin:0;padding:0;background:#111;color:#f1f1f1;
-      display:flex;align-items:center;justify-content:center;font-family:Inter, sans-serif}
-    #dgb-message{max-width:460px;text-align:center;line-height:1.5}
-    #dgb-message h1{font-size:1.6rem;margin:0 0 .6rem;font-weight:600;color:#4f7cff}
-    #dgb-message p{margin:0 0 1.2rem;font-size:0.95rem;color:#c9c9c9}
-    #dgb-message button{padding:.6rem 1.2rem;border:0;border-radius:6px;font-size:.9rem;
-      cursor:pointer;background:#4f7cff;color:#fff}
-    #dgb-message button:hover{filter:brightness(1.1)}
+    html, body {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      background: #111;
+      color: #f1f1f1;
+      font-family: Inter, sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #block-message {
+      text-align: center;
+      max-width: 500px;
+      line-height: 1.6;
+    }
+    #block-message h1 {
+      font-size: 1.8rem;
+      margin-bottom: 0.5rem;
+      color: #ff4c4c;
+    }
+    #block-message p {
+      font-size: 1rem;
+      color: #ccc;
+    }
+    #block-message code {
+      background: #333;
+      padding: 0.2em 0.4em;
+      border-radius: 4px;
+      font-size: 0.9rem;
+    }
   `;
-  const wrap = document.createElement("div");
-  wrap.id = "dgb-message";
-  wrap.innerHTML = `
+
+  const div = document.createElement("div");
+  div.id = "block-message";
+  div.innerHTML = `
     <h1>차단된 갤러리입니다</h1>
-    <p>이 갤러리(<code>${gid}</code>)는 설정한 목록에 의해 숨겨졌습니다.</p>
-    <button id="dgb-close">닫기</button>
+    <p>이 갤러리(<code>${gid}</code>)는 차단 목록에 포함되어 있습니다.</p>
+    <p><strong>${delaySeconds}초 후</strong> 디시인사이드 메인 페이지로 이동합니다...</p>
   `;
 
   document.head.appendChild(style);
-  document.body.appendChild(wrap);
+  document.body.appendChild(div);
 
-  // “닫기” 누르면 뒤로 가기 또는 about:blank
-  document.getElementById("dgb-close")?.addEventListener("click", () => {
-    history.length > 1 ? history.back() : (location.href = "about:blank");
-  });
+  setTimeout(() => {
+    location.href = redirectUrl;
+  }, delaySeconds * 1000);
 })();
