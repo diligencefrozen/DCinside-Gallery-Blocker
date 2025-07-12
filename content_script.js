@@ -1,146 +1,104 @@
+
 (async () => {
-  /* ============ 1. storage 로드 =========== */
-  const { blockedIds = [] } = await chrome.storage.sync.get("blockedIds");
+  /* ============ 1. 옵션 불러오기 ============ */
+  const {
+    enabled       = true,                           // 전역 ON/OFF
+    blockedLinks  = [],                             // 사용자가 추가한 차단 목록
+    redirectTarget = "https://www.dcinside.com/",   // 리다이렉트 목적지
+    delaySeconds   = 3                              // 카운트다운 시간
+  } = await chrome.storage.sync.get([
+    "enabled",
+    "blockedLinks",
+    "redirectTarget",
+    "delaySeconds"
+  ]);
 
-  /* ============ 2. 현재 갤러리 id 파싱 =========== */
-  function getGalleryId() {
+  if (!enabled) return;          // 전체 기능 비활성화
+
+  const href      = location.href;
+  const { host }  = location;
+  const isDcbest  = href.includes("gall.dcinside.com") &&
+                    new URL(href).searchParams.get("id") === "dcbest";
+
+  const isUserBlocked = blockedLinks.some((item) => {
     try {
-      return new URL(location.href).searchParams.get("id");
+      // 사용자가 전체 URL을 넣을 수도, 호스트만 넣을 수도 있으므로 두 방식 모두 검사
+      const sanitized = item.trim().toLowerCase();
+      return href.toLowerCase().includes(sanitized) ||
+             host.toLowerCase().endsWith(sanitized.replace(/^https?:\/\//, ""));
     } catch {
-      return null;
+      return false;
     }
-  }
-  const gid      = getGalleryId();            // ex) "dcbest" | null
-  const pathname = location.pathname;         // "/board/lists/…" | "/board/view/…"
-
-  /* =============================================================
-   * 3. dcbest 리스트 전용 차단 (게시글은 건드리지 않음)
-   * ============================================================= */
-  if (gid === "dcbest" && pathname.startsWith("/board/lists/")) {
-    const PRE_DELAY_MS = 500;     // 페이지가 0.5 초 살짝 보이게
-    const COUNTDOWN    = 3;       // 팝업에 보여줄 카운트다운(초)
-    const REDIRECT_TO  = "https://www.dcinside.com/";
-
-    /* 3-A. 지연 후 오버레이 삽입 */
-    setTimeout(() => {
-      const overlay = document.createElement("div");
-      overlay.id = "dgb-block";
-      overlay.innerHTML = `
-        <style>
-          @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap");
-
-          :root{
-            --accent:#0dd7ff;
-            --bg:#05060d;
-            --fg:#e8eaf6;
-          }
-          #dgb-block{
-            position:fixed; inset:0; z-index:2147483647;
-            display:flex; align-items:center; justify-content:center;
-            background:rgba(0,0,0,.85);
-            font-family:'Inter',sans-serif;
-          }
-          #dgb-card{
-            width:90%; max-width:480px;
-            padding:2.2rem 2rem 2.6rem;
-            text-align:center;
-            background:linear-gradient(135deg,#08101e 0%,#0c1426 100%);
-            border:1px solid rgba(13,215,255,.25);
-            border-radius:22px;
-            box-shadow:0 18px 46px rgba(0,0,0,.65);
-          }
-          #dgb-card h1{
-            margin:0 0 .9rem;
-            font-size:1.6rem;
-            font-weight:700;
-            color:var(--accent);
-          }
-          #dgb-card p{
-            margin:0 0 1.6rem;
-            font-size:1rem;
-            line-height:1.5;
-            color:var(--fg);
-          }
-          #dgb-bar{
-            width:100%; height:8px;
-            background:#1b1c24;
-            border-radius:4px;
-            overflow:hidden;
-          }
-          #dgb-fill{
-            width:0; height:100%;
-            background:var(--accent);
-            animation:dgb-fill ${COUNTDOWN}s linear forwards;
-          }
-          @keyframes dgb-fill{to{width:100%;}}
-        </style>
-
-        <div id="dgb-card">
-          <h1>이 갤러리는 차단되었습니다.</h1>
-          <p><span id="dgb-sec">${COUNTDOWN}</span>초 후, 메인 페이지로 이동합니다.</p>
-          <div id="dgb-bar"><div id="dgb-fill"></div></div>
-        </div>`;
-      document.body.appendChild(overlay);
-
-      /* 3-B. 카운트다운 텍스트 업데이트 */
-      let remain = COUNTDOWN;
-      const secEl = overlay.querySelector("#dgb-sec");
-      const tick  = setInterval(() => {
-        remain--;
-        if (remain <= 0) clearInterval(tick);
-        if (secEl) secEl.textContent = String(remain);
-      }, 1000);
-
-      /* 3-C. 리다이렉트 */
-      setTimeout(() => { location.href = REDIRECT_TO; }, COUNTDOWN * 1000);
-    }, PRE_DELAY_MS);
-
-    return;   // 리스트 처리 후 아래 로직 건너뜀
-  }
-
-  /* =============================================================
-   * 4. 기타 blockedIds 갤러리 차단
-   *    (단, dcbest 게시글(view) 은 예외로 허용)
-   * ============================================================= */
-  if (!gid || gid === "dcbest" || !blockedIds.includes(gid)) return;
-
-  /* 4-A. 간단 차단 메시지 카드 */
-  document.documentElement.innerHTML = "";
-  const style = document.createElement("style");
-  style.textContent = `
-    html,body{
-      height:100%; margin:0;
-      background:#111; color:#f1f1f1;
-      display:flex; align-items:center; justify-content:center;
-      font-family:'Inter',sans-serif;
-    }
-    #dgb-message{max-width:460px; text-align:center; line-height:1.5;}
-    #dgb-message h1{
-      font-size:1.6rem; margin:0 0 .6rem;
-      font-weight:600; color:#4f7cff;
-    }
-    #dgb-message p{
-      margin:0 0 1.2rem; font-size:.95rem; color:#c9c9c9;
-    }
-    #dgb-message button{
-      padding:.6rem 1.2rem; border:0; border-radius:6px; font-size:.9rem;
-      cursor:pointer; background:#4f7cff; color:#fff;
-    }
-    #dgb-message button:hover{filter:brightness(1.1);}
-  `;
-  document.head.appendChild(style);
-
-  const wrap = document.createElement("div");
-  wrap.id = "dgb-message";
-  wrap.innerHTML = `
-    <h1>차단된 갤러리입니다</h1>
-    <p>이 갤러리(<code>${gid}</code>)는 설정에 의해 숨겨졌습니다.</p>
-    <button id="dgb-close">닫기</button>
-  `;
-  document.body.appendChild(wrap);
-
-  /* “닫기” – 뒤로 가기 or about:blank */
-  document.getElementById("dgb-close")?.addEventListener("click", () => {
-    history.length > 1 ? history.back() : (location.href = "about:blank");
   });
+
+  if (!isDcbest && !isUserBlocked) return;          // 차단 대상 아님
+
+  /* ============ 2. 경고 오버레이 출력 ============ */
+  const overlay = document.createElement("div");
+  overlay.id = "dcb-lock";
+  overlay.innerHTML = `
+    <style>
+      @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap");
+      :root{
+        --accent:#0dd7ff;
+        --fg:#e9ecf5;
+      }
+      #dcb-lock{
+        position:fixed; inset:0; z-index:2147483647;
+        display:flex; align-items:center; justify-content:center;
+        background:rgba(0,0,0,.82);
+        font-family:'Inter',sans-serif;
+      }
+      #dcb-card{
+        max-width:480px; width:90%;
+        padding:2rem 1.8rem 2.5rem;
+        text-align:center;
+        background:#05060d;
+        border:1px solid rgba(13,215,255,.25);
+        border-radius:22px;
+        box-shadow:0 18px 46px rgba(0,0,0,.7);
+        color:var(--fg);
+      }
+      #dcb-card h1{
+        margin:0 0 .85rem;
+        font-size:1.6rem;
+        font-weight:700;
+        color:var(--accent);
+      }
+      #dcb-card p{
+        margin:0 0 1.5rem;
+        font-size:1rem;
+        line-height:1.5;
+      }
+      #dcb-bar{
+        width:100%; height:8px;
+        background:#1b1c24;
+        border-radius:4px;
+        overflow:hidden;
+      }
+      #dcb-fill{
+        width:0; height:100%;
+        background:var(--accent);
+        animation:dcb-fill ${delaySeconds}s linear forwards;
+      }
+      @keyframes dcb-fill{to{width:100%;}}
+    </style>
+
+    <div id="dcb-card">
+      <h1>이 갤러리는 차단되었습니다.</h1>
+      <p><span id="dcb-sec">${delaySeconds}</span>초 후, 메인 페이지로 이동합니다.</p>
+      <div id="dcb-bar"><div id="dcb-fill"></div></div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  /* ============ 3. 카운트다운 & 리다이렉트 ============ */
+  let remain = delaySeconds;
+  const secEl = overlay.querySelector("#dcb-sec");
+  const iv    = setInterval(() => {
+    remain--;
+    if (remain <= 0) clearInterval(iv);
+    if (secEl) secEl.textContent = String(remain);
+  }, 1000);
+
+  setTimeout(() => { location.href = redirectTarget; }, delaySeconds * 1000);
 })();
