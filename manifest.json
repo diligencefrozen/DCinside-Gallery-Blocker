@@ -28,5 +28,6 @@
   "options_page": "options/options.html",
   "action": {
     "default_title": "DCInside Gallery Blocker"
+    "default_popup": "popup/popup.html"   
   }
 }
