@@ -1,33 +1,34 @@
 (async () => {
-  /* ============ 1. storage 로드 ============ */
+  /* ============ 1. storage 로드 =========== */
   const { blockedIds = [] } = await chrome.storage.sync.get("blockedIds");
 
-  /* ============ 2. 현재 갤러리 id 파싱 ============ */
+  /* ============ 2. 현재 갤러리 id 파싱 =========== */
   function getGalleryId() {
     try {
-      const u = new URL(location.href);
-      return u.searchParams.get("id"); // string | null
+      return new URL(location.href).searchParams.get("id");
     } catch {
       return null;
     }
   }
-  const gid = getGalleryId();
+  const gid      = getGalleryId();            // ex) "dcbest" | null
+  const pathname = location.pathname;         // "/board/lists/…" | "/board/view/…"
 
   /* =============================================================
-   * 3. dcbest 갤러리 차단 로직
+   * 3. dcbest 리스트 전용 차단 (게시글은 건드리지 않음)
    * ============================================================= */
-  if (gid === "dcbest") {
-    const PRE_DELAY_MS = 500;   // 페이지가 잠깐 보이도록 0.5초 지연
-    const BLOCK_DELAY  = 3;     // 오버레이 카운트다운(초)
-    const TARGET_URL   = "https://www.dcinside.com/";
+  if (gid === "dcbest" && pathname.startsWith("/board/lists/")) {
+    const PRE_DELAY_MS = 500;     // 페이지가 0.5 초 살짝 보이게
+    const COUNTDOWN    = 3;       // 팝업에 보여줄 카운트다운(초)
+    const REDIRECT_TO  = "https://www.dcinside.com/";
 
-    /* 3-A. PRE_DELAY 후 오버레이 삽입 */
+    /* 3-A. 지연 후 오버레이 삽입 */
     setTimeout(() => {
       const overlay = document.createElement("div");
       overlay.id = "dgb-block";
       overlay.innerHTML = `
         <style>
           @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap");
+
           :root{
             --accent:#0dd7ff;
             --bg:#05060d;
@@ -69,38 +70,39 @@
           #dgb-fill{
             width:0; height:100%;
             background:var(--accent);
-            animation:dgb-fill ${BLOCK_DELAY}s linear forwards;
+            animation:dgb-fill ${COUNTDOWN}s linear forwards;
           }
           @keyframes dgb-fill{to{width:100%;}}
         </style>
 
         <div id="dgb-card">
           <h1>이 갤러리는 차단되었습니다.</h1>
-          <p><span id="dgb-sec">${BLOCK_DELAY}</span>초 후, 메인 페이지로 이동합니다.</p>
+          <p><span id="dgb-sec">${COUNTDOWN}</span>초 후, 메인 페이지로 이동합니다.</p>
           <div id="dgb-bar"><div id="dgb-fill"></div></div>
         </div>`;
       document.body.appendChild(overlay);
 
-      /* 3-B. 카운트다운 숫자 업데이트 */
-      let remain = BLOCK_DELAY;
+      /* 3-B. 카운트다운 텍스트 업데이트 */
+      let remain = COUNTDOWN;
       const secEl = overlay.querySelector("#dgb-sec");
-      const iv = setInterval(() => {
+      const tick  = setInterval(() => {
         remain--;
-        if (remain <= 0) clearInterval(iv);
+        if (remain <= 0) clearInterval(tick);
         if (secEl) secEl.textContent = String(remain);
       }, 1000);
 
-      /* 3-C. BLOCK_DELAY 후 리다이렉트 */
-      setTimeout(() => { location.href = TARGET_URL; }, BLOCK_DELAY * 1000);
+      /* 3-C. 리다이렉트 */
+      setTimeout(() => { location.href = REDIRECT_TO; }, COUNTDOWN * 1000);
     }, PRE_DELAY_MS);
 
-    return; // dcbest 처리 후 아래 로직 실행 중단
+    return;   // 리스트 처리 후 아래 로직 건너뜀
   }
 
   /* =============================================================
-   * 4. 기타 blockedIds 목록 갤러리 차단
+   * 4. 기타 blockedIds 갤러리 차단
+   *    (단, dcbest 게시글(view) 은 예외로 허용)
    * ============================================================= */
-  if (!gid || !blockedIds.includes(gid)) return; // 차단 대상 아님 → 종료
+  if (!gid || gid === "dcbest" || !blockedIds.includes(gid)) return;
 
   /* 4-A. 간단 차단 메시지 카드 */
   document.documentElement.innerHTML = "";
@@ -137,6 +139,7 @@
   `;
   document.body.appendChild(wrap);
 
+  /* “닫기” – 뒤로 가기 or about:blank */
   document.getElementById("dgb-close")?.addEventListener("click", () => {
     history.length > 1 ? history.back() : (location.href = "about:blank");
   });
