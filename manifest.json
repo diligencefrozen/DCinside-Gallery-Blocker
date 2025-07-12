@@ -1,0 +1,32 @@
+{
+  "name": "디시갤 차단기",
+  "description": "원치 않는 디시인사이드 갤러리를 화면에서 가립니다.",
+  "version": "7.1.3.2025",
+  "manifest_version": 3,
+  "icons": {
+    "16":  "icons/16.png",
+    "32":  "icons/32.png",
+    "48":  "icons/48.png",
+    "128": "icons/128.png"
+  },
+
+  "permissions": ["storage"],
+  "host_permissions": ["https://gall.dcinside.com/*"],
+
+  "background": {
+    "service_worker": "service_worker.js"
+  },
+
+  "content_scripts": [
+    {
+      "matches": ["https://gall.dcinside.com/*"],
+      "js": ["content_script.js"],
+      "run_at": "document_start"
+    }
+  ],
+
+  "options_page": "options/options.html",
+  "action": {
+    "default_title": "DCInside Gallery Blocker"
+  }
+}
