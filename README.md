@@ -8,7 +8,7 @@
 ### 웹스토어 - 클릭
 [Chrome Web Store에서 설치하기](https://chrome.google.com/webstore/detail/gfibaeldbchmlopmcpdeklbfplcdgapf)
 
-### 수동 설치(개발자용)
+### 수동 설치
 1. Releases 탭에서 **`DCinside-Gallery-Blocker-main.zip`** 다운로드 후 압축 해제  
 2. `chrome://extensions` → **개발자 모드 ON** → **‘압축해제된 확장 프로그램 로드’** → 폴더 선택  
 3. 주소창 우측 ![icon](icons/32.png) 아이콘 클릭 → 팝업에서 차단 갤러리 관리
