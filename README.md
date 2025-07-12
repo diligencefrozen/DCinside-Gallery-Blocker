@@ -15,7 +15,7 @@
 
 ## 개발 빌드
 ```bash
-git clone https://github.com/yourname/DCinside-Gallery-Blocker.git
+git clone https://github.com/diligencefrozen/DCinside-Gallery-Blocker.git
 cd DCinside-Gallery-Blocker-main
 # 소스 수정 후
 # 브라우저에서 chrome://extensions 열고 새로고침
