@@ -5,7 +5,6 @@
   "description": "디시인사이드 특정 갤러리 접속 시 5초 뒤 메인 페이지로 자동 리다이렉트합니다.",
   "icons": { "128": "icons/128.png" },
 
-  /* 툴바 아이콘 → futuristic 팝업 */
   "action": {
     "default_popup": "popup.html",
     "default_title": "디시갤 차단기 - 설정"
