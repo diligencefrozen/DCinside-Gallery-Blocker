@@ -1,13 +1,31 @@
-// 접속한 페이지의 갤러리 id 얻기
-const { searchParams } = new URL(location.href);
-const gid = searchParams.get("id");
+// ─────────────────────────────────────────────
+// ① 현재 페이지에서 갤러리 id 추출
+// ─────────────────────────────────────────────
+const params = new URLSearchParams(location.search);
+const gid = params.get("id")?.trim().toLowerCase();   // ← 공백 제거 + 소문자화
 if (!gid) return;
 
-// 저장된 차단 목록 불러오기
-chrome.storage.sync.get({ blockedIds: [] }, ({ blockedIds }) => {
-  if (!blockedIds.includes(gid)) return;          // 차단 대상이 아니면 끝
+// ─────────────────────────────────────────────
+// ② 항상 차단되는 기본 갤러리 목록
+//    (여기서는 dcbest 하나지만, 원하면 더 넣을 수 있음)
+// ─────────────────────────────────────────────
+const builtinBlocked = ["dcbest"];
 
-  /* === 오버레이 생성 === */
+// ─────────────────────────────────────────────
+// ③ 사용자 정의 목록 + 기본 목록 합쳐서 검사
+// ─────────────────────────────────────────────
+chrome.storage.sync.get({ blockedIds: [] }, ({ blockedIds }) => {
+  // 모두 소문자화해서 Set 으로 합치기
+  const blocked = new Set([
+    ...builtinBlocked,
+    ...blockedIds.map(id => id.trim().toLowerCase())
+  ]);
+
+  if (!blocked.has(gid)) return;   // 차단 대상이 아니면 끝
+
+  // ───────────────────────────────────────────
+  // ④ 오버레이 + 5초 뒤 리다이렉트
+  // ───────────────────────────────────────────
   const overlay = document.createElement("div");
   Object.assign(overlay.style, {
     position: "fixed",
