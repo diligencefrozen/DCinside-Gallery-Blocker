@@ -10,7 +10,9 @@
     {
       "matches": [
         "*://gall.dcinside.com/board/lists*",
-        "*://gall.dcinside.com/mgallery/board/lists*"
+        "*://gall.dcinside.com/board/view*",        
+        "*://gall.dcinside.com/mgallery/board/lists*",
+        "*://gall.dcinside.com/mgallery/board/view*" 
       ],
       "js": ["content_script.js"],
       "run_at": "document_idle"
