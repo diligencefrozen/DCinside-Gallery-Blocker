@@ -1,10 +1,10 @@
-/* options.js  
+/* options.js  */
 
-/* ────────── 상수 ────────── */
-/* 1) 기본으로 항상 차단되는 갤러리(사용자 목록에 안 보임) */
+/* ────────────── 상수 ────────────── */
+/* 1️⃣  항상 차단되는 기본 갤러리 (숨김) */
 const builtinBlocked = ["dcbest"];
 
-/* 2) 추천 차단 갤러리 목록 */
+/* 2️⃣  추천 차단 갤러리 ID */
 const recommendedIds = [
   "4year_university","alliescon","asdf12","canada","centristconservatis",
   "colonialism","disease","divination_new1","ehxoeh","employment",
@@ -12,24 +12,38 @@ const recommendedIds = [
   "jpjobngm","leejaemyung","m_entertainer_new1","minjudang","neostock",
   "newtheory","nobirthgall","singlebungle1472","smartphone",
   "thesingularity","w_entertainer"
-].map(x => x.toLowerCase());
+].map(s=>s.toLowerCase());
 
-/* ────────── DOM 캐시 ────────── */
+/* DC 메인에서 숨기고 싶어하는 영역 */
+const recSelectors = [
+  "div.content.concept_con",
+  "div.content_box.new_gall",
+  "div.content_box.tab",
+  "div.time_best"
+];
+
+/* ────────────── DOM 캐시 ────────────── */
+/* 갤러리 ID 관련 */
 const newIdInput = document.getElementById("newId");
 const addBtn     = document.getElementById("addBtn");
 const listEl     = document.getElementById("list");
-
 const recList    = document.getElementById("recList");
 const addAllRec  = document.getElementById("addAllRec");
 
-/* ────────── 유틸 ────────── */
+/* 셀렉터 관련 */
+const newSel     = document.getElementById("newSel");
+const addSelBtn  = document.getElementById("addSelBtn");
+const addRecSel  = document.getElementById("addRecSel");
+const selList    = document.getElementById("selList");
+
+/* ────────────── 유틸 ────────────── */
 const norm = s => s.trim().toLowerCase();
 
-/* ────────── 사용자 차단 목록 렌더 ────────── */
+/* ────────────── 갤러리 차단 목록 영역 ────────────── */
 function renderUser(ids){
   listEl.innerHTML = "";
   ids
-    .filter(id => !builtinBlocked.includes(id))   // 기본 차단 숨김
+    .filter(id => !builtinBlocked.includes(id))
     .sort()
     .forEach(id=>{
       const li   = document.createElement("li");
@@ -38,7 +52,7 @@ function renderUser(ids){
 
       const del  = document.createElement("button");
       del.textContent = "삭제";
-      del.onclick = () => removeId(id);
+      del.onclick = () => updateBlocked(ids.filter(x=>x!==id));
 
       li.appendChild(span);
       li.appendChild(del);
@@ -46,18 +60,17 @@ function renderUser(ids){
     });
 }
 
-/* ────────── 추천 목록 렌더 ────────── */
+/* ────────────── 추천 갤러리 영역 ────────────── */
 function renderRec(blocked){
   recList.innerHTML = "";
   recommendedIds.forEach(id=>{
     const li  = document.createElement("li");
     const btn = document.createElement("button");
-
     const already = blocked.includes(id);
     btn.textContent = already ? "✓ 추가됨" : "추가";
     btn.disabled   = already;
     btn.className  = already ? "added" : "";
-    btn.onclick    = () => addId(id);
+    if(!already) btn.onclick = () => updateBlocked([...blocked,id]);
 
     li.textContent = id + " ";
     li.appendChild(btn);
@@ -65,58 +78,80 @@ function renderRec(blocked){
   });
 }
 
-/* ────────── 차단 ID 추가 ────────── */
-function addId(rawVal = null){
-  const raw = rawVal ? norm(rawVal) : norm(newIdInput.value);
-  if(!raw || builtinBlocked.includes(raw)) return;
+/* ────────────── 셀렉터 목록 영역 ────────────── */
+function renderSel(arr){
+  selList.innerHTML = "";
+  arr.forEach(sel=>{
+    const li = document.createElement("li");
+    const span = document.createElement("span");
+    span.textContent = sel;
 
-  chrome.storage.sync.get({blockedIds:[]}, ({blockedIds})=>{
-    const set = new Set(blockedIds.map(norm));
-    if(set.has(raw)) return;
+    const del = document.createElement("button");
+    del.textContent = "삭제";
+    del.onclick = () => updateSel(arr.filter(s=>s!==sel));
 
-    set.add(raw);
-    const next = Array.from(set);
-    chrome.storage.sync.set({blockedIds:next}, ()=>{
-      if(!rawVal) newIdInput.value = "";
-      renderUser(next);
-      renderRec(next);
-    });
+    li.appendChild(span);
+    li.appendChild(del);
+    selList.appendChild(li);
   });
 }
 
-/* ────────── 차단 ID 삭제 ────────── */
-function removeId(id){
-  chrome.storage.sync.get({blockedIds:[]}, ({blockedIds})=>{
-    const next = blockedIds.map(norm).filter(x=>x!==norm(id));
-    chrome.storage.sync.set({blockedIds:next}, ()=>{
-      renderUser(next);
-      renderRec(next);
-    });
+/* ────────────── 저장(갤러리) ────────────── */
+function updateBlocked(next){
+  const uniq = Array.from(new Set(next.map(norm)));
+  chrome.storage.sync.set({ blockedIds: uniq }, ()=>{
+    renderUser(uniq);
+    renderRec(uniq);
   });
 }
 
-/* ────────── 추천 전부 추가 ────────── */
-addAllRec.onclick = () =>{
-  chrome.storage.sync.get({blockedIds:[]}, ({blockedIds})=>{
-    const set = new Set(blockedIds.map(norm));
-    recommendedIds.forEach(id=>set.add(id));
-    const next = Array.from(set);
-    chrome.storage.sync.set({blockedIds:next}, ()=>{
-      renderUser(next);
-      renderRec(next);
+/* ────────────── 저장(셀렉터) ────────────── */
+function updateSel(list){
+  const uniq = Array.from(new Set(list.map(s=>s.trim()).filter(Boolean)));
+  chrome.storage.sync.set({ removeSelectors: uniq }, ()=> renderSel(uniq));
+}
+
+/* ────────────── 이벤트 바인딩 ────────────── */
+/* 개별 갤러리 추가 */
+addBtn.onclick = () => {
+  const id = norm(newIdInput.value);
+  if(id && !builtinBlocked.includes(id))
+    chrome.storage.sync.get({blockedIds:[]}, ({blockedIds})=>{
+      if(!blockedIds.map(norm).includes(id)) updateBlocked([...blockedIds,id]);
+      newIdInput.value="";
     });
+};
+newIdInput.addEventListener("keyup", e=>{ if(e.key==="Enter") addBtn.onclick();});
+
+/* 추천 전체 추가 */
+addAllRec.onclick = ()=>
+  chrome.storage.sync.get({blockedIds:[]}, ({blockedIds})=>
+    updateBlocked(Array.from(new Set([...blockedIds,...recommendedIds]))));
+
+/* 셀렉터 개별 추가 */
+addSelBtn.onclick = () => {
+  const sel = newSel.value.trim();
+  if(!sel) return;
+  chrome.storage.sync.get({removeSelectors:[]}, ({removeSelectors})=>{
+    if(!removeSelectors.includes(sel)) updateSel([...removeSelectors, sel]);
+    newSel.value="";
   });
 };
+newSel.addEventListener("keyup", e=>{ if(e.key==="Enter") addSelBtn.onclick(); });
 
-/* ────────── 이벤트 바인딩 ────────── */
-addBtn.onclick = () => addId();
-newIdInput.addEventListener("keyup", e=>{
-  if(e.key==="Enter") addId();
-});
+/* 추천 셀렉터 전체 추가 */
+addRecSel.onclick = ()=>
+  chrome.storage.sync.get({removeSelectors:[]}, ({removeSelectors})=>{
+    updateSel(Array.from(new Set([...removeSelectors, ...recSelectors])));
+  });
 
-/* ────────── 초기 렌더 ────────── */
-chrome.storage.sync.get({blockedIds:[]}, ({blockedIds})=>{
-  const normed = blockedIds.map(norm);
-  renderUser(normed);
-  renderRec(normed);
-});
+/* ────────────── 초기 영역 ────────────── */
+chrome.storage.sync.get(
+  { blockedIds:[], removeSelectors:[] },
+  ({ blockedIds, removeSelectors }) => {
+    const normed = blockedIds.map(norm);
+    renderUser(normed);
+    renderRec(normed);
+    renderSel(removeSelectors);
+  }
+);
