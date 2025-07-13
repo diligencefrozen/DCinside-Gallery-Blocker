@@ -2,7 +2,7 @@
 
 [![Chrome Web Store](https://img.shields.io/chrome-web-store/v/gfibaeldbchmlopmcpdeklbfplcdgapf?label=Chrome%20Web%20Store)](https://chromewebstore.google.com/detail/%EB%94%94%EC%8B%9C%EA%B0%A4-%EC%B0%A8%EB%8B%A8%EA%B8%B0/gfibaeldbchmlopmcpdeklbfplcdgapf)
 
-> 디시인사이드에서 보고 싶지 않은 갤러리에 접속하면 **5 초 뒤** 자동으로 `www.dcinside.com` 메인 페이지로 리다이렉트해 주는 Chrome 확장 프로그램입니다.
+> 디시인사이드에서 보고 싶지 않은 갤러리에 접속하면 자동으로 `www.dcinside.com` 메인 페이지로 리다이렉트해 주는 Chrome 확장 프로그램입니다.
 
 ## 설치
 ### 웹스토어 - 클릭
