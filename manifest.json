@@ -1,19 +1,27 @@
 {
   "manifest_version": 3,
   "name": "디시갤 차단기",
-  "version": "7.1.4.2025",
-  "description": "디시인사이드 특정 갤러리 접속 시 5초 뒤 메인 페이지로 자동 리다이렉트합니다.",
-  "icons": { "128": "icons/128.png" },
+  "version": "7.1.5.2025",
+  "description": "디시인사이드 특정 갤러리를 접속 시, 자동으로 메인 페이지로 리다이렉트 합니다.",
+  "icons": {
+    "128": "icons/128.png"
+  },
 
+  /* 툴바 아이콘 → 팝업 */
   "action": {
     "default_popup": "popup.html",
     "default_title": "디시갤 차단기 - 설정"
   },
 
+  /* 필요한 권한 */
   "permissions": ["storage"],
+
+  /* 옵션 페이지 */
   "options_page": "options.html",
 
+  /* 콘텐츠 스크립트 */
   "content_scripts": [
+    /* 1) 갤러리 페이지 → 5초 뒤 리다이렉트 */
     {
       "matches": [
         "*://gall.dcinside.com/board/lists*",
@@ -22,6 +30,13 @@
         "*://gall.dcinside.com/mgallery/board/view*"
       ],
       "js": ["content_script.js"],
+      "run_at": "document_start"
+    },
+
+    /* 2) DCInside 메인 페이지 → 지정 셀렉터 숨기기 */
+    {
+      "matches": ["*://www.dcinside.com/*"],
+      "js": ["cleaner.js"],
       "run_at": "document_start"
     }
   ]
