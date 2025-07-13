@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "디시갤 차단기",
-  "version": "7.1.3.2025",
+  "version": "7.1.4.2025",
   "description": "디시인사이드 특정 갤러리 접속 시 5초 뒤 메인 페이지로 자동 리다이렉트합니다.",
   "icons": { "128": "icons/128.png" },
 
