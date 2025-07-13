@@ -17,22 +17,11 @@ const recommendedIds = [
 
 /* 3️⃣ 메인 페이지 추천 ‘숨김’ 셀렉터 */
 const recSelectors = [
-  // 기존 추천
   "div.content.concept_con",
   "div.content_box.new_gall",
   "div.content_box.tab",
   "div.time_best",
-  // 광고·배너
-  "#ad-layer",
-  "#ad-pop-layer",
-  "#gall_top_recom",
-  "div.banner_box > a",
-  "div.content_box.r_timebest",
-  "div[data-rand]",
-  "img[src][width][height][title][style]",
-  "div.rightbanner1",
-  "div.content_box.r_only_daum",
-  "div.content_box.r_recommend"
+
 ];
 
 /* ────────────── DOM 캐시 ────────────── */
