@@ -7,21 +7,17 @@
     "128": "icons/128.png"
   },
 
-  /* 툴바 아이콘 → 팝업 */
   "action": {
     "default_popup": "popup.html",
     "default_title": "디시갤 차단기 - 설정"
   },
 
-  /* 필요한 권한 */
   "permissions": ["storage"],
 
-  /* 옵션 페이지 */
   "options_page": "options.html",
 
-  /* 콘텐츠 스크립트 */
   "content_scripts": [
-    /* 1) 갤러리 페이지 → 5초 뒤 리다이렉트 */
+
     {
       "matches": [
         "*://gall.dcinside.com/board/lists*",
@@ -33,7 +29,6 @@
       "run_at": "document_start"
     },
 
-    /* 2) DCInside 메인 페이지 → 지정 셀렉터 숨기기 */
     {
       "matches": ["*://www.dcinside.com/*"],
       "js": ["cleaner.js"],
