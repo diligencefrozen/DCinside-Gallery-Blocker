@@ -12,7 +12,7 @@ const recommendedIds = [
   "escapekorea","escapekoreagall","foreversolo","immovables","iphone",
   "jpjobngm","leejaemyung","m_entertainer_new1","minjudang","neostock",
   "newtheory","nobirthgall","singlebungle1472","smartphone",
-  "thesingularity","w_entertainer"
+  "thesingularity","w_entertainer","loveconsultation"
 ].map(s => s.toLowerCase());
 
 /* 3️⃣ 메인 페이지 추천 ‘숨김’ 셀렉터 */
