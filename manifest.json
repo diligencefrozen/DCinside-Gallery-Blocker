@@ -45,6 +45,12 @@
       "matches": ["*://www.dcinside.com/*"],
       "js": ["cleaner.js"],
       "run_at": "document_start"
+    },
+
+    {
+      "matches": ["*://search.dcinside.com/combine*"],
+      "js": ["cleaner-search.js"],
+      "run_at": "document_start"
     }
   ]
 }
