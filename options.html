@@ -1,198 +1,113 @@
 <!DOCTYPE html>
 <html lang="ko">
-  <head>
-    <meta charset="utf-8" />
-    <title>디시갤 차단기 - 설정</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
-    <style>
-      :root {
-        --accent: #4f7cff;
-        --bg-1: #0d1117;
-        --bg-2: #161b22;
-        --fg: #e6edf3;
-      }
+<head>
+<meta charset="utf-8" />
+<title>디시갤 차단기 - 설정</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --accent:#4f7cff;
+    --bg-1:#0d1117;
+    --bg-2:#161b22;
+    --fg:#e6edf3;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%}
+  body{
+    margin:0; font-family:'Inter',sans-serif;
+    background:var(--bg-1); color:var(--fg);
+    display:flex; justify-content:center; align-items:flex-start;
+    padding:40px 0;
+  }
+  /* ───── 카드 레이아웃 ───── */
+  .wrapper{width:100%;max-width:760px;display:flex;flex-direction:column;gap:48px;padding:0 24px;}
+  .card{
+    background:var(--bg-2); border-radius:18px; padding:28px 32px;
+    box-shadow:0 6px 12px rgba(0,0,0,.35);
+    display:flex; flex-direction:column; gap:18px;
+  }
+  h1{font-size:26px;font-weight:600;margin:0 0 8px;color:var(--accent);}
+  h2{font-size:20px;font-weight:600;margin:0}
+  .note{margin:4px 0 0;font-size:13px;opacity:.8}
+  /* ───── 폼 / 리스트 ───── */
+  .row{display:flex;gap:12px;align-items:center}
+  input[type="text"]{
+    flex:1;padding:10px 12px;font-size:15px;
+    border:1px solid #30363d;border-radius:8px;background:#010409;color:var(--fg);
+  }
+  input[type="text"]:focus{outline:2px solid var(--accent);outline-offset:1px}
+  button{
+    padding:10px 16px;font-size:15px;font-weight:500;
+    border:1px solid var(--accent);border-radius:8px;
+    background:transparent;color:var(--accent);cursor:pointer;transition:.25s;
+  }
+  button:hover{background:var(--accent);color:var(--bg-1)}
+  ul{list-style:none;padding:0;margin:8px 0 0;display:flex;flex-direction:column;gap:6px}
+  li{
+    background:#21262d;border-radius:6px;padding:6px 10px;font-size:14px;
+    display:flex;justify-content:space-between;align-items:center;
+  }
+  li.added{opacity:.5}
+  li button{padding:4px 10px;font-size:13px}
+  code{background:#30363d;padding:2px 6px;border-radius:4px;font-size:13px}
+  @media(max-width:480px){.card{padding:20px}h1{font-size:22px}}
+</style>
+</head>
+<body>
+<main class="wrapper">
+  <!-- 헤더 -->
+  <section class="card" style="align-items:center;text-align:center">
+    <h1>디시갤 차단기 설정</h1>
+    <p class="note">차단할 갤러리와 숨길 영역을 손쉽게 관리하세요.</p>
+  </section>
 
-      * {
-        box-sizing: border-box;
-      }
+  <!-- 직접 갤러리 입력 -->
+  <section class="card">
+    <h2>직접 갤러리 ID 추가</h2>
+    <div class="row">
+      <input id="newId" type="text" placeholder="예: dcbest">
+      <button id="addBtn">추가</button>
+    </div>
+    <ul id="list"></ul>
+  </section>
 
-      html, body {
-        height: 100%;
-      }
+  <!-- 추천 갤러리 -->
+  <section class="card">
+    <h2>🛡️ 추천 차단 갤러리</h2>
+    <p class="note">악성 게시물이 자주 업로드된 갤러리입니다.</p>
+    <button id="addAllRec">✅ 기본 차단만 적용</button>
+    <ul id="recList"></ul>
+  </section>
 
-      body {
-        margin: 0;
-        font-family: 'Inter', sans-serif;
-        background: var(--bg-1);
-        color: var(--fg);
-        display: flex;
-        justify-content: center;
-        align-items: flex-start;
-        padding: 40px 0;
-      }
+  <!-- 메인 페이지 숨김 -->
+  <section class="card">
+    <h2>🧹 메인 페이지 영역 숨기기</h2>
+    <p class="note">디시인사이드 메인에서 제거할 영역을 지정하세요.<br>
+      예: <code>div.time_best</code></p>
+    <div class="row">
+      <input id="newSel" type="text" placeholder="CSS Selector">
+      <button id="addSelBtn">추가</button>
+      <button id="addRecSel">✅ 기본 숨김만 적용</button>
+    </div>
+    <ul id="selList"></ul>
+  </section>
 
-      /* ────── 공통 레이아웃 ────── */
-      .wrapper {
-        width: 100%;
-        max-width: 760px;
-        display: flex;
-        flex-direction: column;
-        gap: 48px;
-        padding: 0 24px;
-      }
+  <!-- 🔥 갤러리 페이지 숨김 -->
+  <section class="card">
+    <h2>🧹 갤러리 페이지 영역 숨기기</h2>
+    <p class="note">갤러리(게시글,목록) 페이지에서 숨길 영역을 지정하세요.<br>
+      예: <code>div.ad_bottom_list</code></p>
+    <div class="row">
+      <input id="newGallSel" type="text" placeholder="CSS Selector">
+      <button id="addGallSelBtn">추가</button>
+      <button id="addRecGallSel">✅ 기본 숨김만 적용</button>
+    </div>
+    <ul id="gallSelList"></ul>
+  </section>
+</main>
 
-      .card {
-        background: var(--bg-2);
-        border-radius: 18px;
-        padding: 28px 32px;
-        box-shadow: 0 6px 12px rgba(0, 0, 0, 0.35);
-        display: flex;
-        flex-direction: column;
-        gap: 18px;
-      }
-
-      h1 {
-        font-size: 26px;
-        font-weight: 600;
-        margin: 0 0 8px 0;
-        color: var(--accent);
-      }
-
-      h2 {
-        font-size: 20px;
-        font-weight: 600;
-        margin: 0;
-      }
-
-      p.note {
-        margin: 4px 0 0;
-        font-size: 13px;
-        opacity: 0.8;
-      }
-
-      /* ────── 폼 요소 ────── */
-      input[type="text"],
-      input[type="number"] {
-        flex: 1;
-        padding: 10px 12px;
-        font-size: 15px;
-        border: 1px solid #30363d;
-        border-radius: 8px;
-        background: #010409;
-        color: var(--fg);
-      }
-
-      input[type="text"]:focus,
-      input[type="number"]:focus {
-        outline: 2px solid var(--accent);
-        outline-offset: 1px;
-      }
-
-      .row {
-        display: flex;
-        gap: 12px;
-        align-items: center;
-      }
-
-      button {
-        padding: 10px 16px;
-        font-size: 15px;
-        font-weight: 500;
-        border: 1px solid var(--accent);
-        border-radius: 8px;
-        background: transparent;
-        color: var(--accent);
-        cursor: pointer;
-        transition: 0.25s;
-      }
-
-      button:hover {
-        background: var(--accent);
-        color: var(--bg-1);
-      }
-
-      ul {
-        list-style: none;
-        padding: 0;
-        margin: 8px 0 0;
-        display: flex;
-        flex-direction: column;
-        gap: 6px;
-      }
-
-      li {
-        background: #21262d;
-        border-radius: 6px;
-        padding: 6px 10px;
-        font-size: 14px;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-      }
-
-      li.added {
-        opacity: 0.5;
-      }
-
-      li button {
-        padding: 4px 10px;
-        font-size: 13px;
-      }
-
-      code {
-        background: #30363d;
-        padding: 2px 6px;
-        border-radius: 4px;
-        font-size: 13px;
-      }
-
-      @media (max-width: 480px) {
-        .card { padding: 20px; }
-        h1 { font-size: 22px; }
-      }
-    </style>
-  </head>
-  <body>
-    <main class="wrapper">
-      <!-- 헤더 카드 -->
-      <section class="card" style="align-items:center;text-align:center;">
-        <h1>디시갤 차단기 설정</h1>
-        <p class="note">차단할 갤러리와 숨길 영역을 손쉽게 관리하세요.</p>
-      </section>
-
-      <!-- 갤러리 직접 입력 -->
-      <section class="card">
-        <h2>직접 갤러리 ID 추가</h2>
-        <div class="row">
-          <input id="newId" type="text" placeholder="예: dcbest" />
-          <button id="addBtn">추가</button>
-        </div>
-        <ul id="list"></ul>
-      </section>
-
-      <!-- 추천 갤러리 -->
-      <section class="card">
-        <h2>🛡️ 추천 차단 갤러리</h2>
-        <p class="note">악성 게시물이 자주 업로드된 갤러리입니다.</p>
-        <button id="addAllRec">✅ 기본 차단만 적용</button>
-        <ul id="recList"></ul>
-      </section>
-
-      <!-- 메인 영역 숨기기 -->
-      <section class="card">
-        <h2>🧹 메인 페이지 영역 숨기기</h2>
-        <p class="note">디시인사이드에서 제거할 영역을 지정하세요.<br>예: <code>div.time_best</code></p>
-        <div class="row">
-          <input id="newSel" type="text" placeholder="CSS Selector" />
-          <button id="addSelBtn">추가</button>
-          <button id="addRecSel">✅ 기본 숨김만 적용</button>
-        </div>
-        <ul id="selList"></ul>
-      </section>
-    </main>
-
-    <script src="options.js"></script>
-  </body>
+<script src="options.js"></script>
+</body>
 </html>
