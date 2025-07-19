@@ -13,10 +13,10 @@
     --bg-2:#161b22;
     --fg:#e6edf3;
   }
-  *{box-sizing:border-box;}
+  *{box-sizing:border-box;margin:0;padding:0}
   html,body{height:100%}
   body{
-    margin:0; font-family:'Inter',sans-serif;
+    font-family:'Inter',sans-serif;
     background:var(--bg-1); color:var(--fg);
     display:flex; justify-content:center; align-items:flex-start;
     padding:40px 0;
@@ -28,9 +28,9 @@
     box-shadow:0 6px 12px rgba(0,0,0,.35);
     display:flex; flex-direction:column; gap:18px;
   }
-  h1{font-size:26px;font-weight:600;margin:0 0 8px;color:var(--accent);}
-  h2{font-size:20px;font-weight:600;margin:0}
-  .note{margin:4px 0 0;font-size:13px;opacity:.8}
+  h1{font-size:26px;font-weight:600;margin-bottom:8px;color:var(--accent);}
+  h2{font-size:20px;font-weight:600}
+  .note{margin-top:4px;font-size:13px;opacity:.8}
   /* ───── 폼 / 리스트 ───── */
   .row{display:flex;gap:12px;align-items:center}
   input[type="text"]{
@@ -44,7 +44,7 @@
     background:transparent;color:var(--accent);cursor:pointer;transition:.25s;
   }
   button:hover{background:var(--accent);color:var(--bg-1)}
-  ul{list-style:none;padding:0;margin:8px 0 0;display:flex;flex-direction:column;gap:6px}
+  ul{list-style:none;margin-top:8px;display:flex;flex-direction:column;gap:6px}
   li{
     background:#21262d;border-radius:6px;padding:6px 10px;font-size:14px;
     display:flex;justify-content:space-between;align-items:center;
@@ -94,10 +94,10 @@
     <ul id="selList"></ul>
   </section>
 
-  <!-- 🔥 갤러리 페이지 숨김 -->
+  <!-- 갤러리 페이지 숨김 -->
   <section class="card">
     <h2>🧹 갤러리 페이지 영역 숨기기</h2>
-    <p class="note">갤러리(게시글,목록) 페이지에서 숨길 영역을 지정하세요.<br>
+    <p class="note">갤러리(게시글·목록) 페이지에서 숨길 영역을 지정하세요.<br>
       예: <code>div.ad_bottom_list</code></p>
     <div class="row">
       <input id="newGallSel" type="text" placeholder="CSS Selector">
@@ -105,6 +105,19 @@
       <button id="addRecGallSel">✅ 기본 숨김만 적용</button>
     </div>
     <ul id="gallSelList"></ul>
+  </section>
+
+  <!-- 검색 페이지 숨김 -->
+  <section class="card">
+    <h2>🧹 검색 페이지 영역 숨기기</h2>
+    <p class="note">검색(combine) 페이지에서 숨길 영역을 지정하세요.<br>
+      예: <code>div.integrate_cont.news_result</code></p>
+    <div class="row">
+      <input id="newSearchSel" type="text" placeholder="CSS Selector">
+      <button id="addSearchSelBtn">추가</button>
+      <button id="addRecSearchSel">✅ 기본 숨김만 적용</button>
+    </div>
+    <ul id="searchSelList"></ul>
   </section>
 </main>
 
