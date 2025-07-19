@@ -1,4 +1,5 @@
-/* options.js   */
+/* options.js 
+*/
 
 /* ───── 상수 ───── */
 const builtinBlocked = ["dcbest"];                           // 기본 차단
@@ -30,6 +31,15 @@ const recGallSelectors = [
   "img[src][width][height][title][style]"
 ];
 
+/* 검색(combine) 페이지 추천 숨김 */
+const recSearchSelectors = [
+  "div.content_box.r_only_daum",
+  "div.content_box.r_recommend",
+  "div.content_box.r_timebest",
+  "div.integrate_cont.news_result",
+  "section.left_content"
+];
+
 /* ───── DOM 캐시 ───── */
 /* 갤러리 ID */
 const newIdInput = document.getElementById("newId");
@@ -47,6 +57,11 @@ const newGallSel     = document.getElementById("newGallSel");
 const addGallSelBtn  = document.getElementById("addGallSelBtn");
 const addRecGallSel  = document.getElementById("addRecGallSel");
 const gallSelList    = document.getElementById("gallSelList");
+/* 검색 셀렉터 */
+const newSearchSel     = document.getElementById("newSearchSel");
+const addSearchSelBtn  = document.getElementById("addSearchSelBtn");
+const addRecSearchSel  = document.getElementById("addRecSearchSel");
+const searchSelList    = document.getElementById("searchSelList");
 
 /* ───── 공통 유틸 ───── */
 const norm = s => s.trim().toLowerCase();
@@ -157,13 +172,29 @@ addRecGallSel.onclick = () =>
     updateSel([...new Set([...removeSelectorsGall, ...recGallSelectors])],
               "removeSelectorsGall", gallSelList));
 
+/* 검색 셀렉터 */
+addSearchSelBtn.onclick = () => {
+  const sel = newSearchSel.value.trim(); if (!sel) return;
+  chrome.storage.sync.get({ removeSelectorsSearch: [] }, ({ removeSelectorsSearch }) => {
+    if (!removeSelectorsSearch.includes(sel))
+      updateSel([...removeSelectorsSearch, sel], "removeSelectorsSearch", searchSelList);
+    newSearchSel.value = "";
+  });
+};
+newSearchSel.addEventListener("keyup", e => { if (e.key === "Enter") addSearchSelBtn.onclick(); });
+addRecSearchSel.onclick = () =>
+  chrome.storage.sync.get({ removeSelectorsSearch: [] }, ({ removeSelectorsSearch }) =>
+    updateSel([...new Set([...removeSelectorsSearch, ...recSearchSelectors])],
+              "removeSelectorsSearch", searchSelList));
+
 /* ───── 초기 로드 ───── */
 chrome.storage.sync.get(
-  { blockedIds: [], removeSelectors: [], removeSelectorsGall: [] },
-  ({ blockedIds, removeSelectors, removeSelectorsGall }) => {
+  { blockedIds: [], removeSelectors: [], removeSelectorsGall: [], removeSelectorsSearch: [] },
+  ({ blockedIds, removeSelectors, removeSelectorsGall, removeSelectorsSearch }) => {
     renderUser(blockedIds.map(norm));
     renderRec(blockedIds.map(norm));
-    renderSel(removeSelectors, selList, "removeSelectors");
-    renderSel(removeSelectorsGall, gallSelList, "removeSelectorsGall");
+    renderSel(removeSelectors,       selList,       "removeSelectors");
+    renderSel(removeSelectorsGall,   gallSelList,   "removeSelectorsGall");
+    renderSel(removeSelectorsSearch, searchSelList, "removeSelectorsSearch");
   }
 );
