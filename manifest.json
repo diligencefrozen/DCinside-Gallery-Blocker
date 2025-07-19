@@ -17,12 +17,15 @@
   "options_page": "options.html",
 
   "content_scripts": [
+
     {
       "matches": [
         "*://gall.dcinside.com/board/lists*",
         "*://gall.dcinside.com/board/view*",
         "*://gall.dcinside.com/mgallery/board/lists*",
-        "*://gall.dcinside.com/mgallery/board/view*"
+        "*://gall.dcinside.com/mgallery/board/view*",
+        "*://gall.dcinside.com/mini/board/lists*",
+        "*://gall.dcinside.com/mini/board/view*"
       ],
       "js": ["content_script.js"],
       "run_at": "document_start"
@@ -31,7 +34,8 @@
     {
       "matches": [
         "*://gall.dcinside.com/board/*",
-        "*://gall.dcinside.com/mgallery/board/*"
+        "*://gall.dcinside.com/mgallery/board/*",
+        "*://gall.dcinside.com/mini/board/*"
       ],
       "js": ["cleaner-gall.js"],
       "run_at": "document_start"
