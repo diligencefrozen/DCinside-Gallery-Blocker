@@ -1,8 +1,11 @@
-/* DCinside Main Cleaner – 숨길 요소 제거 */
-const STYLE_ID = "dcb-clean-style";
+/*****************************************************************
+ * cleaner.js 
+ *****************************************************************/
 
-function applySelectors(selectors) {
-  /* 1) <style> 태그 갱신 */
+const STYLE_ID = "dcb-main-clean-style";
+
+/* <style> 태그 생성 / 갱신 */
+function updateStyle(selectors) {
   let style = document.getElementById(STYLE_ID);
   if (!style) {
     style = document.createElement("style");
@@ -10,34 +13,45 @@ function applySelectors(selectors) {
     document.documentElement.appendChild(style);
   }
   style.textContent = selectors
-    .map(sel => `${sel} { display: none !important; }`)
+    .map(s => `${s}{display:none!important}`)
     .join("\n");
+}
 
-  /* 2) 이미 렌더된 노드 즉시 제거 */
+/* 현재 DOM 에 존재하는 노드 즉시 제거 */
+function removeNow(selectors) {
   selectors.forEach(sel =>
     document.querySelectorAll(sel).forEach(el => el.remove()));
 }
 
-/* 3) MutationObserver – 동적 로딩 대응 */
+/* MutationObserver – 동적 로딩 대응 */
 let observer;
 function startObserver(selectors) {
   if (observer) observer.disconnect();
-  observer = new MutationObserver(() => {
-    selectors.forEach(sel =>
-      document.querySelectorAll(sel).forEach(el => el.remove()));
-  });
+  observer = new MutationObserver(() => removeNow(selectors));
   observer.observe(document.body, { childList: true, subtree: true });
 }
 
-/* 4) 최초 로드 & 실시간 반영 */
-function init() {
+/* 설정값 읽어 적용 */
+function apply() {
   chrome.storage.sync.get({ removeSelectors: [] }, ({ removeSelectors }) => {
-    const ss = removeSelectors.map(s => s.trim()).filter(Boolean);
-    applySelectors(ss);
-    startObserver(ss);
+    const clean = removeSelectors.map(s => s.trim()).filter(Boolean);
+    updateStyle(clean);
+    
+    if (document.body) {
+      removeNow(clean);
+      startObserver(clean);
+    } else {
+      window.addEventListener("DOMContentLoaded", () => {
+        removeNow(clean);
+        startObserver(clean);
+      }, { once: true });
+    }
   });
 }
-chrome.storage.onChanged.addListener((c, area) => {
-  if (area === "sync" && c.removeSelectors) init();
+
+/* 스토리지 변경 감지 → 재적용 */
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "sync" && changes.removeSelectors) apply();
 });
-init();
+
+apply();
