@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "디시갤 차단기",
-  "version": "7.1.5.2025",
-  "description": "디시인사이드 특정 갤러리를 접속 시, 자동으로 메인 페이지로 리다이렉트 합니다.",
+  "version": "7.1.6.2025",
+  "description": "디시인사이드 특정 갤러리 접속 시 메인 페이지로 리다이렉트하고, 불필요한 영역을 숨깁니다.",
   "icons": {
     "128": "icons/128.png"
   },
@@ -17,7 +17,6 @@
   "options_page": "options.html",
 
   "content_scripts": [
-
     {
       "matches": [
         "*://gall.dcinside.com/board/lists*",
@@ -26,6 +25,15 @@
         "*://gall.dcinside.com/mgallery/board/view*"
       ],
       "js": ["content_script.js"],
+      "run_at": "document_start"
+    },
+
+    {
+      "matches": [
+        "*://gall.dcinside.com/board/*",
+        "*://gall.dcinside.com/mgallery/board/*"
+      ],
+      "js": ["cleaner-gall.js"],
       "run_at": "document_start"
     },
 
