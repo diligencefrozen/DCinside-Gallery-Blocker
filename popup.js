@@ -1,46 +1,67 @@
-/* popup.js */
+/* popup.js
+*/
 
-const toggle      = document.getElementById("toggle");
-const openOptions = document.getElementById("openOptions");
+/* ───────── DOM ───────── */
+const toggle       = document.getElementById("toggle");     // 전체 ON/OFF
+const blockModeSel = document.getElementById("blockMode");  // 리다이렉트,완전차단
+const delayNum     = document.getElementById("delayNum");   // 숫자 입력
+const delayRange   = document.getElementById("delayRange"); // 슬라이더
+const openOptions  = document.getElementById("openOptions");
 
-const delayNum    = document.getElementById("delayNum");   // 숫자 입력
-const delayRange  = document.getElementById("delayRange"); // 슬라이더
+/* ───────── util ───────── */
+function lockDelay(disabled){
+  delayNum.disabled   = disabled;
+  delayRange.disabled = disabled;
+  delayNum.style.opacity   = disabled ? .5 : 1;
+  delayRange.style.opacity = disabled ? .5 : 1;
+}
 
-/* ────────── 초기 상태 로드 ────────── */
-chrome.storage.sync.get({ enabled: true, delay: 5 }, ({ enabled, delay }) => {
-  toggle.checked  = enabled;
-  delayNum.value  = delay;
-  delayRange.value = delay;
-});
-
-/* ────────── ON / OFF 기능 ────────── */
-toggle.addEventListener("change", () =>
-  chrome.storage.sync.set({ enabled: toggle.checked })
+/* ───────── 초기 로드 ───────── */
+chrome.storage.sync.get(
+  { enabled:true, blockMode:"redirect", delay:5 },
+  ({ enabled, blockMode, delay })=>{
+    toggle.checked       = enabled;
+    blockModeSel.value   = blockMode;
+    delayNum.value       = delay;
+    delayRange.value     = delay;
+    lockDelay(blockMode === "block");
+  }
 );
 
-/* ────────── 지연 시간 동기화 함수 ────────── */
-function updateDelay(raw) {
-  /* 0 ~ 10 초, 0.5 초 단위로 고정 */
-  const num = Math.min(10, Math.max(0, parseFloat(raw) || 0));
+/* ───────── ON/OFF ───────── */
+toggle.onchange = e =>
+  chrome.storage.sync.set({ enabled: e.target.checked });
+
+/* ───────── blockMode 변경 ───────── */
+blockModeSel.onchange = e=>{
+  const mode = e.target.value;                     // "redirect" | "block"
+  chrome.storage.sync.set({ blockMode: mode });
+  lockDelay(mode === "block");
+};
+
+/* ───────── 지연 시간 동기화 ───────── */
+function updateDelay(val){
+  const num = Math.max(0, Math.min(10, parseFloat(val)||0));
   delayNum.value   = num;
   delayRange.value = num;
   chrome.storage.sync.set({ delay: num });
 }
+delayNum  .oninput = e => updateDelay(e.target.value);
+delayRange.oninput = e => updateDelay(e.target.value);
 
-/* 숫자 입력 ↔ 슬라이더 양방향 바인딩 */
-delayNum .addEventListener("input", e => updateDelay(e.target.value));
-delayRange.addEventListener("input", e => updateDelay(e.target.value));
-
-/* ────────── 외부 탭에서 설정 변경 시 실시간 반영 ────────── */
-chrome.storage.onChanged.addListener((changes, area) => {
-  if (area !== "sync") return;
-  if (changes.enabled) toggle.checked = changes.enabled.newValue;
-  if (changes.delay) {
-    const d = changes.delay.newValue;
-    delayNum.value = d;
-    delayRange.value = d;
+/* ───────── 외부 변경 실시간 반영 ───────── */
+chrome.storage.onChanged.addListener((c,a)=>{
+  if(a!=="sync") return;
+  if(c.enabled)     toggle.checked   = c.enabled.newValue;
+  if(c.blockMode){
+    blockModeSel.value = c.blockMode.newValue;
+    lockDelay(c.blockMode.newValue === "block");
+  }
+  if(c.delay){
+    delayNum.value   = c.delay.newValue;
+    delayRange.value = c.delay.newValue;
   }
 });
 
-/* ────────── 옵션 페이지 열기 ────────── */
-openOptions.addEventListener("click", () => chrome.runtime.openOptionsPage());
+/* ───────── 옵션 페이지 열기 ───────── */
+openOptions.onclick = () => chrome.runtime.openOptionsPage();
