@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "디시갤 차단기",
   "version": "7.1.7.2025",
-  "description": "디시인사이드 특정 갤러리 접속을 리다이렉트하거나 완전 차단하고, 불필요한 영역을 숨깁니다.",
+  "description": "디시인사이드 특정 갤러리 접속을 완전 차단하고, 불필요한 영역을 숨깁니다.",
   "icons": {
     "128": "icons/128.png"
   },
@@ -12,6 +12,7 @@
     "default_title": "디시갤 차단기 - 설정"
   },
 
+  /* ───── 권한 ───── */
   "permissions": [
     "storage",
     "declarativeNetRequest"
@@ -32,6 +33,7 @@
   "options_page": "options.html",
 
   "content_scripts": [
+
     {
       "matches": [
         "*://gall.dcinside.com/board/lists*",
@@ -49,7 +51,9 @@
       "matches": [
         "*://gall.dcinside.com/board/*",
         "*://gall.dcinside.com/mgallery/board/*",
-        "*://gall.dcinside.com/mini/board/*"
+        "*://gall.dcinside.com/mini/board/*",
+        "*://gall.dcinside.com/mgallery/*",  
+        "*://gall.dcinside.com/mini/*"        
       ],
       "js": ["cleaner-gall.js"],
       "run_at": "document_start"
@@ -62,7 +66,10 @@
     },
 
     {
-      "matches": ["*://search.dcinside.com/combine*"],
+      "matches": [
+        "*://search.dcinside.com/combine*",
+        "*://search.dcinside.com/combine/q/*"   
+      ],
       "js": ["cleaner-search.js"],
       "run_at": "document_start"
     }
