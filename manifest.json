@@ -7,28 +7,26 @@
     "128": "icons/128.png"
   },
 
-  /* ───────── 툴바 아이콘 ───────── */
   "action": {
     "default_popup": "popup.html",
     "default_title": "디시갤 차단기 - 설정"
   },
 
-  /* ───────── 권한 ───────── */
   "permissions": [
     "storage",
-    "declarativeNetRequest"         
+    "declarativeNetRequest"
   ],
 
-  /* 차단 대상 호스트에 대한 네트워크 권한 */
   "host_permissions": [
-    "*://gall.dcinside.com/*"
+    "*://gall.dcinside.com/*",
+    "*://www.dcinside.com/*",
+    "*://search.dcinside.com/*"
   ],
 
-  /* 동적 DNR 규칙을 Service Worker에서 관리 */
   "declarative_net_request": { "rule_resources": [] },
 
   "background": {
-    "service_worker": "background.js" 
+    "service_worker": "background.js"
   },
 
   "options_page": "options.html",
