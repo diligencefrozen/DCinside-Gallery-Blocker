@@ -2,83 +2,75 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8" />
-<title>디시갤 차단기 • 팝업</title>
+<title>디시갤 차단기 - 팝업</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
 <style>
-  :root {
+  :root{
     --neon:#4f7cff;
     --dark:#0d1117;
     --light:#ffffff;
   }
-  /* ────────── 레이아웃 ────────── */
+  *{box-sizing:border-box;margin:0;padding:0}
   body{
-    margin:0; padding:20px; width:280px;
+    width:280px; padding:20px;
     background:var(--dark); color:var(--light);
     font-family:"Inter",sans-serif;
     display:flex; flex-direction:column; gap:22px;
   }
-  h1{
-    font-size:18px; margin:0;
-    letter-spacing:.5px;
-    text-shadow:0 0 6px var(--neon);
-  }
-  /* ────────── 토글 스위치 ────────── */
-  .switch{position:relative; display:inline-block; width:46px; height:24px;}
-  .switch input{display:none;}
-  .slider{
-    position:absolute; inset:0; cursor:pointer;
-    background:#444; border-radius:34px; transition:.3s;
-  }
-  .slider:before{
-    content:""; position:absolute; left:3px; top:3px;
-    width:18px; height:18px; background:#fff; border-radius:50%; transition:.3s;
-  }
-  input:checked + .slider{
-    background:var(--neon); box-shadow:0 0 8px var(--neon);
-  }
-  input:checked + .slider:before{transform:translateX(22px);}
-  /* ────────── 버튼 ────────── */
+  h1{font-size:18px;letter-spacing:.5px;text-shadow:0 0 6px var(--neon)}
+  /* 스위치 */
+  .switch{position:relative;width:46px;height:24px}
+  .switch input{display:none}
+  .slider{position:absolute;inset:0;background:#444;border-radius:34px;transition:.3s;cursor:pointer}
+  .slider:before{content:"";position:absolute;left:3px;top:3px;width:18px;height:18px;background:#fff;border-radius:50%;transition:.3s}
+  input:checked + .slider{background:var(--neon);box-shadow:0 0 8px var(--neon)}
+  input:checked + .slider:before{transform:translateX(22px)}
+  /* 버튼 & 필드 */
   button{
-    padding:8px 12px; font-size:14px;
-    border:1px solid var(--neon); border-radius:8px;
-    background:transparent; color:var(--light); cursor:pointer; transition:.25s;
+    padding:8px 12px;font-size:14px;border:1px solid var(--neon);
+    border-radius:8px;background:transparent;color:var(--light);cursor:pointer;transition:.25s
   }
-  button:hover{
-    background:var(--neon); color:var(--dark);
-    box-shadow:0 0 10px var(--neon);
+  button:hover{background:var(--neon);color:var(--dark);box-shadow:0 0 10px var(--neon)}
+  input[type="number"],select{
+    padding:6px 4px;font-size:14px;width:72px;border:1px solid #444;border-radius:6px;background:#222;color:var(--light)
   }
-  /* ────────── 슬라이더 & 숫자 ────────── */
-  input[type="number"]{
-    width:64px; padding:6px 4px; font-size:14px;
-    border:1px solid #444; border-radius:6px; background:#222; color:var(--light);
-  }
-  input[type="range"]{
-    flex:1; accent-color:var(--neon);
-  }
-  label.row{display:flex; align-items:center; gap:10px;}
+  input[type="range"]{flex:1;accent-color:var(--neon)}
+  label.row{display:flex;align-items:center;gap:10px}
 </style>
 </head>
 <body>
   <h1>디시갤 차단기</h1>
 
-  <!-- ON/OFF 기능 -->
+  <!-- ON/OFF -->
   <label class="row">
-    <span style="min-width:110px;">갤러리 차단 활성화</span>
+    <span style="min-width:110px;">갤러리 차단</span>
     <label class="switch">
       <input type="checkbox" id="toggle">
       <span class="slider"></span>
     </label>
   </label>
 
-  <!-- 지연 시간 설정 -->
+  <!-- 차단 방식 -->
+  <label class="row">
+    <span style="min-width:110px;">차단 방식</span>
+    <select id="blockMode">
+      <option value="redirect">초보모드</option>
+      <option value="block">하드모드</option>
+    </select>
+  </label>
+
+  <!-- 지연 시간 -->
   <label class="row">
     <span style="min-width:110px;">지연 시간&nbsp;(초)</span>
     <input type="number" id="delayNum" min="0" max="10" step="0.5">
   </label>
   <input type="range" id="delayRange" min="0" max="10" step="0.5">
 
-  <!-- 옵션 페이지 버튼 -->
+  <!-- 옵션 페이지 -->
   <button id="openOptions">설정 메뉴 열기</button>
 
-<script src="popup.js"></script>
+  <script src="popup.js"></script>
 </body>
 </html>
