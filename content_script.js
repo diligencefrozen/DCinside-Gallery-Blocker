@@ -1,105 +1,101 @@
+/*****************************************************************
+ * content_script.js 
+ *****************************************************************/
 
-/* ────────────── 고정 설정 ────────────── */
-const builtinBlocked = ["dcbest"];          // 항상 차단되는 기본 갤러리
+/* ───────── 고정값 ───────── */
+const builtinBlocked = ["dcbest"];                  // 항상 차단
 const redirectUrl    = "https://www.dcinside.com";
 
-/* ────────────── 동적 설정 ────────────── */
-let enabled      = true;                    // ON / OFF
-let blockedSet   = new Set(builtinBlocked); // 차단 ID 집합
-let delaySeconds = 5;                       // 리다이렉트 지연 (0 ~ 10, 0.5 단위)
+/* ───────── 동적 설정 ───────── */
+let enabled      = true;                            // ON / OFF
+let blockMode    = "redirect";                      // 초보모드 | block
+let blockedSet   = new Set(builtinBlocked);         // 차단 ID
+let delaySeconds = 5;                               // 지연 시간
 
-/* ────────── 저장값 → 메모리 동기화 ────────── */
-function syncSettings(cb) {
+/* ───────── storage → 메모리 ───────── */
+function syncSettings(cb){
   chrome.storage.sync.get(
-    { enabled: true, blockedIds: [], delay: 5 },
-    ({ enabled: en, blockedIds, delay }) => {
-      enabled      = en;
-      blockedSet   = new Set([
-        ...builtinBlocked,
-        ...blockedIds.map(id => id.trim().toLowerCase())
-      ]);
-      delaySeconds = typeof delay === "number" ? delay : 5;
+    { enabled:true, blockMode:"redirect", blockedIds:[], delay:5 },
+    ({ enabled:en, blockMode:bm, blockedIds, delay })=>{
+      enabled   = en;
+      blockMode = bm;
+      blockedSet = new Set([...builtinBlocked, ...blockedIds.map(x=>x.trim().toLowerCase())]);
+      delaySeconds = typeof delay==="number" ? delay : 5;
       cb && cb();
     }
   );
 }
 
-/* storage 변경 감지 → 실시간 반영 */
-chrome.storage.onChanged.addListener((changes, area) => {
-  if (area !== "sync") return;
-  if (changes.enabled)   enabled      = changes.enabled.newValue;
-  if (changes.blockedIds) blockedSet  = new Set([
-    ...builtinBlocked,
-    ...changes.blockedIds.newValue.map(id => id.trim().toLowerCase())
-  ]);
-  if (changes.delay)     delaySeconds = changes.delay.newValue;
+/* 실시간 반영 */
+chrome.storage.onChanged.addListener((chg,area)=>{
+  if(area!=="sync") return;
+  if(chg.enabled)      enabled   = chg.enabled.newValue;
+  if(chg.blockMode)    blockMode = chg.blockMode.newValue;
+  if(chg.blockedIds)   blockedSet = new Set([...builtinBlocked, ...chg.blockedIds.newValue.map(x=>x.trim().toLowerCase())]);
+  if(chg.delay)        delaySeconds = chg.delay.newValue;
 });
 
-/* ────────────── URL 검사 & 처리 ────────────── */
-function handleUrl() {
-  if (!enabled) return;                        // 기능 OFF
+/* ───────── URL 검사 ───────── */
+function handleUrl(){
+  if(!enabled || blockMode!=="redirect") return;    // 하드모드면 패스
 
-  const gid = new URLSearchParams(location.search)
-              .get("id")?.trim().toLowerCase();
-  if (!gid || !blockedSet.has(gid)) return;    // 차단 대상 아님
-  if (document.getElementById("dcblock-overlay")) return; // 이미 처리됨
+  const gid = new URLSearchParams(location.search).get("id")?.trim().toLowerCase();
+  if(!gid || !blockedSet.has(gid)) return;
+  if(document.getElementById("dcblock-overlay")) return;
 
   showOverlayAndRedirect();
 }
 
-/* ────────────── 오버레이 + 지연 처리 ────────────── */
-function showOverlayAndRedirect() {
-  /* 0초 설정이면 오버레이 없이 즉시 이동 */
-  if (delaySeconds === 0) {
-    location.href = redirectUrl;
-    return;
-  }
+/* ───────── 오버레이 + 지연 ───────── */
+function showOverlayAndRedirect(){
+  /* 0 초 지연 → 즉시 이동 */
+  if(delaySeconds===0){ location.href = redirectUrl; return; }
 
   const ov = document.createElement("div");
   ov.id = "dcblock-overlay";
-  Object.assign(ov.style, {
-    position:"fixed", inset:0, zIndex:2147483647,
-    background:"rgba(0,0,0,0.9)", color:"#fff",
-    display:"flex", flexDirection:"column",
-    justifyContent:"center", alignItems:"center",
-    fontFamily:"Inter,sans-serif", fontSize:"24px",
-    lineHeight:1.5, textAlign:"center"
+  Object.assign(ov.style,{
+    position:"fixed",inset:0,zIndex:2147483647,
+    background:"rgba(0,0,0,0.9)",color:"#fff",
+    display:"flex",flexDirection:"column",
+    justifyContent:"center",alignItems:"center",
+    fontFamily:"Inter,sans-serif",fontSize:"24px",
+    lineHeight:1.5,textAlign:"center"
   });
 
-  /* 0.5 ~ 0.9초 같은 소수점 지연 */
-  if (delaySeconds < 1) {
+  /* 0.5 ~ 0.9 초 */
+  if(delaySeconds<1){
     ov.textContent = "이 갤러리는 차단됨, 잠시 후 메인 페이지로 이동합니다";
     document.documentElement.appendChild(ov);
-    setTimeout(() => location.href = redirectUrl, delaySeconds * 1000);
+    setTimeout(()=>location.href=redirectUrl, delaySeconds*1000);
     return;
   }
 
-  /* 1초 이상 → 카운트다운 */
+  /* 1 초 이상 → 카운트다운 */
   let sec = Math.round(delaySeconds);
   ov.textContent = `이 갤러리는 차단됨, ${sec}초 후 메인 페이지로 이동합니다`;
   document.documentElement.appendChild(ov);
 
-  const timer = setInterval(() => {
+  const timer = setInterval(()=>{
     sec -= 1;
-    if (sec <= 0) {
+    if(sec<=0){
       clearInterval(timer);
       location.href = redirectUrl;
-    } else {
+    }else{
       ov.textContent = `이 갤러리는 차단됨, ${sec}초 후 메인 페이지로 이동합니다`;
     }
-  }, 1000);
+  },1000);
 }
 
-/* ────────────── SPA(pushState) 대응 ────────────── */
-["pushState", "replaceState"].forEach(type => {
-  const orig = history[type];
-  history[type] = function () {
-    const ret = orig.apply(this, arguments);
+/* ───────── SPA 대응 ───────── */
+["pushState","replaceState"].forEach(t=>{
+  const o = history[t];
+  history[t] = function(){
+    const r = o.apply(this,arguments);
     handleUrl();
-    return ret;
+    return r;
   };
 });
-addEventListener("popstate", handleUrl);       // 뒤로/앞으로 탐색
+addEventListener("popstate", handleUrl);
 
-/* ────────────── 초기화 ────────────── */
+/* ───────── 초기 실행 ───────── */
 syncSettings(handleUrl);
