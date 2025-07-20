@@ -1,23 +1,39 @@
 {
   "manifest_version": 3,
   "name": "디시갤 차단기",
-  "version": "7.1.6.2025",
-  "description": "디시인사이드 특정 갤러리 접속 시 메인 페이지로 리다이렉트하고, 불필요한 영역을 숨깁니다.",
+  "version": "7.1.7.2025",
+  "description": "디시인사이드 특정 갤러리 접속을 리다이렉트하거나 완전 차단하고, 불필요한 영역을 숨깁니다.",
   "icons": {
     "128": "icons/128.png"
   },
 
+  /* ───────── 툴바 아이콘 ───────── */
   "action": {
     "default_popup": "popup.html",
     "default_title": "디시갤 차단기 - 설정"
   },
 
-  "permissions": ["storage"],
+  /* ───────── 권한 ───────── */
+  "permissions": [
+    "storage",
+    "declarativeNetRequest"         
+  ],
+
+  /* 차단 대상 호스트에 대한 네트워크 권한 */
+  "host_permissions": [
+    "*://gall.dcinside.com/*"
+  ],
+
+  /* 동적 DNR 규칙을 Service Worker에서 관리 */
+  "declarative_net_request": { "rule_resources": [] },
+
+  "background": {
+    "service_worker": "background.js" 
+  },
 
   "options_page": "options.html",
 
   "content_scripts": [
-
     {
       "matches": [
         "*://gall.dcinside.com/board/lists*",
