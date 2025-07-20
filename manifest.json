@@ -12,7 +12,6 @@
     "default_title": "디시갤 차단기 - 설정"
   },
 
-  /* ───── 권한 ───── */
   "permissions": [
     "storage",
     "declarativeNetRequest"
