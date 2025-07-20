@@ -2,15 +2,16 @@
  * content_script.js 
  *****************************************************************/
 
-/* ───────── 고정값 ───────── */
-const builtinBlocked = ["dcbest"];                  // 항상 차단
-const redirectUrl    = "https://www.dcinside.com";
+/* ───────── 상수 ───────── */
+const REDIRECT_URL   = "https://www.dcinside.com";
+const BUILTIN_BLOCK  = ["dcbest"];               // 항상 차단되는 갤러리 ID
+const DELAY_MIN = 0, DELAY_MAX = 10;             // 지연 범위
 
-/* ───────── 동적 설정 ───────── */
-let enabled      = true;                            // ON / OFF
-let blockMode    = "redirect";                      // 초보모드 | block
-let blockedSet   = new Set(builtinBlocked);         // 차단 ID
-let delaySeconds = 5;                               // 지연 시간
+/* ───────── 동적 상태 ───────── */
+let enabled      = true;                         // 전역 ON/OFF
+let blockMode    = "redirect";                   // "redirect" | "block"
+let blockedSet   = new Set(BUILTIN_BLOCK);       // 차단 ID
+let delaySeconds = 5;                            // 0 ~ 10, 0.5 단위
 
 /* ───────── storage → 메모리 ───────── */
 function syncSettings(cb){
@@ -19,37 +20,38 @@ function syncSettings(cb){
     ({ enabled:en, blockMode:bm, blockedIds, delay })=>{
       enabled   = en;
       blockMode = bm;
-      blockedSet = new Set([...builtinBlocked, ...blockedIds.map(x=>x.trim().toLowerCase())]);
-      delaySeconds = typeof delay==="number" ? delay : 5;
+      blockedSet = new Set([...BUILTIN_BLOCK, ...blockedIds.map(x=>x.trim().toLowerCase())]);
+      delaySeconds = clampDelay(delay);
       cb && cb();
     }
   );
 }
 
-/* 실시간 반영 */
+/* storage 변경 실시간 반영 */
 chrome.storage.onChanged.addListener((chg,area)=>{
   if(area!=="sync") return;
   if(chg.enabled)      enabled   = chg.enabled.newValue;
   if(chg.blockMode)    blockMode = chg.blockMode.newValue;
-  if(chg.blockedIds)   blockedSet = new Set([...builtinBlocked, ...chg.blockedIds.newValue.map(x=>x.trim().toLowerCase())]);
-  if(chg.delay)        delaySeconds = chg.delay.newValue;
+  if(chg.blockedIds)   blockedSet = new Set([...BUILTIN_BLOCK, ...chg.blockedIds.newValue.map(x=>x.trim().toLowerCase())]);
+  if(chg.delay)        delaySeconds = clampDelay(chg.delay.newValue);
 });
 
 /* ───────── URL 검사 ───────── */
 function handleUrl(){
-  if(!enabled || blockMode!=="redirect") return;    // 하드모드면 패스
+  /* 하드모드(block)·OFF 일 때는 아무 작업도 하지 않음 */
+  if(!enabled || blockMode!=="redirect") return;
 
   const gid = new URLSearchParams(location.search).get("id")?.trim().toLowerCase();
   if(!gid || !blockedSet.has(gid)) return;
-  if(document.getElementById("dcblock-overlay")) return;
+  if(document.getElementById("dcblock-overlay")) return; // 중복 방지
 
   showOverlayAndRedirect();
 }
 
 /* ───────── 오버레이 + 지연 ───────── */
 function showOverlayAndRedirect(){
-  /* 0 초 지연 → 즉시 이동 */
-  if(delaySeconds===0){ location.href = redirectUrl; return; }
+  /* 지연 0 → 즉시 이동 (오버레이 없음) */
+  if(delaySeconds===0){ location.href = REDIRECT_URL; return; }
 
   const ov = document.createElement("div");
   ov.id = "dcblock-overlay";
@@ -62,40 +64,47 @@ function showOverlayAndRedirect(){
     lineHeight:1.5,textAlign:"center"
   });
 
-  /* 0.5 ~ 0.9 초 */
-  if(delaySeconds<1){
+  /* 0 < delay < 1 초 : 고정 문구 후 타임아웃 */
+  if(delaySeconds < 1){
     ov.textContent = "이 갤러리는 차단됨, 잠시 후 메인 페이지로 이동합니다";
     document.documentElement.appendChild(ov);
-    setTimeout(()=>location.href=redirectUrl, delaySeconds*1000);
+    setTimeout(()=>location.href = REDIRECT_URL, delaySeconds*1000);
     return;
   }
 
-  /* 1 초 이상 → 카운트다운 */
+  /* 1 초 이상 : 카운트다운 */
   let sec = Math.round(delaySeconds);
   ov.textContent = `이 갤러리는 차단됨, ${sec}초 후 메인 페이지로 이동합니다`;
   document.documentElement.appendChild(ov);
 
   const timer = setInterval(()=>{
-    sec -= 1;
+    sec--;
     if(sec<=0){
       clearInterval(timer);
-      location.href = redirectUrl;
+      location.href = REDIRECT_URL;
     }else{
       ov.textContent = `이 갤러리는 차단됨, ${sec}초 후 메인 페이지로 이동합니다`;
     }
   },1000);
 }
 
-/* ───────── SPA 대응 ───────── */
-["pushState","replaceState"].forEach(t=>{
-  const o = history[t];
-  history[t] = function(){
-    const r = o.apply(this,arguments);
+/* ───────── SPA(pushState) 대응 ───────── */
+["pushState","replaceState"].forEach(fn=>{
+  const orig = history[fn];
+  history[fn] = function(){
+    const res = orig.apply(this,arguments);
     handleUrl();
-    return r;
+    return res;
   };
 });
 addEventListener("popstate", handleUrl);
+
+/* ───────── 헬퍼 ───────── */
+function clampDelay(v){
+  const n = parseFloat(v);
+  if(isNaN(n)) return 5;
+  return Math.max(DELAY_MIN, Math.min(DELAY_MAX, Math.round(n*2)/2)); // 0.5 단위
+}
 
 /* ───────── 초기 실행 ───────── */
 syncSettings(handleUrl);
