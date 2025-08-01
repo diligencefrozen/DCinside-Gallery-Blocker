@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "디시갤 차단기",
-  "version": "7.1.7.2025",
+  "version": "7.1.8.2025",
   "description": "디시인사이드 특정 갤러리 접속을 완전 차단하고, 불필요한 영역을 숨깁니다.",
   "icons": {
     "128": "icons/128.png"
@@ -9,7 +9,7 @@
 
   "action": {
     "default_popup": "popup.html",
-    "default_title": "디시갤 차단기 - 설정"
+    "default_title": "디시갤 차단기 – 설정"
   },
 
   "permissions": [
@@ -32,7 +32,6 @@
   "options_page": "options.html",
 
   "content_scripts": [
-
     {
       "matches": [
         "*://gall.dcinside.com/board/lists*",
@@ -51,8 +50,8 @@
         "*://gall.dcinside.com/board/*",
         "*://gall.dcinside.com/mgallery/board/*",
         "*://gall.dcinside.com/mini/board/*",
-        "*://gall.dcinside.com/mgallery/*",  
-        "*://gall.dcinside.com/mini/*"        
+        "*://gall.dcinside.com/mgallery/*",
+        "*://gall.dcinside.com/mini/*"
       ],
       "js": ["cleaner-gall.js"],
       "run_at": "document_start"
@@ -67,9 +66,19 @@
     {
       "matches": [
         "*://search.dcinside.com/combine*",
-        "*://search.dcinside.com/combine/q/*"   
+        "*://search.dcinside.com/combine/q/*"
       ],
       "js": ["cleaner-search.js"],
+      "run_at": "document_start"
+    },
+
+    {
+      "matches": [
+        "*://gall.dcinside.com/*",
+        "*://www.dcinside.com/*",
+        "*://search.dcinside.com/*"
+      ],
+      "js": ["cleaner-comment.js"],
       "run_at": "document_start"
     }
   ]
