@@ -1,42 +1,70 @@
 /*****************************************************************
- * cleaner-comment.js – 댓글 영역 전체 숨김
+ * cleaner-comment.js 
  *****************************************************************/
-const STYLE_ID = "dcb-comment-hide-style";
-const CMT_SELECTORS = [
-  /* 기본 댓글 박스들 */
-  "#comment_li_3046673 > div",
-  "#comment_wrap_941305 > div.comment_count",
-  "#comment_wrap_941305 > div.comment_box",
-  "#focus_cmt > div.cmt_write_box.clear"
-  /* 필요 시 추가 */
+
+const STYLE_ID = "dcb-hide-comment-style";
+
+/* 글마다 달라지는 id 를 포괄하도록 일반화한 셀렉터 모음 */
+const COMMENT_SELECTORS = [
+  /* 댓글 컨테이너 */
+  '[id^="comment_wrap_"]',
+  '[id^="comment_li_"]',
+  '#focus_cmt',
+
+  /* 댓글 목록 / 입력창 공통 클래스 */
+  '.comment_box',
+  '.comment_count',
+  '.cmt_write_box',
+  '.reply_box',
+  '.comment_list_wrap'
 ];
 
-function apply(list){
+function applySelectors(on) {
   let st = document.getElementById(STYLE_ID);
-  if(!st){
-    st = document.createElement("style");
-    st.id = STYLE_ID;
-    document.documentElement.appendChild(st);
+
+  if (on) {
+    if (!st) {
+      st = document.createElement("style");
+      st.id = STYLE_ID;
+      document.documentElement.appendChild(st);
+    }
+    st.textContent = COMMENT_SELECTORS
+      .map(s => `${s}{display:none!important}`)  // CSS 숨김
+      .join("\n");
+
+    /* 이미 렌더된 노드도 삭제 */
+    COMMENT_SELECTORS.forEach(sel =>
+      document.querySelectorAll(sel).forEach(el => el.remove()));
+  } else if (st) {
+    /** 숨김 OFF → style 제거 */
+    st.remove();
   }
-  st.textContent = list.map(s=>`${s}{display:none!important}`).join("\n");
-  list.forEach(sel=>document.querySelectorAll(sel).forEach(e=>e.remove()));
 }
 
-function observe(list){
-  const ob = new MutationObserver(()=>list.forEach(sel=>
-    document.querySelectorAll(sel).forEach(e=>e.remove())));
-  ob.observe(document.body,{childList:true,subtree:true});
+let observer;
+
+function startObserver(on) {
+  if (observer) observer.disconnect();
+  if (!on) return;
+
+  observer = new MutationObserver(() =>
+    COMMENT_SELECTORS.forEach(sel =>
+      document.querySelectorAll(sel).forEach(el => el.remove()))
+  );
+  observer.observe(document.body, { childList: true, subtree: true });
 }
 
-function init(){
-  chrome.storage.sync.get({ hideComment:false }, ({ hideComment })=>{
-    const list = hideComment ? CMT_SELECTORS : [];
-    apply(list);
-    if(document.body) observe(list); else
-      addEventListener("DOMContentLoaded",()=>observe(list),{once:true});
+function init() {
+  chrome.storage.sync.get({ hideComment: false }, ({ hideComment }) => {
+    applySelectors(hideComment);
+    if (document.body) startObserver(hideComment);
+    else addEventListener("DOMContentLoaded", () => startObserver(hideComment), { once: true });
   });
 }
-chrome.storage.onChanged.addListener((c,a)=>{
-  if(a==="sync" && c.hideComment) init();
+
+/* 스토리지 변경 반영 */
+chrome.storage.onChanged.addListener((c, area) => {
+  if (area === "sync" && c.hideComment) init();
 });
+
 init();
