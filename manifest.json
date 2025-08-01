@@ -3,9 +3,7 @@
   "name": "디시갤 차단기",
   "version": "7.1.8.2025",
   "description": "디시인사이드 특정 갤러리 접속을 완전 차단하고, 불필요한 영역을 숨깁니다.",
-  "icons": {
-    "128": "icons/128.png"
-  },
+  "icons": { "128": "icons/128.png" },
 
   "action": {
     "default_popup": "popup.html",
@@ -79,7 +77,8 @@
         "*://search.dcinside.com/*"
       ],
       "js": ["cleaner-comment.js"],
-      "run_at": "document_start"
+      "run_at": "document_start",
+      "all_frames": true          
     }
   ]
 }
