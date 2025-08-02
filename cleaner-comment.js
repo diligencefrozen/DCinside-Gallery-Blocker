@@ -1,17 +1,18 @@
 /*****************************************************************
- * cleaner-comment.js 
+ * cleaner-comment.js
  *****************************************************************/
 (() => {
   const SELS = [
     'div#focus_cmt.view_comment[tabindex]',
-    'span.reply_num'
+    'span.reply_num',
+    'a.reply_numbox[href]'             
   ];
   const STYLE_ID = 'dcb-hide-comment-style';
   const CSS_RULE = `${SELS.join(',')}{display:none !important}`;
 
   let styleNode = null;
 
-  const addStyle    = () => {
+  const addStyle = () => {
     if (styleNode) return;
     styleNode = document.createElement('style');
     styleNode.id = STYLE_ID;
@@ -19,8 +20,7 @@
     (document.head || document.documentElement).appendChild(styleNode);
   };
   const removeStyle = () => {
-    if (!styleNode) styleNode = document.getElementById(STYLE_ID);
-    if (styleNode)   styleNode.remove();
+    (styleNode ?? document.getElementById(STYLE_ID))?.remove();
     styleNode = null;
   };
 
@@ -30,9 +30,7 @@
     apply(hideComment);
   });
 
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === 'sync' && changes.hideComment) {
-      apply(changes.hideComment.newValue);
-    }
+  chrome.storage.onChanged.addListener((c, area) => {
+    if (area === 'sync' && c.hideComment) apply(c.hideComment.newValue);
   });
 })();
