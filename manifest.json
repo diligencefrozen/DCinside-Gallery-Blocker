@@ -42,7 +42,6 @@
       "js": ["content_script.js"],
       "run_at": "document_start"
     },
-
     {
       "matches": [
         "*://gall.dcinside.com/board/*",
@@ -54,13 +53,11 @@
       "js": ["cleaner-gall.js"],
       "run_at": "document_start"
     },
-
     {
       "matches": ["*://www.dcinside.com/*"],
       "js": ["cleaner.js"],
       "run_at": "document_start"
     },
-
     {
       "matches": [
         "*://search.dcinside.com/combine*",
@@ -69,16 +66,15 @@
       "js": ["cleaner-search.js"],
       "run_at": "document_start"
     },
-
     {
       "matches": [
-        "*://gall.dcinside.com/*",
-        "*://www.dcinside.com/*",
-        "*://search.dcinside.com/*"
+        "*://gall.dcinside.com/board/view*",
+        "*://gall.dcinside.com/mgallery/board/view*",
+        "*://gall.dcinside.com/mini/board/view*"
       ],
       "js": ["cleaner-comment.js"],
       "run_at": "document_start",
-      "all_frames": true          
+      "all_frames": true
     }
   ]
 }
