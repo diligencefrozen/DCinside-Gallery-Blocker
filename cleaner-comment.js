@@ -1,50 +1,38 @@
 /*****************************************************************
- * cleaner-comment.js  — 댓글 영역만 깔끔히 숨김
+ * cleaner-comment.js 
  *****************************************************************/
+(() => {
+  const SEL      = 'div#focus_cmt.view_comment[tabindex]';
+  const STYLE_ID = 'dcb-hide-comment-style';
+  const CSS      = `${SEL}{display:none!important}`;
 
-const STYLE_ID = "dcb-hide-comment-style";
-const SEL = "div#focus_cmt.view_comment[tabindex]";
-
-function apply(hide) {
-  let styleEl = document.getElementById(STYLE_ID);
-  if (hide) {
-    if (!styleEl) {
-      styleEl = document.createElement("style");
-      styleEl.id = STYLE_ID;
-      document.documentElement.appendChild(styleEl);
+  /** <style> 주입 ― 존재하지 않으면 새로 삽입 */
+  function ensureStyle() {
+    if (!document.getElementById(STYLE_ID)) {
+      const style = document.createElement('style');
+      style.id = STYLE_ID;
+      style.textContent = CSS;
+      (document.head || document.documentElement).appendChild(style);
     }
-    styleEl.textContent = `${SEL}{display:none !important}`;
-    removeNodes();
-  } else if (styleEl) {
-    styleEl.remove();
   }
-}
 
-function removeNodes() {
-  document.querySelectorAll(SEL).forEach(el => el.remove());
-}
+  /** 이미 붙어 있는 댓글 노드 제거 */
+  function purge() {
+    document.querySelectorAll(SEL).forEach(el => el.remove());
+  }
 
-let observer;
-function watch(hide) {
-  if (observer) observer.disconnect();
-  if (!hide) return;
-  observer = new MutationObserver(removeNodes);
-  observer.observe(document.documentElement, { childList: true, subtree: true });
-}
+  /** DOM 변화를 감시해 댓글이 재삽입되면 곧바로 제거 */
+  function watch() {
+    new MutationObserver(() => purge())
+      .observe(document.documentElement, { childList: true, subtree: true });
+  }
 
-function init() {
-  chrome.storage.sync.get({ hideComment: false }, ({ hideComment }) => {
-    apply(hideComment);
-    if (document.documentElement) {
-      watch(hideComment);
-    } else {
-      addEventListener("DOMContentLoaded", () => watch(hideComment), { once: true });
-    }
-  });
-}
-
-chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "sync" && "hideComment" in changes) init();
-});
-
-init();
+  /** 진입 지점 */
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+      ensureStyle(); purge(); watch();
+    }, { once: true });
+  } else {
+    ensureStyle(); purge(); watch();
+  }
+})();
