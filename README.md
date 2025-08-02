@@ -23,7 +23,7 @@
 [**Chrome Web Store에서 설치하기**](https://chromewebstore.google.com/detail/디시갤-차단기/fnfmdbldnhadkadklplhcjcojjiaopgg)
 
 1. **‘Chrome에 추가’** 버튼 클릭
-2. 주소창 우측 🛡️ 아이콘 → **설정** 버튼으로 차단 목록·지연 시간·댓글 숨김 토글 조정
+2. 주소창 우측 🛡️ 아이콘 → **설정** 버튼으로 차단 목록,지연 시간,댓글 숨김 토글 조정
 
 > **Tip** : “하드” 모드에서는 차단된 갤러리 접속 시 브라우저가 `ERR_BLOCKED_BY_CLIENT` 페이지를 바로 보여 줍니다.
 > 실수로 차단했을 경우 팝업에서 모드를 *초보 모드* 로 돌리면 복구할 수 있습니다.
