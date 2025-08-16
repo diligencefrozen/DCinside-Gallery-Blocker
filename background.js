@@ -1,5 +1,5 @@
 /*****************************************************************
- * background.js 
+ * background.js
  *****************************************************************/
 
 /* ───── 상수 ───── */
@@ -7,19 +7,59 @@ const MAIN_URL  = "https://www.dcinside.com";
 const BUILTIN   = ["dcbest"];          // 항상 차단
 const RULE_NS   = 40_000;              // 다른 확장과 id 충돌 방지 (40001…)
 
-/* 최초 설치 시 기본값 주입: 하드모드 + 사용 ON */
-chrome.runtime.onInstalled.addListener(({ reason }) => {
+/* ───── 컨텍스트 메뉴 ID ───── */
+const CTX_ROOT         = "dcb-root";
+const CTX_BLOCK_USER   = "dcb-block-user";
+const CTX_OPEN_OPTIONS = "dcb-open-options";
+
+/* ───── 설치/업데이트: 기본값 주입 + 메뉴 생성 ───── */
+chrome.runtime.onInstalled.addListener(async ({ reason }) => {
   if (reason === "install") {
-    chrome.storage.sync.get(["blockMode", "enabled"], (conf) => {
-      const patch = {};
-      if (typeof conf.blockMode === "undefined") patch.blockMode = "block"; // 기본: 하드모드
-      if (typeof conf.enabled   === "undefined") patch.enabled   = true;    // 기본: ON
-      if (Object.keys(patch).length) chrome.storage.sync.set(patch);
-    });
+    // 기본값: 하드모드 + ON + 사용자차단 ON
+    const seed = await chrome.storage.sync.get(["blockMode", "enabled", "userBlockEnabled"]);
+    const patch = {};
+    if (typeof seed.blockMode        === "undefined") patch.blockMode        = "block";
+    if (typeof seed.enabled          === "undefined") patch.enabled          = true;
+    if (typeof seed.userBlockEnabled === "undefined") patch.userBlockEnabled = true;
+    if (Object.keys(patch).length) await chrome.storage.sync.set(patch);
   }
+  createContextMenus();
 });
 
-/* 규칙 생성 */
+/* 서비스워커가 재시작될 때도 메뉴가 확실히 있도록 */
+createContextMenus();
+
+/* ───── 컨텍스트 메뉴 생성 ───── */
+function createContextMenus() {
+  try {
+    chrome.contextMenus.removeAll(() => {
+      chrome.contextMenus.create({
+        id: CTX_ROOT,
+        title: "디시갤 차단기",
+        contexts: ["all"],
+        documentUrlPatterns: ["*://gall.dcinside.com/*"]
+      });
+      chrome.contextMenus.create({
+        id: CTX_BLOCK_USER,
+        parentId: CTX_ROOT,
+        title: "오른쪽 클릭해 이 유저 차단",
+        contexts: ["all"],
+        documentUrlPatterns: ["*://gall.dcinside.com/*"]
+      });
+      chrome.contextMenus.create({
+        id: CTX_OPEN_OPTIONS,
+        parentId: CTX_ROOT,
+        title: "설정 열기",
+        contexts: ["all"],
+        documentUrlPatterns: ["*://gall.dcinside.com/*"]
+      });
+    });
+  } catch (e) {
+    // 첫 부팅 직후 permission 미준비 등으로 실패할 수 있으니 무시
+  }
+}
+
+/* ───── DNR 규칙 생성 ───── */
 const makeRules = (ids) =>
   ids.map((gid, i) => ({
     id       : RULE_NS + i + 1,
@@ -31,29 +71,26 @@ const makeRules = (ids) =>
     action   : { type: "block" }
   }));
 
-/* 동기화 */
+/* ───── DNR 동기화 ───── */
 async function syncRules() {
-  // 기본값도 하드모드로 맞춤
   const { enabled = true, blockMode = "block", blockedIds = [] } =
     await chrome.storage.sync.get({
       enabled   : true,
-      blockMode : "block",   // ← 기본 하드모드
+      blockMode : "block",
       blockedIds: []
     });
 
-  /* 현재 규칙 id */
   const curr = await chrome.declarativeNetRequest.getDynamicRules();
   const currIds = curr.map(r => r.id);
 
-  /* redirect 모드 또는 OFF → 규칙 제거 후 끝 */
   if (!enabled || blockMode === "redirect") {
-    if (currIds.length)
+    if (currIds.length) {
       await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: currIds });
+    }
     console.log("[DNR] redirect/OFF - rules cleared");
     return;
   }
 
-  /* 완전 차단 모드 → 새 규칙 생성 */
   const ids   = [...new Set([...BUILTIN, ...blockedIds.map(t => t.toLowerCase())])];
   const rules = makeRules(ids);
 
@@ -69,6 +106,55 @@ syncRules();
 chrome.storage.onChanged.addListener((c, area) => {
   if (area === "sync" && (c.blockedIds || c.blockMode || c.enabled)) syncRules();
 });
+
+/* ───── 우클릭 후보 수신 (ctx-probe.js) ───── */
+const lastCtxByTab = new Map();
+chrome.runtime.onMessage.addListener((msg, sender) => {
+  if (msg?.type === "dcb.ctxCandidate" && sender.tab?.id != null) {
+    lastCtxByTab.set(sender.tab.id, { uid: msg.uid || "", ip: msg.ip || "" });
+  }
+});
+
+/* ───── 컨텍스트 메뉴 클릭 처리 ───── */
+chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+  if (!tab?.id) return;
+
+  if (info.menuItemId === CTX_OPEN_OPTIONS) {
+    chrome.runtime.openOptionsPage();
+    return;
+  }
+  if (info.menuItemId !== CTX_BLOCK_USER) return;
+
+  const cand = lastCtxByTab.get(tab.id) || {};
+  const sel  = (info.selectionText || "").trim();
+
+  // UID 우선, 없으면 IP 앞두옥텟, 그래도 없으면 선택 텍스트에서 추출
+  const uidFromSel = sel.match(/[A-Za-z0-9_\-]{3,}/)?.[0] || "";
+  const ipFromSel  = sel.match(/(\d{1,3}\.\d{1,3})/)?.[1] || "";
+
+  const token = (cand.uid && cand.uid.trim())
+             || (cand.ip  && cand.ip.trim())
+             || uidFromSel
+             || ipFromSel;
+
+  if (!token) {
+    chrome.action.setBadgeText({ tabId: tab.id, text: "?" });
+    setTimeout(() => chrome.action.setBadgeText({ tabId: tab.id, text: "" }), 1200);
+    return;
+  }
+
+  const { blockedUids = [], userBlockEnabled = true } =
+    await chrome.storage.sync.get({ blockedUids: [], userBlockEnabled: true });
+
+  const next = Array.from(new Set([...blockedUids, token]));
+  await chrome.storage.sync.set({ blockedUids: next });
+
+  chrome.action.setBadgeText({ tabId: tab.id, text: userBlockEnabled ? "✔" : "OFF" });
+  setTimeout(() => chrome.action.setBadgeText({ tabId: tab.id, text: "" }), 1200);
+});
+
+/* 탭 닫힘 시 캐시 정리 */
+chrome.tabs.onRemoved.addListener((tabId) => lastCtxByTab.delete(tabId));
 
 /* 아이콘(툴바) 클릭 → 옵션 페이지 */
 chrome.action.onClicked.addListener(() => chrome.runtime.openOptionsPage());
