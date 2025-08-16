@@ -14,6 +14,11 @@ const uidInput    = document.getElementById("uidInput");
 const addUidBtn   = document.getElementById("addUidBtn");
 const uidListEl   = document.getElementById("uidList");
 
+// 페이지 숨김 마스터 
+const toggleHideMain   = document.getElementById("toggleHideMain");
+const toggleHideGall   = document.getElementById("toggleHideGall");
+const toggleHideSearch = document.getElementById("toggleHideSearch");
+
 /* ───────── util ───────── */
 function lockDelay(disabled){
   delayNum.disabled   = disabled;
@@ -34,11 +39,17 @@ const DEFAULTS = {
   blockMode: "redirect",    // redirect | block
   hideComment: false,
   delay: 5,
-  // ✅ 새 키들
+
+  // 사용자 차단
   userBlockEnabled: true,   // 마스터 토글
   blockedUids: [],
   // ⬇ 마이그레이션용(과거 키)
-  hideDCGray: undefined
+  hideDCGray: undefined,
+
+  // 페이지 숨김 마스터
+  hideMainEnabled:   true,
+  hideGallEnabled:   true,
+  hideSearchEnabled: true,
 };
 
 function sanitizeUid(s) {
@@ -69,14 +80,19 @@ function saveUidList(mutator) {
 
 /* ───────── 초기 로드 ───────── */
 chrome.storage.sync.get(DEFAULTS, (conf)=>{
-  // 🔁 과거 hideDCGray → userBlockEnabled 로 1회 이행
+  // 과거 hideDCGray → userBlockEnabled 로 1회 이행
   if (typeof conf.userBlockEnabled !== "boolean" && typeof conf.hideDCGray === "boolean") {
     conf.userBlockEnabled = conf.hideDCGray;
     chrome.storage.sync.set({ userBlockEnabled: conf.userBlockEnabled });
   }
 
-  const { enabled, blockMode, hideComment, delay, userBlockEnabled, blockedUids } = conf;
+  const {
+    enabled, blockMode, hideComment, delay,
+    userBlockEnabled, blockedUids,
+    hideMainEnabled, hideGallEnabled, hideSearchEnabled
+  } = conf;
 
+  // 기본 토글/입력값
   toggle.checked        = enabled;
   blockModeSel.value    = blockMode;
   hideCmtToggle.checked = hideComment;
@@ -84,11 +100,17 @@ chrome.storage.sync.get(DEFAULTS, (conf)=>{
   delayRange.value      = delay;
   lockDelay(blockMode === "block");
 
+  // 사용자 차단
   if (userBlockEl) {
     userBlockEl.checked = !!userBlockEnabled;
     lockUserBlockUI(!userBlockEnabled); // OFF면 입력/추가 비활성화
   }
   renderUidList(blockedUids);
+
+  // ✅ 페이지 숨김 마스터
+  if (toggleHideMain)   toggleHideMain.checked   = !!hideMainEnabled;
+  if (toggleHideGall)   toggleHideGall.checked   = !!hideGallEnabled;
+  if (toggleHideSearch) toggleHideSearch.checked = !!hideSearchEnabled;
 });
 
 /* ───────── 이벤트 바인딩 ───────── */
@@ -151,6 +173,11 @@ if (uidListEl) {
   });
 }
 
+/* 페이지 숨김 마스터 저장 */
+if (toggleHideMain)   toggleHideMain.onchange   = e => chrome.storage.sync.set({ hideMainEnabled:   !!e.target.checked });
+if (toggleHideGall)   toggleHideGall.onchange   = e => chrome.storage.sync.set({ hideGallEnabled:   !!e.target.checked });
+if (toggleHideSearch) toggleHideSearch.onchange = e => chrome.storage.sync.set({ hideSearchEnabled: !!e.target.checked });
+
 /* 스토리지 외부 변경 반영 */
 chrome.storage.onChanged.addListener((c,a)=>{
   if(a!=="sync") return;
@@ -169,6 +196,11 @@ chrome.storage.onChanged.addListener((c,a)=>{
     lockUserBlockUI(!c.userBlockEnabled.newValue);
   }
   if (c.blockedUids)  renderUidList(c.blockedUids.newValue || []);
+
+  // 외부 변경 반영 (페이지 숨김)
+  if (c.hideMainEnabled   && toggleHideMain)   toggleHideMain.checked   = !!c.hideMainEnabled.newValue;
+  if (c.hideGallEnabled   && toggleHideGall)   toggleHideGall.checked   = !!c.hideGallEnabled.newValue;
+  if (c.hideSearchEnabled && toggleHideSearch) toggleHideSearch.checked = !!c.hideSearchEnabled.newValue;
 });
 
 /* 옵션 페이지 열기 */
