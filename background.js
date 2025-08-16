@@ -42,7 +42,7 @@ function createContextMenus() {
       chrome.contextMenus.create({
         id: CTX_BLOCK_USER,
         parentId: CTX_ROOT,
-        title: "오른쪽 클릭해 이 유저 차단",
+        title: "해당 이용자 즉시 차단!",
         contexts: ["all"],
         documentUrlPatterns: ["*://gall.dcinside.com/*"]
       });
