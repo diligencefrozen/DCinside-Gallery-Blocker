@@ -12,7 +12,8 @@
 
   "permissions": [
     "storage",
-    "declarativeNetRequest"
+    "declarativeNetRequest",
+    "contextMenus"                
   ],
 
   "host_permissions": [
@@ -79,6 +80,12 @@
     {
       "matches": ["*://gall.dcinside.com/*"],
       "js": ["cleaner-userblock.js"],
+      "run_at": "document_start",
+      "all_frames": true
+    },
+    {
+      "matches": ["*://gall.dcinside.com/*"],  
+      "js": ["ctx-probe.js"],
       "run_at": "document_start",
       "all_frames": true
     }
