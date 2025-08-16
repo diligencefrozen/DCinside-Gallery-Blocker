@@ -1,8 +1,7 @@
-/* options.js 
-*/
+/* options.js */
 
 /* ───── 상수 ───── */
-const builtinBlocked = ["dcbest"];                           // 기본 차단
+const builtinBlocked = ["dcbest"]; // 기본 차단
 
 const recommendedIds = [
   "4year_university","alliescon","asdf12","canada","centristconservatis",
@@ -62,11 +61,17 @@ const newSearchSel     = document.getElementById("newSearchSel");
 const addSearchSelBtn  = document.getElementById("addSearchSelBtn");
 const addRecSearchSel  = document.getElementById("addRecSearchSel");
 const searchSelList    = document.getElementById("searchSelList");
+/* ✅ 사용자 차단(UID) */
+const userBlockEl = document.getElementById("userBlockEnabled");
+const uidInput    = document.getElementById("uidInput");
+const addUidBtn   = document.getElementById("addUidBtn");
+const uidListEl   = document.getElementById("uidList");
 
 /* ───── 공통 유틸 ───── */
 const norm = s => s.trim().toLowerCase();
+const sanitizeUid = s => String(s || "").trim().replace(/\s+/g, "");
 
-/* ───── 갤러리 차단 렌더 ───── */
+/* ───── 갤러리 차단 ───── */
 function renderUser(ids){
   listEl.innerHTML = "";
   const vis = ids.filter(id => !builtinBlocked.includes(id));
@@ -88,7 +93,7 @@ function renderUser(ids){
 function renderRec(blocked){
   recList.innerHTML = "";
   recommendedIds.forEach(id=>{
-    const li = document.createElement("li");
+    const li  = document.createElement("li");
     const btn = document.createElement("button");
     const already = blocked.includes(id);
     btn.textContent = already ? "✓ 추가됨" : "추가";
@@ -126,6 +131,40 @@ function updateBlocked(next){
 function updateSel(list, key, targetUl){
   const uniq = [...new Set(list.map(s => s.trim()).filter(Boolean))];
   chrome.storage.sync.set({ [key]: uniq }, () => renderSel(uniq, targetUl, key));
+}
+
+/* ───── 사용자 차단(UID) 렌더/저장 ───── */
+function lockUserBlockUI(disabled){
+  if (!uidInput || !addUidBtn) return;
+  uidInput.disabled = addUidBtn.disabled = !!disabled;
+  const op = disabled ? 0.5 : 1;
+  uidInput.style.opacity = addUidBtn.style.opacity = op;
+}
+
+function renderUidList(uids){
+  uidListEl.innerHTML = "";
+  if (!uids || !uids.length){
+    uidListEl.innerHTML = '<li class="note" style="background:transparent;padding:0">등록된 유저 아이디가 없습니다.</li>';
+    return;
+  }
+  uids.forEach((uid, idx) => {
+    const li = document.createElement("li");
+    li.innerHTML = `<code>${uid}</code>`;
+    const del = document.createElement("button");
+    del.textContent = "삭제";
+    del.onclick = () => saveUidList(list => { list.splice(idx, 1); });
+    li.appendChild(del);
+    uidListEl.appendChild(li);
+  });
+}
+
+function saveUidList(mutator){
+  chrome.storage.sync.get({ blockedUids: [] }, ({ blockedUids }) => {
+    const list = Array.isArray(blockedUids) ? blockedUids.slice() : [];
+    mutator(list);
+    const uniq = Array.from(new Set(list.map(sanitizeUid).filter(Boolean)));
+    chrome.storage.sync.set({ blockedUids: uniq }, () => renderUidList(uniq));
+  });
 }
 
 /* ───── 이벤트 ───── */
@@ -187,14 +226,85 @@ addRecSearchSel.onclick = () =>
     updateSel([...new Set([...removeSelectorsSearch, ...recSearchSelectors])],
               "removeSelectorsSearch", searchSelList));
 
+/* ✅ 사용자 차단 토글 & UID 추가/삭제 */
+if (userBlockEl) {
+  userBlockEl.addEventListener("change", e => {
+    const on = !!e.target.checked;
+    lockUserBlockUI(!on);
+    chrome.storage.sync.set({ userBlockEnabled: on });
+  });
+}
+if (addUidBtn && uidInput) {
+  addUidBtn.addEventListener("click", () => {
+    const v = sanitizeUid(uidInput.value);
+    if (!v) return;
+    saveUidList(list => list.push(v));
+    uidInput.value = "";
+    uidInput.focus();
+  });
+  uidInput.addEventListener("keydown", e => {
+    if (e.key === "Enter") { e.preventDefault(); addUidBtn.click(); }
+  });
+}
+if (uidListEl) {
+  uidListEl.addEventListener("click", e => {
+    const btn = e.target.closest("button");
+    if (!btn) return;
+    const idx = Array.from(uidListEl.children).indexOf(btn.parentElement);
+    if (idx < 0) return;
+    saveUidList(list => { list.splice(idx, 1); });
+  });
+}
+
 /* ───── 초기 로드 ───── */
 chrome.storage.sync.get(
-  { blockedIds: [], removeSelectors: [], removeSelectorsGall: [], removeSelectorsSearch: [] },
-  ({ blockedIds, removeSelectors, removeSelectorsGall, removeSelectorsSearch }) => {
+  {
+    blockedIds: [],
+    removeSelectors: [],
+    removeSelectorsGall: [],
+    removeSelectorsSearch: [],
+    // 사용자 차단(UID)
+    userBlockEnabled: true,
+    blockedUids: [],
+    // 구버전 호환 (hideDCGray → userBlockEnabled)
+    hideDCGray: undefined
+  },
+  ({ blockedIds, removeSelectors, removeSelectorsGall, removeSelectorsSearch, userBlockEnabled, blockedUids, hideDCGray }) => {
+    // 마이그레이션
+    if (typeof userBlockEnabled !== "boolean" && typeof hideDCGray === "boolean") {
+      userBlockEnabled = hideDCGray;
+      chrome.storage.sync.set({ userBlockEnabled });
+    }
+
     renderUser(blockedIds.map(norm));
     renderRec(blockedIds.map(norm));
     renderSel(removeSelectors,       selList,       "removeSelectors");
     renderSel(removeSelectorsGall,   gallSelList,   "removeSelectorsGall");
     renderSel(removeSelectorsSearch, searchSelList, "removeSelectorsSearch");
+
+    if (userBlockEl) {
+      userBlockEl.checked = !!userBlockEnabled;
+      lockUserBlockUI(!userBlockEnabled);
+    }
+    renderUidList(blockedUids || []);
   }
 );
+
+/* 다른 탭/팝업 변경 반영 */
+chrome.storage.onChanged.addListener((c, area) => {
+  if (area !== "sync") return;
+
+  if (c.blockedIds) {
+    const ids = (c.blockedIds.newValue || []).map(norm);
+    renderUser(ids); renderRec(ids);
+  }
+  if (c.removeSelectors)       renderSel(c.removeSelectors.newValue || [],       selList,       "removeSelectors");
+  if (c.removeSelectorsGall)   renderSel(c.removeSelectorsGall.newValue || [],   gallSelList,   "removeSelectorsGall");
+  if (c.removeSelectorsSearch) renderSel(c.removeSelectorsSearch.newValue || [], searchSelList, "removeSelectorsSearch");
+
+  if (c.userBlockEnabled && userBlockEl) {
+    userBlockEl.checked = !!c.userBlockEnabled.newValue;
+    lockUserBlockUI(!c.userBlockEnabled.newValue);
+  }
+  if (c.blockedUids) renderUidList(c.blockedUids.newValue || []);
+});
