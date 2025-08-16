@@ -14,10 +14,12 @@ const recommendedIds = [
 
 /* 메인 페이지 추천 숨김 */
 const recSelectors = [
+  "div#dna_content.content.news_con",
   "div.content.concept_con",
+  "div.content_box.dcmedia",
   "div.content_box.new_gall",
-  "div.content_box.tab",
-  "div.time_best"
+  "div.time_best",
+  "div.trend.vote",
 ];
 
 /* 갤러리 페이지 추천 숨김 */
