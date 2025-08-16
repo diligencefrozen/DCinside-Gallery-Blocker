@@ -8,7 +8,7 @@
   // 기본값: DC 회색처리 숨김 ON, 사용자 차단 목록 비어 있음
   const DEFAULTS = {
     hideDCGray: true,            // gall.dcinside.com##.block-disable 
-    blockedUids: []              // 예: ['my0j4zrxn648']
+    blockedUids: []              // 예: ['my0j4zrxn648', 'dfsss']
   };
 
   // 차단 CSS 생성
