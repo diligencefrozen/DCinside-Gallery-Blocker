@@ -56,6 +56,7 @@
     padding:8px 12px;
   }
   .muted{font-size:12px;opacity:.8}
+  .hint{font-size:12px;opacity:.9;color:#c9d1d9;margin-top:-10px}
   ul#uidList{list-style:none;display:flex;flex-direction:column;gap:6px;max-height:120px;overflow:auto}
   ul#uidList li{display:flex;justify-content:space-between;align-items:center;border:1px solid #333;border-radius:8px;padding:6px 8px;background:#151a22}
   ul#uidList code{opacity:.9}
@@ -109,6 +110,7 @@
       <span class="slider"></span>
     </label>
   </label>
+  <p class="hint">숨길 영역은 <b>설정 메뉴</b> → “메인 페이지 영역 숨기기”에서 관리하세요.</p>
 
   <label class="row">
     <span style="min-width:110px;">갤러리 페이지 불필요한 영역 숨김</span>
@@ -117,6 +119,7 @@
       <span class="slider"></span>
     </label>
   </label>
+  <p class="hint">숨길 영역은 <b>설정 메뉴</b> → “갤러리 페이지 영역 숨기기”에서 관리하세요.</p>
 
   <label class="row">
     <span style="min-width:110px;">검색 페이지 불필요한 영역 숨김</span>
@@ -125,6 +128,7 @@
       <span class="slider"></span>
     </label>
   </label>
+  <p class="hint">숨길 영역은 <b>설정 메뉴</b> → “검색 페이지 영역 숨기기”에서 관리하세요.</p>
 
   <hr class="divider">
 
@@ -137,7 +141,7 @@
     </label>
   </label>
 
-  <!-- 차단할 유저 아이디 -->
+  <!-- 차단할 유저 아이디/아이피 -->
   <label class="row">
     <span style="min-width:110px;">차단할 유저 아이디와 아이피</span>
   </label>
@@ -146,8 +150,8 @@
     <button id="addUidBtn">추가</button>
   </div>
   <ul id="uidList"></ul>
-  <div class="muted">* 유저 아이디(UID)는 작성자 요소의 <code>data-uid</code> 값 또는 갤로그 주소의 사용자 ID입니다.</div>
-  <div class="muted">* 유저 아이피(UIP)는 비회원 사용자 값 입니다.</div>
+  <div class="muted">* UID는 작성자 요소의 <code>data-uid</code> 값 또는 갤로그 주소의 사용자 ID입니다.</div>
+  <div class="muted">* 비회원은 IP 앞부분(예: <code>39.7</code>)을 등록하면 <code>data-ip^="39.7"</code>로 일괄 차단됩니다.</div>
 
   <!-- 옵션 페이지 -->
   <button id="openOptions">설정 메뉴 열기</button>
