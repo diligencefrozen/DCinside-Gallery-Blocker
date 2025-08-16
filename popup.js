@@ -8,11 +8,11 @@ const delayNum       = document.getElementById("delayNum");     // 숫자 입력
 const delayRange     = document.getElementById("delayRange");   // 슬라이더
 const openOptionsBtn = document.getElementById("openOptions");
 
-// NEW: 시스템 회색(.block-disable) 숨김 + UID 차단 UI
-const hideDCGrayEl = document.getElementById("hideDCGray");
-const uidInput     = document.getElementById("uidInput");
-const addUidBtn    = document.getElementById("addUidBtn");
-const uidListEl    = document.getElementById("uidList");
+// 사용자 차단 + UID 관리 UI
+const userBlockEl = document.getElementById("userBlockEnabled") || document.getElementById("hideDCGray");
+const uidInput    = document.getElementById("uidInput");
+const addUidBtn   = document.getElementById("addUidBtn");
+const uidListEl   = document.getElementById("uidList");
 
 /* ───────── util ───────── */
 function lockDelay(disabled){
@@ -22,22 +22,32 @@ function lockDelay(disabled){
   delayNum.style.opacity = delayRange.style.opacity = op;
 }
 
+function lockUserBlockUI(disabled){
+  if (!uidInput || !addUidBtn) return;
+  uidInput.disabled = addUidBtn.disabled = !!disabled;
+  const op = disabled ? 0.5 : 1;
+  uidInput.style.opacity = addUidBtn.style.opacity = op;
+}
+
 const DEFAULTS = {
   enabled: true,
   blockMode: "redirect",    // redirect | block
   hideComment: false,
   delay: 5,
-  // NEW
-  hideDCGray: true,
-  blockedUids: []
+  // ✅ 새 키들
+  userBlockEnabled: true,   // 마스터 토글
+  blockedUids: [],
+  // ⬇ 마이그레이션용(과거 키)
+  hideDCGray: undefined
 };
 
 function sanitizeUid(s) {
-  // 양끝 공백 제거 + 공백 제거, 기본적으로 영숫자/밑줄/하이픈만 권장
+  // 공백 제거, 기본적으로 영숫자/밑줄/하이픈 권장
   return String(s || "").trim().replace(/\s+/g, "");
 }
 
 function renderUidList(list) {
+  if (!uidListEl) return;
   uidListEl.innerHTML = "";
   (list || []).forEach((uid, idx) => {
     const li = document.createElement("li");
@@ -59,7 +69,13 @@ function saveUidList(mutator) {
 
 /* ───────── 초기 로드 ───────── */
 chrome.storage.sync.get(DEFAULTS, (conf)=>{
-  const { enabled, blockMode, hideComment, delay, hideDCGray, blockedUids } = conf;
+  // 🔁 과거 hideDCGray → userBlockEnabled 로 1회 이행
+  if (typeof conf.userBlockEnabled !== "boolean" && typeof conf.hideDCGray === "boolean") {
+    conf.userBlockEnabled = conf.hideDCGray;
+    chrome.storage.sync.set({ userBlockEnabled: conf.userBlockEnabled });
+  }
+
+  const { enabled, blockMode, hideComment, delay, userBlockEnabled, blockedUids } = conf;
 
   toggle.checked        = enabled;
   blockModeSel.value    = blockMode;
@@ -68,9 +84,11 @@ chrome.storage.sync.get(DEFAULTS, (conf)=>{
   delayRange.value      = delay;
   lockDelay(blockMode === "block");
 
-  // NEW
-  if (hideDCGrayEl) hideDCGrayEl.checked = !!hideDCGray;
-  if (uidListEl)    renderUidList(blockedUids);
+  if (userBlockEl) {
+    userBlockEl.checked = !!userBlockEnabled;
+    lockUserBlockUI(!userBlockEnabled); // OFF면 입력/추가 비활성화
+  }
+  renderUidList(blockedUids);
 });
 
 /* ───────── 이벤트 바인딩 ───────── */
@@ -97,13 +115,16 @@ function updateDelay(v){
 delayNum.oninput   = e => updateDelay(e.target.value);
 delayRange.oninput = e => updateDelay(e.target.value);
 
-/* NEW: 회색(.block-disable) 숨김 토글 */
-if (hideDCGrayEl) {
-  hideDCGrayEl.onchange = e =>
-    chrome.storage.sync.set({ hideDCGray: !!e.target.checked });
+/* 사용자 차단  */
+if (userBlockEl) {
+  userBlockEl.onchange = e => {
+    const on = !!e.target.checked;
+    lockUserBlockUI(!on);
+    chrome.storage.sync.set({ userBlockEnabled: on });
+  };
 }
 
-/* NEW: UID 추가 */
+/* UID 추가 */
 if (addUidBtn && uidInput) {
   addUidBtn.onclick = () => {
     const v = sanitizeUid(uidInput.value);
@@ -112,7 +133,6 @@ if (addUidBtn && uidInput) {
     uidInput.value = "";
     uidInput.focus();
   };
-  // Enter로 추가
   uidInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
       e.preventDefault();
@@ -121,7 +141,7 @@ if (addUidBtn && uidInput) {
   });
 }
 
-/* NEW: UID 삭제 (이벤트 위임) */
+/* UID 삭제 (이벤트 위임) */
 if (uidListEl) {
   uidListEl.addEventListener("click", (e) => {
     const btn = e.target.closest("button[data-idx]");
@@ -144,9 +164,11 @@ chrome.storage.onChanged.addListener((c,a)=>{
     delayNum.value   = c.delay.newValue;
     delayRange.value = c.delay.newValue;
   }
-  // NEW
-  if (c.hideDCGray && hideDCGrayEl) hideDCGrayEl.checked = !!c.hideDCGray.newValue;
-  if (c.blockedUids && uidListEl)  renderUidList(c.blockedUids.newValue || []);
+  if (c.userBlockEnabled && userBlockEl) {
+    userBlockEl.checked = !!c.userBlockEnabled.newValue;
+    lockUserBlockUI(!c.userBlockEnabled.newValue);
+  }
+  if (c.blockedUids)  renderUidList(c.blockedUids.newValue || []);
 });
 
 /* 옵션 페이지 열기 */
