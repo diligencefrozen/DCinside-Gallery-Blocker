@@ -13,7 +13,7 @@
   "permissions": [
     "storage",
     "declarativeNetRequest",
-    "contextMenus"                
+    "contextMenus"
   ],
 
   "host_permissions": [
@@ -84,7 +84,7 @@
       "all_frames": true
     },
     {
-      "matches": ["*://gall.dcinside.com/*"],  
+      "matches": ["*://gall.dcinside.com/*"],
       "js": ["ctx-probe.js"],
       "run_at": "document_start",
       "all_frames": true
