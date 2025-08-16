@@ -7,6 +7,18 @@ const MAIN_URL  = "https://www.dcinside.com";
 const BUILTIN   = ["dcbest"];          // 항상 차단
 const RULE_NS   = 40_000;              // 다른 확장과 id 충돌 방지 (40001…)
 
+/* 최초 설치 시 기본값 주입: 하드모드 + 사용 ON */
+chrome.runtime.onInstalled.addListener(({ reason }) => {
+  if (reason === "install") {
+    chrome.storage.sync.get(["blockMode", "enabled"], (conf) => {
+      const patch = {};
+      if (typeof conf.blockMode === "undefined") patch.blockMode = "block"; // 기본: 하드모드
+      if (typeof conf.enabled   === "undefined") patch.enabled   = true;    // 기본: ON
+      if (Object.keys(patch).length) chrome.storage.sync.set(patch);
+    });
+  }
+});
+
 /* 규칙 생성 */
 const makeRules = (ids) =>
   ids.map((gid, i) => ({
@@ -21,10 +33,11 @@ const makeRules = (ids) =>
 
 /* 동기화 */
 async function syncRules() {
-  const { enabled = true, blockMode = "redirect", blockedIds = [] } =
+  // 기본값도 하드모드로 맞춤
+  const { enabled = true, blockMode = "block", blockedIds = [] } =
     await chrome.storage.sync.get({
       enabled   : true,
-      blockMode : "redirect",
+      blockMode : "block",   // ← 기본 하드모드
       blockedIds: []
     });
 
