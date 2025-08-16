@@ -1,55 +1,78 @@
 /*****************************************************************
- * cleaner-search.js 
+ * cleaner-search.js — 검색(combine) 페이지 숨김
  *****************************************************************/
 
 const STYLE_ID = "dcb-search-clean-style";
-let observer;
+let observer = null;
 
-/* <style> 태그 생성 / 갱신 */
-function updateStyle(selectors) {
+/* <style> 생성/보장 */
+function ensureStyle() {
   let style = document.getElementById(STYLE_ID);
   if (!style) {
     style = document.createElement("style");
     style.id = STYLE_ID;
-    document.documentElement.appendChild(style);
+    (document.head || document.documentElement).appendChild(style);
   }
-  style.textContent = selectors.map(s => `${s}{display:none!important}`).join("\n");
+  return style;
 }
 
 /* 즉시 제거 */
-const removeNow = selArr =>
-  selArr.forEach(sel =>
-    document.querySelectorAll(sel).forEach(el => el.remove()));
+function removeNow(selectors) {
+  selectors.forEach(sel =>
+    document.querySelectorAll(sel).forEach(el => el.remove())
+  );
+}
 
-/*  MutationObserver */
+/* 동적 로딩 대응 */
 function startObserver(selectors) {
   if (observer) observer.disconnect();
   observer = new MutationObserver(() => removeNow(selectors));
-  observer.observe(document.body, { childList: true, subtree: true });
+  if (document.body) {
+    observer.observe(document.body, { childList: true, subtree: true });
+  } else {
+    window.addEventListener("DOMContentLoaded", () => {
+      if (observer) observer.observe(document.body, { childList: true, subtree: true });
+    }, { once: true });
+  }
 }
 
 /* 설정 적용 */
 function apply() {
-  chrome.storage.sync.get({ removeSelectorsSearch: [] }, ({ removeSelectorsSearch }) => {
-    const list = removeSelectorsSearch.map(s => s.trim()).filter(Boolean);
-    updateStyle(list);
+  chrome.storage.sync.get(
+    { hideSearchEnabled: true, removeSelectorsSearch: [] },
+    ({ hideSearchEnabled, removeSelectorsSearch }) => {
+      const sels = (removeSelectorsSearch || []).map(s => s.trim()).filter(Boolean);
+      const style = ensureStyle();
 
-    /* body 가 없으면 DOMContentLoaded 후 처리 */
-    if (document.body) {
-      removeNow(list);
-      startObserver(list);
-    } else {
-      addEventListener("DOMContentLoaded", () => {
-        removeNow(list);
-        startObserver(list);
-      }, { once: true });
+      // 🔒 마스터 OFF 또는 리스트 비었으면 모두 해제
+      if (!hideSearchEnabled || sels.length === 0) {
+        style.textContent = "";
+        if (observer) observer.disconnect();
+        return;
+      }
+
+      // CSS로 재등장 억제
+      style.textContent = sels.map(s => `${s}{display:none!important}`).join("\n");
+
+      // 즉시 제거 + 옵저버
+      if (document.readyState === "loading") {
+        window.addEventListener("DOMContentLoaded", () => {
+          removeNow(sels);
+          startObserver(sels);
+        }, { once: true });
+      } else {
+        removeNow(sels);
+        startObserver(sels);
+      }
     }
-  });
+  );
 }
 
 /* 스토리지 변경 감지 */
 chrome.storage.onChanged.addListener((c, area) => {
-  if (area === "sync" && c.removeSelectorsSearch) apply();
+  if (area !== "sync") return;
+  if (c.hideSearchEnabled || c.removeSelectorsSearch) apply();
 });
 
+/* 초기 실행 */
 apply();
