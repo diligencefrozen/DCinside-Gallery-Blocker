@@ -93,7 +93,7 @@
 
   <hr class="divider">
 
-  <!-- DC 시스템 차단(회색) + 사용자 UID 차단 -->
+  <!-- DC 시스템 차단(회색) + 유저 아이디 차단 -->
   <label class="row">
     <span style="min-width:110px;">회색처리 숨기기</span>
     <label class="switch">
@@ -102,12 +102,16 @@
     </label>
   </label>
 
+  <!-- 차단할 유저 아이디 -->
+  <label class="row">
+    <span style="min-width:110px;">차단할 유저 아이디</span>
+  </label>
   <div class="row-input">
-    <input id="uidInput" type="text" placeholder="차단할 UID 입력 (예: dfsss)">
+    <input id="uidInput" type="text" placeholder="예: 88pcgs">
     <button id="addUidBtn">추가</button>
   </div>
   <ul id="uidList"></ul>
-  <div class="muted">* UID는 작성자 요소의 <code>data-uid</code> 값 또는 갤로그 주소의 사용자 ID입니다.</div>
+  <div class="muted">* 유저 아이디(UID)는 작성자 요소의 <code>data-uid</code> 값 또는 갤로그 주소의 사용자 ID입니다.</div>
 
   <!-- 옵션 페이지 -->
   <button id="openOptions">설정 메뉴 열기</button>
