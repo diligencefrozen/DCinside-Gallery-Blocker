@@ -80,7 +80,7 @@
   <section class="card">
     <h2>사용자 차단</h2>
     <div class="row" style="justify-content:space-between">
-      <span class="note">OFF이면 UID가 등록되어 있어도 아무도 차단하지 않습니다.</span>
+      <span class="note">OFF면 UID(또는 UIP)가 등록되어 있어도 아무도 차단하지 않습니다.</span>
       <label class="switch" title="사용자 차단 활성화">
         <input type="checkbox" id="userBlockEnabled">
         <span class="slider"></span>
@@ -88,11 +88,12 @@
     </div>
 
     <div class="row">
-      <input id="uidInput" type="text" placeholder="차단할 유저 아이디 입력 (예: 88pcgs)">
+      <input id="uidInput" type="text" placeholder="차단할 유저 아이디 & 아이피 입력 (예: userid, 39.7)">
       <button id="addUidBtn">추가</button>
     </div>
     <ul id="uidList"></ul>
     <p class="note">* 유저 아이디(UID)는 작성자 요소의 <code>data-uid</code> 값 또는 갤로그 주소의 사용자 ID입니다.</p>
+    <p class="note">* 유저 아이피(UIP)는 비회원 사용자 값입니다.</p>
   </section>
 
   <!-- 직접 갤러리 입력 -->
