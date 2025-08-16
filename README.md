@@ -14,8 +14,8 @@
 | **차단 방식 선택**     | - *초보 모드* : 0 ~ 10초 후 메인으로 리다이렉트<br>- *하드모드(기본)* : 네트워크 레벨에서 즉시 차단 |
 | **사용자 차단(UID/IP)** | - 회원 **UID** 와 비회원 **IP**(예: `119.202`) 등록 차단<br>- DC 시스템 **회색처리(.block-disable)** 포함 차단<br>- 기능 **OFF 시 차단목록에 있어도 차단 미적용 |
 | **우클릭 차단**    | - 우클릭 메뉴 **“디시갤 차단기 → 해당 유저 즉시 차단!”**<br> |
-| **댓글 숨김/복원**     | - 게시글의 댓글 영역 `div#focus_cmt.view_comment[tabindex]` 숨김 기능<br> |
-| **방해 요소 숨김**     | - **메인/갤러리/검색** <br>- 차단 목록에 등록되어 있어도 **기능이 ON일 때만 적용**<br>- 메인 추천 프리셋: `div#dna_content.content.news_con`, `div.content.concept_con`, `div.content_box.dcmedia`, `div.content_box.new_gall`, `div.time_best`, `div.trend.vote` |                                                                            |
+| **댓글 숨김**     | - 게시글의 댓글 영역 `div#focus_cmt.view_comment[tabindex]` 숨김 기능<br> |
+| **방해물 숨김**     | - **메인/갤러리/검색** <br>- 차단 목록에 등록되어 있어도 **기능이 ON일 때만 적용**<br>- 메인 추천 프리셋: `div#dna_content.content.news_con`, `div.content.concept_con`, `div.content_box.dcmedia`, `div.content_box.new_gall`, `div.time_best`, `div.trend.vote` |                                                                            |
 
 ## 설치 방법
 
