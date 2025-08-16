@@ -36,7 +36,7 @@ function lockUserBlockUI(disabled){
 
 const DEFAULTS = {
   enabled: true,
-  blockMode: "redirect",    // redirect | block
+  blockMode: "block",       // ← 기본 하드모드로 변경
   hideComment: false,
   delay: 5,
 
@@ -53,7 +53,7 @@ const DEFAULTS = {
 };
 
 function sanitizeUid(s) {
-  // 공백 제거, 기본적으로 영숫자/밑줄/하이픈 권장
+  // 공백 제거
   return String(s || "").trim().replace(/\s+/g, "");
 }
 
@@ -107,7 +107,7 @@ chrome.storage.sync.get(DEFAULTS, (conf)=>{
   }
   renderUidList(blockedUids);
 
-  // ✅ 페이지 숨김 마스터
+  // 페이지 숨김 마스터
   if (toggleHideMain)   toggleHideMain.checked   = !!hideMainEnabled;
   if (toggleHideGall)   toggleHideGall.checked   = !!hideGallEnabled;
   if (toggleHideSearch) toggleHideSearch.checked = !!hideSearchEnabled;
