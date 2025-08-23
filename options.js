@@ -24,8 +24,8 @@ const recSelectors = [
 
 /* 갤러리 페이지 추천 숨김 */
 const recGallSelectors = [
-  "div.ad_bottom_list[style]"
-  "div.content_box.r_recommend[data-rand]"
+  "div.ad_bottom_list[style]",
+  "div.content_box.r_recommend[data-rand]",
   "div.content_box.r_timebest"
 ];
 
@@ -225,7 +225,7 @@ addRecSearchSel.onclick = () =>
     updateSel([...new Set([...removeSelectorsSearch, ...recSearchSelectors])],
               "removeSelectorsSearch", searchSelList));
 
-/* ✅ 사용자 차단 토글 & UID 추가/삭제 */
+/* 사용자 차단 토글 & UID 추가/삭제 */
 if (userBlockEl) {
   userBlockEl.addEventListener("change", e => {
     const on = !!e.target.checked;
