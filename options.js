@@ -24,12 +24,9 @@ const recSelectors = [
 
 /* 갤러리 페이지 추천 숨김 */
 const recGallSelectors = [
-  "article > div > div > div[style]",
-  "div.ad_bottom_list",
-  "div.content_box.r_timebest",
-  "div.rightbanner1",
-  "div[data-rand]",
-  "img[src][width][height][title][style]"
+  "div.ad_bottom_list[style]"
+  "div.content_box.r_recommend[data-rand]"
+  "div.content_box.r_timebest"
 ];
 
 /* 검색(combine) 페이지 추천 숨김 */
