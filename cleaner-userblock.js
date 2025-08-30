@@ -45,8 +45,8 @@
       (isIpToken(s) ? ips : uids).push(s);
     });
 
+    // 목록(리스트) 항목은 통째로 숨김
     const addRulesForAttr = (attr) => {
-
       lines.push(
         `.gall_list tr.ub-content:has(.gall_writer${attr}){display:none!important}`,
         `.gall_list li.ub-content:has(.gall_writer${attr}){display:none!important}`
@@ -57,12 +57,12 @@
 
     // 댓글 안내문 공통 스타일
     lines.push(`
-      .dcb-blocked {
-        display:block; margin:6px 0 8px; padding:8px 10px;
-        background:rgba(224,49,49,.08); color:#e03131;
-        border:1px dashed rgba(224,49,49,.45); border-radius:6px;
-        font-size:12px; font-weight:700; line-height:1.45;
-        white-space:pre-wrap; word-break:break-word;
+      .dcb-blocked{
+        display:block;margin:6px 0 8px;padding:8px 10px;
+        background:rgba(224,49,49,.08);color:#e03131;
+        border:1px dashed rgba(224,49,49,.45);border-radius:6px;
+        font-size:12px;font-weight:700;line-height:1.45;
+        white-space:pre-wrap;word-break:break-word;
       }
     `);
 
@@ -71,46 +71,67 @@
 
   /* ===== 댓글 본문 탐색 ===== */
   function findCommentBody(container){
-    // 가장 흔한 케이스
+    // NEW: p.usertxt, .usertxt.ub-word까지 포함
     return (
       container.querySelector('.cmt_txtbox') ||
       container.querySelector('.comment_box') ||
       container.querySelector('.cmt_txt') ||
+      container.querySelector('p.usertxt') ||     
+      container.querySelector('.usertxt.ub-word') || 
       container.querySelector('.ub-word') ||
       null
     );
   }
+
   function findBodyFromInfo(infoEl){
-    // infoEl의 형제/부모 쪽에서 본문을 탐색
     let p = infoEl.parentElement;
     let cand = findCommentBody(p||infoEl);
     if (cand) return cand;
 
+    // 인접 형제에서 몇 번 더 탐색
     let sib = infoEl.nextElementSibling;
     for (let i=0; i<3 && sib; i++, sib = sib.nextElementSibling){
-      if (sib.matches?.('.cmt_txtbox, .comment_box, .cmt_txt, .ub-word')) return sib;
-      const inner = sib.querySelector?.('.cmt_txtbox, .comment_box, .cmt_txt, .ub-word');
+      if (sib.matches?.('.cmt_txtbox, .comment_box, .cmt_txt, .ub-word, p.usertxt, .usertxt.ub-word')) return sib; // NEW
+      const inner = sib.querySelector?.('.cmt_txtbox, .comment_box, .cmt_txt, .ub-word, p.usertxt, .usertxt.ub-word'); // NEW
       if (inner) return inner;
     }
     return null;
   }
+
   function getCommentItems(){
     const items = [];
+    const seen = new Set(); // NEW: data-no 기준 중복 제거
 
-
+    // 1) li.ub-content 기준 수집
     document.querySelectorAll('#focus_cmt .cmt_list li.ub-content').forEach(li=>{
-      const writer = li.querySelector('.gall_writer'); if(!writer) return;
-      const body = findCommentBody(li) || findBodyFromInfo(li.querySelector('.cmt_info')||li);
+      const info = li.querySelector('.cmt_info');
+      const no = info?.getAttribute('data-no') || '';
+      if (no && seen.has(no)) return;
+
+      const writer = li.querySelector('.gall_writer');
+      if(!writer) return;
+
+      const body = findCommentBody(li) || (info && findBodyFromInfo(info));
       if (!body) return;
+
       items.push({ container: li, writer, body });
+      if (no) seen.add(no);
     });
 
-
+    // 2) li가 없이 .cmt_info만 존재하는 케이스
     document.querySelectorAll('#focus_cmt .cmt_info').forEach(info=>{
-      if (info.closest('li.ub-content')) return; // 1)에서 처리됨
-      const writer = info.querySelector('.gall_writer'); if(!writer) return;
-      const body = findBodyFromInfo(info); if(!body) return;
+      if (info.closest('li.ub-content')) return; // 이미 위에서 처리
+      const no = info.getAttribute('data-no') || '';
+      if (no && seen.has(no)) return;
+
+      const writer = info.querySelector('.gall_writer');
+      if(!writer) return;
+
+      const body = findBodyFromInfo(info);
+      if (!body) return;
+
       items.push({ container: info, writer, body });
+      if (no) seen.add(no);
     });
 
     return items;
@@ -176,7 +197,11 @@
   }
 
   // 동적 로딩 대응
-  const mo = new MutationObserver(() => apply());
+  let raf = 0;
+  const mo = new MutationObserver(() => {
+    cancelAnimationFrame(raf);
+    raf = requestAnimationFrame(apply);
+  });
   const startMO = () => {
     if (document.body) mo.observe(document.body, { childList:true, subtree:true });
     else document.addEventListener('DOMContentLoaded', startMO, { once:true });
