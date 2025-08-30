@@ -57,7 +57,8 @@
 
     // 안내 UI(우측 정렬, 슬림)
     lines.push(`
-      .dcb-blocked-wrap{display:block;text-align:right}
+-     .dcb-blocked-wrap{display:block;text-align:right}
++     .dcb-blocked-wrap{display:inline-block;width:100%;text-align:right}
       .dcb-badge{
         display:inline-flex;align-items:center;gap:6px;
         padding:4px 8px;border:1px dashed rgba(224,49,49,.45);
@@ -135,15 +136,20 @@
     return items;
   }
 
-  /* ===== 보기/숨기기 렌더 ===== */
+  /* ===== 보기/숨기기 ===== */
   function renderHidden(body){
     body.setAttribute('data-dcb-body', '1');
-    body.innerHTML =
-      `<div class="dcb-blocked-wrap">
-         <span class="dcb-badge">차단된 댓글입니다
-           <button class="dcb-toggle" type="button" data-dcb-act="show">보기</button>
-         </span>
-       </div>`;
+-    body.innerHTML =
+-      `<div class="dcb-blocked-wrap">
+-         <span class="dcb-badge">차단된 댓글입니다
+-           <button class="dcb-toggle" type="button" data-dcb-act="show">보기</button>
+-         </span>
+-       </div>`;
++    body.innerHTML =
++      `<span class="dcb-blocked-wrap">
++         <span class="dcb-badge">차단된 댓글입니다</span>
++         <button class="dcb-toggle" type="button" data-dcb-act="show">보기</button>
++       </span>`;
   }
   function renderShown(body){
     body.setAttribute('data-dcb-body', '1');
@@ -180,7 +186,6 @@
     if (!btn) return;
 
     const act = btn.dataset.dcbAct;
-    // 버튼에서 가장 가까운 본문 노드 탐색
     const body =
       btn.closest('[data-dcb-body="1"]') ||
       btn.closest('.cmt_txtbox, .comment_box, .cmt_txt, p.usertxt, .usertxt.ub-word, .ub-word');
