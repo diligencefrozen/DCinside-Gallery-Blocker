@@ -1,12 +1,12 @@
 /*****************************************************************
- * cleaner-userblock.js 
+ * cleaner-userblock.js  
  *****************************************************************/
 (() => {
   const STYLE_ID = 'dcb-userblock-style';
 
   const DEFAULTS = {
-    userBlockEnabled: true,   // 마스터 토글
-    blockedUids: [],          // 예: ['my0j4zrxn648', '118.235']
+    userBlockEnabled: true,   // 마스터 
+    blockedUids: [],          // 예: ['my0j4zrxn648', '118.235'] 
     includeGray: true,        // 회색(.block-disable)도 함께 숨김
     // 구버전 호환(과거 hideDCGray → userBlockEnabled)
     hideDCGray: undefined
@@ -38,47 +38,35 @@
 
   function buildCss(conf) {
     const { userBlockEnabled, includeGray, blockedUids } = conf;
-    if (!userBlockEnabled) return ''; // OFF면 완전 무효화
+    if (!userBlockEnabled) return ''; // OFF면 완전 비활성
+
+    const lines = [];
+    if (includeGray) lines.push('.block-disable{display:none!important}');
 
     const uids = [];
     const ips  = [];
-
     (blockedUids || []).forEach(raw => {
       const token = String(raw || '').trim();
       if (!token) return;
       (isIpToken(token) ? ips : uids).push(token);
     });
 
-    const lines = [];
-
-    // 1) 시스템 회색처리 숨김
-    if (includeGray) lines.push('.block-disable{display:none!important}');
-
-    // 2) 회원 UID 차단
-    uids.forEach(uid => {
-      const u = cssEscape(uid);
-      // 목록/댓글 아이템 컨테이너 숨김
+    const addRulesForAttr = (attr) => {
+      // 1) 목록/리스트 항목 숨김 (글/댓글 미리보기 컨테이너)
       CONTAINERS.forEach(c =>
-        lines.push(`${c}:has(.gall_writer[data-uid="${u}"]){display:none!important}`)
+        lines.push(`${c}:has(.gall_writer${attr}){display:none!important}`)
       );
-      // 뷰 페이지(본문/댓글) 숨김
-      lines.push(
-        `#container:has(.gall_writer[data-uid="${u}"]) .view_content_wrap{display:none!important}`,
-        `#container:has(.gall_writer[data-uid="${u}"]) #focus_cmt{display:none!important}`
-      );
-    });
 
-    // 3) 비회원 IP 프리픽스 차단 (data-ip^="118.235")
-    ips.forEach(prefix => {
-      const p = cssEscape(prefix);
-      CONTAINERS.forEach(c =>
-        lines.push(`${c}:has(.gall_writer[data-ip^="${p}"]){display:none!important}`)
-      );
-      lines.push(
-        `#container:has(.gall_writer[data-ip^="${p}"]) .view_content_wrap{display:none!important}`,
-        `#container:has(.gall_writer[data-ip^="${p}"]) #focus_cmt{display:none!important}`
-      );
-    });
+      // 2) 게시글 본문: "글쓴이"가 차단 대상일 때만 본문 숨김
+      //    댓글 작성자 때문에 본문이 사라지지 않도록 컨테이너를 좁힘
+      lines.push(`.view_content_wrap:has(.gall_writer${attr}){display:none!important}`);
+
+      // 3) 댓글: 해당 작성자의 댓글 '항목'만 숨김
+      lines.push(`#focus_cmt .cmt_list li.ub-content:has(.gall_writer${attr}){display:none!important}`);
+    };
+
+    uids.forEach(u => addRulesForAttr(`[data-uid="${cssEscape(u)}"]`));
+    ips .forEach(p => addRulesForAttr(`[data-ip^="${cssEscape(p)}"]`));
 
     return lines.join('');
   }
