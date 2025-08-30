@@ -1,13 +1,13 @@
 /*****************************************************************
- * cleaner-userblock.js 
+ * cleaner-userblock.js  
  *****************************************************************/
 (() => {
   const STYLE_ID = 'dcb-userblock-style';
 
   const DEFAULTS = {
-    userBlockEnabled: true,   // 마스터
+    userBlockEnabled: true,   // 마스터 
     blockedUids: [],          // 예: ['my0j4zrxn648', '118.235']
-    includeGray: true,        // 회색(.block-disable)도 숨김
+    includeGray: true,        // .block-disable 숨김
     // 구버전 호환
     hideDCGray: undefined
   };
@@ -41,6 +41,19 @@
     const lines = [];
     if (includeGray) lines.push('.block-disable{display:none!important}');
 
+    // 댓글: 본문 숨기고 빨간 안내문으로 대체 (헤더/시간/작성자는 유지)
+    lines.push(`
+      #focus_cmt .cmt_list li.ub-content.dcb-masked .cmt_txtbox{display:none!important}
+      #focus_cmt .cmt_list li.ub-content.dcb-masked .cmt_info::after{
+        content:'차단된 댓글입니다';
+        display:block; margin:6px 0 8px; padding:8px 10px;
+        background:rgba(224,49,49,.08); color:#e03131; border-radius:6px;
+        font-size:12px; line-height:1.4; font-weight:700;
+        border:1px dashed rgba(224,49,49,.45);
+      }
+    `);
+
+    // 차단 토큰 분류
     const uids = [];
     const ips  = [];
     (blockedUids || []).forEach(raw => {
@@ -49,35 +62,19 @@
       (isIpToken(token) ? ips : uids).push(token);
     });
 
-    // 댓글 placeholder 공통 스타일
-    lines.push(`
-      /* 댓글 본문을 숨기고 안내문을 표시 (헤더/작성자/시간은 유지) */
-      #focus_cmt .cmt_list li.ub-content.dcb-masked .cmt_txtbox{display:none!important}
-      #focus_cmt .cmt_list li.ub-content.dcb-masked .cmt_info::after{
-        content:'차단된 댓글';
-        display:block; margin:6px 0 8px; padding:8px 10px;
-        background:rgba(0,0,0,.06); color:#666; border-radius:6px;
-        font-size:12px; line-height:1.4;
-      }
-    `);
-
     // 속성 조합으로 규칙 생성
     const addRulesForAttr = (attr) => {
-      /* 1) 목록(리스트)은 완전히 제거 */
+      // 목록(리스트)은 통째로 숨김
       lines.push(
         `.gall_list tr.ub-content:has(.gall_writer${attr}){display:none!important}`,
         `.gall_list li.ub-content:has(.gall_writer${attr}){display:none!important}`
       );
 
-      /* 2) 게시글 본문: '글쓴이'가 차단 대상일 때만 본문 숨김
-            (댓글 작성자 때문에 본문이 사라지지 않도록 범위를 .view_content_wrap 으로 제한) */
-      lines.push(`.view_content_wrap:has(.gall_writer${attr}){display:none!important}`);
-
-      /* 3) 댓글: 항목(li)은 남기고 본문만 숨김 + 안내문 표기 */
+      // 댓글: li 자체는 유지(위 CSS의 dcb-masked로 안내문 표시)
       lines.push(
-        `#focus_cmt .cmt_list li.ub-content:has(.gall_writer${attr}){position:relative}`,
-        `#focus_cmt .cmt_list li.ub-content:has(.gall_writer${attr}){/**/}`
+        `#focus_cmt .cmt_list li.ub-content:has(.gall_writer${attr}){position:relative}`
       );
+
     };
 
     uids.forEach(u => addRulesForAttr(`[data-uid="${cssEscape(u)}"]`));
@@ -124,7 +121,7 @@
     apply();
   }
 
-  // 동적 로딩 댓글 대응
+  // 동적 로딩 대응
   const mo = new MutationObserver(() => apply());
   const startMO = () => {
     if (document.body) mo.observe(document.body, { childList:true, subtree:true });
