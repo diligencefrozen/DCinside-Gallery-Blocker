@@ -1,5 +1,5 @@
 /*****************************************************************
- * cleaner-userblock.js 
+ * cleaner-userblock.js  
  *****************************************************************/
 (() => {
   const STYLE_ID = 'dcb-userblock-style';
@@ -8,7 +8,7 @@
     userBlockEnabled: true,
     blockedUids: [],          // ['회원UID', '118.235' 같은 IP 프리픽스]
     includeGray: true,
-    hideDCGray: undefined     // 구버전 호환
+    hideDCGray: undefined
   };
 
   const cssEscape = s => String(s || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
@@ -55,26 +55,21 @@
     uids.forEach(u => addRulesForAttr(`[data-uid="${cssEscape(u)}"]`));
     ips .forEach(p => addRulesForAttr(`[data-ip^="${cssEscape(p)}"]`));
 
-    // 안내문/버튼 스타일
+    // 안내 UI(우측 정렬, 슬림)
     lines.push(`
-      .dcb-blocked{
-        display:block;margin:6px 0 8px;padding:8px 10px;
-        background:rgba(224,49,49,.08);color:#e03131;
-        border:1px dashed rgba(224,49,49,.45);border-radius:6px;
-        font-size:12px;font-weight:700;line-height:1.45;
-        white-space:pre-wrap;word-break:break-word;
+      .dcb-blocked-wrap{display:block;text-align:right}
+      .dcb-badge{
+        display:inline-flex;align-items:center;gap:6px;
+        padding:4px 8px;border:1px dashed rgba(224,49,49,.45);
+        border-radius:6px;background:rgba(224,49,49,.08);color:#e03131;
+        font-size:12px;font-weight:700;line-height:1.45
       }
       .dcb-toggle{
-        margin-left:.5rem;padding:2px 8px;border:1px solid #e03131;
-        border-radius:6px;background:transparent;color:#e03131;
-        font-size:11px;cursor:pointer
+        padding:2px 8px;border:1px solid currentColor;border-radius:6px;
+        background:transparent;color:#e03131;font-size:11px;cursor:pointer
       }
-      .dcb-rehide{
-        margin-top:6px
-      }
-      .dcb-rehide .dcb-toggle{
-        border-color:#666;color:#666
-      }
+      .dcb-rehide{margin-top:6px;text-align:right}
+      .dcb-rehide .dcb-toggle{border-color:#666;color:#666}
     `);
 
     return lines.join('\n');
@@ -82,7 +77,6 @@
 
   /* ===== 댓글 본문 탐색 ===== */
   function findCommentBody(container){
-    // 스킨별로 제각각이라 넓게 커버
     return (
       container.querySelector('.cmt_txtbox') ||
       container.querySelector('.comment_box') ||
@@ -99,7 +93,6 @@
     let cand = findCommentBody(p||infoEl);
     if (cand) return cand;
 
-    // 인접 형제에서 탐색
     let sib = infoEl.nextElementSibling;
     for (let i=0; i<3 && sib; i++, sib = sib.nextElementSibling){
       if (sib.matches?.('.cmt_txtbox, .comment_box, .cmt_txt, .ub-word, p.usertxt, .usertxt.ub-word')) return sib;
@@ -111,9 +104,9 @@
 
   function getCommentItems(){
     const items = [];
-    const seen = new Set(); // data-no 중복 제거
+    const seen = new Set();
 
-    // 1) 일반 댓글 li
+    // 일반/이미지 댓글 li
     document.querySelectorAll('#focus_cmt .cmt_list li.ub-content, #container .cmt_list li.ub-content, li[id^="img_comment_li_"]').forEach(li=>{
       const info = li.querySelector('.cmt_info');
       const no = info?.getAttribute('data-no') || '';
@@ -126,7 +119,7 @@
       if (no) seen.add(no);
     });
 
-    // 2) li 없이 .cmt_info만 존재하는 케이스
+    // li 없이 .cmt_info만 있는 케이스
     document.querySelectorAll('#focus_cmt .cmt_info, #container .cmt_info').forEach(info=>{
       if (info.closest('li.ub-content')) return;
       const no = info.getAttribute('data-no') || '';
@@ -142,14 +135,23 @@
     return items;
   }
 
-  /* ===== 보기/숨기기 토글 ===== */
+  /* ===== 보기/숨기기 렌더 ===== */
   function renderHidden(body){
-    body.innerHTML = `<span class="dcb-blocked">차단된 댓글입니다
-      <button class="dcb-toggle" type="button" data-dcb-act="show">보기</button></span>`;
+    body.setAttribute('data-dcb-body', '1');
+    body.innerHTML =
+      `<div class="dcb-blocked-wrap">
+         <span class="dcb-badge">차단된 댓글입니다
+           <button class="dcb-toggle" type="button" data-dcb-act="show">보기</button>
+         </span>
+       </div>`;
   }
   function renderShown(body){
-    body.innerHTML = body.dataset.dcbOriginal +
-      `<div class="dcb-rehide"><button class="dcb-toggle" type="button" data-dcb-act="hide">숨기기</button></div>`;
+    body.setAttribute('data-dcb-body', '1');
+    body.innerHTML =
+      body.dataset.dcbOriginal +
+      `<div class="dcb-rehide">
+         <button class="dcb-toggle" type="button" data-dcb-act="hide">숨기기</button>
+       </div>`;
   }
 
   function maskOne(item, masked){
@@ -158,7 +160,7 @@
       if (!body.dataset.dcbOriginal){
         body.dataset.dcbOriginal = body.innerHTML;
       }
-      if (container.dataset.dcbOpen === '1') renderShown(body);
+      if (body.dataset.dcbOpen === '1') renderShown(body);
       else renderHidden(body);
       container.classList.add('dcb-masked');
     }else{
@@ -166,32 +168,31 @@
         body.innerHTML = body.dataset.dcbOriginal;
         delete body.dataset.dcbOriginal;
       }
-      container.removeAttribute('data-dcb-open');
+      body.removeAttribute('data-dcb-open');
+      body.removeAttribute('data-dcb-body');
       container.classList.remove('dcb-masked');
     }
   }
 
-  // 보기/숨기기 버튼(이벤트 위임)
+  // 보기/숨기기 (본문 기준으로 토글) — 이벤트 위임
   document.addEventListener('click', (e)=>{
     const btn = e.target.closest('.dcb-toggle');
     if (!btn) return;
 
     const act = btn.dataset.dcbAct;
-    const host = btn.closest('.cmt_info, li.ub-content'); // 댓글 컨테이너
-    if (!host) return;
-
+    // 버튼에서 가장 가까운 본문 노드 탐색
     const body =
-      host.querySelector('.cmt_txtbox, .comment_box, .cmt_txt, p.usertxt, .usertxt.ub-word, .ub-word');
+      btn.closest('[data-dcb-body="1"]') ||
+      btn.closest('.cmt_txtbox, .comment_box, .cmt_txt, p.usertxt, .usertxt.ub-word, .ub-word');
     if (!body || !body.dataset.dcbOriginal) return;
 
     if (act === 'show'){
-      host.dataset.dcbOpen = '1';
+      body.dataset.dcbOpen = '1';
       renderShown(body);
     }else{
-      host.dataset.dcbOpen = '0';
+      body.dataset.dcbOpen = '0';
       renderHidden(body);
     }
-    e.stopPropagation();
     e.preventDefault();
   }, true);
 
@@ -237,7 +238,7 @@
     apply();
   }
 
-  // 동적 로딩 대응 (AJAX 이미지댓글/새 댓글 포함)
+  // 동적 로딩 대응
   let raf = 0;
   const mo = new MutationObserver(() => {
     cancelAnimationFrame(raf);
