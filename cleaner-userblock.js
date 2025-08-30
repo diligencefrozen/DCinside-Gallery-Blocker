@@ -55,22 +55,15 @@
     uids.forEach(u => addRulesForAttr(`[data-uid="${cssEscape(u)}"]`));
     ips .forEach(p => addRulesForAttr(`[data-ip^="${cssEscape(p)}"]`));
 
-    // 안내 UI(우측 정렬, 슬림)
+    // 안내 UI (우측 정렬, 토글 없음)
     lines.push(`
--     .dcb-blocked-wrap{display:block;text-align:right}
-+     .dcb-blocked-wrap{display:inline-block;width:100%;text-align:right}
+      .dcb-blocked-wrap{display:block;text-align:right}
       .dcb-badge{
-        display:inline-flex;align-items:center;gap:6px;
+        display:inline-flex;align-items:center;
         padding:4px 8px;border:1px dashed rgba(224,49,49,.45);
         border-radius:6px;background:rgba(224,49,49,.08);color:#e03131;
         font-size:12px;font-weight:700;line-height:1.45
       }
-      .dcb-toggle{
-        padding:2px 8px;border:1px solid currentColor;border-radius:6px;
-        background:transparent;color:#e03131;font-size:11px;cursor:pointer
-      }
-      .dcb-rehide{margin-top:6px;text-align:right}
-      .dcb-rehide .dcb-toggle{border-color:#666;color:#666}
     `);
 
     return lines.join('\n');
@@ -88,7 +81,6 @@
       null
     );
   }
-
   function findBodyFromInfo(infoEl){
     let p = infoEl.parentElement;
     let cand = findCommentBody(p||infoEl);
@@ -107,8 +99,13 @@
     const items = [];
     const seen = new Set();
 
-    // 일반/이미지 댓글 li
-    document.querySelectorAll('#focus_cmt .cmt_list li.ub-content, #container .cmt_list li.ub-content, li[id^="img_comment_li_"]').forEach(li=>{
+    // 1) 일반/이미지 댓글 li (ul 안/밖 모두)
+    document.querySelectorAll(`
+      #focus_cmt .cmt_list li.ub-content,
+      #container   .cmt_list li.ub-content,
+      .comment_box.img_comment_box .cmt_list.add li.ub-content,
+      li[id^="img_comment_li_"]
+    `).forEach(li=>{
       const info = li.querySelector('.cmt_info');
       const no = info?.getAttribute('data-no') || '';
       if (no && seen.has(no)) return;
@@ -120,8 +117,12 @@
       if (no) seen.add(no);
     });
 
-    // li 없이 .cmt_info만 있는 케이스
-    document.querySelectorAll('#focus_cmt .cmt_info, #container .cmt_info').forEach(info=>{
+    // 2) li 없이 .cmt_info만 존재하는 케이스 (이미지 댓글 박스 포함)
+    document.querySelectorAll(`
+      #focus_cmt .cmt_info,
+      #container  .cmt_info,
+      .comment_box.img_comment_box .cmt_info
+    `).forEach(info=>{
       if (info.closest('li.ub-content')) return;
       const no = info.getAttribute('data-no') || '';
       if (no && seen.has(no)) return;
@@ -136,70 +137,25 @@
     return items;
   }
 
-  /* ===== 보기/숨기기 ===== */
-  function renderHidden(body){
-    body.setAttribute('data-dcb-body', '1');
--    body.innerHTML =
--      `<div class="dcb-blocked-wrap">
--         <span class="dcb-badge">차단된 댓글입니다
--           <button class="dcb-toggle" type="button" data-dcb-act="show">보기</button>
--         </span>
--       </div>`;
-+    body.innerHTML =
-+      `<span class="dcb-blocked-wrap">
-+         <span class="dcb-badge">차단된 댓글입니다</span>
-+         <button class="dcb-toggle" type="button" data-dcb-act="show">보기</button>
-+       </span>`;
-  }
-  function renderShown(body){
-    body.setAttribute('data-dcb-body', '1');
-    body.innerHTML =
-      body.dataset.dcbOriginal +
-      `<div class="dcb-rehide">
-         <button class="dcb-toggle" type="button" data-dcb-act="hide">숨기기</button>
-       </div>`;
-  }
-
+  /* ===== 차단 렌더 (토글 없음) ===== */
   function maskOne(item, masked){
     const { container, body } = item;
     if (masked){
       if (!body.dataset.dcbOriginal){
         body.dataset.dcbOriginal = body.innerHTML;
       }
-      if (body.dataset.dcbOpen === '1') renderShown(body);
-      else renderHidden(body);
+      body.setAttribute('data-dcb-body','1');
+      body.innerHTML = `<div class="dcb-blocked-wrap"><span class="dcb-badge">차단된 댓글입니다</span></div>`;
       container.classList.add('dcb-masked');
     }else{
       if (body.dataset.dcbOriginal){
         body.innerHTML = body.dataset.dcbOriginal;
         delete body.dataset.dcbOriginal;
       }
-      body.removeAttribute('data-dcb-open');
       body.removeAttribute('data-dcb-body');
       container.classList.remove('dcb-masked');
     }
   }
-
-  // 보기/숨기기 (본문 기준으로 토글) — 이벤트 위임
-  document.addEventListener('click', (e)=>{
-    const btn = e.target.closest('.dcb-toggle');
-    if (!btn) return;
-
-    const act = btn.dataset.dcbAct;
-    const body =
-      btn.closest('[data-dcb-body="1"]') ||
-      btn.closest('.cmt_txtbox, .comment_box, .cmt_txt, p.usertxt, .usertxt.ub-word, .ub-word');
-    if (!body || !body.dataset.dcbOriginal) return;
-
-    if (act === 'show'){
-      body.dataset.dcbOpen = '1';
-      renderShown(body);
-    }else{
-      body.dataset.dcbOpen = '0';
-      renderHidden(body);
-    }
-    e.preventDefault();
-  }, true);
 
   function applyMask(tokens){
     const isIp = t => /^\d{1,3}(?:\.\d{1,3}){1,3}$/.test(t);
@@ -243,7 +199,7 @@
     apply();
   }
 
-  // 동적 로딩 대응
+  // 동적 로딩 대응(중복 이벤트 최소화)
   let raf = 0;
   const mo = new MutationObserver(() => {
     cancelAnimationFrame(raf);
@@ -255,7 +211,7 @@
   };
   startMO();
 
-  // 설정 변경 즉시 반영
+  // 설정 변경 반영
   chrome.storage.onChanged.addListener((changes, area)=>{
     if (area !== 'sync') return;
     if (changes.userBlockEnabled || changes.blockedUids || changes.includeGray || changes.hideDCGray){
