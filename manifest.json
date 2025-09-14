@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "디시갤 차단기",
   "short_name": "디시갤 차단기",
-  "version": "7.2.1.2025",
+  "version": "7.2.0.2025",
   "description": "디시인사이드 특정 갤러리 접속을 완전 차단하고, 불필요한 영역을 숨깁니다.",
   "icons": {
     "16": "icons/16.png",
