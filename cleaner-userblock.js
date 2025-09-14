@@ -283,7 +283,7 @@
     chrome.storage.sync.get(DEFAULTS, raw=>{
       const conf = migrate(raw);
       ensureStyle().textContent = buildCss(conf);
-
+      
       // 1) 사용자 차단
       if (!conf.userBlockEnabled){
         applyUserBlock([]); // 모두 복원
@@ -291,12 +291,13 @@
         const tokens = (conf.blockedUids||[]).map(s=>String(s).trim()).filter(Boolean);
         applyUserBlock(tokens);
       }
-
-      // 2) 도배 차단(반복 + 교차 중복)
-      applySpam(!!conf.spamBlockEnabled);
+      
+      // 2) 도배 차단은 "사용자 차단 ON"이어야 동작
+      const spamEnabled = !!(conf.userBlockEnabled && conf.spamBlockEnabled);
+      applySpam(spamEnabled);
     });
   }
-
+  
   // 초기 적용
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', apply, { once:true });
