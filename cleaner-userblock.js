@@ -1,5 +1,5 @@
 /*****************************************************************
- * cleaner-userblock.js  — 사용자 차단 + 다국어 도배(반복) 마스킹
+ * cleaner-userblock.js 
  *****************************************************************/
 (() => {
   const STYLE_ID = 'dcb-userblock-style';
@@ -11,11 +11,11 @@
     includeGray: true,        // .block-disable 숨김
     hideDCGray: undefined,    // 구버전 호환
 
-    // 도배(반복) 차단
-    spamBlockEnabled: true,   // ← OFF면 도배 감지/차단 전혀 안 함
+    // 도배(반복/중복) 차단
+    spamBlockEnabled: true,   // OFF면 도배 감지/차단 전혀 안 함
   };
 
-  /* 댓글이 존재하는 루트 컨테이너들 (#focus_cmt + 이미지댓글 .comment_wrap) */
+  /* 댓글 루트 (#focus_cmt + 이미지댓글 .comment_wrap) */
   const COMMENT_ROOTS = ['#focus_cmt', '.comment_wrap'];
 
   const cssEscape = s => String(s || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
@@ -45,7 +45,7 @@
     const lines = [];
     if (includeGray) lines.push('.block-disable{display:none!important}');
 
-    /* 공통 안내 라벨 스타일 (차단/도배 둘 다 사용) */
+    /* 안내 (차단/도배 공통) */
     lines.push(`
       .dcb-label{
         display:block; margin:6px 0 8px; padding:8px 10px;
@@ -116,7 +116,7 @@
   function getCommentItems(){
     const items = [];
 
-    // 1) 표준/이미지댓글 공통: li.ub-content 안에서 수집
+    // 1) 표준/이미지댓글 공통: li.ub-content 내부
     qAllInRoots('.cmt_list li.ub-content').forEach(li => {
       const writer = li.querySelector('.gall_writer'); if(!writer) return;
       const body = findCommentBody(li) || findBodyFromInfo(li.querySelector('.cmt_info')||li);
@@ -124,7 +124,7 @@
       items.push({ container: li, writer, body });
     });
 
-    // 2) li 밖에 독립적으로 놓인 .cmt_info (이미지 댓글에서 자주 등장)
+    // 2) li 밖에 독립적인 .cmt_info (이미지댓글 케이스)
     qAllInRoots('.cmt_info').forEach(info => {
       if (info.closest('li.ub-content')) return; // 1)에서 처리됨
       const writer = info.querySelector('.gall_writer'); if(!writer) return;
@@ -167,39 +167,47 @@
     });
   }
 
-  /* ===== 도배(반복) 감지 (다국어 대응) ===== */
-  // 기준값(필요시 변경 가능)
-  const LINE_REPEAT_THRESHOLD = 3;  // 같은 줄이 3회 이상 반복
-  const CHAR_RUN_THRESHOLD    = 30; // 동일문자 30연속
-  const LAUGH_SUM_THRESHOLD   = 24; // ㅋㅋ/ㅎㅎ/ww/笑/草/哈/呵 등 누적 24자 이상
+  /* ===== 도배(반복/중복) 감지 ===== */
+  // ① 한 댓글 내부 반복/문자런/웃음 누적 ② 서로 다른 댓글 간 “내용 중복(교차 중복)”
+  const LINE_REPEAT_THRESHOLD = 3;   // 같은 줄 3회 이상
+  const CHAR_RUN_THRESHOLD    = 30;  // 동일 문자 30연속
+  const LAUGH_SUM_THRESHOLD   = 24;  // ㅋㅋ/ㅎㅎ/ww/笑/草/哈/呵 등 누적 24자+
+  const DUP_MIN_CHARS         = 40;  // “교차 중복”으로 볼 최소 길이(문자 수)
 
   function normalizeHtmlToLines(html){
     return html.split(/<br\s*\/?>|[\r\n]+/ig)
                .map(s => s.replace(/<[^>]+>/g,'').trim())
                .filter(Boolean);
   }
-
   function countMaxDuplicate(lines){
     const cnt = Object.create(null);
     let max = 0;
     for (const ln of lines){
-      const key = ln.toLowerCase(); // 케이스 무시
+      const key = ln.toLowerCase();
       max = Math.max(max, (cnt[key] = (cnt[key]||0)+1));
     }
     return max;
   }
-
   function laughScore(text){
-    // 한/일/중/영 “웃음”/연장 기호 계열
-    // ㅋ,ㅎ,ㅠ,ㅜ, w/W, 笑, 草, 哈, 呵, 泣 같은 흔한 감탄/웃음류를 포함
     const m = text.match(/[ㅋㅎㅠㅜwW笑草哈呵泣]+/gu);
-    if (!m) return 0;
-    return m.join('').length;
+    return m ? m.join('').length : 0;
+  }
+  function getOriginalPlainText(bodyEl){
+    const srcHtml = bodyEl.dataset?.dcbOriginal || bodyEl.innerHTML || '';
+    const text = srcHtml.replace(/<[^>]+>/g,' ').replace(/\u200b/g,'').trim();
+    return text;
+  }
+  function normalizeForDup(text){
+    return text
+      .replace(/-+\s*dc\s*app\s*$/i,'') // “- dc App” 꼬리표 제거
+      .replace(/\s+/g,' ')
+      .trim()
+      .toLowerCase();
   }
 
-  function looksSpammy(bodyEl){
-    const html = bodyEl.innerHTML || '';
-    const text = (bodyEl.textContent || '').replace(/\u200b/g,'').trim();
+  function looksSpammySingle(bodyEl){
+    const html = bodyEl.dataset?.dcbOriginal || bodyEl.innerHTML || '';
+    const text = getOriginalPlainText(bodyEl);
     if (!text) return false;
 
     // 1) 같은 줄 반복
@@ -207,7 +215,7 @@
     if (lines.length >= LINE_REPEAT_THRESHOLD && countMaxDuplicate(lines) >= LINE_REPEAT_THRESHOLD)
       return true;
 
-    // 2) 동일 문자 장문 반복 (모든 언어의 비공백 문자)
+    // 2) 동일 문자 장문 반복
     if (/([^\s])\1{29,}/u.test(text)) return true;
 
     // 3) 웃음/감탄류 누적 과다
@@ -216,11 +224,11 @@
     return false;
   }
 
-  function maskSpam(item, masked){
+  function maskSpam(item, masked, label='도배된 댓글입니다'){
     const { container, body } = item;
     if (masked){
       if (!body.dataset.dcbOriginal) body.dataset.dcbOriginal = body.innerHTML;
-      body.innerHTML = `<span class="dcb-label">도배된 댓글입니다</span>`;
+      body.innerHTML = `<span class="dcb-label">${label}</span>`;
       container.classList.add('dcb-spammed');
     }else{
       if (container.classList.contains('dcb-spammed') && body.dataset.dcbOriginal){
@@ -232,14 +240,41 @@
 
   function applySpam(enabled){
     const items = getCommentItems();
+
+    // 스팸 OFF → 스팸만 복원(사용자 차단은 유지)
     if (!enabled){
-      // 스팸만 복원(사용자 차단 dcb-masked 는 유지)
-      items.forEach(item => { if (item.container.classList.contains('dcb-spammed')) maskSpam(item,false); });
+      items.forEach(item => {
+        if (item.container.classList.contains('dcb-spammed')) maskSpam(item,false);
+      });
       return;
     }
+
+    // 1) 한 댓글 내부 패턴(라인 반복/문자런/웃음 과다)
     items.forEach(item => {
-      if (item.container.classList.contains('dcb-masked')) return; // 사용자 차단이 우선
-      maskSpam(item, looksSpammy(item.body));
+      if (item.container.classList.contains('dcb-masked')) return; // 사용자 차단 우선
+      const isSpam = looksSpammySingle(item.body);
+      maskSpam(item, isSpam, '도배된 댓글입니다');
+    });
+
+    // 2) 서로 다른 댓글 간 “내용 중복” 탐지 (첫 1개만 남기고 2번째부터 마스킹)
+    const seen = new Map(); // key -> count
+    items.forEach(item => {
+      if (item.container.classList.contains('dcb-masked')) return; // 사용자 차단 우선
+      const plain = getOriginalPlainText(item.body);
+      const key   = normalizeForDup(plain);
+      if (!key || key.length < DUP_MIN_CHARS) return;
+
+      const n = (seen.get(key) || 0) + 1;
+      seen.set(key, n);
+
+      if (n >= 2){ // 두 번째부터 도배 처리
+        maskSpam(item, true, '중복 도배 댓글입니다');
+      } else {
+        // 한 댓글 내부 규칙으로 막혀있었다면 풀어줌(첫 원본은 보이도록)
+        if (item.container.classList.contains('dcb-spammed')) {
+          maskSpam(item, false);
+        }
+      }
     });
   }
 
@@ -251,13 +286,13 @@
 
       // 1) 사용자 차단
       if (!conf.userBlockEnabled){
-        applyUserBlock([]);            // 모두 복원
+        applyUserBlock([]); // 모두 복원
       } else {
         const tokens = (conf.blockedUids||[]).map(s=>String(s).trim()).filter(Boolean);
         applyUserBlock(tokens);
       }
 
-      // 2) 도배 차단(다국어)
+      // 2) 도배 차단(반복 + 교차 중복)
       applySpam(!!conf.spamBlockEnabled);
     });
   }
