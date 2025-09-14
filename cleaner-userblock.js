@@ -268,7 +268,7 @@
       seen.set(key, n);
 
       if (n >= 2){ // 두 번째부터 도배 처리
-        maskSpam(item, true, '중복 도배 댓글입니다');
+        maskSpam(item, true, '도배 행위가 감지된 댓글입니다');
       } else {
         // 한 댓글 내부 규칙으로 막혀있었다면 풀어줌(첫 원본은 보이도록)
         if (item.container.classList.contains('dcb-spammed')) {
