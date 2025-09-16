@@ -14,10 +14,13 @@ const uidInput    = document.getElementById("uidInput");
 const addUidBtn   = document.getElementById("addUidBtn");
 const uidListEl   = document.getElementById("uidList");
 
-// 페이지 숨김 마스터 
+// 페이지 숨김 
 const toggleHideMain   = document.getElementById("toggleHideMain");
 const toggleHideGall   = document.getElementById("toggleHideGall");
 const toggleHideSearch = document.getElementById("toggleHideSearch");
+
+// 닉네임 옆 회원 ID 표시
+const toggleUidBadge   = document.getElementById("toggleUidBadge");
 
 /* ───────── util ───────── */
 function lockDelay(disabled){
@@ -36,24 +39,29 @@ function lockUserBlockUI(disabled){
 
 const DEFAULTS = {
   enabled: true,
-  blockMode: "block",       // ← 기본 하드모드로 변경
+  blockMode: "block",       // 기본 하드모드
   hideComment: false,
   delay: 5,
 
   // 사용자 차단
   userBlockEnabled: true,   // 마스터 토글
   blockedUids: [],
-  // ⬇ 마이그레이션용(과거 키)
+  // 마이그레이션용(과거 키)
   hideDCGray: undefined,
 
   // 페이지 숨김 마스터
   hideMainEnabled:   true,
   hideGallEnabled:   true,
   hideSearchEnabled: true,
+
+  // ★ 닉네임 옆 회원 ID 표시
+  showUidBadge: true,
+
+  // 글로벌 OFF 시 복원용 스냅샷
+  prevFeatureState: null
 };
 
 function sanitizeUid(s) {
-  // 공백 제거
   return String(s || "").trim().replace(/\s+/g, "");
 }
 
@@ -78,6 +86,43 @@ function saveUidList(mutator) {
   });
 }
 
+/* ───────── 글로벌 ON/OFF: 스냅샷 저장/복원 ───────── */
+async function pauseAllFeatures() {
+  const conf = await chrome.storage.sync.get(DEFAULTS);
+  const snapshot = {
+    userBlockEnabled : !!conf.userBlockEnabled,
+    hideMainEnabled  : !!conf.hideMainEnabled,
+    hideGallEnabled  : !!conf.hideGallEnabled,
+    hideSearchEnabled: !!conf.hideSearchEnabled,
+    hideComment      : !!conf.hideComment,
+    showUidBadge     : !!conf.showUidBadge
+  };
+  await chrome.storage.sync.set({
+    prevFeatureState : snapshot,
+    userBlockEnabled : false,
+    hideMainEnabled  : false,
+    hideGallEnabled  : false,
+    hideSearchEnabled: false,
+    hideComment      : false,
+    showUidBadge     : false
+  });
+}
+
+async function resumeAllFeatures() {
+  const { prevFeatureState } = await chrome.storage.sync.get(DEFAULTS);
+  if (prevFeatureState && typeof prevFeatureState === "object") {
+    await chrome.storage.sync.set({
+      userBlockEnabled : !!prevFeatureState.userBlockEnabled,
+      hideMainEnabled  : !!prevFeatureState.hideMainEnabled,
+      hideGallEnabled  : !!prevFeatureState.hideGallEnabled,
+      hideSearchEnabled: !!prevFeatureState.hideSearchEnabled,
+      hideComment      : !!prevFeatureState.hideComment,
+      showUidBadge     : !!prevFeatureState.showUidBadge,
+      prevFeatureState : null
+    });
+  }
+}
+
 /* ───────── 초기 로드 ───────── */
 chrome.storage.sync.get(DEFAULTS, (conf)=>{
   // 과거 hideDCGray → userBlockEnabled 로 1회 이행
@@ -89,7 +134,8 @@ chrome.storage.sync.get(DEFAULTS, (conf)=>{
   const {
     enabled, blockMode, hideComment, delay,
     userBlockEnabled, blockedUids,
-    hideMainEnabled, hideGallEnabled, hideSearchEnabled
+    hideMainEnabled, hideGallEnabled, hideSearchEnabled,
+    showUidBadge
   } = conf;
 
   // 기본 토글/입력값
@@ -111,11 +157,22 @@ chrome.storage.sync.get(DEFAULTS, (conf)=>{
   if (toggleHideMain)   toggleHideMain.checked   = !!hideMainEnabled;
   if (toggleHideGall)   toggleHideGall.checked   = !!hideGallEnabled;
   if (toggleHideSearch) toggleHideSearch.checked = !!hideSearchEnabled;
+
+  // ★ 닉네임 옆 회원 ID 표시
+  if (toggleUidBadge)   toggleUidBadge.checked   = !!showUidBadge;
 });
 
 /* ───────── 이벤트 바인딩 ───────── */
-/* 전체 ON/OFF */
-toggle.onchange = e => chrome.storage.sync.set({ enabled: e.target.checked });
+/* 전체 ON/OFF (완전 중지/복구) */
+toggle.onchange = async (e) => {
+  const on = !!e.target.checked;
+  await chrome.storage.sync.set({ enabled: on });
+  if (!on) {
+    await pauseAllFeatures();
+  } else {
+    await resumeAllFeatures();
+  }
+};
 
 /* 차단 방식 변경 */
 blockModeSel.onchange = e => {
@@ -178,6 +235,9 @@ if (toggleHideMain)   toggleHideMain.onchange   = e => chrome.storage.sync.set({
 if (toggleHideGall)   toggleHideGall.onchange   = e => chrome.storage.sync.set({ hideGallEnabled:   !!e.target.checked });
 if (toggleHideSearch) toggleHideSearch.onchange = e => chrome.storage.sync.set({ hideSearchEnabled: !!e.target.checked });
 
+/* 닉네임 옆 회원 ID 표시 저장 */
+if (toggleUidBadge)   toggleUidBadge.onchange   = e => chrome.storage.sync.set({ showUidBadge: !!e.target.checked });
+
 /* 스토리지 외부 변경 반영 */
 chrome.storage.onChanged.addListener((c,a)=>{
   if(a!=="sync") return;
@@ -201,6 +261,9 @@ chrome.storage.onChanged.addListener((c,a)=>{
   if (c.hideMainEnabled   && toggleHideMain)   toggleHideMain.checked   = !!c.hideMainEnabled.newValue;
   if (c.hideGallEnabled   && toggleHideGall)   toggleHideGall.checked   = !!c.hideGallEnabled.newValue;
   if (c.hideSearchEnabled && toggleHideSearch) toggleHideSearch.checked = !!c.hideSearchEnabled.newValue;
+
+  // 닉네임 옆 회원 ID 표시
+  if (c.showUidBadge && toggleUidBadge)        toggleUidBadge.checked   = !!c.showUidBadge.newValue;
 });
 
 /* 옵션 페이지 열기 */
