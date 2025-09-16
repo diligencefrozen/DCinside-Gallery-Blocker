@@ -42,7 +42,7 @@
     return m ? m[1] : "";
   }
 
-  // 비회원 IP 앞두옥텟 파싱: (119.202) 스타일 · 텍스트 전역 검사
+  // 비회원 IP 앞두옥텟 파싱: (119.202) 스타일, 텍스트 전역 검사
   function ipPrefixFromText(scope) {
     // 1) 전용 span.ip에서 먼저
     const ipEl = scope.querySelector(".ip") || scope.querySelector(".refresherUserData.ip");
