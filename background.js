@@ -15,12 +15,13 @@ const CTX_OPEN_OPTIONS = "dcb-open-options";
 /* ───── 설치/업데이트: 기본값 주입 + 메뉴 생성 ───── */
 chrome.runtime.onInstalled.addListener(async ({ reason }) => {
   if (reason === "install") {
-    // 기본값: 하드모드 + ON + 사용자차단 ON
-    const seed = await chrome.storage.sync.get(["blockMode", "enabled", "userBlockEnabled"]);
+    // 기본값: 하드모드 + 갤러리차단 ON + 사용자차단 ON
+    // ※ galleryBlockEnabled가 없으면 과거 enabled 값을 이관(fallback)
+    const seed  = await chrome.storage.sync.get(["blockMode", "galleryBlockEnabled", "enabled", "userBlockEnabled"]);
     const patch = {};
-    if (typeof seed.blockMode        === "undefined") patch.blockMode        = "block";
-    if (typeof seed.enabled          === "undefined") patch.enabled          = true;
-    if (typeof seed.userBlockEnabled === "undefined") patch.userBlockEnabled = true;
+    if (typeof seed.blockMode            === "undefined") patch.blockMode            = "block";
+    if (typeof seed.galleryBlockEnabled  === "undefined") patch.galleryBlockEnabled  = (typeof seed.enabled === "boolean") ? !!seed.enabled : true;
+    if (typeof seed.userBlockEnabled     === "undefined") patch.userBlockEnabled     = true;
     if (Object.keys(patch).length) await chrome.storage.sync.set(patch);
   }
   createContextMenus();
@@ -73,17 +74,22 @@ const makeRules = (ids) =>
 
 /* ───── DNR 동기화 ───── */
 async function syncRules() {
-  const { enabled = true, blockMode = "block", blockedIds = [] } =
-    await chrome.storage.sync.get({
-      enabled   : true,
-      blockMode : "block",
-      blockedIds: []
-    });
+  // galleryBlockEnabled(신규) 우선, 없으면 enabled(구버전)로 대체
+  const conf = await chrome.storage.sync.get({
+    galleryBlockEnabled: undefined,
+    enabled            : true,
+    blockMode          : "block",
+    blockedIds         : []
+  });
 
-  const curr = await chrome.declarativeNetRequest.getDynamicRules();
+  const gEnabled = (typeof conf.galleryBlockEnabled === "boolean")
+    ? conf.galleryBlockEnabled
+    : !!conf.enabled;
+
+  const curr    = await chrome.declarativeNetRequest.getDynamicRules();
   const currIds = curr.map(r => r.id);
 
-  if (!enabled || blockMode === "redirect") {
+  if (!gEnabled || conf.blockMode === "redirect") {
     if (currIds.length) {
       await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: currIds });
     }
@@ -91,7 +97,7 @@ async function syncRules() {
     return;
   }
 
-  const ids   = [...new Set([...BUILTIN, ...blockedIds.map(t => t.toLowerCase())])];
+  const ids   = [...new Set([...BUILTIN, ...conf.blockedIds.map(t => t.toLowerCase())])];
   const rules = makeRules(ids);
 
   await chrome.declarativeNetRequest.updateDynamicRules({
@@ -104,7 +110,10 @@ async function syncRules() {
 /* 최초 + 스토리지 변경 감지 */
 syncRules();
 chrome.storage.onChanged.addListener((c, area) => {
-  if (area === "sync" && (c.blockedIds || c.blockMode || c.enabled)) syncRules();
+  // blockedIds / blockMode / galleryBlockEnabled(enabled 호환) 변화에 반응
+  if (area === "sync" && (c.blockedIds || c.blockMode || c.galleryBlockEnabled || c.enabled)) {
+    syncRules();
+  }
 });
 
 /* ───── 우클릭 후보 수신 (ctx-probe.js) ───── */
