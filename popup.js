@@ -1,11 +1,11 @@
 /* popup.js */
 
 /* ───────── DOM ───────── */
-const toggle         = document.getElementById("toggle");       // ON/OFF
-const blockModeSel   = document.getElementById("blockMode");    // 초보,하드모드
+const toggle         = document.getElementById("toggle");       // 갤러리 차단 ON/OFF 
+const blockModeSel   = document.getElementById("blockMode");    // 초보(redirect), 하드(block)
 const hideCmtToggle  = document.getElementById("hideComment");  // 댓글 숨김
 const delayNum       = document.getElementById("delayNum");     // 숫자 입력
-const delayRange     = document.getElementById("delayRange");   // 슬라이더
+const delayRange     = document.getElementById("delayRange");   
 const openOptionsBtn = document.getElementById("openOptions");
 
 // 사용자 차단 + UID 관리 UI
@@ -38,7 +38,9 @@ function lockUserBlockUI(disabled){
 }
 
 const DEFAULTS = {
+  // 갤러리 차단(차단 규칙/DNR, 리다이렉트 오버레이)만 제어하는 마스터 키
   enabled: true,
+
   blockMode: "block",       // 기본 하드모드
   hideComment: false,
   delay: 5,
@@ -55,10 +57,7 @@ const DEFAULTS = {
   hideSearchEnabled: true,
 
   // ★ 닉네임 옆 회원 ID 표시
-  showUidBadge: true,
-
-  // 글로벌 OFF 시 복원용 스냅샷
-  prevFeatureState: null
+  showUidBadge: true
 };
 
 function sanitizeUid(s) {
@@ -84,43 +83,6 @@ function saveUidList(mutator) {
     const uniq = Array.from(new Set(list.map(sanitizeUid).filter(Boolean)));
     chrome.storage.sync.set({ blockedUids: uniq }, () => renderUidList(uniq));
   });
-}
-
-/* ───────── 글로벌 ON/OFF: 스냅샷 저장/복원 ───────── */
-async function pauseAllFeatures() {
-  const conf = await chrome.storage.sync.get(DEFAULTS);
-  const snapshot = {
-    userBlockEnabled : !!conf.userBlockEnabled,
-    hideMainEnabled  : !!conf.hideMainEnabled,
-    hideGallEnabled  : !!conf.hideGallEnabled,
-    hideSearchEnabled: !!conf.hideSearchEnabled,
-    hideComment      : !!conf.hideComment,
-    showUidBadge     : !!conf.showUidBadge
-  };
-  await chrome.storage.sync.set({
-    prevFeatureState : snapshot,
-    userBlockEnabled : false,
-    hideMainEnabled  : false,
-    hideGallEnabled  : false,
-    hideSearchEnabled: false,
-    hideComment      : false,
-    showUidBadge     : false
-  });
-}
-
-async function resumeAllFeatures() {
-  const { prevFeatureState } = await chrome.storage.sync.get(DEFAULTS);
-  if (prevFeatureState && typeof prevFeatureState === "object") {
-    await chrome.storage.sync.set({
-      userBlockEnabled : !!prevFeatureState.userBlockEnabled,
-      hideMainEnabled  : !!prevFeatureState.hideMainEnabled,
-      hideGallEnabled  : !!prevFeatureState.hideGallEnabled,
-      hideSearchEnabled: !!prevFeatureState.hideSearchEnabled,
-      hideComment      : !!prevFeatureState.hideComment,
-      showUidBadge     : !!prevFeatureState.showUidBadge,
-      prevFeatureState : null
-    });
-  }
 }
 
 /* ───────── 초기 로드 ───────── */
@@ -158,20 +120,14 @@ chrome.storage.sync.get(DEFAULTS, (conf)=>{
   if (toggleHideGall)   toggleHideGall.checked   = !!hideGallEnabled;
   if (toggleHideSearch) toggleHideSearch.checked = !!hideSearchEnabled;
 
-  // ★ 닉네임 옆 회원 ID 표시
+  // 닉네임 옆 회원 ID 표시
   if (toggleUidBadge)   toggleUidBadge.checked   = !!showUidBadge;
 });
 
 /* ───────── 이벤트 바인딩 ───────── */
-/* 전체 ON/OFF (완전 중지/복구) */
-toggle.onchange = async (e) => {
-  const on = !!e.target.checked;
-  await chrome.storage.sync.set({ enabled: on });
-  if (!on) {
-    await pauseAllFeatures();
-  } else {
-    await resumeAllFeatures();
-  }
+/* 갤러리 차단 ON/OFF (다른 기능엔 영향 없음) */
+toggle.onchange = (e) => {
+  chrome.storage.sync.set({ enabled: !!e.target.checked });
 };
 
 /* 차단 방식 변경 */
@@ -185,7 +141,7 @@ blockModeSel.onchange = e => {
 hideCmtToggle.onchange = e =>
   chrome.storage.sync.set({ hideComment: e.target.checked });
 
-/* 지연 시간 숫자/슬라이더 ↔ storage */
+/* 지연 시간 숫자 ↔ storage */
 function updateDelay(v){
   const num = Math.max(0, Math.min(10, parseFloat(v)||0));
   delayNum.value = delayRange.value = num;
