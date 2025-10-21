@@ -2,7 +2,8 @@
 
 /* ───────── DOM ───────── */
 const toggle         = document.getElementById("toggle");       // 갤러리 차단 ON/OFF 
-const blockModeSel   = document.getElementById("blockMode");    // 초보(redirect), 하드(block)
+const blockModeSel   = document.getElementById("blockMode");    // 스마트, 초보(redirect), 하드(block)
+const blockModeHint  = document.getElementById("blockModeHint");// 모드 설명
 const hideCmtToggle  = document.getElementById("hideComment");  // 댓글 숨김
 const delayNum       = document.getElementById("delayNum");     // 숫자 입력
 const delayRange     = document.getElementById("delayRange");   
@@ -30,6 +31,16 @@ function lockDelay(disabled){
   delayNum.style.opacity = delayRange.style.opacity = op;
 }
 
+function updateBlockModeHint(mode){
+  if(!blockModeHint) return;
+  const hints = {
+    smart: "✨ 경고 화면 표시 후 선택 가능 (추천)",
+    redirect: "⏱️ 카운트다운 후 자동 리다이렉트",
+    block: "🚫 완전 차단 (네트워크 레벨)"
+  };
+  blockModeHint.textContent = hints[mode] || "";
+}
+
 function lockUserBlockUI(disabled){
   if (!uidInput || !addUidBtn) return;
   uidInput.disabled = addUidBtn.disabled = !!disabled;
@@ -41,7 +52,7 @@ const DEFAULTS = {
   // 갤러리 차단(차단 규칙/DNR, 리다이렉트 오버레이)만 제어하는 마스터 키
   enabled: true,
 
-  blockMode: "block",       // 기본 하드모드
+  blockMode: "smart",       // 기본 스마트 모드
   hideComment: false,
   delay: 5,
 
@@ -57,7 +68,10 @@ const DEFAULTS = {
   hideSearchEnabled: true,
 
   // ★ 닉네임 옆 회원 ID 표시
-  showUidBadge: true
+  showUidBadge: true,
+
+  // 링크 경고 표시
+  linkWarnEnabled: true
 };
 
 function sanitizeUid(s) {
@@ -103,6 +117,7 @@ chrome.storage.sync.get(DEFAULTS, (conf)=>{
   // 기본 토글/입력값
   toggle.checked        = enabled;
   blockModeSel.value    = blockMode;
+  updateBlockModeHint(blockMode);
   hideCmtToggle.checked = hideComment;
   delayNum.value        = delay;
   delayRange.value      = delay;
@@ -132,8 +147,9 @@ toggle.onchange = (e) => {
 
 /* 차단 방식 변경 */
 blockModeSel.onchange = e => {
-  const mode = e.target.value;              // redirect | block
+  const mode = e.target.value;              // smart | redirect | block
   chrome.storage.sync.set({ blockMode: mode });
+  updateBlockModeHint(mode);
   lockDelay(mode === "block");
 };
 
@@ -200,6 +216,7 @@ chrome.storage.onChanged.addListener((c,a)=>{
   if(c.enabled)      toggle.checked       = c.enabled.newValue;
   if(c.blockMode){
     blockModeSel.value = c.blockMode.newValue;
+    updateBlockModeHint(c.blockMode.newValue);
     lockDelay(c.blockMode.newValue === "block");
   }
   if(c.hideComment)  hideCmtToggle.checked = c.hideComment.newValue;
