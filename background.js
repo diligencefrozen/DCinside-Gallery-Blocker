@@ -89,11 +89,12 @@ async function syncRules() {
   const curr    = await chrome.declarativeNetRequest.getDynamicRules();
   const currIds = curr.map(r => r.id);
 
-  if (!gEnabled || conf.blockMode === "redirect") {
+  // 하드모드(block)만 DNR 사용, redirect/smart는 content script가 처리
+  if (!gEnabled || conf.blockMode === "redirect" || conf.blockMode === "smart") {
     if (currIds.length) {
       await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: currIds });
     }
-    console.log("[DNR] redirect/OFF - rules cleared");
+    console.log(`[DNR] ${conf.blockMode || "OFF"} mode - rules cleared`);
     return;
   }
 
