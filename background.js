@@ -15,11 +15,11 @@ const CTX_OPEN_OPTIONS = "dcb-open-options";
 /* ───── 설치/업데이트: 기본값 주입 + 메뉴 생성 ───── */
 chrome.runtime.onInstalled.addListener(async ({ reason }) => {
   if (reason === "install") {
-    // 기본값: 하드모드 + 갤러리차단 ON + 사용자차단 ON
-    // ※ galleryBlockEnabled가 없으면 과거 enabled 값을 이관(fallback)
+    // 기본값: 스마트모드 + 갤러리차단 ON + 사용자차단 ON
+    // galleryBlockEnabled가 없으면 과거 enabled 값을 이관(fallback)
     const seed  = await chrome.storage.sync.get(["blockMode", "galleryBlockEnabled", "enabled", "userBlockEnabled"]);
     const patch = {};
-    if (typeof seed.blockMode            === "undefined") patch.blockMode            = "block";
+    if (typeof seed.blockMode            === "undefined") patch.blockMode            = "smart";
     if (typeof seed.galleryBlockEnabled  === "undefined") patch.galleryBlockEnabled  = (typeof seed.enabled === "boolean") ? !!seed.enabled : true;
     if (typeof seed.userBlockEnabled     === "undefined") patch.userBlockEnabled     = true;
     if (Object.keys(patch).length) await chrome.storage.sync.set(patch);
@@ -78,7 +78,7 @@ async function syncRules() {
   const conf = await chrome.storage.sync.get({
     galleryBlockEnabled: undefined,
     enabled            : true,
-    blockMode          : "block",
+    blockMode          : "smart",
     blockedIds         : []
   });
 
