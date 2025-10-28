@@ -5,7 +5,8 @@ cleaner-comment.js
   const SELS = [
     'div#focus_cmt.view_comment[tabindex]',
     'a.reply_numbox',          
-    'span.reply_num'           
+    'span.reply_num',
+    'div.img_comment.fold.getMoreComment'  // 이미지 댓글 영역
   ];
   const STYLE_ID = 'dcb-hide-comment-style';
   const CSS_RULE = `${SELS.join(',')}{display:none !important}`;
@@ -32,10 +33,21 @@ cleaner-comment.js
     if (hide) {
       addStyle();
       startObserver();
+      // 즉시 숨기기 적용 (DOM에 이미 있는 요소들)
+      hideExistingElements();
     } else {
       removeStyle();
       stopObserver();
     }
+  };
+  
+  /* ───── 기존 DOM 요소 즉시 숨기기 ───── */
+  const hideExistingElements = () => {
+    SELS.forEach(sel => {
+      document.querySelectorAll(sel).forEach(el => {
+        el.style.cssText = 'display:none !important';
+      });
+    });
   };
 
   /* ───── 동적 콘텐츠 대응 ───── */
@@ -45,6 +57,7 @@ cleaner-comment.js
     observer = new MutationObserver(() => {
       if (hideComment) {
         addStyle(); // 스타일이 제거되었을 경우 다시 추가
+        hideExistingElements(); // 새로 추가된 요소도 숨기기
       }
     });
     
@@ -82,8 +95,19 @@ cleaner-comment.js
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", () => {
       chrome.storage.sync.get({ hideComment: false }, ({ hideComment }) => {
-        apply(hideComment);
+        if (hideComment) {
+          addStyle();
+          hideExistingElements();
+        }
       });
     }, { once: true });
   }
+  
+  /* ───── window.onload 시점에도 한 번 더 확인 ───── */
+  window.addEventListener("load", () => {
+    if (hideComment) {
+      addStyle();
+      hideExistingElements();
+    }
+  }, { once: true });
 })();
