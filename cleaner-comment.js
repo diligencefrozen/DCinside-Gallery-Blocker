@@ -5,8 +5,7 @@ cleaner-comment.js
   const SELS = [
     'div#focus_cmt.view_comment[tabindex]',
     'a.reply_numbox',          
-    'span.reply_num',
-    'div.img_comment.fold.getMoreComment'  // 이미지 댓글 영역
+    'span.reply_num'
   ];
   const STYLE_ID = 'dcb-hide-comment-style';
   const CSS_RULE = `${SELS.join(',')}{display:none !important}`;
