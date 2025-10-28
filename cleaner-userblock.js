@@ -131,6 +131,11 @@
 
   function maskOne(item, masked){
     const { container, body } = item;
+    
+    // 이미 처리된 상태와 동일하면 스킵
+    const alreadyMasked = container.classList.contains('dcb-masked');
+    if (masked === alreadyMasked) return;
+    
     if (masked){
       if (!body.dataset.dcbOriginal){
         body.dataset.dcbOriginal = body.innerHTML;
@@ -190,7 +195,15 @@
   }
 
   // 동적 로딩 대응 (이미지댓글 페이징/새로고침 포함)
-  const mo = new MutationObserver(() => apply());
+  let debounceTimer = null;
+  const mo = new MutationObserver(() => {
+    // 디바운스로 과도한 호출 방지
+    if (debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      apply();
+      debounceTimer = null;
+    }, 100);
+  });
   const startMO = () => {
     if (document.body) mo.observe(document.body, { childList:true, subtree:true });
     else document.addEventListener('DOMContentLoaded', startMO, { once:true });
