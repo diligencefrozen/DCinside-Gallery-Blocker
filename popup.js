@@ -56,7 +56,7 @@ const DEFAULTS = {
 
   blockMode: "smart",       // 기본 스마트 모드
   hideComment: false,
-  hideImgComment: true,     // 이미지 댓글 기본 숨김
+  hideImgComment: false,    // 이미지 댓글 기본적으로 꺼짐
   hideDccon: false,         // 디시콘 숨기기
   delay: 5,
 
