@@ -60,11 +60,15 @@ const newSearchSel     = document.getElementById("newSearchSel");
 const addSearchSelBtn  = document.getElementById("addSearchSelBtn");
 const addRecSearchSel  = document.getElementById("addRecSearchSel");
 const searchSelList    = document.getElementById("searchSelList");
-/* ✅ 사용자 차단(UID) */
+/* 사용자 차단(UID) */
 const userBlockEl = document.getElementById("userBlockEnabled");
 const uidInput    = document.getElementById("uidInput");
 const addUidBtn   = document.getElementById("addUidBtn");
 const uidListEl   = document.getElementById("uidList");
+/* 댓글 숨기기 */
+const hideCommentEl    = document.getElementById("hideComment");
+const hideImgCommentEl = document.getElementById("hideImgComment");
+const hideDcconEl      = document.getElementById("hideDccon");
 
 /* ───── 공통 유틸 ───── */
 const norm = s => s.trim().toLowerCase();
@@ -255,6 +259,25 @@ if (uidListEl) {
   });
 }
 
+/* 댓글 숨기기 토글 */
+if (hideCommentEl) {
+  hideCommentEl.addEventListener("change", e => {
+    chrome.storage.sync.set({ hideComment: !!e.target.checked });
+  });
+}
+
+if (hideImgCommentEl) {
+  hideImgCommentEl.addEventListener("change", e => {
+    chrome.storage.sync.set({ hideImgComment: !!e.target.checked });
+  });
+}
+
+if (hideDcconEl) {
+  hideDcconEl.addEventListener("change", e => {
+    chrome.storage.sync.set({ hideDccon: !!e.target.checked });
+  });
+}
+
 /* ───── 초기 로드 ───── */
 chrome.storage.sync.get(
   {
@@ -265,10 +288,14 @@ chrome.storage.sync.get(
     // 사용자 차단(UID)
     userBlockEnabled: true,
     blockedUids: [],
+    // 댓글 숨기기
+    hideComment: false,
+    hideImgComment: false,   // 이미지 댓글 기본적으로 꺼짐
+    hideDccon: false,        // 디시콘 숨기기
     // 구버전 호환 (hideDCGray → userBlockEnabled)
     hideDCGray: undefined
   },
-  ({ blockedIds, removeSelectors, removeSelectorsGall, removeSelectorsSearch, userBlockEnabled, blockedUids, hideDCGray }) => {
+  ({ blockedIds, removeSelectors, removeSelectorsGall, removeSelectorsSearch, userBlockEnabled, blockedUids, hideComment, hideImgComment, hideDccon, hideDCGray }) => {
     // 마이그레이션
     if (typeof userBlockEnabled !== "boolean" && typeof hideDCGray === "boolean") {
       userBlockEnabled = hideDCGray;
@@ -286,6 +313,11 @@ chrome.storage.sync.get(
       lockUserBlockUI(!userBlockEnabled);
     }
     renderUidList(blockedUids || []);
+    
+    // 댓글 숨기기 초기값
+    if (hideCommentEl) hideCommentEl.checked = !!hideComment;
+    if (hideImgCommentEl) hideImgCommentEl.checked = !!hideImgComment;
+    if (hideDcconEl) hideDcconEl.checked = !!hideDccon;
   }
 );
 
@@ -306,4 +338,15 @@ chrome.storage.onChanged.addListener((c, area) => {
     lockUserBlockUI(!c.userBlockEnabled.newValue);
   }
   if (c.blockedUids) renderUidList(c.blockedUids.newValue || []);
+  
+  // 댓글 숨기기 변경 반영
+  if (c.hideComment && hideCommentEl) {
+    hideCommentEl.checked = !!c.hideComment.newValue;
+  }
+  if (c.hideImgComment && hideImgCommentEl) {
+    hideImgCommentEl.checked = !!c.hideImgComment.newValue;
+  }
+  if (c.hideDccon && hideDcconEl) {
+    hideDcconEl.checked = !!c.hideDccon.newValue;
+  }
 });
