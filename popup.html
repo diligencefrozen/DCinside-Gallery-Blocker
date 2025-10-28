@@ -81,7 +81,7 @@
   <label class="row">
     <span style="min-width:110px;">차단 방식</span>
     <select id="blockMode">
-      <option value="smart">스마트 (추천)</option>
+      <option value="smart">스마트</option>
       <option value="redirect">초보</option>
       <option value="block">하드</option>
     </select>
@@ -90,9 +90,27 @@
 
   <!-- 댓글 숨기기 -->
   <label class="row">
-    <span style="min-width:110px;">댓글 숨기기</span>
+    <span style="min-width:110px;">일반 댓글 숨기기</span>
     <label class="switch">
       <input type="checkbox" id="hideComment">
+      <span class="slider"></span>
+    </label>
+  </label>
+
+  <!-- 이미지 댓글 숨기기 -->
+  <label class="row">
+    <span style="min-width:110px;">이미지 댓글 숨기기</span>
+    <label class="switch">
+      <input type="checkbox" id="hideImgComment">
+      <span class="slider"></span>
+    </label>
+  </label>
+
+  <!-- 디시콘 숨기기 -->
+  <label class="row">
+    <span style="min-width:110px;">디시콘 숨기기</span>
+    <label class="switch">
+      <input type="checkbox" id="hideDccon">
       <span class="slider"></span>
     </label>
   </label>
