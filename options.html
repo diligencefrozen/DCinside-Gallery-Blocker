@@ -143,7 +143,7 @@
   <!-- 검색 페이지 숨김 -->
   <section class="card">
     <h2>🧹 검색 페이지 영역 숨기기</h2>
-    <p class="note">검색(combine) 페이지에서 숨길 영역을 지정하세요.<br>
+    <p class="note">검색 페이지에서 숨길 영역을 지정하세요.<br>
       예: <code>div.integrate_cont.news_result</code></p>
     <div class="row">
       <input id="newSearchSel" type="text" placeholder="CSS Selector">
@@ -151,6 +151,35 @@
       <button id="addRecSearchSel">✅ 기본 숨김만 적용</button>
     </div>
     <ul id="searchSelList"></ul>
+  </section>
+
+  <!-- 댓글 숨기기 -->
+  <section class="card">
+    <h2>💬 댓글 숨기기</h2>
+    <div class="row" style="justify-content:space-between;margin-bottom:12px">
+      <span>일반 댓글 숨기기</span>
+      <label class="switch" title="일반 댓글 숨기기">
+        <input type="checkbox" id="hideComment">
+        <span class="slider"></span>
+      </label>
+    </div>
+    <div class="row" style="justify-content:space-between;margin-bottom:12px">
+      <span>이미지 댓글 숨기기</span>
+      <label class="switch" title="이미지 댓글 숨기기">
+        <input type="checkbox" id="hideImgComment">
+        <span class="slider"></span>
+      </label>
+    </div>
+    <div class="row" style="justify-content:space-between">
+      <span>디시콘 숨기기</span>
+      <label class="switch" title="디시콘 숨기기">
+        <input type="checkbox" id="hideDccon">
+        <span class="slider"></span>
+      </label>
+    </div>
+    <p class="note" style="margin-top:12px">* 일반 댓글: 게시글 하단의 댓글 영역<br>
+    * 이미지 댓글: 이미지에 달린 댓글 영역만 숨김<br>
+    * 디시콘: 본문과 댓글의 디시콘 숨김</p>
   </section>
 </main>
 
