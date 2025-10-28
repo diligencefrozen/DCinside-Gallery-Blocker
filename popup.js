@@ -4,7 +4,9 @@
 const toggle         = document.getElementById("toggle");       // 갤러리 차단 ON/OFF 
 const blockModeSel   = document.getElementById("blockMode");    // 스마트, 초보(redirect), 하드(block)
 const blockModeHint  = document.getElementById("blockModeHint");// 모드 설명
-const hideCmtToggle  = document.getElementById("hideComment");  // 댓글 숨김
+const hideCmtToggle  = document.getElementById("hideComment");  // 일반 댓글 숨김
+const hideImgCmtToggle = document.getElementById("hideImgComment"); // 이미지 댓글 숨김
+const hideDcconToggle = document.getElementById("hideDccon");   // 디시콘 숨김
 const delayNum       = document.getElementById("delayNum");     // 숫자 입력
 const delayRange     = document.getElementById("delayRange");   
 const openOptionsBtn = document.getElementById("openOptions");
@@ -54,6 +56,8 @@ const DEFAULTS = {
 
   blockMode: "smart",       // 기본 스마트 모드
   hideComment: false,
+  hideImgComment: true,     // 이미지 댓글 기본 숨김
+  hideDccon: false,         // 디시콘 숨기기
   delay: 5,
 
   // 사용자 차단
@@ -108,7 +112,7 @@ chrome.storage.sync.get(DEFAULTS, (conf)=>{
   }
 
   const {
-    enabled, blockMode, hideComment, delay,
+    enabled, blockMode, hideComment, hideImgComment, hideDccon, delay,
     userBlockEnabled, blockedUids,
     hideMainEnabled, hideGallEnabled, hideSearchEnabled,
     showUidBadge
@@ -119,6 +123,8 @@ chrome.storage.sync.get(DEFAULTS, (conf)=>{
   blockModeSel.value    = blockMode;
   updateBlockModeHint(blockMode);
   hideCmtToggle.checked = hideComment;
+  hideImgCmtToggle.checked = hideImgComment;
+  hideDcconToggle.checked = hideDccon;
   delayNum.value        = delay;
   delayRange.value      = delay;
   lockDelay(blockMode === "block");
@@ -156,6 +162,14 @@ blockModeSel.onchange = e => {
 /* 댓글 숨기기 ON/OFF */
 hideCmtToggle.onchange = e =>
   chrome.storage.sync.set({ hideComment: e.target.checked });
+
+/* 이미지 댓글 숨기기 ON/OFF */
+hideImgCmtToggle.onchange = e =>
+  chrome.storage.sync.set({ hideImgComment: e.target.checked });
+
+/* 디시콘 숨기기 ON/OFF */
+hideDcconToggle.onchange = e =>
+  chrome.storage.sync.set({ hideDccon: e.target.checked });
 
 /* 지연 시간 숫자 ↔ storage */
 function updateDelay(v){
@@ -220,6 +234,8 @@ chrome.storage.onChanged.addListener((c,a)=>{
     lockDelay(c.blockMode.newValue === "block");
   }
   if(c.hideComment)  hideCmtToggle.checked = c.hideComment.newValue;
+  if(c.hideImgComment) hideImgCmtToggle.checked = c.hideImgComment.newValue;
+  if(c.hideDccon) hideDcconToggle.checked = c.hideDccon.newValue;
   if(c.delay){
     delayNum.value   = c.delay.newValue;
     delayRange.value = c.delay.newValue;
