@@ -7,6 +7,9 @@ const blockModeHint  = document.getElementById("blockModeHint");// 모드 설명
 const hideCmtToggle  = document.getElementById("hideComment");  // 일반 댓글 숨김
 const hideImgCmtToggle = document.getElementById("hideImgComment"); // 이미지 댓글 숨김
 const hideDcconToggle = document.getElementById("hideDccon");   // 디시콘 숨김
+const autoRefreshToggle = document.getElementById("autoRefreshEnabled"); // 자동 새로고침
+const autoRefreshIntervalNum = document.getElementById("autoRefreshIntervalNum"); // 새로고침 간격 숫자
+const autoRefreshIntervalRange = document.getElementById("autoRefreshIntervalRange"); // 새로고침 간격 슬라이더
 const delayNum       = document.getElementById("delayNum");     // 숫자 입력
 const delayRange     = document.getElementById("delayRange");   
 const openOptionsBtn = document.getElementById("openOptions");
@@ -58,6 +61,8 @@ const DEFAULTS = {
   hideComment: false,
   hideImgComment: false,    // 이미지 댓글 기본적으로 꺼짐
   hideDccon: false,         // 디시콘 숨기기
+  autoRefreshEnabled: false, // 자동 새로고침 기본적으로 꺼짐
+  autoRefreshInterval: 60,  // 기본 60초
   delay: 5,
 
   // 사용자 차단
@@ -113,6 +118,7 @@ chrome.storage.sync.get(DEFAULTS, (conf)=>{
 
   const {
     enabled, blockMode, hideComment, hideImgComment, hideDccon, delay,
+    autoRefreshEnabled, autoRefreshInterval,
     userBlockEnabled, blockedUids,
     hideMainEnabled, hideGallEnabled, hideSearchEnabled,
     showUidBadge
@@ -125,6 +131,9 @@ chrome.storage.sync.get(DEFAULTS, (conf)=>{
   hideCmtToggle.checked = hideComment;
   hideImgCmtToggle.checked = hideImgComment;
   hideDcconToggle.checked = hideDccon;
+  autoRefreshToggle.checked = autoRefreshEnabled;
+  autoRefreshIntervalNum.value = autoRefreshInterval;
+  autoRefreshIntervalRange.value = autoRefreshInterval;
   delayNum.value        = delay;
   delayRange.value      = delay;
   lockDelay(blockMode === "block");
@@ -170,6 +179,19 @@ hideImgCmtToggle.onchange = e =>
 /* 디시콘 숨기기 ON/OFF */
 hideDcconToggle.onchange = e =>
   chrome.storage.sync.set({ hideDccon: e.target.checked });
+
+/* 자동 새로고침 ON/OFF */
+autoRefreshToggle.onchange = e =>
+  chrome.storage.sync.set({ autoRefreshEnabled: e.target.checked });
+
+/* 자동 새로고침 간격 숫자 ↔ storage */
+function updateAutoRefreshInterval(v){
+  const num = Math.max(10, Math.min(600, parseInt(v)||60));
+  autoRefreshIntervalNum.value = autoRefreshIntervalRange.value = num;
+  chrome.storage.sync.set({ autoRefreshInterval: num });
+}
+autoRefreshIntervalNum.oninput   = e => updateAutoRefreshInterval(e.target.value);
+autoRefreshIntervalRange.oninput = e => updateAutoRefreshInterval(e.target.value);
 
 /* 지연 시간 숫자 ↔ storage */
 function updateDelay(v){
@@ -236,6 +258,11 @@ chrome.storage.onChanged.addListener((c,a)=>{
   if(c.hideComment)  hideCmtToggle.checked = c.hideComment.newValue;
   if(c.hideImgComment) hideImgCmtToggle.checked = c.hideImgComment.newValue;
   if(c.hideDccon) hideDcconToggle.checked = c.hideDccon.newValue;
+  if(c.autoRefreshEnabled) autoRefreshToggle.checked = c.autoRefreshEnabled.newValue;
+  if(c.autoRefreshInterval){
+    autoRefreshIntervalNum.value = c.autoRefreshInterval.newValue;
+    autoRefreshIntervalRange.value = c.autoRefreshInterval.newValue;
+  }
   if(c.delay){
     delayNum.value   = c.delay.newValue;
     delayRange.value = c.delay.newValue;
