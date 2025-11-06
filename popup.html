@@ -37,7 +37,12 @@
     padding:6px 4px;font-size:14px;width:72px;border:1px solid #444;
     border-radius:6px;background:#222;color:var(--light)
   }
-  input[type="range"]{flex:1;accent-color:var(--neon)}
+  /* 슬라이더: 두 슬라이더 모두 동일 폭/느낌으로 */
+  input[type="range"]{
+    display:block;
+    width:100%;
+    accent-color:var(--neon);
+  }
   label.row{display:flex;align-items:center;gap:10px}
 
   /* UID 입력 */
@@ -138,13 +143,12 @@
 
   <!-- 지연 시간 (초보 모드일 때만 표시) -->
   <div id="delaySection" style="display:none;">
-    <hr class="divider">
     <label class="row">
       <span style="min-width:110px;">리다이렉트 지연 시간 (초)</span>
-      <input type="number" id="delayNum" min="0" max="10" step="0.5"><br/>
+      <input type="number" id="delayNum" min="0" max="10" step="0.5">
     </label>
     <p class="hint">초보 모드에서 카운트다운 후 리다이렉트되는 시간입니다.</p>
-    <input type="range" id="delayRange" min="10" max="600" step="0.5">
+    <input type="range" id="delayRange" min="0" max="10" step="0.5">
   </div>
 
   <hr class="divider">
