@@ -82,7 +82,8 @@ function handleUrl(){
 
   const gid = getGalleryId();
   if(!gid || !blockedSet.has(gid)) return;
-  if(isTempAllowed(gid)) return; // 임시 허용됨
+  // 스마트 모드에서만 임시 허용을 존중
+  if(blockMode === "smart" && isTempAllowed(gid)) return;
   if(document.getElementById("dcblock-overlay")) return;
 
   // redirect 또는 smart 모드
