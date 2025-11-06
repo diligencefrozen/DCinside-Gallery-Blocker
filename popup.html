@@ -136,12 +136,15 @@
 
   <hr class="divider">
 
-  <!-- 지연 시간 -->
-  <label class="row">
-    <span style="min-width:110px;">지연 시간&nbsp;(초)</span>
-    <input type="number" id="delayNum" min="0" max="10" step="0.5">
-  </label>
-  <input type="range" id="delayRange" min="0" max="10" step="0.5">
+  <!-- 지연 시간 (초보 모드일 때만 표시) -->
+  <div id="delaySection" style="display:none;">
+    <label class="row">
+      <span style="min-width:110px;">리다이렉트 지연 시간 (초)</span>
+      <input type="number" id="delayNum" min="0" max="10" step="0.5">
+    </label>
+    <input type="range" id="delayRange" min="0" max="10" step="0.5">
+    <p class="hint">초보 모드에서 카운트다운 후 리다이렉트되는 시간입니다.</p>
+  </div>
 
   <!-- 페이지 숨김  -->
   <label class="row">
