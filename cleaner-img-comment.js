@@ -5,7 +5,8 @@ cleaner-img-comment.js - 이미지 댓글만 숨기기
   const SELS = [
     'div.img_comment',                      // 이미지 댓글 영역 (기본)
     'div.img_comment.fold',                 // fold 클래스가 있는 경우
-    'div.img_comment.getMoreComment'        // getMoreComment 클래스
+    'div.img_comment.getMoreComment',       // getMoreComment 클래스
+    'button.btn_imgcmtopen'                 // 이미지 댓글 열기 버튼
   ];
   const STYLE_ID = 'dcb-hide-img-comment-style';
   const CSS_RULE = `${SELS.join(',')}{display:none !important}`;
