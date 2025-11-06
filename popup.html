@@ -115,6 +115,27 @@
     </label>
   </label>
 
+  <hr class="divider">
+
+  <!-- 자동 새로고침 -->
+  <label class="row">
+    <span style="min-width:110px;">자동 새로고침</span>
+    <label class="switch">
+      <input type="checkbox" id="autoRefreshEnabled">
+      <span class="slider"></span>
+    </label>
+  </label>
+
+  <!-- 새로고침 간격 -->
+  <label class="row">
+    <span style="min-width:110px;">새로고침 간격 (초)</span>
+    <input type="number" id="autoRefreshIntervalNum" min="10" max="600" step="10">
+  </label>
+  <input type="range" id="autoRefreshIntervalRange" min="10" max="600" step="10">
+  <p class="hint">최소 10초, 최대 600초(10분)까지 설정 가능합니다.</p>
+
+  <hr class="divider">
+
   <!-- 지연 시간 -->
   <label class="row">
     <span style="min-width:110px;">지연 시간&nbsp;(초)</span>
