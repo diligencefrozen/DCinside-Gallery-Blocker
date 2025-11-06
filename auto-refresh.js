@@ -7,6 +7,7 @@ auto-refresh.js - 자동 새로고침 기능
   let timerId = null;
   let countdownInterval = null;
   let remainingSeconds = 0;
+  let pausedByReading = false;
   
   // 카운트다운 표시 요소
   let countdownElement = null;
@@ -76,6 +77,7 @@ auto-refresh.js - 자동 새로고침 기능
 
   /* ───── 카운트다운 시작 ───── */
   const startCountdown = () => {
+    if (pausedByReading) return; // 일시중지 시 표시하지 않음
     if (countdownInterval) {
       clearInterval(countdownInterval);
     }
@@ -137,17 +139,28 @@ auto-refresh.js - 자동 새로고침 기능
     stopCountdown();
   };
 
+  /* ───── 글 본문/댓글 감지: 읽는 중이면 새로고침 금지 ───── */
+  const isArticleView = () => /\/board\/view\//.test(location.pathname + location.search + location.hash);
+  const hasCommentSection = () => !!document.querySelector('.comment_wrap');
+  const shouldPauseForReading = () => isArticleView() && hasCommentSection();
+
   /* ───── 설정 적용 ───── */
   const apply = (enabled, interval) => {
     autoRefreshEnabled = enabled;
     refreshInterval = interval;
     
-    if (enabled) {
+    pausedByReading = shouldPauseForReading();
+
+    if (enabled && !pausedByReading) {
       // 기존 타이머가 있으면 정지하고 새로 시작
       stopAutoRefresh();
       startAutoRefresh();
     } else {
       stopAutoRefresh();
+    }
+
+    if (enabled && pausedByReading) {
+      console.log('[DCB] 본문/댓글 감지됨: 자동 새로고침 일시중지');
     }
   };
 
@@ -181,6 +194,19 @@ auto-refresh.js - 자동 새로고침 기능
       apply(newEnabled, newInterval);
     }
   });
+
+  /* ───── DOM 변화 감지: 댓글 영역이 늦게 로드돼도 중지 ───── */
+  const mo = new MutationObserver(() => {
+    if (!autoRefreshEnabled) return;
+    if (timerId && shouldPauseForReading()) {
+      pausedByReading = true;
+      stopAutoRefresh();
+      console.log('[DCB] 댓글 영역 감지됨: 자동 새로고침 중단');
+    }
+  });
+  try {
+    mo.observe(document.documentElement || document.body, { childList: true, subtree: true });
+  } catch {}
 
   /* ───── 페이지 언로드 시 정리 ───── */
   window.addEventListener('beforeunload', () => {
