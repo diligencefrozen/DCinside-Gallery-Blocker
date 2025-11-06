@@ -44,6 +44,11 @@
     accent-color:var(--neon);
   }
   label.row{display:flex;align-items:center;gap:10px}
+  /* 라벨은 가변 폭, 입력/스위치는 고정 폭으로 우측 정렬 */
+  label.row > span{flex:1 1 auto;min-width:110px}
+  label.row > .switch,
+  label.row > select,
+  label.row > input[type="number"]{flex:0 0 auto}
 
   /* UID 입력 */
   .row-input{
@@ -61,7 +66,7 @@
     padding:8px 12px;
   }
   .muted{font-size:12px;opacity:.8}
-  .hint{font-size:12px;opacity:.9;color:#c9d1d9;margin-top:-10px}
+  .hint{font-size:12px;opacity:.9;color:#c9d1d9;margin-top:6px}
   ul#uidList{list-style:none;display:flex;flex-direction:column;gap:6px;max-height:120px;overflow:auto}
   ul#uidList li{display:flex;justify-content:space-between;align-items:center;border:1px solid #333;border-radius:8px;padding:6px 8px;background:#151a22}
   ul#uidList code{opacity:.9}
@@ -91,7 +96,7 @@
       <option value="block">하드</option>
     </select>
   </label>
-  <p class="hint" id="blockModeHint" style="margin-top:-16px;font-size:11px;opacity:0.85"></p>
+  <p class="hint" id="blockModeHint" style="font-size:11px;opacity:0.85"></p>
 
   <!-- 댓글 숨기기 -->
   <label class="row">
