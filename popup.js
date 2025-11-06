@@ -28,6 +28,9 @@ const toggleHideSearch = document.getElementById("toggleHideSearch");
 // 닉네임 옆 회원 ID 표시
 const toggleUidBadge   = document.getElementById("toggleUidBadge");
 
+// 지연 시간 섹션 (초보 모드일 때만 표시)
+const delaySection = document.getElementById("delaySection");
+
 /* ───────── util ───────── */
 function lockDelay(disabled){
   delayNum.disabled   = disabled;
@@ -44,6 +47,11 @@ function updateBlockModeHint(mode){
     block: "🚫 완전 차단 (네트워크 레벨)"
   };
   blockModeHint.textContent = hints[mode] || "";
+  
+  // 초보(redirect) 모드일 때만 지연 시간 섹션 표시
+  if (delaySection) {
+    delaySection.style.display = mode === "redirect" ? "block" : "none";
+  }
 }
 
 function lockUserBlockUI(disabled){
@@ -136,7 +144,7 @@ chrome.storage.sync.get(DEFAULTS, (conf)=>{
   autoRefreshIntervalRange.value = autoRefreshInterval;
   delayNum.value        = delay;
   delayRange.value      = delay;
-  lockDelay(blockMode === "block");
+  // lockDelay는 이제 사용하지 않음 (지연 시간 섹션 자체를 숨김)
 
   // 사용자 차단
   if (userBlockEl) {
@@ -165,7 +173,7 @@ blockModeSel.onchange = e => {
   const mode = e.target.value;              // smart | redirect | block
   chrome.storage.sync.set({ blockMode: mode });
   updateBlockModeHint(mode);
-  lockDelay(mode === "block");
+  // lockDelay는 이제 사용하지 않음 (섹션 자체를 숨김)
 };
 
 /* 댓글 숨기기 ON/OFF */
@@ -253,7 +261,7 @@ chrome.storage.onChanged.addListener((c,a)=>{
   if(c.blockMode){
     blockModeSel.value = c.blockMode.newValue;
     updateBlockModeHint(c.blockMode.newValue);
-    lockDelay(c.blockMode.newValue === "block");
+    // lockDelay는 이제 사용하지 않음
   }
   if(c.hideComment)  hideCmtToggle.checked = c.hideComment.newValue;
   if(c.hideImgComment) hideImgCmtToggle.checked = c.hideImgComment.newValue;
