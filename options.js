@@ -38,6 +38,39 @@ const recSearchSelectors = [
   "section.left_content"
 ];
 
+/* 백업 범위 및 기본값 */
+const BACKUP_KEYS = [
+  "blockedIds", "removeSelectors", "removeSelectorsGall", "removeSelectorsSearch",
+  "userBlockEnabled", "blockedUids", "hideComment", "hideImgComment", "hideDccon",
+  "hideMainEnabled", "hideGallEnabled", "hideSearchEnabled",
+  "enabled", "galleryBlockEnabled", "blockMode", "autoRefreshEnabled",
+  "autoRefreshInterval", "delay", "showUidBadge", "linkWarnEnabled", "hideDCGray"
+];
+
+const BACKUP_DEFAULTS = {
+  blockedIds: [],
+  removeSelectors: [],
+  removeSelectorsGall: [],
+  removeSelectorsSearch: [],
+  userBlockEnabled: true,
+  blockedUids: [],
+  hideComment: false,
+  hideImgComment: false,
+  hideDccon: false,
+  hideMainEnabled: true,
+  hideGallEnabled: true,
+  hideSearchEnabled: true,
+  enabled: true,
+  galleryBlockEnabled: undefined,
+  blockMode: "smart",
+  autoRefreshEnabled: false,
+  autoRefreshInterval: 60,
+  delay: 5,
+  showUidBadge: true,
+  linkWarnEnabled: true,
+  hideDCGray: undefined
+};
+
 /* ───── DOM 캐시 ───── */
 /* 갤러리 ID */
 const newIdInput = document.getElementById("newId");
@@ -69,10 +102,66 @@ const uidListEl   = document.getElementById("uidList");
 const hideCommentEl    = document.getElementById("hideComment");
 const hideImgCommentEl = document.getElementById("hideImgComment");
 const hideDcconEl      = document.getElementById("hideDccon");
+/* 백업/복원 */
+const exportBtn    = document.getElementById("exportBtn");
+const importBtn    = document.getElementById("importBtn");
+const importFileEl = document.getElementById("importFile");
 
 /* ───── 공통 유틸 ───── */
 const norm = s => s.trim().toLowerCase();
 const sanitizeUid = s => String(s || "").trim().replace(/\s+/g, "");
+
+function sanitizeImport(raw){
+  const body = raw && typeof raw === "object"
+    ? (raw.data && typeof raw.data === "object" ? raw.data : raw)
+    : null;
+
+  if (!body || typeof body !== "object") throw new Error("invalid");
+
+  const patch = {};
+  BACKUP_KEYS.forEach(k => {
+    if (Object.prototype.hasOwnProperty.call(body, k)) patch[k] = body[k];
+  });
+  if (!Object.keys(patch).length) throw new Error("empty");
+  return patch;
+}
+
+function exportSettings(){
+  chrome.storage.sync.get(BACKUP_DEFAULTS, snapshot => {
+    const payload = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      data: snapshot
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement("a");
+    const ts   = new Date().toISOString().replace(/[:.]/g, "-");
+    a.href = url;
+    a.download = `dcb-settings-${ts}.json`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 500);
+  });
+}
+
+function importSettingsFromFile(file){
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const parsed = JSON.parse(reader.result);
+      const patch  = sanitizeImport(parsed);
+      chrome.storage.sync.set(patch, () => {
+        alert("백업을 불러왔습니다. 페이지를 새로고침합니다.");
+        location.reload();
+      });
+    } catch (err) {
+      console.error("[DCB] backup import failed", err);
+      alert("백업 파일을 불러오지 못했습니다. JSON 형식을 확인하세요.");
+    }
+  };
+  reader.readAsText(file);
+}
 
 /* ───── 갤러리 차단 ───── */
 function renderUser(ids){
@@ -171,6 +260,17 @@ function saveUidList(mutator){
 }
 
 /* ───── 이벤트 ───── */
+/* 백업/복원 */
+if (exportBtn) exportBtn.onclick = () => exportSettings();
+if (importBtn && importFileEl) {
+  importBtn.onclick = () => importFileEl.click();
+  importFileEl.onchange = () => {
+    const [file] = importFileEl.files || [];
+    importSettingsFromFile(file);
+    importFileEl.value = "";
+  };
+}
+
 /* 갤러리 ID */
 addBtn.onclick = () => {
   const id = norm(newIdInput.value); if (!id || builtinBlocked.includes(id)) return;
