@@ -76,6 +76,18 @@
     <p class="note">차단할 갤러리와 숨길 영역을 손쉽게 관리하세요.</p>
   </section>
 
+  <!-- 백업/복원 -->
+  <section class="card">
+    <h2>📦 설정 백업/복원</h2>
+    <p class="note">현재 저장된 설정을 JSON 파일로 내보내거나 불러올 수 있습니다.</p>
+    <div class="row">
+      <button id="exportBtn">백업 파일 다운로드</button>
+      <button id="importBtn">백업 불러오기</button>
+      <input id="importFile" type="file" accept="application/json,.json" style="display:none">
+    </div>
+    <p class="note">불러오면 기존 설정이 덮어씌워집니다. (chrome.storage.sync 기준)</p>
+  </section>
+
   <!-- 사용자 차단(UID) -->
   <section class="card">
     <h2>사용자 차단</h2>
