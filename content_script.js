@@ -313,7 +313,6 @@ syncSettings(handleUrl);
       #${OVERLAY_ID} .dcbpv-reply{padding-left:28px;background:rgba(255,255,255,.04);border-left:3px solid rgba(79,124,255,.3)}
       #${OVERLAY_ID} .dcbpv-comment .meta{display:flex;gap:8px;flex-wrap:wrap;font-size:12px;color:#9fb1c7;margin-bottom:4px}
       #${OVERLAY_ID} .dcbpv-empty{padding:14px;border:1px dashed rgba(255,255,255,.08);border-radius:12px;color:#9fb1c7;text-align:center}
-      #${OVERLAY_ID} .dcbpv-scrollhint{font-size:12px;color:#6e7f96;text-align:right;margin-top:-6px}
       #${OVERLAY_ID} .dcbpv-share-popup{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#1a1f28;border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,.6);z-index:2147483650;min-width:320px}
       #${OVERLAY_ID} .dcbpv-share-popup h3{margin:0 0 16px 0;font-size:18px;color:#e6edf3;font-weight:700}
       #${OVERLAY_ID} .dcbpv-share-popup .share-btns{display:flex;gap:10px;margin-bottom:14px}
@@ -536,7 +535,6 @@ syncSettings(handleUrl);
             <div class="dcbpv-article">
               <div class="dcbpv-actions" id="dcbpv-actions"></div>
               <div class="dcbpv-content" id="dcbpv-article"></div>
-              <div class="dcbpv-scrollhint"> </div>
             </div>
           </div>
           <div class="dcbpv-col">
@@ -755,7 +753,6 @@ syncSettings(handleUrl);
                 ${reportUrl ? `<button class="dcbpv-btn warn" data-act="report-preview">🚨 신고</button>` : ""}
               </div>
               <div class="dcbpv-content" id="dcbpv-article"></div>
-              <div class="dcbpv-scrollhint">본문을 스크롤할 수 있습니다</div>
             </div>
           </div>
         </div>
