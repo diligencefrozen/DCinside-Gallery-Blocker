@@ -198,9 +198,7 @@ auto-refresh.js - 자동 새로고침 기능 (현대화 버전)
     currentInterval = interval; // 기본값으로 리셋
     noNewPostCount = 0;
     
-    // ISP 차단 초기 리프레시 중에는 auto-refresh 일시중지 무시
-    const ispRefreshing = sessionStorage.getItem("dcb-isp-refreshing");
-    pausedByReading = ispRefreshing ? false : shouldPauseForReading();
+    pausedByReading = shouldPauseForReading();
 
     if (enabled && !pausedByReading && pageVisible) {
       stopAutoRefresh();
@@ -209,7 +207,7 @@ auto-refresh.js - 자동 새로고침 기능 (현대화 버전)
       stopAutoRefresh();
     }
 
-    if (enabled && pausedByReading && !ispRefreshing) {
+    if (enabled && pausedByReading) {
       console.log('[DCB] 본문/댓글 감지됨: 자동 새로고침 일시중지');
     }
   };
