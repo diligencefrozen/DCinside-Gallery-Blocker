@@ -29,9 +29,6 @@ const toggleHideSearch = document.getElementById("toggleHideSearch");
 // 닉네임 옆 회원 ID 표시
 const toggleUidBadge   = document.getElementById("toggleUidBadge");
 
-// 통신사 IP 차단
-const ispBlockEl = document.getElementById("ispBlockEnabled");
-
 // 지연 시간 섹션 (초보 모드일 때만 표시)
 const delaySection = document.getElementById("delaySection");
 
@@ -92,9 +89,6 @@ const DEFAULTS = {
   // ★ 닉네임 옆 회원 ID 표시
   showUidBadge: true,
 
-  // 통신사 IP 차단
-  ispBlockEnabled: false,
-
   // 링크 경고 표시
   linkWarnEnabled: true
 };
@@ -138,8 +132,7 @@ chrome.storage.sync.get(DEFAULTS, (conf)=>{
     autoRefreshEnabled, autoRefreshInterval,
     userBlockEnabled, blockedUids,
     hideMainEnabled, hideGallEnabled, hideSearchEnabled,
-    showUidBadge,
-    ispBlockEnabled
+    showUidBadge
   } = conf;
 
   // 기본 토글/입력값
@@ -171,9 +164,6 @@ chrome.storage.sync.get(DEFAULTS, (conf)=>{
 
   // 닉네임 옆 회원 ID 표시
   if (toggleUidBadge)   toggleUidBadge.checked   = !!showUidBadge;
-
-  // 통신사 IP 차단
-  if (ispBlockEl)       ispBlockEl.checked       = !!ispBlockEnabled;
 });
 
 /* ───────── 이벤트 바인딩 ───────── */
@@ -277,9 +267,6 @@ if (toggleHideSearch) toggleHideSearch.onchange = e => chrome.storage.sync.set({
 /* 닉네임 옆 회원 ID 표시 저장 */
 if (toggleUidBadge)   toggleUidBadge.onchange   = e => chrome.storage.sync.set({ showUidBadge: !!e.target.checked });
 
-/* 통신사 IP 차단 저장 */
-if (ispBlockEl)       ispBlockEl.onchange       = e => chrome.storage.sync.set({ ispBlockEnabled: !!e.target.checked });
-
 /* 스토리지 외부 변경 반영 */
 chrome.storage.onChanged.addListener((c,a)=>{
   if(a!=="sync") return;
@@ -318,9 +305,6 @@ chrome.storage.onChanged.addListener((c,a)=>{
 
   // 닉네임 옆 회원 ID 표시
   if (c.showUidBadge && toggleUidBadge)        toggleUidBadge.checked   = !!c.showUidBadge.newValue;
-
-  // 통신사 IP 차단
-  if (c.ispBlockEnabled && ispBlockEl)         ispBlockEl.checked       = !!c.ispBlockEnabled.newValue;
 });
 
 /* 옵션 페이지 열기 */
