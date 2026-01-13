@@ -8,43 +8,6 @@ const BUILTIN_BLOCKID = ["dcbest"];              // 항상 차단
 const DELAY_MIN = 0, DELAY_MAX = 10;             // 0 ~ 10 s (0.5 step)
 const TEMP_ALLOW_KEY  = "dcb-temp-allow";        // sessionStorage 키
 
-// 통신사 IP(통피) 대역 - SKT, KT, LG
-const ISP_PATTERNS = {
-  SKT: [
-    "211.235", "210.102", "223.32", "223.33", "223.34", "223.35", "223.36", "223.37",
-    "223.38", "223.39", "223.40", "223.41", "223.42", "223.43", "223.44", "223.45",
-    "223.46", "223.47", "223.48", "223.49", "223.50", "223.51", "223.52", "223.53",
-    "223.54", "223.55", "223.56", "223.57", "223.58", "223.59", "223.60", "223.61",
-    "223.62", "223.63", "211.234", "203.226", "61.43", "211.33"
-  ],
-  KT: [
-    "118.235", "39.7", "110.70", "112.161", "114.200", "114.201", "114.202", "114.203",
-    "114.204", "114.205", "121.130", "121.131", "121.132", "121.133", "175.223", "211.246",
-    "175.210", "175.211", "175.212", "175.213", "175.214", "175.215", "175.216", "175.217",
-    "175.218", "175.219", "211.230", "211.231", "211.232", "211.233", "211.234", "211.235",
-    "211.236", "211.237", "211.238", "211.239"
-  ],
-  LG: [
-    "106.101", "101.235", "211.36", "117.111", "125.188", "106.102", "104.230", "104.231",
-    "104.232", "104.233", "104.234", "104.235", "104.236", "104.237", "104.238", "104.239",
-    "211.200", "211.201", "211.202", "211.203", "211.204", "211.205", "211.206", "211.207",
-    "211.208", "211.209", "59.150", "59.151", "59.152", "59.153", "59.154", "59.155",
-    "59.156", "59.157", "59.158", "59.159"
-  ]
-};
-
-function detectISP(ipAddr) {
-  if (!ipAddr) return null;
-  for (const [isp, prefixes] of Object.entries(ISP_PATTERNS)) {
-    for (const prefix of prefixes) {
-      if (ipAddr.startsWith(prefix)) {
-        return isp;
-      }
-    }
-  }
-  return null;
-}
-
 /* ───── 동적 상태 ───── */
 // 갤러리 차단 전용 마스터 (galleryBlockEnabled 우선, 없으면 enabled 사용)
 let gBlockEnabled = true;                        // 갤러리 차단 ON/OFF
@@ -60,9 +23,6 @@ if (!window.isPreviewOpen) {
 // 미리보기 기능 활성화 상태
 let previewEnabled = false;
 
-// 통신사 IP 차단 활성화 상태
-let ispBlockEnabled = false;
-
 /* ───── storage → 메모리 ───── */
 function syncSettings(cb){
   chrome.storage.sync.get(
@@ -72,17 +32,15 @@ function syncSettings(cb){
       blockMode          : "redirect",
       blockedIds         : [],
       delay              : 5,
-      previewEnabled     : false,
-      ispBlockEnabled    : false
+      previewEnabled     : false
     },
-    ({ galleryBlockEnabled, enabled, blockMode:bm, blockedIds, delay, previewEnabled:pe, ispBlockEnabled:isb })=>{
+    ({ galleryBlockEnabled, enabled, blockMode:bm, blockedIds, delay, previewEnabled:pe })=>{
       const en = (typeof galleryBlockEnabled === "boolean") ? galleryBlockEnabled : !!enabled;
       gBlockEnabled = en;
       blockMode     = bm;
       blockedSet    = new Set([...BUILTIN_BLOCKID, ...blockedIds.map(x=>String(x).trim().toLowerCase())]);
       delaySeconds  = clamp(delay);
       previewEnabled = !!pe;
-      ispBlockEnabled = !!isb;
       cb && cb();
     }
   );
@@ -96,7 +54,6 @@ chrome.storage.onChanged.addListener((chg,a)=>{
 
   if(chg.blockMode)    blockMode   = chg.blockMode.newValue;
   if(chg.previewEnabled) previewEnabled = !!chg.previewEnabled.newValue;
-  if(chg.ispBlockEnabled) ispBlockEnabled = !!chg.ispBlockEnabled.newValue;
   if(chg.blockedIds)   blockedSet  = new Set([...BUILTIN_BLOCKID, ...chg.blockedIds.newValue.map(x=>String(x).trim().toLowerCase())]);
   if(chg.delay)        delaySeconds= clamp(chg.delay.newValue);
 });
@@ -1027,243 +984,4 @@ syncSettings(handleUrl);
       };
     });
   }
-})();
-
-/* ───────────────────────────────────────────────────────── */
-/* ISP 차단 기능 */
-/* ───────────────────────────────────────────────────────── */
-(() => {
-  let ispBlockObserver = null;
-  let lastPageUrl = location.href; // 마지막 페이지 URL 추적
-  let ispStateReady = false; // 저장소 로딩 완료 전에는 복원/차단 모두 수행하지 않음
-
-  // ISP 차단 상태 리셋 (페이지/게시물 이동 시)
-  function resetISPBlockState() {
-    if (!ispBlockEnabled) return;
-
-    console.log("[DCB ISP Block] 페이지/게시물 이동 - ISP 차단 리셋 및 재적용");
-
-    // 기존 표시 복원 및 속성 제거
-    document.querySelectorAll("[data-dcb-isp-replaced]").forEach(el => el.remove());
-    document.querySelectorAll("[data-dcb-isp-hidden]").forEach(el => {
-      el.style.display = "";
-      el.removeAttribute("data-dcb-isp-hidden");
-    });
-    document.querySelectorAll("[data-dcb-isp-hidden-cmt]").forEach(el => {
-      el.style.display = "";
-      el.removeAttribute("data-dcb-isp-hidden-cmt");
-    });
-
-    // 새 DOM에 대해 즉시/지연 적용(동적 로드 대비)
-    const reapply = () => hideIPBlockedPosts();
-    [0, 300, 1200].forEach(delay => setTimeout(reapply, delay));
-  }
-
-  function hideIPBlockedPosts() {
-    // 설정 로드 이전에는 아무 것도 하지 않아 초기 플리커 방지
-    if (!ispStateReady) return 0;
-    if (!ispBlockEnabled) {
-      // ISP 차단 비활성화 시 모든 대체된 댓글 복원
-      document.querySelectorAll("[data-dcb-isp-replaced]").forEach(el => {
-        el.remove();
-      });
-      // 숨겼던 게시글 복원
-      document.querySelectorAll("[data-dcb-isp-hidden]").forEach(el => {
-        el.style.display = "";
-        el.removeAttribute("data-dcb-isp-hidden");
-      });
-      // 숨겼던 댓글/대댓글 복원
-      document.querySelectorAll("[data-dcb-isp-hidden-cmt]").forEach(el => {
-        el.style.display = "";
-        el.removeAttribute("data-dcb-isp-hidden-cmt");
-      });
-      return 0;
-    }
-
-    let blockedCount = 0;
-
-    // ===== 게시글 목록 즉시 차단 =====
-    // 갤러리 리스트의 작성자 셀(.gall_writer)에서 통피 감지 시 행(tr 또는 .ub-content)을 숨김
-    document.querySelectorAll(".gall_writer[data-loc='list']").forEach(writerEl => {
-      const ip = writerEl.getAttribute("data-ip");
-      const uid = writerEl.getAttribute("data-uid");
-      if (!ip || (uid && uid !== "")) return; // 회원이면 패스
-
-      const isp = detectISP(ip);
-      if (!isp) return;
-
-      const row = writerEl.closest("tr") || writerEl.closest(".ub-content");
-      if (!row) return;
-      
-      // 이미 숨긴 것 제외
-      if (row.hasAttribute("data-dcb-isp-hidden")) return;
-
-      row.style.display = "none";
-      row.setAttribute("data-dcb-isp-hidden", isp);
-      blockedCount++;
-      console.log(`[DCB ISP Block] ${isp} 비회원 게시글 차단: ${ip}`);
-    });
-
-    // ===== 댓글/대댓글 즉시 차단 (display none) =====
-    // 더 광범위한 선택자로 댓글 요소 감지
-    document.querySelectorAll(".cmt_info, .reply_info, .cmt_list li, .reply_list li").forEach(cmtEl => {
-      // 이미 숨긴 것 제외
-      if (cmtEl.hasAttribute("data-dcb-isp-hidden-cmt") || cmtEl.hasAttribute("data-dcb-isp-replaced")) return;
-
-      // .gall_writer 찾기 (여러 구조 대응)
-      let writerSpan = cmtEl.querySelector(".gall_writer");
-      
-      // .gall_writer가 없으면 부모에서도 찾기
-      if (!writerSpan && cmtEl.classList.contains("gall_writer")) {
-        writerSpan = cmtEl;
-      }
-      
-      // 그래도 없으면 다른 위치에서 찾기 (.ub-nick 등)
-      if (!writerSpan) {
-        writerSpan = cmtEl.querySelector("[data-ip]");
-      }
-      
-      if (!writerSpan) return;
-
-      // data-ip, data-uid 속성
-      const ip = writerSpan.getAttribute("data-ip");
-      const uid = writerSpan.getAttribute("data-uid");
-
-      // 비회원(uid 빈)이고 ISP 감지되면 댓글/대댓글 숨김
-      if (ip && (!uid || uid === "")) {
-        const isp = detectISP(ip);
-        if (isp) {
-          const target = cmtEl.closest("li") || cmtEl;
-          target.style.display = "none";
-          target.setAttribute("data-dcb-isp-hidden-cmt", isp);
-          blockedCount++;
-          console.log(`[DCB ISP Block] ${isp} 비회원 댓글 숨김: ${ip}`);
-        }
-      }
-    });
-    
-    return blockedCount;
-  }
-
-  function startISPBlockObserver() {
-    if (ispBlockObserver) ispBlockObserver.disconnect();
-    ispBlockObserver = new MutationObserver(() => {
-      // 비활성 상태면 불필요한 작업 생략
-      if (!ispBlockEnabled) return;
-      // 즉시 처리해 체감 속도 개선 (댓글 영역 감지용 고감도)
-      hideIPBlockedPosts();
-    });
-
-    if (document.body) {
-      ispBlockObserver.observe(document.body, {
-        childList: true,
-        subtree: true,
-        attributes: true,  // 속성 변화도 감지 (data-ip 설정 시점 캡처)
-        attributeFilter: ["data-ip", "data-uid", "class"] // 특정 속성만 감지해 성능 최적화
-      });
-    }
-  }
-
-  // 옵저버는 준비되면 시작 (초기에는 ready=false라 동작 없음)
-  startISPBlockObserver();
-
-  // 설정 변경 감지
-  chrome.storage.onChanged.addListener((chg, areaName) => {
-    if (areaName !== "sync") return;
-    if (chg.ispBlockEnabled) {
-      console.log("[DCB] ISP 차단 토글 변경:", chg.ispBlockEnabled.newValue);
-      const enabled = !!chg.ispBlockEnabled.newValue;
-      ispBlockEnabled = enabled;
-
-      // OFF로 전환되면 진행 중 플래그만 해제(기록은 유지)
-      if (!enabled) {
-        sessionStorage.removeItem("dcb-isp-refreshing");
-      }
-
-      // 저장소 이벤트 도착 시 상태를 신뢰 가능하므로 ready 표시
-      ispStateReady = true;
-      const count = hideIPBlockedPosts();
-      // ON 시에는 현재 페이지 상태를 기준으로 리프레시 필요 여부 판단
-      if (enabled) maybeRefreshForISP(count);
-    }
-  });
-
-  // 페이지 언로드 시: ISP 차단 일시 비활성화 (복원)
-  window.addEventListener('beforeunload', () => {
-    resetISPBlockState();
-  });
-
-  // URL 변경 감지 (뒤로가기, 앞으로가기)
-  window.addEventListener('popstate', () => {
-    resetISPBlockState();
-    lastPageUrl = location.href;
-  });
-
-  // 해시 기반 라우팅 변경 감지
-  window.addEventListener('hashchange', () => {
-    resetISPBlockState();
-    lastPageUrl = location.href;
-  });
-
-  // URL 변경 감시 (동적 페이지 로드 감지용 - MutationObserver에서도 체크)
-  const urlChangeObserver = setInterval(() => {
-    if (location.href !== lastPageUrl) {
-      console.log("[DCB ISP Block] URL 변경 감지:", lastPageUrl, "->", location.href);
-      resetISPBlockState();
-      lastPageUrl = location.href;
-    }
-  }, 500); // 500ms마다 URL 체크
-
-  // 페이지 언로드 시 인터벌 정리
-  window.addEventListener('beforeunload', () => {
-    clearInterval(urlChangeObserver);
-  });
-
-  // ISP 차단 리프레시 로직 (토글/초기화 공용)
-  function maybeRefreshForISP(blockedCount) {
-    if (!ispBlockEnabled) return;
-
-    const refreshKey = "dcb-isp-block-refreshed";
-    const MAX_REFRESH = 3;
-
-    const rawCount = sessionStorage.getItem(refreshKey);
-    const parsed = parseInt(rawCount || "0", 10);
-    const refreshCount = Number.isFinite(parsed) ? parsed : 0;
-    if (!Number.isFinite(parsed)) {
-      sessionStorage.setItem(refreshKey, "0");
-    }
-
-    // 현재 차단된 요소 수가 주어지지 않았다면 즉시 계산
-    const currBlocked = (typeof blockedCount === "number") ? blockedCount : hideIPBlockedPosts();
-
-    if (refreshCount === 0) {
-      sessionStorage.setItem(refreshKey, "1");
-      sessionStorage.setItem("dcb-isp-refreshing", "true");
-      console.log("[DCB ISP Block] 첫 실행 감지 - 페이지 리프레시 (1/3)");
-      location.reload();
-      return;
-    }
-
-    if (refreshCount > 0 && refreshCount < MAX_REFRESH && currBlocked === 0) {
-      sessionStorage.setItem(refreshKey, String(refreshCount + 1));
-      sessionStorage.setItem("dcb-isp-refreshing", "true");
-      console.log(`[DCB ISP Block] 통피 미감지 - 리프레시 (${refreshCount + 1}/3)`);
-      location.reload();
-      return;
-    }
-
-    // 더 이상 리프레시 불필요
-    sessionStorage.removeItem("dcb-isp-refreshing");
-    console.log(`[DCB ISP Block] 리프레시 완료 - 차단된 요소: ${currBlocked}개, 시도 횟수: ${refreshCount}`);
-  }
-
-  // syncSettings와 함께 초기화 (storage 로드 후 실행)
-  syncSettings(() => {
-    console.log("[DCB ISP Block] syncSettings 완료 - ispBlockEnabled:", ispBlockEnabled);
-    // 저장소 로딩 완료 → 이후부터 hide/restore 수행
-    ispStateReady = true;
-    const blockedCount = hideIPBlockedPosts();
-    startISPBlockObserver();
-    if (ispBlockEnabled) maybeRefreshForISP(blockedCount);
-  });
 })();
