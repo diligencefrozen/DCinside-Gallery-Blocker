@@ -45,7 +45,7 @@ const BACKUP_KEYS = [
   "hideMainEnabled", "hideGallEnabled", "hideSearchEnabled",
   "enabled", "galleryBlockEnabled", "blockMode", "autoRefreshEnabled",
   "autoRefreshInterval", "delay", "showUidBadge", "linkWarnEnabled", "hideDCGray",
-  "previewEnabled", "ispBlockEnabled"
+  "previewEnabled"
 ];
 
 const BACKUP_DEFAULTS = {
@@ -70,8 +70,7 @@ const BACKUP_DEFAULTS = {
   showUidBadge: true,
   linkWarnEnabled: true,
   hideDCGray: undefined,
-  previewEnabled: false,
-  ispBlockEnabled: false
+  previewEnabled: false
 };
 
 /* ───── DOM 캐시 ───── */
@@ -102,7 +101,6 @@ const uidInput    = document.getElementById("uidInput");
 const addUidBtn   = document.getElementById("addUidBtn");
 const uidListEl   = document.getElementById("uidList");
 const previewEnabledEl = document.getElementById("previewEnabled");
-const ispBlockEl       = document.getElementById("ispBlockEnabled");
 /* 댓글 숨기기 */
 const hideCommentEl    = document.getElementById("hideComment");
 const hideImgCommentEl = document.getElementById("hideImgComment");
@@ -391,14 +389,6 @@ if (previewEnabledEl) {
   });
 }
 
-if (ispBlockEl) {
-  ispBlockEl.addEventListener("change", e => {
-    const newValue = !!e.target.checked;
-    console.log("[DCB] 통피 차단 설정 변경:", newValue);
-    chrome.storage.sync.set({ ispBlockEnabled: newValue });
-  });
-}
-
 /* ───── 초기 로드 ───── */
 chrome.storage.sync.get(
   {
@@ -415,12 +405,10 @@ chrome.storage.sync.get(
     hideDccon: false,        // 디시콘 숨기기
     // 페이지 미리보기
     previewEnabled: false,   // 기본값: 비활성화 (BACKUP_DEFAULTS와 일치)
-    // 통신사 IP 차단
-    ispBlockEnabled: false,  // 기본값: 비활성화 (BACKUP_DEFAULTS와 일치)
     // 구버전 호환 (hideDCGray → userBlockEnabled)
     hideDCGray: undefined
   },
-  ({ blockedIds, removeSelectors, removeSelectorsGall, removeSelectorsSearch, userBlockEnabled, blockedUids, hideComment, hideImgComment, hideDccon, previewEnabled, ispBlockEnabled, hideDCGray }) => {
+  ({ blockedIds, removeSelectors, removeSelectorsGall, removeSelectorsSearch, userBlockEnabled, blockedUids, hideComment, hideImgComment, hideDccon, previewEnabled, hideDCGray }) => {
     // 마이그레이션
     if (typeof userBlockEnabled !== "boolean" && typeof hideDCGray === "boolean") {
       userBlockEnabled = hideDCGray;
