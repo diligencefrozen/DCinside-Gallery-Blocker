@@ -8,6 +8,7 @@ auto-refresh.js - 자동 새로고침 기능
   let countdownInterval = null;
   let remainingSeconds = 0;
   let pausedByReading = false;
+  let pausedByPreview = false;
   
   // 카운트다운 표시 요소
   let countdownElement = null;
@@ -142,7 +143,8 @@ auto-refresh.js - 자동 새로고침 기능
   /* ───── 글 본문/댓글 감지: 읽는 중이면 새로고침 금지 ───── */
   const isArticleView = () => /\/board\/view\//.test(location.pathname + location.search + location.hash);
   const hasCommentSection = () => !!document.querySelector('.comment_wrap');
-  const shouldPauseForReading = () => isArticleView() && hasCommentSection();
+  const isPreviewActive = () => pausedByPreview || !!window.isPreviewOpen;
+  const shouldPauseForReading = () => isPreviewActive() || (isArticleView() && hasCommentSection());
 
   /* ───── 설정 적용 ───── */
   const apply = (enabled, interval) => {
@@ -212,4 +214,25 @@ auto-refresh.js - 자동 새로고침 기능
   window.addEventListener('beforeunload', () => {
     stopAutoRefresh();
   });
+
+  /* ───── 미리보기 오버레이 상태 연동 ───── */
+  const handlePreviewState = (open) => {
+    pausedByPreview = !!open;
+    pausedByReading = shouldPauseForReading();
+
+    if (timerId && pausedByReading) {
+      stopAutoRefresh();
+    }
+
+    if (autoRefreshEnabled && !pausedByReading && !timerId) {
+      startAutoRefresh();
+    }
+  };
+
+  document.addEventListener('dcb-preview-state', (e) => {
+    handlePreviewState(e.detail?.open);
+  });
+
+  // 초기 상태 반영 (이미 열려 있는 경우)
+  handlePreviewState(window.isPreviewOpen);
 })();
