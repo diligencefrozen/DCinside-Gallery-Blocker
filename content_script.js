@@ -8,6 +8,43 @@ const BUILTIN_BLOCKID = ["dcbest"];              // 항상 차단
 const DELAY_MIN = 0, DELAY_MAX = 10;             // 0 ~ 10 s (0.5 step)
 const TEMP_ALLOW_KEY  = "dcb-temp-allow";        // sessionStorage 키
 
+// 통신사 IP(통피) 대역 - SKT, KT, LG
+const ISP_PATTERNS = {
+  SKT: [
+    "211.235", "210.102", "223.32", "223.33", "223.34", "223.35", "223.36", "223.37",
+    "223.38", "223.39", "223.40", "223.41", "223.42", "223.43", "223.44", "223.45",
+    "223.46", "223.47", "223.48", "223.49", "223.50", "223.51", "223.52", "223.53",
+    "223.54", "223.55", "223.56", "223.57", "223.58", "223.59", "223.60", "223.61",
+    "223.62", "223.63", "211.234", "203.226", "61.43", "211.33"
+  ],
+  KT: [
+    "118.235", "39.7", "110.70", "112.161", "114.200", "114.201", "114.202", "114.203",
+    "114.204", "114.205", "121.130", "121.131", "121.132", "121.133", "175.223", "211.246",
+    "175.210", "175.211", "175.212", "175.213", "175.214", "175.215", "175.216", "175.217",
+    "175.218", "175.219", "211.230", "211.231", "211.232", "211.233", "211.234", "211.235",
+    "211.236", "211.237", "211.238", "211.239"
+  ],
+  LG: [
+    "106.101", "101.235", "211.36", "117.111", "125.188", "106.102", "104.230", "104.231",
+    "104.232", "104.233", "104.234", "104.235", "104.236", "104.237", "104.238", "104.239",
+    "211.200", "211.201", "211.202", "211.203", "211.204", "211.205", "211.206", "211.207",
+    "211.208", "211.209", "59.150", "59.151", "59.152", "59.153", "59.154", "59.155",
+    "59.156", "59.157", "59.158", "59.159"
+  ]
+};
+
+function detectISP(ipAddr) {
+  if (!ipAddr) return null;
+  for (const [isp, prefixes] of Object.entries(ISP_PATTERNS)) {
+    for (const prefix of prefixes) {
+      if (ipAddr.startsWith(prefix)) {
+        return isp;
+      }
+    }
+  }
+  return null;
+}
+
 /* ───── 동적 상태 ───── */
 // 갤러리 차단 전용 마스터 (galleryBlockEnabled 우선, 없으면 enabled 사용)
 let gBlockEnabled = true;                        // 갤러리 차단 ON/OFF
@@ -20,6 +57,12 @@ if (!window.isPreviewOpen) {
   window.isPreviewOpen = false;
 }
 
+// 미리보기 기능 활성화 상태
+let previewEnabled = false;
+
+// 통신사 IP 차단 활성화 상태
+let ispBlockEnabled = false;
+
 /* ───── storage → 메모리 ───── */
 function syncSettings(cb){
   chrome.storage.sync.get(
@@ -28,14 +71,18 @@ function syncSettings(cb){
       enabled            : true,       // 구버전 호환
       blockMode          : "redirect",
       blockedIds         : [],
-      delay              : 5
+      delay              : 5,
+      previewEnabled     : false,
+      ispBlockEnabled    : false
     },
-    ({ galleryBlockEnabled, enabled, blockMode:bm, blockedIds, delay })=>{
+    ({ galleryBlockEnabled, enabled, blockMode:bm, blockedIds, delay, previewEnabled:pe, ispBlockEnabled:isb })=>{
       const en = (typeof galleryBlockEnabled === "boolean") ? galleryBlockEnabled : !!enabled;
       gBlockEnabled = en;
       blockMode     = bm;
       blockedSet    = new Set([...BUILTIN_BLOCKID, ...blockedIds.map(x=>String(x).trim().toLowerCase())]);
       delaySeconds  = clamp(delay);
+      previewEnabled = !!pe;
+      ispBlockEnabled = !!isb;
       cb && cb();
     }
   );
@@ -48,6 +95,8 @@ chrome.storage.onChanged.addListener((chg,a)=>{
   else if(chg.enabled)        gBlockEnabled = !!chg.enabled.newValue;
 
   if(chg.blockMode)    blockMode   = chg.blockMode.newValue;
+  if(chg.previewEnabled) previewEnabled = !!chg.previewEnabled.newValue;
+  if(chg.ispBlockEnabled) ispBlockEnabled = !!chg.ispBlockEnabled.newValue;
   if(chg.blockedIds)   blockedSet  = new Set([...BUILTIN_BLOCKID, ...chg.blockedIds.newValue.map(x=>String(x).trim().toLowerCase())]);
   if(chg.delay)        delaySeconds= clamp(chg.delay.newValue);
 });
@@ -286,45 +335,59 @@ syncSettings(handleUrl);
     const style = document.createElement("style");
     style.id = STYLE_ID;
     style.textContent = `
-      #${OVERLAY_ID}{position:fixed;inset:0;z-index:2147483600;display:flex;align-items:center;justify-content:center;padding:32px;background:rgba(0,0,0,.75);backdrop-filter:blur(12px);animation:dcbpv-fade .18s ease-out}
-      #${OVERLAY_ID} .dcbpv-panel{width:min(1600px,96vw);height:min(92vh,950px);background:#0f141c;border:1px solid rgba(255,255,255,.05);box-shadow:0 20px 80px rgba(0,0,0,.45);border-radius:18px;display:flex;flex-direction:column;overflow:hidden;animation:dcbpv-pop .22s ease-out}
-      #${OVERLAY_ID} .dcbpv-header{display:flex;align-items:flex-start;gap:16px;padding:18px 20px;border-bottom:1px solid rgba(255,255,255,.06);background:linear-gradient(120deg, rgba(79,124,255,.08), transparent)}
+      #${OVERLAY_ID}{position:fixed;inset:0;z-index:2147483600;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(0,0,0,.8);backdrop-filter:blur(12px);animation:dcbpv-fade .18s ease-out;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
+      #${OVERLAY_ID} .dcbpv-panel{width:min(1400px,95vw);height:min(90vh,900px);background:#fff;box-shadow:0 25px 80px rgba(0,0,0,.3);border-radius:20px;display:flex;flex-direction:column;overflow:hidden;animation:dcbpv-pop .22s ease-out}
+      #${OVERLAY_ID} .dcbpv-header{display:flex;align-items:flex-start;gap:20px;padding:24px 28px;border-bottom:1px solid #f0f0f0;background:linear-gradient(135deg, #fafbfc 0%, #f5f7fa 100%)}
       #${OVERLAY_ID} .dcbpv-meta{flex:1;min-width:0}
-      #${OVERLAY_ID} .dcbpv-title{font-size:22px;font-weight:700;color:#e6edf3;line-height:1.35;margin-bottom:6px}
-      #${OVERLAY_ID} .dcbpv-sub{display:flex;flex-wrap:wrap;gap:10px;font-size:13px;color:#9fb1c7;opacity:.9}
-      #${OVERLAY_ID} .dcbpv-chip{padding:4px 8px;border-radius:999px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.04);display:inline-flex;align-items:center;gap:6px}
-      #${OVERLAY_ID} .dcbpv-close{border:none;background:transparent;color:#9fb1c7;font-size:18px;cursor:pointer;padding:6px 10px;border-radius:10px;transition:.15s}
-      #${OVERLAY_ID} .dcbpv-close:hover{background:rgba(255,255,255,.08);color:#fff}
-      #${OVERLAY_ID} .dcbpv-body{flex:1;display:flex;flex-direction:column;background:rgba(255,255,255,.04);overflow:hidden}
-      #${OVERLAY_ID} .dcbpv-col{background:#0b0f15;overflow-y:auto;padding:18px;flex:1}
-      #${OVERLAY_ID} .dcbpv-article{display:flex;flex-direction:column;gap:14px}
-      #${OVERLAY_ID} .dcbpv-content{font-size:15px;line-height:1.66;color:#d7e1ee}
-      #${OVERLAY_ID} .dcbpv-content img, #${OVERLAY_ID} .dcbpv-content video{max-width:100%;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.35);margin:10px 0}
-      #${OVERLAY_ID} .dcbpv-content pre{white-space:pre-wrap;background:#121926;padding:12px;border-radius:10px;border:1px solid rgba(255,255,255,.05)}
-      #${OVERLAY_ID} .dcbpv-actions{display:flex;flex-wrap:wrap;gap:10px;padding:12px;border:1px solid rgba(255,255,255,.06);border-radius:12px;background:rgba(255,255,255,.03)}
-      #${OVERLAY_ID} .dcbpv-btn{display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border-radius:12px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.04);color:#e6edf3;font-weight:600;font-size:14px;cursor:pointer;transition:.16s}
-      #${OVERLAY_ID} .dcbpv-btn:hover{transform:translateY(-1px);background:rgba(79,124,255,.12);border-color:rgba(79,124,255,.4)}
-      #${OVERLAY_ID} .dcbpv-btn.warn{background:rgba(231,76,60,.12);border-color:rgba(231,76,60,.4)}
-      #${OVERLAY_ID} .dcbpv-btn.secondary{background:rgba(255,255,255,.02)}
-      #${OVERLAY_ID} .dcbpv-comments{display:flex;flex-direction:column;gap:12px;height:100%}
-      #${OVERLAY_ID} .dcbpv-comments h4{margin:0;font-size:15px;color:#e6edf3;font-weight:700}
-      #${OVERLAY_ID} .dcbpv-commentlist{flex:1;overflow:auto;display:flex;flex-direction:column;gap:10px;padding-right:4px}
-      #${OVERLAY_ID} .dcbpv-comment{padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.05);background:rgba(255,255,255,.02);color:#d7e1ee;font-size:14px;line-height:1.5}
-      #${OVERLAY_ID} .dcbpv-reply{padding-left:28px;background:rgba(255,255,255,.04);border-left:3px solid rgba(79,124,255,.3)}
-      #${OVERLAY_ID} .dcbpv-comment .meta{display:flex;gap:8px;flex-wrap:wrap;font-size:12px;color:#9fb1c7;margin-bottom:4px}
-      #${OVERLAY_ID} .dcbpv-empty{padding:14px;border:1px dashed rgba(255,255,255,.08);border-radius:12px;color:#9fb1c7;text-align:center}
-      #${OVERLAY_ID} .dcbpv-share-popup{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#1a1f28;border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,.6);z-index:2147483650;min-width:320px}
-      #${OVERLAY_ID} .dcbpv-share-popup h3{margin:0 0 16px 0;font-size:18px;color:#e6edf3;font-weight:700}
-      #${OVERLAY_ID} .dcbpv-share-popup .share-btns{display:flex;gap:10px;margin-bottom:14px}
-      #${OVERLAY_ID} .dcbpv-share-popup .share-btn{flex:1;padding:12px;border:1px solid rgba(255,255,255,.08);border-radius:10px;background:rgba(255,255,255,.04);color:#e6edf3;text-align:center;cursor:pointer;transition:.15s;font-size:14px}
-      #${OVERLAY_ID} .dcbpv-share-popup .share-btn:hover{background:rgba(79,124,255,.12);border-color:rgba(79,124,255,.4)}
+      #${OVERLAY_ID} .dcbpv-title{font-size:26px;font-weight:700;color:#1a1a1a;line-height:1.3;margin-bottom:12px}
+      #${OVERLAY_ID} .dcbpv-sub{display:flex;flex-wrap:wrap;gap:8px;font-size:13px;color:#666;opacity:.85}
+      #${OVERLAY_ID} .dcbpv-chip{padding:6px 12px;border-radius:20px;background:#f0f2f5;border:none;display:inline-flex;align-items:center;gap:6px;color:#333;font-size:13px}
+      #${OVERLAY_ID} .dcbpv-close{border:none;background:transparent;color:#999;font-size:24px;cursor:pointer;padding:0;transition:.2s;display:flex;align-items:center;justify-content:center;width:44px;height:44px;border-radius:10px}
+      #${OVERLAY_ID} .dcbpv-close:hover{background:#f0f0f0;color:#333}
+      #${OVERLAY_ID} .dcbpv-body{flex:1;display:flex;overflow:hidden;background:#fff}
+      #${OVERLAY_ID} .dcbpv-col{background:#fff;overflow-y:auto;padding:24px;flex:1;display:flex;flex-direction:column}
+      #${OVERLAY_ID} .dcbpv-col:last-child{border-left:1px solid #f0f0f0;background:#fafbfc}
+      #${OVERLAY_ID} .dcbpv-article{display:flex;flex-direction:column;gap:20px;flex:1}
+      #${OVERLAY_ID} .dcbpv-content{font-size:16px;line-height:1.7;color:#333}
+      #${OVERLAY_ID} .dcbpv-content img, #${OVERLAY_ID} .dcbpv-content video{max-width:100%;border-radius:16px;box-shadow:0 8px 24px rgba(0,0,0,.12);margin:16px 0}
+      #${OVERLAY_ID} .dcbpv-content pre{white-space:pre-wrap;background:#f5f5f5;padding:16px;border-radius:12px;border:none;font-size:14px;color:#444;overflow-x:auto}
+      #${OVERLAY_ID} .dcbpv-actions{display:flex;flex-direction:column;gap:12px;padding:16px 0;border-top:1px solid #f0f0f0;margin-top:20px}
+      #${OVERLAY_ID} .dcbpv-action-group{display:flex;gap:8px;flex-wrap:wrap}
+      #${OVERLAY_ID} .dcbpv-btn{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:12px 16px;border-radius:14px;border:1px solid #e0e0e0;background:#fff;color:#333;font-weight:600;font-size:12px;cursor:pointer;transition:.2s;flex:1;min-width:80px}
+      #${OVERLAY_ID} .dcbpv-btn-icon{font-size:24px;line-height:1}
+      #${OVERLAY_ID} .dcbpv-btn-text{font-size:12px;color:#666;font-weight:500}
+      #${OVERLAY_ID} .dcbpv-btn:hover{background:#f5f5f5;border-color:#d0d0d0;transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.08)}
+      #${OVERLAY_ID} .dcbpv-btn:active{transform:translateY(0)}
+      #${OVERLAY_ID} .dcbpv-btn.warn{background:rgba(255,71,71,.08);border-color:rgba(255,71,71,.2);color:#c41e3a}
+      #${OVERLAY_ID} .dcbpv-btn.warn:hover{background:rgba(255,71,71,.12);border-color:rgba(255,71,71,.3)}
+      #${OVERLAY_ID} .dcbpv-btn.warn .dcbpv-btn-text{color:#c41e3a}
+      #${OVERLAY_ID} .dcbpv-btn.secondary{background:#f0f2f5;border-color:#e0e0e0;color:#555}
+      #${OVERLAY_ID} .dcbpv-btn.secondary:hover{background:#e8eaed}
+      #${OVERLAY_ID} .dcbpv-comments{display:flex;flex-direction:column;gap:16px;height:100%}
+      #${OVERLAY_ID} .dcbpv-comments h4{margin:0;font-size:16px;color:#1a1a1a;font-weight:700}
+      #${OVERLAY_ID} .dcbpv-commentlist{flex:1;overflow:auto;display:flex;flex-direction:column;gap:12px;padding-right:8px}
+      #${OVERLAY_ID} .dcbpv-commentlist::-webkit-scrollbar{width:6px}
+      #${OVERLAY_ID} .dcbpv-commentlist::-webkit-scrollbar-track{background:transparent}
+      #${OVERLAY_ID} .dcbpv-commentlist::-webkit-scrollbar-thumb{background:#ddd;border-radius:3px}
+      #${OVERLAY_ID} .dcbpv-commentlist::-webkit-scrollbar-thumb:hover{background:#bbb}
+      #${OVERLAY_ID} .dcbpv-comment{padding:12px 14px;border-radius:12px;border:none;background:#f5f5f5;color:#333;font-size:14px;line-height:1.6}
+      #${OVERLAY_ID} .dcbpv-reply{padding-left:28px;background:#f0f0f0;border-left:3px solid #999}
+      #${OVERLAY_ID} .dcbpv-comment .meta{display:flex;gap:10px;flex-wrap:wrap;font-size:12px;color:#999;margin-bottom:6px}
+      #${OVERLAY_ID} .dcbpv-empty{padding:16px;border:1px dashed #ddd;border-radius:12px;color:#999;text-align:center;background:#fafbfc}
+      #${OVERLAY_ID} .dcbpv-share-popup{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;border:1px solid #e0e0e0;border-radius:16px;padding:28px;box-shadow:0 20px 60px rgba(0,0,0,.15);z-index:2147483650;min-width:360px;max-width:90vw}
+      #${OVERLAY_ID} .dcbpv-share-popup h3{margin:0 0 20px 0;font-size:20px;color:#1a1a1a;font-weight:700}
+      #${OVERLAY_ID} .dcbpv-share-popup .share-btns{display:flex;gap:10px;margin-bottom:20px}
+      #${OVERLAY_ID} .dcbpv-share-popup .share-btn{flex:1;padding:14px;border:1px solid #e0e0e0;border-radius:12px;background:#f5f5f5;color:#333;text-align:center;cursor:pointer;transition:.2s;font-size:14px;font-weight:600}
+      #${OVERLAY_ID} .dcbpv-share-popup .share-btn:hover{background:#e8eaed;border-color:#d0d0d0}
       #${OVERLAY_ID} .dcbpv-share-popup .url-copy{display:flex;gap:8px;align-items:center}
-      #${OVERLAY_ID} .dcbpv-share-popup .url-copy input{flex:1;padding:10px;border:1px solid rgba(255,255,255,.08);border-radius:8px;background:#0b0f15;color:#e6edf3;font-size:13px}
-      #${OVERLAY_ID} .dcbpv-share-popup .url-copy button{padding:10px 16px;border:1px solid rgba(79,124,255,.4);border-radius:8px;background:rgba(79,124,255,.12);color:#e6edf3;cursor:pointer;font-weight:600;font-size:14px}
-      #${OVERLAY_ID} .dcbpv-share-popup .url-copy button:hover{background:rgba(79,124,255,.2)}
-      #${OVERLAY_ID} .dcbpv-share-close{position:absolute;top:12px;right:12px;border:none;background:transparent;color:#9fb1c7;font-size:20px;cursor:pointer;padding:4px 8px}
+      #${OVERLAY_ID} .dcbpv-share-popup .url-copy input{flex:1;padding:12px 14px;border:1px solid #e0e0e0;border-radius:10px;background:#f9f9f9;color:#333;font-size:13px;outline:none}
+      #${OVERLAY_ID} .dcbpv-share-popup .url-copy input:focus{border-color:#4f7cff;background:#fff}
+      #${OVERLAY_ID} .dcbpv-share-popup .url-copy button{padding:12px 20px;border:1px solid #4f7cff;border-radius:10px;background:#4f7cff;color:#fff;cursor:pointer;font-weight:600;font-size:14px;transition:.2s}
+      #${OVERLAY_ID} .dcbpv-share-popup .url-copy button:hover{background:#3d63ff;border-color:#3d63ff}
+      #${OVERLAY_ID} .dcbpv-share-close{position:absolute;top:16px;right:16px;border:none;background:transparent;color:#999;font-size:24px;cursor:pointer;padding:8px;transition:.2s;display:flex;align-items:center;justify-content:center}
+      #${OVERLAY_ID} .dcbpv-share-close:hover{color:#333;background:#f0f0f0;border-radius:8px}
       @keyframes dcbpv-fade{from{opacity:0} to{opacity:1}}
-      @keyframes dcbpv-pop{from{transform:translateY(12px) scale(.98);opacity:0} to{transform:translateY(0) scale(1);opacity:1}}
+      @keyframes dcbpv-pop{from{transform:translateY(20px) scale(.96);opacity:0} to{transform:translateY(0) scale(1);opacity:1}}
     `;
     document.head.appendChild(style);
   };
@@ -448,10 +511,24 @@ syncSettings(handleUrl);
     function renderCounts(){
       if (!countsBox) return;
       countsBox.innerHTML = `
-        <button class="dcbpv-btn" data-act="up">👍 추천 ${rec.up}</button>
-        <button class="dcbpv-btn" data-act="down">👎 비추천 ${rec.down}</button>
-        <button class="dcbpv-btn secondary" data-act="share">🔗 공유</button>
-        <button class="dcbpv-btn warn" data-act="report">🚨 신고</button>
+        <div class="dcbpv-action-group">
+          <button class="dcbpv-btn" data-act="up">
+            <div class="dcbpv-btn-icon">👍</div>
+            <div class="dcbpv-btn-text">${rec.up}</div>
+          </button>
+          <button class="dcbpv-btn" data-act="down">
+            <div class="dcbpv-btn-icon">👎</div>
+            <div class="dcbpv-btn-text">${rec.down}</div>
+          </button>
+          <button class="dcbpv-btn secondary" data-act="share">
+            <div class="dcbpv-btn-icon">🔗</div>
+            <div class="dcbpv-btn-text">공유</div>
+          </button>
+          <button class="dcbpv-btn warn" data-act="report">
+            <div class="dcbpv-btn-icon">🚨</div>
+            <div class="dcbpv-btn-text">신고</div>
+          </button>
+        </div>
       `;
     }
 
@@ -465,9 +542,17 @@ syncSettings(handleUrl);
         return;
       }
       const btn = recomBtns[act];
-      if (!btn) return;
-      btn.click();
-      setTimeout(refreshCounts, 600);
+      if (!btn) {
+        console.warn("[DCB] 버튼을 찾을 수 없습니다:", act);
+        return;
+      }
+      try {
+        btn.click();
+        setTimeout(refreshCounts, 600);
+      } catch (error) {
+        console.error("[DCB] 버튼 클릭 오류:", error);
+        alert("❌ 추천/비추천 처리 중 오류가 발생했습니다.\n" + error.message);
+      }
     };
 
     function showSharePopup(){
@@ -476,16 +561,19 @@ syncSettings(handleUrl);
       popup.id = "dcbpv-share-popup";
       popup.className = "dcbpv-share-popup";
       popup.innerHTML = `
-        <button class="dcbpv-share-close">✕</button>
-        <h3>공유하기</h3>
+        <button class="dcbpv-share-close" aria-label="닫기">✕</button>
+        <h3>📤 게시글 공유하기</h3>
         <div class="share-btns">
-          <div class="share-btn" data-share="kakao">카카오톡</div>
-          <div class="share-btn" data-share="x">X</div>
-          <div class="share-btn" data-share="facebook">페이스북</div>
+          <div class="share-btn" data-share="kakao">💬 카카오톡</div>
+          <div class="share-btn" data-share="x">𝕏 트위터</div>
+          <div class="share-btn" data-share="facebook">f 페이스북</div>
         </div>
-        <div class="url-copy">
-          <input type="text" readonly value="${currentUrl}" id="dcbpv-url-input">
-          <button id="dcbpv-copy-btn">URL 복사</button>
+        <div style="margin-top:20px;padding-top:20px;border-top:1px solid #e0e0e0">
+          <div style="font-size:13px;color:#666;margin-bottom:10px;font-weight:600">🔗 링크 복사</div>
+          <div class="url-copy">
+            <input type="text" readonly value="${currentUrl}" id="dcbpv-url-input">
+            <button id="dcbpv-copy-btn">📋 복사</button>
+          </div>
         </div>
       `;
       overlay.appendChild(popup);
@@ -522,10 +610,9 @@ syncSettings(handleUrl);
             <div class="dcbpv-title">${title || "제목 없음"}</div>
             <div class="dcbpv-sub">
               ${head ? `<span class="dcbpv-chip">${head}</span>` : ""}
-              ${nick ? `<span class="dcbpv-chip">작성자 ${nick}${uid ? ` (${uid})` : ""}</span>` : ""}
-              ${ip ? `<span class="dcbpv-chip">IP ${ip}</span>` : ""}
-              ${date ? `<span class="dcbpv-chip">${date}</span>` : ""}
-              ${views ? `<span class="dcbpv-chip">${views}</span>` : ""}
+              ${nick ? `<span class="dcbpv-chip">✍️ ${nick}${uid ? ` (${uid})` : ""}</span>` : ""}
+              ${date ? `<span class="dcbpv-chip">📅 ${date}</span>` : ""}
+              ${views ? `<span class="dcbpv-chip">👁️ ${views}</span>` : ""}
             </div>
           </div>
           <button class="dcbpv-close" aria-label="닫기">✕</button>
@@ -533,16 +620,13 @@ syncSettings(handleUrl);
         <div class="dcbpv-body">
           <div class="dcbpv-col">
             <div class="dcbpv-article">
-              <div class="dcbpv-actions" id="dcbpv-actions"></div>
               <div class="dcbpv-content" id="dcbpv-article"></div>
+              <div class="dcbpv-actions" id="dcbpv-actions"></div>
             </div>
           </div>
           <div class="dcbpv-col">
             <div class="dcbpv-comments">
-              <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-                <h4>댓글 미리보기</h4>
-                <span style="font-size:12px;color:#9fb1c7">원본 댓글 UI를 그대로 불러옵니다</span>
-              </div>
+              <h4>💬 댓글 미리보기</h4>
               <div class="dcbpv-commentlist" id="dcbpv-commentlist"></div>
             </div>
           </div>
@@ -584,6 +668,10 @@ syncSettings(handleUrl);
 
   document.addEventListener("contextmenu", (e) => {
     if (!shouldOpen(e.target)) return;
+    
+    // 미리보기 기능이 활성화되지 않았으면 기본 컨텍스트 메뉴 사용
+    if (!previewEnabled) return;
+    
     e.preventDefault();
     
     // 목록에서 우클릭 시: 해당 게시글 정보를 불러와 현재 창에서 오버레이
@@ -734,10 +822,9 @@ syncSettings(handleUrl);
             <div class="dcbpv-title">${title || "제목 없음"}</div>
             <div class="dcbpv-sub">
               ${head ? `<span class="dcbpv-chip">${head}</span>` : ""}
-              ${nick ? `<span class="dcbpv-chip">작성자 ${nick}${uid ? ` (${uid})` : ""}</span>` : ""}
-              ${ip ? `<span class="dcbpv-chip">IP ${ip}</span>` : ""}
-              ${date ? `<span class="dcbpv-chip">${date}</span>` : ""}
-              ${views ? `<span class="dcbpv-chip">${views}</span>` : ""}
+              ${nick ? `<span class="dcbpv-chip">✍️ ${nick}${uid ? ` (${uid})` : ""}</span>` : ""}
+              ${date ? `<span class="dcbpv-chip">📅 ${date}</span>` : ""}
+              ${views ? `<span class="dcbpv-chip">👁️ ${views}</span>` : ""}
             </div>
           </div>
           <button class="dcbpv-close" aria-label="닫기">✕</button>
@@ -745,14 +832,31 @@ syncSettings(handleUrl);
         <div class="dcbpv-body">
           <div class="dcbpv-col">
             <div class="dcbpv-article">
-              <div class="dcbpv-actions" id="dcbpv-actions">
-                <button class="dcbpv-btn" data-act="open">🔗 원본 보기</button>
-                <button class="dcbpv-btn" data-act="up-preview">👍 추천 ${rec.up}</button>
-                <button class="dcbpv-btn" data-act="down-preview">👎 비추천 ${rec.down}</button>
-                <button class="dcbpv-btn secondary" data-act="share-preview">🔗 공유</button>
-                ${reportUrl ? `<button class="dcbpv-btn warn" data-act="report-preview">🚨 신고</button>` : ""}
-              </div>
               <div class="dcbpv-content" id="dcbpv-article"></div>
+              <div class="dcbpv-actions" id="dcbpv-actions">
+                <div class="dcbpv-action-group">
+                  <button class="dcbpv-btn" data-act="open">
+                    <div class="dcbpv-btn-icon">🔗</div>
+                    <div class="dcbpv-btn-text">원본</div>
+                  </button>
+                  <button class="dcbpv-btn" data-act="up-preview">
+                    <div class="dcbpv-btn-icon">👍</div>
+                    <div class="dcbpv-btn-text">${rec.up}</div>
+                  </button>
+                  <button class="dcbpv-btn" data-act="down-preview">
+                    <div class="dcbpv-btn-icon">👎</div>
+                    <div class="dcbpv-btn-text">${rec.down}</div>
+                  </button>
+                  <button class="dcbpv-btn secondary" data-act="share-preview">
+                    <div class="dcbpv-btn-icon">📤</div>
+                    <div class="dcbpv-btn-text">공유</div>
+                  </button>
+                  ${reportUrl ? `<button class="dcbpv-btn warn" data-act="report-preview">
+                    <div class="dcbpv-btn-icon">🚨</div>
+                    <div class="dcbpv-btn-text">신고</div>
+                  </button>` : ""}
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -803,73 +907,75 @@ syncSettings(handleUrl);
   
   async function handleRecommendPreview(url, type, btn) {
     try {
-      // 원본 페이지에서 해당 게시글을 새 탭에서 열고, 자동으로 추천/비추천 클릭
+      // URL에서 갤러리 ID와 게시글 번호 추출
       const urlObj = new URL(url);
       const gallId = urlObj.searchParams.get("id") || "";
       const articleNo = url.match(/no=(\d+)/)?.[1] || "";
       
       if (!gallId || !articleNo) {
-        alert("게시글 정보를 찾을 수 없습니다.");
+        console.error("[DCB] 갤러리 ID 또는 게시글 번호를 찾을 수 없습니다.");
+        alert("❌ 게시글 정보를 찾을 수 없습니다.");
         return;
       }
       
-      // 원본 페이지 내용 가져오기
-      const response = await fetch(url);
-      const html = await response.text();
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(html, "text/html");
+      console.log("[DCB] 추천/비추천 요청:", { gallId, articleNo, type });
       
-      // 실제 추천/비추천 버튼 찾기
       const isUp = type === "up";
-      const recomBtn = doc.querySelector(isUp ? ".btn_recom_up" : ".btn_recom_down");
+      const mode = isUp ? "U" : "D";
       
-      if (!recomBtn) {
-        alert("추천/비추천 버튼을 찾을 수 없습니다.");
-        return;
-      }
-      
-      // 버튼의 data-no 확인
-      const btnNo = recomBtn.getAttribute("data-no");
-      if (!btnNo) {
-        alert("게시글 번호 정보가 없습니다.");
-        return;
-      }
-      
-      // 추천/비추천 API 호출
-      const voteResponse = await fetch("https://gall.dcinside.com/board/recommend/vote", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"
-        },
-        credentials: "include",
-        body: new URLSearchParams({
-          id: gallId,
-          no: btnNo,
-          mode: isUp ? "U" : "D",
-          link_id: ""
-        })
+      // Background service worker에 API 호출 위임
+      const result = await chrome.runtime.sendMessage({
+        type: "DCB_RECOMMEND_VOTE",
+        gallId,
+        articleNo,
+        mode
       });
       
-      const result = await voteResponse.text();
+      console.log("[DCB] API 응답:", result);
       
-      // 결과 처리
-      if (result.includes('"success"') || result.includes('"True"')) {
-        // 현재 수를 가져와서 업데이트
-        const countSelector = isUp ? ".up_num" : ".down_num";
-        const countEl = doc.querySelector(countSelector);
-        if (countEl) {
-          const currentCount = parseInt(countEl.textContent) || 0;
-          btn.textContent = btn.textContent.replace(/\d+/, currentCount + 1);
+      if (result.success) {
+        // 원본 페이지에서 최신 수치 가져오기
+        try {
+          const pageResponse = await fetch(url);
+          const pageHtml = await pageResponse.text();
+          const parser = new DOMParser();
+          const doc = parser.parseFromString(pageHtml, "text/html");
+          
+          const countSelector = isUp ? ".up_num" : ".down_num";
+          const countEl = doc.querySelector(countSelector);
+          let newCount = "0";
+          
+          if (countEl) {
+            newCount = countEl.textContent.trim();
+          }
+          
+          // 버튼 UI 업데이트
+          const btnText = isUp ? "👍" : "👎";
+          btn.innerHTML = `<div class="dcbpv-btn-icon">${btnText}</div><div class="dcbpv-btn-text">${newCount}</div>`;
+        } catch (e) {
+          console.log("[DCB] 최신 수치 가져오기 실패");
+          const btnText = isUp ? "👍" : "👎";
+          btn.innerHTML = `<div class="dcbpv-btn-icon">${btnText}</div><div class="dcbpv-btn-text">+1</div>`;
         }
-        alert(isUp ? "추천이 완료되었습니다." : "비추천이 완료되었습니다.");
-      } else if (result.includes('중복') || result.includes('이미')) {
-        alert("이미 투표하셨습니다.");
+        
+        alert(isUp ? "✅ 추천이 완료되었습니다!" : "✅ 비추천이 완료되었습니다!");
+        
       } else {
-        alert("추천/비추천 처리 중 오류가 발생했습니다.");
+        const errorMsg = result.error || "알 수 없는 오류";
+        console.error("[DCB] 추천/비추천 실패:", result);
+        
+        if (result.code === "ALREADY_VOTED") {
+          alert("⚠️ 이미 투표하셨습니다.");
+        } else if (result.code === "INVALID_ACCESS") {
+          alert("❌ 잘못된 접근입니다.\n원본 페이지에서 직접 추천해주세요.");
+        } else {
+          alert("❌ 추천/비추천 처리에 실패했습니다.\n" + errorMsg);
+        }
       }
+      
     } catch (error) {
-      console.error("Recommend error:", error);
-      alert("요청 처리 중 오류가 발생했습니다: " + error.message);
+      console.error("[DCB] 추천/비추천 요청 오류:", error);
+      alert("❌ 요청 중 오류가 발생했습니다:\n" + error.message);
     }
   }
   
@@ -879,16 +985,19 @@ syncSettings(handleUrl);
     popup.id = "dcbpv-share-popup";
     popup.className = "dcbpv-share-popup";
     popup.innerHTML = `
-      <button class="dcbpv-share-close">✕</button>
-      <h3>공유하기</h3>
+      <button class="dcbpv-share-close" aria-label="닫기">✕</button>
+      <h3>📤 게시글 공유하기</h3>
       <div class="share-btns">
-        <div class="share-btn" data-share="kakao">카카오톡</div>
-        <div class="share-btn" data-share="x">X</div>
-        <div class="share-btn" data-share="facebook">페이스북</div>
+        <div class="share-btn" data-share="kakao">💬 카카오톡</div>
+        <div class="share-btn" data-share="x">𝕏 트위터</div>
+        <div class="share-btn" data-share="facebook">f 페이스북</div>
       </div>
-      <div class="url-copy">
-        <input type="text" readonly value="${url}" id="dcbpv-url-input-preview">
-        <button id="dcbpv-copy-btn-preview">URL 복사</button>
+      <div style="margin-top:20px;padding-top:20px;border-top:1px solid #e0e0e0">
+        <div style="font-size:13px;color:#666;margin-bottom:10px;font-weight:600">🔗 링크 복사</div>
+        <div class="url-copy">
+          <input type="text" readonly value="${url}" id="dcbpv-url-input-preview">
+          <button id="dcbpv-copy-btn-preview">📋 복사</button>
+        </div>
       </div>
     `;
     const overlay = document.getElementById(OVERLAY_ID);
@@ -918,4 +1027,229 @@ syncSettings(handleUrl);
       };
     });
   }
+})();
+
+/* ───────────────────────────────────────────────────────── */
+/* ISP 차단 기능 */
+/* ───────────────────────────────────────────────────────── */
+(() => {
+  let ispBlockObserver = null;
+  let lastPageUrl = location.href; // 마지막 페이지 URL 추적
+
+  // ISP 차단 상태 리셋 (페이지/게시물 이동 시)
+  function resetISPBlockState() {
+    if (!ispBlockEnabled) return;
+
+    console.log("[DCB ISP Block] 페이지/게시물 이동 - ISP 차단 리셋 및 재적용");
+
+    // 기존 표시 복원 및 속성 제거
+    document.querySelectorAll("[data-dcb-isp-replaced]").forEach(el => el.remove());
+    document.querySelectorAll("[data-dcb-isp-hidden]").forEach(el => {
+      el.style.display = "";
+      el.removeAttribute("data-dcb-isp-hidden");
+    });
+    document.querySelectorAll("[data-dcb-isp-hidden-cmt]").forEach(el => {
+      el.style.display = "";
+      el.removeAttribute("data-dcb-isp-hidden-cmt");
+    });
+
+    // 새 DOM에 대해 즉시/지연 적용(동적 로드 대비)
+    const reapply = () => hideIPBlockedPosts();
+    [0, 300, 1200].forEach(delay => setTimeout(reapply, delay));
+  }
+
+  function hideIPBlockedPosts() {
+    if (!ispBlockEnabled) {
+      // ISP 차단 비활성화 시 모든 대체된 댓글 복원
+      document.querySelectorAll("[data-dcb-isp-replaced]").forEach(el => {
+        el.remove();
+      });
+      // 숨겼던 게시글 복원
+      document.querySelectorAll("[data-dcb-isp-hidden]").forEach(el => {
+        el.style.display = "";
+        el.removeAttribute("data-dcb-isp-hidden");
+      });
+      // 숨겼던 댓글/대댓글 복원
+      document.querySelectorAll("[data-dcb-isp-hidden-cmt]").forEach(el => {
+        el.style.display = "";
+        el.removeAttribute("data-dcb-isp-hidden-cmt");
+      });
+      return 0;
+    }
+
+    let blockedCount = 0;
+
+    // ===== 게시글 목록 즉시 차단 =====
+    // 갤러리 리스트의 작성자 셀(.gall_writer)에서 통피 감지 시 행(tr 또는 .ub-content)을 숨김
+    document.querySelectorAll(".gall_writer[data-loc='list']").forEach(writerEl => {
+      const ip = writerEl.getAttribute("data-ip");
+      const uid = writerEl.getAttribute("data-uid");
+      if (!ip || (uid && uid !== "")) return; // 회원이면 패스
+
+      const isp = detectISP(ip);
+      if (!isp) return;
+
+      const row = writerEl.closest("tr") || writerEl.closest(".ub-content");
+      if (!row) return;
+      
+      // 이미 숨긴 것 제외
+      if (row.hasAttribute("data-dcb-isp-hidden")) return;
+
+      row.style.display = "none";
+      row.setAttribute("data-dcb-isp-hidden", isp);
+      blockedCount++;
+      console.log(`[DCB ISP Block] ${isp} 비회원 게시글 차단: ${ip}`);
+    });
+
+    // ===== 댓글/대댓글 즉시 차단 (display none) =====
+    // 더 광범위한 선택자로 댓글 요소 감지
+    document.querySelectorAll(".cmt_info, .reply_info, .cmt_list li, .reply_list li").forEach(cmtEl => {
+      // 이미 숨긴 것 제외
+      if (cmtEl.hasAttribute("data-dcb-isp-hidden-cmt") || cmtEl.hasAttribute("data-dcb-isp-replaced")) return;
+
+      // .gall_writer 찾기 (여러 구조 대응)
+      let writerSpan = cmtEl.querySelector(".gall_writer");
+      
+      // .gall_writer가 없으면 부모에서도 찾기
+      if (!writerSpan && cmtEl.classList.contains("gall_writer")) {
+        writerSpan = cmtEl;
+      }
+      
+      // 그래도 없으면 다른 위치에서 찾기 (.ub-nick 등)
+      if (!writerSpan) {
+        writerSpan = cmtEl.querySelector("[data-ip]");
+      }
+      
+      if (!writerSpan) return;
+
+      // data-ip, data-uid 속성
+      const ip = writerSpan.getAttribute("data-ip");
+      const uid = writerSpan.getAttribute("data-uid");
+
+      // 비회원(uid 빈)이고 ISP 감지되면 댓글/대댓글 숨김
+      if (ip && (!uid || uid === "")) {
+        const isp = detectISP(ip);
+        if (isp) {
+          const target = cmtEl.closest("li") || cmtEl;
+          target.style.display = "none";
+          target.setAttribute("data-dcb-isp-hidden-cmt", isp);
+          blockedCount++;
+          console.log(`[DCB ISP Block] ${isp} 비회원 댓글 숨김: ${ip}`);
+        }
+      }
+    });
+    
+    return blockedCount;
+  }
+
+  function startISPBlockObserver() {
+    if (ispBlockObserver) ispBlockObserver.disconnect();
+    ispBlockObserver = new MutationObserver(() => {
+      // 비활성 상태면 불필요한 작업 생략
+      if (!ispBlockEnabled) return;
+      // 즉시 처리해 체감 속도 개선 (댓글 영역 감지용 고감도)
+      hideIPBlockedPosts();
+    });
+
+    if (document.body) {
+      ispBlockObserver.observe(document.body, {
+        childList: true,
+        subtree: true,
+        attributes: true,  // 속성 변화도 감지 (data-ip 설정 시점 캡처)
+        attributeFilter: ["data-ip", "data-uid", "class"] // 특정 속성만 감지해 성능 최적화
+      });
+    }
+  }
+
+  // 즉시 실행 (DOMContentLoaded 대기 안 함 - 더 빠른 반응)
+  console.log("[DCB ISP Block] 초기화 - ispBlockEnabled:", ispBlockEnabled);
+  hideIPBlockedPosts();
+  startISPBlockObserver();
+
+  // 설정 변경 감지
+  chrome.storage.onChanged.addListener((chg, areaName) => {
+    if (areaName !== "sync") return;
+    if (chg.ispBlockEnabled) {
+      console.log("[DCB] ISP 차단 토글 변경:", chg.ispBlockEnabled.newValue);
+      const enabled = !!chg.ispBlockEnabled.newValue;
+      ispBlockEnabled = enabled;
+
+      // OFF로 전환될 때 자동 리프레시 관련 세션 키 초기화
+      if (!enabled) {
+        sessionStorage.removeItem("dcb-isp-block-refreshed");
+        sessionStorage.removeItem("dcb-isp-refreshing");
+      }
+
+      hideIPBlockedPosts();
+    }
+  });
+
+  // 페이지 언로드 시: ISP 차단 일시 비활성화 (복원)
+  window.addEventListener('beforeunload', () => {
+    resetISPBlockState();
+  });
+
+  // URL 변경 감지 (뒤로가기, 앞으로가기)
+  window.addEventListener('popstate', () => {
+    resetISPBlockState();
+    lastPageUrl = location.href;
+  });
+
+  // 해시 기반 라우팅 변경 감지
+  window.addEventListener('hashchange', () => {
+    resetISPBlockState();
+    lastPageUrl = location.href;
+  });
+
+  // URL 변경 감시 (동적 페이지 로드 감지용 - MutationObserver에서도 체크)
+  const urlChangeObserver = setInterval(() => {
+    if (location.href !== lastPageUrl) {
+      console.log("[DCB ISP Block] URL 변경 감지:", lastPageUrl, "->", location.href);
+      resetISPBlockState();
+      lastPageUrl = location.href;
+    }
+  }, 500); // 500ms마다 URL 체크
+
+  // 페이지 언로드 시 인터벌 정리
+  window.addEventListener('beforeunload', () => {
+    clearInterval(urlChangeObserver);
+  });
+
+  // syncSettings와 함께 초기화 (storage 로드 후 실행)
+  syncSettings(() => {
+    console.log("[DCB ISP Block] syncSettings 완료 - ispBlockEnabled:", ispBlockEnabled);
+    const blockedCount = hideIPBlockedPosts();
+    startISPBlockObserver();
+    
+    // ISP 차단이 켜져있을 때 리프레시 로직 (최대 3번)
+    if (ispBlockEnabled) {
+      const refreshKey = "dcb-isp-block-refreshed";
+      const MAX_REFRESH = 3;
+
+      const rawCount = sessionStorage.getItem(refreshKey);
+      const parsed = parseInt(rawCount || "0", 10);
+      const refreshCount = Number.isFinite(parsed) ? parsed : 0;
+      if (!Number.isFinite(parsed)) {
+        // 이전 버전에서 이상값이 남은 경우 초기화
+        sessionStorage.setItem(refreshKey, "0");
+      }
+
+      if (refreshCount === 0) {
+        // 첫 실행: 무조건 한 번 리프레시
+        sessionStorage.setItem(refreshKey, "1");
+        sessionStorage.setItem("dcb-isp-refreshing", "true"); // auto-refresh 일시중지 방지
+        console.log("[DCB ISP Block] 첫 실행 감지 - 페이지 리프레시 (1/3)");
+        location.reload();
+      } else if (refreshCount > 0 && refreshCount < MAX_REFRESH && blockedCount === 0) {
+        // 통피가 감지되지 않고 최대 횟수 미만이면 계속 리프레시
+        sessionStorage.setItem(refreshKey, String(refreshCount + 1));
+        sessionStorage.setItem("dcb-isp-refreshing", "true"); // auto-refresh 일시중지 방지
+        console.log(`[DCB ISP Block] 통피 미감지 - 리프레시 (${refreshCount + 1}/3)`);
+        location.reload();
+      } else {
+        sessionStorage.removeItem("dcb-isp-refreshing");
+        console.log(`[DCB ISP Block] 리프레시 완료 - 차단된 요소: ${blockedCount}개, 시도 횟수: ${refreshCount}`);
+      }
+    }
+  });
 })();
