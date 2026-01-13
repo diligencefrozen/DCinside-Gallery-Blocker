@@ -1,14 +1,18 @@
 /*****************************************************************
-auto-refresh.js - 자동 새로고침 기능
+auto-refresh.js - 자동 새로고침 기능 (현대화 버전)
  *****************************************************************/
 (() => {
   let autoRefreshEnabled = false;
-  let refreshInterval = 60; // 기본 60초
+  let baseInterval = 60; // 기본 60초
+  let currentInterval = 60; // 현재 간격 (동적 조정)
   let timerId = null;
   let countdownInterval = null;
   let remainingSeconds = 0;
   let pausedByReading = false;
   let pausedByPreview = false;
+  let pageVisible = true;
+  let lastPostCount = 0;
+  let noNewPostCount = 0; // 연속으로 새 게시물 없음 카운트
   
   // 카운트다운 표시 요소
   let countdownElement = null;
@@ -33,10 +37,38 @@ auto-refresh.js - 자동 새로고침 기능
       font-size: 13px;
       z-index: 999999;
       display: none;
-      min-width: 180px;
+      min-width: 200px;
     `;
     
     document.body.appendChild(countdownElement);
+  };
+
+  /* ───── 게시물 수 감지 ───── */
+  const getPostCount = () => {
+    const list = document.querySelector('.gall_list tbody');
+    return list ? list.querySelectorAll('tr').length : 0;
+  };
+
+  /* ───── 스마트 간격 조정 ───── */
+  const adjustInterval = () => {
+    const currentCount = getPostCount();
+    
+    if (currentCount > lastPostCount) {
+      // 새 게시물 감지: 간격 단축 (기본값의 50%)
+      currentInterval = Math.max(20, Math.floor(baseInterval * 0.5));
+      noNewPostCount = 0;
+      console.log(`[DCB] 새 게시물 감지 - 간격 단축: ${currentInterval}초`);
+    } else {
+      // 새 게시물 없음: 점진적 간격 연장
+      noNewPostCount++;
+      if (noNewPostCount >= 3) {
+        currentInterval = Math.min(baseInterval * 1.5, 180); // 최대 180초
+        noNewPostCount = 0;
+        console.log(`[DCB] 새 게시물 없음 - 간격 연장: ${currentInterval}초`);
+      }
+    }
+    
+    lastPostCount = currentCount;
   };
 
   /* ───── 카운트다운 업데이트 ───── */
@@ -49,6 +81,11 @@ auto-refresh.js - 자동 새로고침 기능
       ? `${minutes}분 ${seconds}초`
       : `${seconds}초`;
     
+    // 다음 간격 표시 (간격이 변할 예정이면)
+    const nextText = currentInterval !== baseInterval 
+      ? ` (기본: ${Math.floor(baseInterval)}초)`
+      : '';
+    
     countdownElement.innerHTML = `
       <div style="display: flex; align-items: center; gap: 8px;">
         <div style="
@@ -58,7 +95,7 @@ auto-refresh.js - 자동 새로고침 기능
           border-radius: 50%;
           animation: pulse 2s infinite;
         "></div>
-        <span>자동 새로고침: <strong>${timeText}</strong></span>
+        <span>자동 새로고침: <strong>${timeText}</strong>${nextText}</span>
       </div>
     `;
     
@@ -78,13 +115,13 @@ auto-refresh.js - 자동 새로고침 기능
 
   /* ───── 카운트다운 시작 ───── */
   const startCountdown = () => {
-    if (pausedByReading) return; // 일시중지 시 표시하지 않음
+    if (pausedByReading || !pageVisible) return;
     if (countdownInterval) {
       clearInterval(countdownInterval);
     }
     
     createCountdownUI();
-    remainingSeconds = refreshInterval;
+    remainingSeconds = currentInterval;
     
     if (countdownElement) {
       countdownElement.style.display = 'block';
@@ -116,17 +153,25 @@ auto-refresh.js - 자동 새로고침 기능
 
   /* ───── 자동 새로고침 시작 ───── */
   const startAutoRefresh = () => {
-    if (timerId) return; // 이미 실행 중
+    if (timerId) return;
+    if (!pageVisible) return;
     
-    console.log(`[DCB] 자동 새로고침 시작: ${refreshInterval}초 간격`);
+    console.log(`[DCB] 자동 새로고침 시작: ${currentInterval}초 간격`);
+    lastPostCount = getPostCount();
     
-    // 카운트다운 시작
     startCountdown();
     
     timerId = setInterval(() => {
+      if (!pageVisible) {
+        console.log('[DCB] 페이지 백그라운드 상태 - 새로고침 건너뜀');
+        return;
+      }
+      
+      adjustInterval(); // 간격 조정
+      
       console.log('[DCB] 페이지 자동 새로고침 실행');
       window.location.reload();
-    }, refreshInterval * 1000);
+    }, currentInterval * 1000);
   };
 
   /* ───── 자동 새로고침 정지 ───── */
@@ -149,19 +194,22 @@ auto-refresh.js - 자동 새로고침 기능
   /* ───── 설정 적용 ───── */
   const apply = (enabled, interval) => {
     autoRefreshEnabled = enabled;
-    refreshInterval = interval;
+    baseInterval = interval;
+    currentInterval = interval; // 기본값으로 리셋
+    noNewPostCount = 0;
     
-    pausedByReading = shouldPauseForReading();
+    // ISP 차단 초기 리프레시 중에는 auto-refresh 일시중지 무시
+    const ispRefreshing = sessionStorage.getItem("dcb-isp-refreshing");
+    pausedByReading = ispRefreshing ? false : shouldPauseForReading();
 
-    if (enabled && !pausedByReading) {
-      // 기존 타이머가 있으면 정지하고 새로 시작
+    if (enabled && !pausedByReading && pageVisible) {
       stopAutoRefresh();
       startAutoRefresh();
     } else {
       stopAutoRefresh();
     }
 
-    if (enabled && pausedByReading) {
+    if (enabled && pausedByReading && !ispRefreshing) {
       console.log('[DCB] 본문/댓글 감지됨: 자동 새로고침 일시중지');
     }
   };
@@ -180,7 +228,7 @@ auto-refresh.js - 자동 새로고침 기능
     
     let needUpdate = false;
     let newEnabled = autoRefreshEnabled;
-    let newInterval = refreshInterval;
+    let newInterval = baseInterval;
     
     if (changes.autoRefreshEnabled) {
       newEnabled = changes.autoRefreshEnabled.newValue;
@@ -210,6 +258,20 @@ auto-refresh.js - 자동 새로고침 기능
     mo.observe(document.documentElement || document.body, { childList: true, subtree: true });
   } catch {}
 
+  /* ───── Page Visibility API: 탭이 백그라운드면 새로고침 중지 ───── */
+  document.addEventListener('visibilitychange', () => {
+    pageVisible = document.visibilityState === 'visible';
+    
+    if (pageVisible && autoRefreshEnabled && !pausedByReading) {
+      console.log('[DCB] 페이지 다시 활성화됨: 자동 새로고침 재개');
+      stopAutoRefresh();
+      startAutoRefresh();
+    } else if (!pageVisible && timerId) {
+      console.log('[DCB] 페이지 백그라운드 전환: 카운트다운 일시정지');
+      stopCountdown();
+    }
+  });
+
   /* ───── 페이지 언로드 시 정리 ───── */
   window.addEventListener('beforeunload', () => {
     stopAutoRefresh();
@@ -224,7 +286,7 @@ auto-refresh.js - 자동 새로고침 기능
       stopAutoRefresh();
     }
 
-    if (autoRefreshEnabled && !pausedByReading && !timerId) {
+    if (autoRefreshEnabled && !pausedByReading && !timerId && pageVisible) {
       startAutoRefresh();
     }
   };
