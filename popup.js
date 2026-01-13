@@ -7,6 +7,7 @@ const blockModeHint  = document.getElementById("blockModeHint");// 모드 설명
 const hideCmtToggle  = document.getElementById("hideComment");  // 일반 댓글 숨김
 const hideImgCmtToggle = document.getElementById("hideImgComment"); // 이미지 댓글 숨김
 const hideDcconToggle = document.getElementById("hideDccon");   // 디시콘 숨김
+const previewToggle   = document.getElementById("previewEnabled"); // 페이지 미리보기
 const autoRefreshToggle = document.getElementById("autoRefreshEnabled"); // 자동 새로고침
 const autoRefreshIntervalNum = document.getElementById("autoRefreshIntervalNum"); // 새로고침 간격 숫자
 const autoRefreshIntervalRange = document.getElementById("autoRefreshIntervalRange"); // 새로고침 간격 슬라이더
@@ -69,6 +70,7 @@ const DEFAULTS = {
   hideComment: false,
   hideImgComment: false,    // 이미지 댓글 기본적으로 꺼짐
   hideDccon: false,         // 디시콘 숨기기
+  previewEnabled: false,    // 페이지 미리보기 (기본값: 껴짐)
   autoRefreshEnabled: false, // 자동 새로고침 기본적으로 꺼짐
   autoRefreshInterval: 60,  // 기본 60초
   delay: 5,
@@ -126,6 +128,7 @@ chrome.storage.sync.get(DEFAULTS, (conf)=>{
 
   const {
     enabled, blockMode, hideComment, hideImgComment, hideDccon, delay,
+    previewEnabled,
     autoRefreshEnabled, autoRefreshInterval,
     userBlockEnabled, blockedUids,
     hideMainEnabled, hideGallEnabled, hideSearchEnabled,
@@ -139,6 +142,7 @@ chrome.storage.sync.get(DEFAULTS, (conf)=>{
   hideCmtToggle.checked = hideComment;
   hideImgCmtToggle.checked = hideImgComment;
   hideDcconToggle.checked = hideDccon;
+  if (previewToggle) previewToggle.checked = !!previewEnabled;
   autoRefreshToggle.checked = autoRefreshEnabled;
   autoRefreshIntervalNum.value = autoRefreshInterval;
   autoRefreshIntervalRange.value = autoRefreshInterval;
@@ -187,6 +191,12 @@ hideImgCmtToggle.onchange = e =>
 /* 디시콘 숨기기 ON/OFF */
 hideDcconToggle.onchange = e =>
   chrome.storage.sync.set({ hideDccon: e.target.checked });
+
+/* 페이지 미리보기 ON/OFF */
+if (previewToggle) {
+  previewToggle.onchange = e =>
+    chrome.storage.sync.set({ previewEnabled: !!e.target.checked });
+}
 
 /* 자동 새로고침 ON/OFF */
 autoRefreshToggle.onchange = e =>
@@ -266,6 +276,7 @@ chrome.storage.onChanged.addListener((c,a)=>{
   if(c.hideComment)  hideCmtToggle.checked = c.hideComment.newValue;
   if(c.hideImgComment) hideImgCmtToggle.checked = c.hideImgComment.newValue;
   if(c.hideDccon) hideDcconToggle.checked = c.hideDccon.newValue;
+  if(c.previewEnabled && previewToggle) previewToggle.checked = !!c.previewEnabled.newValue;
   if(c.autoRefreshEnabled) autoRefreshToggle.checked = c.autoRefreshEnabled.newValue;
   if(c.autoRefreshInterval){
     autoRefreshIntervalNum.value = c.autoRefreshInterval.newValue;
