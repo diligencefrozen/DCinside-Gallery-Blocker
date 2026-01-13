@@ -44,7 +44,8 @@ const BACKUP_KEYS = [
   "userBlockEnabled", "blockedUids", "hideComment", "hideImgComment", "hideDccon",
   "hideMainEnabled", "hideGallEnabled", "hideSearchEnabled",
   "enabled", "galleryBlockEnabled", "blockMode", "autoRefreshEnabled",
-  "autoRefreshInterval", "delay", "showUidBadge", "linkWarnEnabled", "hideDCGray"
+  "autoRefreshInterval", "delay", "showUidBadge", "linkWarnEnabled", "hideDCGray",
+  "previewEnabled", "ispBlockEnabled"
 ];
 
 const BACKUP_DEFAULTS = {
@@ -68,7 +69,9 @@ const BACKUP_DEFAULTS = {
   delay: 5,
   showUidBadge: true,
   linkWarnEnabled: true,
-  hideDCGray: undefined
+  hideDCGray: undefined,
+  previewEnabled: false,
+  ispBlockEnabled: false
 };
 
 /* ───── DOM 캐시 ───── */
@@ -98,6 +101,8 @@ const userBlockEl = document.getElementById("userBlockEnabled");
 const uidInput    = document.getElementById("uidInput");
 const addUidBtn   = document.getElementById("addUidBtn");
 const uidListEl   = document.getElementById("uidList");
+const previewEnabledEl = document.getElementById("previewEnabled");
+const ispBlockEl       = document.getElementById("ispBlockEnabled");
 /* 댓글 숨기기 */
 const hideCommentEl    = document.getElementById("hideComment");
 const hideImgCommentEl = document.getElementById("hideImgComment");
@@ -378,6 +383,22 @@ if (hideDcconEl) {
   });
 }
 
+if (previewEnabledEl) {
+  previewEnabledEl.addEventListener("change", e => {
+    const newValue = !!e.target.checked;
+    console.log("[DCB] 미리보기 설정 변경:", newValue);
+    chrome.storage.sync.set({ previewEnabled: newValue });
+  });
+}
+
+if (ispBlockEl) {
+  ispBlockEl.addEventListener("change", e => {
+    const newValue = !!e.target.checked;
+    console.log("[DCB] 통피 차단 설정 변경:", newValue);
+    chrome.storage.sync.set({ ispBlockEnabled: newValue });
+  });
+}
+
 /* ───── 초기 로드 ───── */
 chrome.storage.sync.get(
   {
@@ -392,10 +413,14 @@ chrome.storage.sync.get(
     hideComment: false,
     hideImgComment: false,   // 이미지 댓글 기본적으로 꺼짐
     hideDccon: false,        // 디시콘 숨기기
+    // 페이지 미리보기
+    previewEnabled: false,   // 기본값: 비활성화 (BACKUP_DEFAULTS와 일치)
+    // 통신사 IP 차단
+    ispBlockEnabled: false,  // 기본값: 비활성화 (BACKUP_DEFAULTS와 일치)
     // 구버전 호환 (hideDCGray → userBlockEnabled)
     hideDCGray: undefined
   },
-  ({ blockedIds, removeSelectors, removeSelectorsGall, removeSelectorsSearch, userBlockEnabled, blockedUids, hideComment, hideImgComment, hideDccon, hideDCGray }) => {
+  ({ blockedIds, removeSelectors, removeSelectorsGall, removeSelectorsSearch, userBlockEnabled, blockedUids, hideComment, hideImgComment, hideDccon, previewEnabled, ispBlockEnabled, hideDCGray }) => {
     // 마이그레이션
     if (typeof userBlockEnabled !== "boolean" && typeof hideDCGray === "boolean") {
       userBlockEnabled = hideDCGray;
@@ -418,6 +443,10 @@ chrome.storage.sync.get(
     if (hideCommentEl) hideCommentEl.checked = !!hideComment;
     if (hideImgCommentEl) hideImgCommentEl.checked = !!hideImgComment;
     if (hideDcconEl) hideDcconEl.checked = !!hideDccon;
+    if (previewEnabledEl) {
+      previewEnabledEl.checked = !!previewEnabled;
+      console.log("[DCB] 초기 미리보기 설정:", !!previewEnabled);
+    }
   }
 );
 
@@ -448,5 +477,8 @@ chrome.storage.onChanged.addListener((c, area) => {
   }
   if (c.hideDccon && hideDcconEl) {
     hideDcconEl.checked = !!c.hideDccon.newValue;
+  }
+  if (c.previewEnabled && previewEnabledEl) {
+    previewEnabledEl.checked = !!c.previewEnabled.newValue;
   }
 });
