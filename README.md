@@ -2,7 +2,6 @@
 
 [![Chrome Web Store](https://img.shields.io/chrome-web-store/v/fnfmdbldnhadkadklplhcjcojjiaopgg?label=Chrome%20Web%20Store)](https://chromewebstore.google.com/detail/fnfmdbldnhadkadklplhcjcojjiaopgg)
 
-<h1>디시갤 차단기</h1>
 Less noise. More focus.
 
 <h2>디시인사이드를 사용할 때</h2>
