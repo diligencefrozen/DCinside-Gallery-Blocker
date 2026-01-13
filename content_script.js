@@ -1035,6 +1035,7 @@ syncSettings(handleUrl);
 (() => {
   let ispBlockObserver = null;
   let lastPageUrl = location.href; // 마지막 페이지 URL 추적
+  let ispStateReady = false; // 저장소 로딩 완료 전에는 복원/차단 모두 수행하지 않음
 
   // ISP 차단 상태 리셋 (페이지/게시물 이동 시)
   function resetISPBlockState() {
@@ -1059,6 +1060,8 @@ syncSettings(handleUrl);
   }
 
   function hideIPBlockedPosts() {
+    // 설정 로드 이전에는 아무 것도 하지 않아 초기 플리커 방지
+    if (!ispStateReady) return 0;
     if (!ispBlockEnabled) {
       // ISP 차단 비활성화 시 모든 대체된 댓글 복원
       document.querySelectorAll("[data-dcb-isp-replaced]").forEach(el => {
@@ -1161,9 +1164,7 @@ syncSettings(handleUrl);
     }
   }
 
-  // 즉시 실행 (DOMContentLoaded 대기 안 함 - 더 빠른 반응)
-  console.log("[DCB ISP Block] 초기화 - ispBlockEnabled:", ispBlockEnabled);
-  hideIPBlockedPosts();
+  // 옵저버는 준비되면 시작 (초기에는 ready=false라 동작 없음)
   startISPBlockObserver();
 
   // 설정 변경 감지
@@ -1174,13 +1175,16 @@ syncSettings(handleUrl);
       const enabled = !!chg.ispBlockEnabled.newValue;
       ispBlockEnabled = enabled;
 
-      // OFF로 전환될 때 자동 리프레시 관련 세션 키 초기화
+      // OFF로 전환되면 진행 중 플래그만 해제(기록은 유지)
       if (!enabled) {
-        sessionStorage.removeItem("dcb-isp-block-refreshed");
         sessionStorage.removeItem("dcb-isp-refreshing");
       }
 
-      hideIPBlockedPosts();
+      // 저장소 이벤트 도착 시 상태를 신뢰 가능하므로 ready 표시
+      ispStateReady = true;
+      const count = hideIPBlockedPosts();
+      // ON 시에는 현재 페이지 상태를 기준으로 리프레시 필요 여부 판단
+      if (enabled) maybeRefreshForISP(count);
     }
   });
 
@@ -1215,41 +1219,51 @@ syncSettings(handleUrl);
     clearInterval(urlChangeObserver);
   });
 
+  // ISP 차단 리프레시 로직 (토글/초기화 공용)
+  function maybeRefreshForISP(blockedCount) {
+    if (!ispBlockEnabled) return;
+
+    const refreshKey = "dcb-isp-block-refreshed";
+    const MAX_REFRESH = 3;
+
+    const rawCount = sessionStorage.getItem(refreshKey);
+    const parsed = parseInt(rawCount || "0", 10);
+    const refreshCount = Number.isFinite(parsed) ? parsed : 0;
+    if (!Number.isFinite(parsed)) {
+      sessionStorage.setItem(refreshKey, "0");
+    }
+
+    // 현재 차단된 요소 수가 주어지지 않았다면 즉시 계산
+    const currBlocked = (typeof blockedCount === "number") ? blockedCount : hideIPBlockedPosts();
+
+    if (refreshCount === 0) {
+      sessionStorage.setItem(refreshKey, "1");
+      sessionStorage.setItem("dcb-isp-refreshing", "true");
+      console.log("[DCB ISP Block] 첫 실행 감지 - 페이지 리프레시 (1/3)");
+      location.reload();
+      return;
+    }
+
+    if (refreshCount > 0 && refreshCount < MAX_REFRESH && currBlocked === 0) {
+      sessionStorage.setItem(refreshKey, String(refreshCount + 1));
+      sessionStorage.setItem("dcb-isp-refreshing", "true");
+      console.log(`[DCB ISP Block] 통피 미감지 - 리프레시 (${refreshCount + 1}/3)`);
+      location.reload();
+      return;
+    }
+
+    // 더 이상 리프레시 불필요
+    sessionStorage.removeItem("dcb-isp-refreshing");
+    console.log(`[DCB ISP Block] 리프레시 완료 - 차단된 요소: ${currBlocked}개, 시도 횟수: ${refreshCount}`);
+  }
+
   // syncSettings와 함께 초기화 (storage 로드 후 실행)
   syncSettings(() => {
     console.log("[DCB ISP Block] syncSettings 완료 - ispBlockEnabled:", ispBlockEnabled);
+    // 저장소 로딩 완료 → 이후부터 hide/restore 수행
+    ispStateReady = true;
     const blockedCount = hideIPBlockedPosts();
     startISPBlockObserver();
-    
-    // ISP 차단이 켜져있을 때 리프레시 로직 (최대 3번)
-    if (ispBlockEnabled) {
-      const refreshKey = "dcb-isp-block-refreshed";
-      const MAX_REFRESH = 3;
-
-      const rawCount = sessionStorage.getItem(refreshKey);
-      const parsed = parseInt(rawCount || "0", 10);
-      const refreshCount = Number.isFinite(parsed) ? parsed : 0;
-      if (!Number.isFinite(parsed)) {
-        // 이전 버전에서 이상값이 남은 경우 초기화
-        sessionStorage.setItem(refreshKey, "0");
-      }
-
-      if (refreshCount === 0) {
-        // 첫 실행: 무조건 한 번 리프레시
-        sessionStorage.setItem(refreshKey, "1");
-        sessionStorage.setItem("dcb-isp-refreshing", "true"); // auto-refresh 일시중지 방지
-        console.log("[DCB ISP Block] 첫 실행 감지 - 페이지 리프레시 (1/3)");
-        location.reload();
-      } else if (refreshCount > 0 && refreshCount < MAX_REFRESH && blockedCount === 0) {
-        // 통피가 감지되지 않고 최대 횟수 미만이면 계속 리프레시
-        sessionStorage.setItem(refreshKey, String(refreshCount + 1));
-        sessionStorage.setItem("dcb-isp-refreshing", "true"); // auto-refresh 일시중지 방지
-        console.log(`[DCB ISP Block] 통피 미감지 - 리프레시 (${refreshCount + 1}/3)`);
-        location.reload();
-      } else {
-        sessionStorage.removeItem("dcb-isp-refreshing");
-        console.log(`[DCB ISP Block] 리프레시 완료 - 차단된 요소: ${blockedCount}개, 시도 횟수: ${refreshCount}`);
-      }
-    }
+    if (ispBlockEnabled) maybeRefreshForISP(blockedCount);
   });
 })();
