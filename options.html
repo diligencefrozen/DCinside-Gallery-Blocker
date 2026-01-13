@@ -92,7 +92,7 @@
   <section class="card">
     <h2>🖥️ 페이지 미리보기</h2>
     <div class="row" style="justify-content:space-between;align-items:center">
-      <span class="note">게시글을 새 탭 없이 오버레이로 미리봅니다. 사용하지 않으면 끌 수 있습니다.</span>
+      <span class="note">게시글을 새 탭 없이 오버레이로 미리봅니다. 사용하고싶지 않으면 끌 수 있습니다.</span>
       <label class="switch" title="페이지 미리보기">
         <input type="checkbox" id="previewEnabled">
         <span class="slider"></span>
@@ -118,6 +118,20 @@
     <ul id="uidList"></ul>
     <p class="note">* 유저 아이디(UID)는 작성자 요소의 <code>data-uid</code> 값 또는 갤로그 주소의 사용자 ID입니다.</p>
     <p class="note">* 비회원은 IP 앞부분(예: <code>39.7</code>)을 등록하면 일괄 차단됩니다.</p>
+  </section>
+
+  <!-- 통신사 IP 차단 -->
+  <section class="card">
+    <h2>📡 통신사 IP(통피) 차단</h2>
+    <div class="row" style="justify-content:space-between">
+      <span class="note">특정 통신사(SKT, KT, LG) 대역의 비회원 게시글 및 댓글을 자동으로 숨깁니다.</span>
+      <label class="switch" title="통신사 IP 차단">
+        <input type="checkbox" id="ispBlockEnabled">
+        <span class="slider"></span>
+      </label>
+    </div>
+    <p class="note">✓ 활성화 시: SKT · KT · LG 대역의 모든 비회원 게시글 및 댓글 숨김</p>
+    <p class="note">ℹ️ 기본값: 비활성화</p>
   </section>
 
   <!-- 직접 갤러리 입력 -->
