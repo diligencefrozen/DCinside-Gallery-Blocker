@@ -45,7 +45,7 @@ const BACKUP_KEYS = [
   "hideMainEnabled", "hideGallEnabled", "hideSearchEnabled",
   "enabled", "galleryBlockEnabled", "blockMode", "autoRefreshEnabled",
   "autoRefreshInterval", "delay", "showUidBadge", "linkWarnEnabled", "hideDCGray",
-  "previewEnabled"
+  "previewEnabled", "hideAnonymousEnabled"
 ];
 
 const BACKUP_DEFAULTS = {
@@ -70,7 +70,8 @@ const BACKUP_DEFAULTS = {
   showUidBadge: true,
   linkWarnEnabled: true,
   hideDCGray: undefined,
-  previewEnabled: false
+  previewEnabled: false,
+  hideAnonymousEnabled: false
 };
 
 /* ───── DOM 캐시 ───── */
@@ -105,6 +106,8 @@ const previewEnabledEl = document.getElementById("previewEnabled");
 const hideCommentEl    = document.getElementById("hideComment");
 const hideImgCommentEl = document.getElementById("hideImgComment");
 const hideDcconEl      = document.getElementById("hideDccon");
+/* 비회원 게시물 숨기기 */
+const hideAnonymousEl  = document.getElementById("hideAnonymousEnabled");
 /* 백업/복원 */
 const exportBtn    = document.getElementById("exportBtn");
 const importBtn    = document.getElementById("importBtn");
@@ -389,6 +392,13 @@ if (previewEnabledEl) {
   });
 }
 
+/* 비회원 게시물 숨기기 토글 */
+if (hideAnonymousEl) {
+  hideAnonymousEl.addEventListener("change", e => {
+    chrome.storage.sync.set({ hideAnonymousEnabled: !!e.target.checked });
+  });
+}
+
 /* ───── 초기 로드 ───── */
 chrome.storage.sync.get(
   {
@@ -405,10 +415,12 @@ chrome.storage.sync.get(
     hideDccon: false,        // 디시콘 숨기기
     // 페이지 미리보기
     previewEnabled: false,   // 기본값: 비활성화 (BACKUP_DEFAULTS와 일치)
+    // 비회원 게시물 숨기기
+    hideAnonymousEnabled: false,
     // 구버전 호환 (hideDCGray → userBlockEnabled)
     hideDCGray: undefined
   },
-  ({ blockedIds, removeSelectors, removeSelectorsGall, removeSelectorsSearch, userBlockEnabled, blockedUids, hideComment, hideImgComment, hideDccon, previewEnabled, hideDCGray }) => {
+  ({ blockedIds, removeSelectors, removeSelectorsGall, removeSelectorsSearch, userBlockEnabled, blockedUids, hideComment, hideImgComment, hideDccon, previewEnabled, hideAnonymousEnabled, hideDCGray }) => {
     // 마이그레이션
     if (typeof userBlockEnabled !== "boolean" && typeof hideDCGray === "boolean") {
       userBlockEnabled = hideDCGray;
@@ -435,6 +447,9 @@ chrome.storage.sync.get(
       previewEnabledEl.checked = !!previewEnabled;
       console.log("[DCB] 초기 미리보기 설정:", !!previewEnabled);
     }
+    
+    // 비회원 게시물 숨기기 초기값
+    if (hideAnonymousEl) hideAnonymousEl.checked = !!hideAnonymousEnabled;
   }
 );
 
@@ -468,5 +483,10 @@ chrome.storage.onChanged.addListener((c, area) => {
   }
   if (c.previewEnabled && previewEnabledEl) {
     previewEnabledEl.checked = !!c.previewEnabled.newValue;
+  }
+
+  // 비회원 게시물 숨기기 변경 반영
+  if (c.hideAnonymousEnabled && hideAnonymousEl) {
+    hideAnonymousEl.checked = !!c.hideAnonymousEnabled.newValue;
   }
 });
