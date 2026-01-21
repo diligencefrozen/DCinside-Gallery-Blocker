@@ -29,6 +29,9 @@ const toggleHideSearch = document.getElementById("toggleHideSearch");
 // 닉네임 옆 회원 ID 표시
 const toggleUidBadge   = document.getElementById("toggleUidBadge");
 
+// 비회원 게시물 숨기기
+const hideAnonymousToggle = document.getElementById("hideAnonymousEnabled");
+
 // 지연 시간 섹션 (초보 모드일 때만 표시)
 const delaySection = document.getElementById("delaySection");
 
@@ -89,6 +92,9 @@ const DEFAULTS = {
   // ★ 닉네임 옆 회원 ID 표시
   showUidBadge: true,
 
+  // 비회원 게시물 숨기기 (기본값: 비활성화)
+  hideAnonymousEnabled: false,
+
   // 링크 경고 표시
   linkWarnEnabled: true
 };
@@ -132,7 +138,8 @@ chrome.storage.sync.get(DEFAULTS, (conf)=>{
     autoRefreshEnabled, autoRefreshInterval,
     userBlockEnabled, blockedUids,
     hideMainEnabled, hideGallEnabled, hideSearchEnabled,
-    showUidBadge
+    showUidBadge,
+    hideAnonymousEnabled
   } = conf;
 
   // 기본 토글/입력값
@@ -164,6 +171,9 @@ chrome.storage.sync.get(DEFAULTS, (conf)=>{
 
   // 닉네임 옆 회원 ID 표시
   if (toggleUidBadge)   toggleUidBadge.checked   = !!showUidBadge;
+
+  // 비회원 게시물 숨기기
+  if (hideAnonymousToggle) hideAnonymousToggle.checked = !!hideAnonymousEnabled;
 });
 
 /* ───────── 이벤트 바인딩 ───────── */
@@ -267,6 +277,9 @@ if (toggleHideSearch) toggleHideSearch.onchange = e => chrome.storage.sync.set({
 /* 닉네임 옆 회원 ID 표시 저장 */
 if (toggleUidBadge)   toggleUidBadge.onchange   = e => chrome.storage.sync.set({ showUidBadge: !!e.target.checked });
 
+/* 비회원 게시물 숨기기 저장 */
+if (hideAnonymousToggle) hideAnonymousToggle.onchange = e => chrome.storage.sync.set({ hideAnonymousEnabled: !!e.target.checked });
+
 /* 스토리지 외부 변경 반영 */
 chrome.storage.onChanged.addListener((c,a)=>{
   if(a!=="sync") return;
@@ -305,6 +318,9 @@ chrome.storage.onChanged.addListener((c,a)=>{
 
   // 닉네임 옆 회원 ID 표시
   if (c.showUidBadge && toggleUidBadge)        toggleUidBadge.checked   = !!c.showUidBadge.newValue;
+
+  // 비회원 게시물 숨기기
+  if (c.hideAnonymousEnabled && hideAnonymousToggle) hideAnonymousToggle.checked = !!c.hideAnonymousEnabled.newValue;
 });
 
 /* 옵션 페이지 열기 */
