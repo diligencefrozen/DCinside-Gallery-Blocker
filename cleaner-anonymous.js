@@ -21,14 +21,17 @@
   function isAnonymous(writer) {
     if (!writer) return false;
 
-    // 갤로그 링크 탐색
-    const link =
-      writer.parentElement?.querySelector(
-        '.writer_nikcon,[onclick*="gallog.dcinside.com"],a[href*="gallog.dcinside.com"]'
-      ) || writer.querySelector('a[href*="gallog.dcinside.com"]');
+    // 갤로그 링크 감지: .writer_nikcon 클래스가 있으면 회원
+    // (.writer_nikcon 요소가 있으면 갤로그 딱지가 있다는 뜻)
+    const gallogLink = writer.querySelector('.writer_nikcon');
+    if (gallogLink) return false; // 회원
 
-    // 링크가 없으면 비회원
-    return !link;
+    // 추가 확인: onclick이나 href에 gallog URL이 있으면 회원
+    const gallogUrl = writer.querySelector('[onclick*="gallog"], [href*="gallog"]');
+    if (gallogUrl) return false; // 회원
+
+    // 갤로그 링크가 없으면 비회원
+    return true;
   }
 
   /* 비회원 글/댓글을 숨기기 위한 selector 수집 */
@@ -44,13 +47,25 @@
       }
     });
 
-    // 2) 댓글 – .gall_writer (댓글도 동일한 구조)
-    document.querySelectorAll("div.comment_view .gall_writer").forEach((writer) => {
+    // 2) 댓글 – .cmt_info 내부의 .gall_writer만 검사 (정확한 탐색)
+    document.querySelectorAll(".cmt_info .gall_writer").forEach((writer) => {
       if (isAnonymous(writer)) {
-        const commentBox = writer.closest(
-          ".gall_comment, .view_comment, li[id^='cmt_'], tr[id^='cmt_']"
-        );
-        if (commentBox) anonymousElements.push(commentBox);
+        // .cmt_info의 부모 li만 숨기기 (대댓글은 보존)
+        const commentItem = writer.closest(".cmt_info")?.parentElement;
+        if (commentItem && commentItem.tagName === "LI") {
+          anonymousElements.push(commentItem);
+        }
+      }
+    });
+
+    // 3) 대댓글 – .reply_info 내부의 .gall_writer 검사
+    document.querySelectorAll(".reply_info .gall_writer").forEach((writer) => {
+      if (isAnonymous(writer)) {
+        // 대댓글의 경우: 해당 대댓글 li만 숨기기
+        const replyItem = writer.closest(".reply_info")?.parentElement;
+        if (replyItem && replyItem.tagName === "LI") {
+          anonymousElements.push(replyItem);
+        }
       }
     });
 
