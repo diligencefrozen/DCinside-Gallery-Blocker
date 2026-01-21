@@ -1,7 +1,7 @@
 # 디시갤 차단기
 
 [![Chrome Web Store](https://img.shields.io/chrome-web-store/v/fnfmdbldnhadkadklplhcjcojjiaopgg?label=Chrome%20Web%20Store)](https://chromewebstore.google.com/detail/fnfmdbldnhadkadklplhcjcojjiaopgg)
-
+<br/><img src="https://github.com/diligencefrozen/DCinside-Gallery-Blocker/blob/main/IntroducingDCB%20(1).png?raw=true"><br/>
 Less noise. More focus.
 
 <h2>디시인사이드를 사용할 때</h2>
