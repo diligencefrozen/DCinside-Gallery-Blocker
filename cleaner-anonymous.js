@@ -30,7 +30,11 @@
     const gallogUrl = writer.querySelector('[onclick*="gallog"], [href*="gallog"]');
     if (gallogUrl) return false; // 회원
 
-    // 갤로그 링크가 없으면 비회원
+    // IP 뱃지 확인: span.ip가 없으면 필터링하지 않음 (익명 회원/비회원 구분 불가)
+    const ipBadge = writer.querySelector('span.ip');
+    if (!ipBadge) return false; // IP 뱃지 없음 = 필터링 스킵
+
+    // IP 뱃지가 있으면 비회원
     return true;
   }
 
