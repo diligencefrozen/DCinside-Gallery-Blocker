@@ -1,7 +1,7 @@
-# 디시갤 차단기
+<img width="640" height="400" alt="image" src="https://github.com/user-attachments/assets/ba410cd0-e16b-4359-a964-0dc219e94815" /><img width="640" height="400" alt="image" src="https://github.com/user-attachments/assets/d21368a7-978a-45f5-86ec-345765180466" /># 디시갤 차단기
 
 [![Chrome Web Store](https://img.shields.io/chrome-web-store/v/fnfmdbldnhadkadklplhcjcojjiaopgg?label=Chrome%20Web%20Store)](https://chromewebstore.google.com/detail/fnfmdbldnhadkadklplhcjcojjiaopgg)
-<br/><img src="https://github.com/diligencefrozen/DCinside-Gallery-Blocker/blob/main/IntroducingDCB%20(1).png?raw=true"><br/>
+<br/><img src="https://github.com/diligencefrozen/DCinside-Gallery-Blocker/blob/main/IntroducingDCB_final.png?raw=true"><br/>
 Less noise. More focus.
 
 <h2>디시인사이드를 사용할 때</h2>
