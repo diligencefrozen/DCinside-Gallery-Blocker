@@ -292,131 +292,148 @@ syncSettings(handleUrl);
     const style = document.createElement("style");
     style.id = STYLE_ID;
     style.textContent = `
-      #${OVERLAY_ID}{position:fixed;inset:0;z-index:2147483600;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(0,0,0,.8);backdrop-filter:blur(12px);animation:dcbpv-fade .18s ease-out;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
-      #${OVERLAY_ID} .dcbpv-panel{width:min(1400px,95vw);height:min(90vh,900px);background:#fff;box-shadow:0 25px 80px rgba(0,0,0,.3);border-radius:20px;display:flex;flex-direction:column;overflow:hidden;animation:dcbpv-pop .22s ease-out}
-      #${OVERLAY_ID} .dcbpv-header{display:flex;align-items:flex-start;gap:20px;padding:24px 28px;border-bottom:1px solid #f0f0f0;background:linear-gradient(135deg, #fafbfc 0%, #f5f7fa 100%)}
+      #${OVERLAY_ID}{position:fixed;inset:0;z-index:2147483600;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(0,0,0,.6);backdrop-filter:blur(8px);animation:dcbpv-fade .2s ease-out;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
+      #${OVERLAY_ID} .dcbpv-panel{width:min(680px,90vw);max-height:min(85vh,700px);background:#fff;box-shadow:0 20px 60px rgba(0,0,0,.25),0 0 0 1px rgba(0,0,0,.05);border-radius:16px;display:flex;flex-direction:column;overflow:hidden;animation:dcbpv-pop .25s cubic-bezier(0.34,1.56,0.64,1)}
+      #${OVERLAY_ID} .dcbpv-header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:20px 24px;border-bottom:1px solid #f0f0f0;background:#fff}
       #${OVERLAY_ID} .dcbpv-meta{flex:1;min-width:0}
-      #${OVERLAY_ID} .dcbpv-title{font-size:26px;font-weight:700;color:#1a1a1a;line-height:1.3;margin-bottom:12px}
-      #${OVERLAY_ID} .dcbpv-sub{display:flex;flex-wrap:wrap;gap:8px;font-size:13px;color:#666;opacity:.85}
-      #${OVERLAY_ID} .dcbpv-chip{padding:6px 12px;border-radius:20px;background:#f0f2f5;border:none;display:inline-flex;align-items:center;gap:6px;color:#333;font-size:13px}
-      #${OVERLAY_ID} .dcbpv-close{border:none;background:transparent;color:#999;font-size:24px;cursor:pointer;padding:0;transition:.2s;display:flex;align-items:center;justify-content:center;width:44px;height:44px;border-radius:10px}
-      #${OVERLAY_ID} .dcbpv-close:hover{background:#f0f0f0;color:#333}
-      #${OVERLAY_ID} .dcbpv-body{flex:1;display:flex;overflow:hidden;background:#fff}
-      #${OVERLAY_ID} .dcbpv-col{background:#fff;overflow-y:auto;padding:24px;flex:1;display:flex;flex-direction:column}
-      #${OVERLAY_ID} .dcbpv-col:last-child{border-left:1px solid #f0f0f0;background:#fafbfc}
-      #${OVERLAY_ID} .dcbpv-article{display:flex;flex-direction:column;gap:20px;flex:1}
-      #${OVERLAY_ID} .dcbpv-content{font-size:16px;line-height:1.7;color:#333}
-      #${OVERLAY_ID} .dcbpv-content img, #${OVERLAY_ID} .dcbpv-content video{max-width:100%;border-radius:16px;box-shadow:0 8px 24px rgba(0,0,0,.12);margin:16px 0}
-      #${OVERLAY_ID} .dcbpv-content pre{white-space:pre-wrap;background:#f5f5f5;padding:16px;border-radius:12px;border:none;font-size:14px;color:#444;overflow-x:auto}
-      #${OVERLAY_ID} .dcbpv-actions{display:flex;flex-direction:column;gap:12px;padding:16px 0;border-top:1px solid #f0f0f0;margin-top:20px}
-      #${OVERLAY_ID} .dcbpv-action-group{display:flex;gap:8px;flex-wrap:wrap}
-      #${OVERLAY_ID} .dcbpv-btn{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:12px 16px;border-radius:14px;border:1px solid #e0e0e0;background:#fff;color:#333;font-weight:600;font-size:12px;cursor:pointer;transition:.2s;flex:1;min-width:80px}
-      #${OVERLAY_ID} .dcbpv-btn-icon{font-size:24px;line-height:1}
-      #${OVERLAY_ID} .dcbpv-btn-text{font-size:12px;color:#666;font-weight:500}
-      #${OVERLAY_ID} .dcbpv-btn:hover{background:#f5f5f5;border-color:#d0d0d0;transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.08)}
+      #${OVERLAY_ID} .dcbpv-title{font-size:18px;font-weight:600;color:#1a1a1a;line-height:1.4;margin-bottom:10px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+      #${OVERLAY_ID} .dcbpv-sub{display:flex;flex-wrap:wrap;gap:6px;font-size:12px;color:#6b7280}
+      #${OVERLAY_ID} .dcbpv-chip{display:inline-flex;align-items:center;gap:4px;color:#6b7280;font-size:12px;line-height:1.5}
+      #${OVERLAY_ID} .dcbpv-chip::before{content:'';width:4px;height:4px;background:#d1d5db;border-radius:50%}
+      #${OVERLAY_ID} .dcbpv-chip:first-child::before{display:none}
+      #${OVERLAY_ID} .dcbpv-close{border:none;background:transparent;color:#9ca3af;font-size:20px;cursor:pointer;padding:4px;transition:.15s;display:flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:8px;flex-shrink:0}
+      #${OVERLAY_ID} .dcbpv-close:hover{background:#f3f4f6;color:#374151}
+      #${OVERLAY_ID} .dcbpv-body{flex:1;overflow-y:auto;background:#fff;padding:20px 24px}
+      #${OVERLAY_ID} .dcbpv-body::-webkit-scrollbar{width:6px}
+      #${OVERLAY_ID} .dcbpv-body::-webkit-scrollbar-track{background:transparent}
+      #${OVERLAY_ID} .dcbpv-body::-webkit-scrollbar-thumb{background:#d1d5db;border-radius:3px}
+      #${OVERLAY_ID} .dcbpv-body::-webkit-scrollbar-thumb:hover{background:#9ca3af}
+      #${OVERLAY_ID} .dcbpv-content{font-size:14px;line-height:1.7;color:#374151;max-height:400px;overflow-y:auto;padding-right:8px}
+      #${OVERLAY_ID} .dcbpv-content::-webkit-scrollbar{width:4px}
+      #${OVERLAY_ID} .dcbpv-content::-webkit-scrollbar-track{background:transparent}
+      #${OVERLAY_ID} .dcbpv-content::-webkit-scrollbar-thumb{background:#d1d5db;border-radius:2px}
+      #${OVERLAY_ID} .dcbpv-content img{max-width:100%;border-radius:8px;margin:12px 0;box-shadow:0 2px 8px rgba(0,0,0,.1)}
+      #${OVERLAY_ID} .dcbpv-content video{max-width:100%;border-radius:8px;margin:12px 0}
+      #${OVERLAY_ID} .dcbpv-content pre{white-space:pre-wrap;background:#f9fafb;padding:12px;border-radius:8px;border:1px solid #e5e7eb;font-size:13px;color:#374151;overflow-x:auto;margin:8px 0}
+      #${OVERLAY_ID} .dcbpv-content p{margin:8px 0}
+      #${OVERLAY_ID} .dcbpv-imggrid{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 12px 0}
+      #${OVERLAY_ID} .dcbpv-thumb{width:calc(50% - 4px);border-radius:10px;overflow:hidden;border:1px solid #e5e7eb;background:#f9fafb;text-decoration:none;color:inherit}
+      #${OVERLAY_ID} .dcbpv-thumb img{width:100%;height:140px;object-fit:cover;display:block;margin:0;border-radius:0;box-shadow:none}
+      #${OVERLAY_ID} .dcbpv-thumb.more{display:flex;align-items:center;justify-content:center;height:140px;font-size:13px;color:#6b7280;font-weight:600}
+      @media (max-width: 520px){ #${OVERLAY_ID} .dcbpv-thumb{width:100%} }
+      #${OVERLAY_ID} .dcbpv-attachments{margin-top:16px;padding-top:16px;border-top:1px solid #f0f0f0}
+      #${OVERLAY_ID} .dcbpv-attachments-title{font-size:12px;font-weight:600;color:#6b7280;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.5px}
+      #${OVERLAY_ID} .dcbpv-attachment{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;color:#374151;text-decoration:none;transition:.15s;margin-right:6px;margin-bottom:6px}
+      #${OVERLAY_ID} .dcbpv-attachment:hover{background:#f3f4f6;border-color:#d1d5db;color:#111827}
+      #${OVERLAY_ID} .dcbpv-actions{display:flex;gap:8px;padding-top:16px;margin-top:16px;border-top:1px solid #f0f0f0}
+      #${OVERLAY_ID} .dcbpv-btn{display:flex;align-items:center;justify-content:center;gap:6px;padding:8px 14px;border-radius:8px;border:1px solid #e5e7eb;background:#fff;color:#374151;font-weight:500;font-size:13px;cursor:pointer;transition:.15s;flex:1}
+      #${OVERLAY_ID} .dcbpv-btn:hover{background:#f9fafb;border-color:#d1d5db;transform:translateY(-1px);box-shadow:0 2px 4px rgba(0,0,0,.05)}
       #${OVERLAY_ID} .dcbpv-btn:active{transform:translateY(0)}
-      #${OVERLAY_ID} .dcbpv-btn.warn{background:rgba(255,71,71,.08);border-color:rgba(255,71,71,.2);color:#c41e3a}
-      #${OVERLAY_ID} .dcbpv-btn.warn:hover{background:rgba(255,71,71,.12);border-color:rgba(255,71,71,.3)}
-      #${OVERLAY_ID} .dcbpv-btn.warn .dcbpv-btn-text{color:#c41e3a}
-      #${OVERLAY_ID} .dcbpv-btn.secondary{background:#f0f2f5;border-color:#e0e0e0;color:#555}
-      #${OVERLAY_ID} .dcbpv-btn.secondary:hover{background:#e8eaed}
-      #${OVERLAY_ID} .dcbpv-comments{display:flex;flex-direction:column;gap:16px;height:100%}
-      #${OVERLAY_ID} .dcbpv-comments h4{margin:0;font-size:16px;color:#1a1a1a;font-weight:700}
-      #${OVERLAY_ID} .dcbpv-commentlist{flex:1;overflow:auto;display:flex;flex-direction:column;gap:12px;padding-right:8px}
-      #${OVERLAY_ID} .dcbpv-commentlist::-webkit-scrollbar{width:6px}
-      #${OVERLAY_ID} .dcbpv-commentlist::-webkit-scrollbar-track{background:transparent}
-      #${OVERLAY_ID} .dcbpv-commentlist::-webkit-scrollbar-thumb{background:#ddd;border-radius:3px}
-      #${OVERLAY_ID} .dcbpv-commentlist::-webkit-scrollbar-thumb:hover{background:#bbb}
-      #${OVERLAY_ID} .dcbpv-comment{padding:12px 14px;border-radius:12px;border:none;background:#f5f5f5;color:#333;font-size:14px;line-height:1.6}
-      #${OVERLAY_ID} .dcbpv-reply{padding-left:28px;background:#f0f0f0;border-left:3px solid #999}
-      #${OVERLAY_ID} .dcbpv-comment .meta{display:flex;gap:10px;flex-wrap:wrap;font-size:12px;color:#999;margin-bottom:6px}
-      #${OVERLAY_ID} .dcbpv-empty{padding:16px;border:1px dashed #ddd;border-radius:12px;color:#999;text-align:center;background:#fafbfc}
-      #${OVERLAY_ID} .dcbpv-share-popup{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;border:1px solid #e0e0e0;border-radius:16px;padding:28px;box-shadow:0 20px 60px rgba(0,0,0,.15);z-index:2147483650;min-width:360px;max-width:90vw}
-      #${OVERLAY_ID} .dcbpv-share-popup h3{margin:0 0 20px 0;font-size:20px;color:#1a1a1a;font-weight:700}
-      #${OVERLAY_ID} .dcbpv-share-popup .share-btns{display:flex;gap:10px;margin-bottom:20px}
-      #${OVERLAY_ID} .dcbpv-share-popup .share-btn{flex:1;padding:14px;border:1px solid #e0e0e0;border-radius:12px;background:#f5f5f5;color:#333;text-align:center;cursor:pointer;transition:.2s;font-size:14px;font-weight:600}
-      #${OVERLAY_ID} .dcbpv-share-popup .share-btn:hover{background:#e8eaed;border-color:#d0d0d0}
+      #${OVERLAY_ID} .dcbpv-btn-icon{font-size:16px;line-height:1}
+      #${OVERLAY_ID} .dcbpv-btn-text{font-size:13px;color:inherit}
+      #${OVERLAY_ID} .dcbpv-btn.primary{background:#3b82f6;border-color:#3b82f6;color:#fff}
+      #${OVERLAY_ID} .dcbpv-btn.primary:hover{background:#2563eb;border-color:#2563eb}
+      #${OVERLAY_ID} .dcbpv-btn.warn{background:#fee2e2;border-color:#fecaca;color:#dc2626}
+      #${OVERLAY_ID} .dcbpv-btn.warn:hover{background:#fecaca;border-color:#fca5a5}
+      #${OVERLAY_ID} .dcbpv-empty{padding:32px 16px;text-align:center;color:#9ca3af;font-size:14px}
+      #${OVERLAY_ID} .dcbpv-share-popup{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:24px;box-shadow:0 20px 60px rgba(0,0,0,.2);z-index:2147483650;min-width:320px;max-width:90vw}
+      #${OVERLAY_ID} .dcbpv-share-popup h3{margin:0 0 16px 0;font-size:18px;color:#1a1a1a;font-weight:600}
+      #${OVERLAY_ID} .dcbpv-share-popup .share-btns{display:flex;gap:8px;margin-bottom:16px}
+      #${OVERLAY_ID} .dcbpv-share-popup .share-btn{flex:1;padding:10px;border:1px solid #e5e7eb;border-radius:8px;background:#f9fafb;color:#374151;text-align:center;cursor:pointer;transition:.15s;font-size:13px;font-weight:500}
+      #${OVERLAY_ID} .dcbpv-share-popup .share-btn:hover{background:#f3f4f6;border-color:#d1d5db}
       #${OVERLAY_ID} .dcbpv-share-popup .url-copy{display:flex;gap:8px;align-items:center}
-      #${OVERLAY_ID} .dcbpv-share-popup .url-copy input{flex:1;padding:12px 14px;border:1px solid #e0e0e0;border-radius:10px;background:#f9f9f9;color:#333;font-size:13px;outline:none}
-      #${OVERLAY_ID} .dcbpv-share-popup .url-copy input:focus{border-color:#4f7cff;background:#fff}
-      #${OVERLAY_ID} .dcbpv-share-popup .url-copy button{padding:12px 20px;border:1px solid #4f7cff;border-radius:10px;background:#4f7cff;color:#fff;cursor:pointer;font-weight:600;font-size:14px;transition:.2s}
-      #${OVERLAY_ID} .dcbpv-share-popup .url-copy button:hover{background:#3d63ff;border-color:#3d63ff}
-      #${OVERLAY_ID} .dcbpv-share-close{position:absolute;top:16px;right:16px;border:none;background:transparent;color:#999;font-size:24px;cursor:pointer;padding:8px;transition:.2s;display:flex;align-items:center;justify-content:center}
-      #${OVERLAY_ID} .dcbpv-share-close:hover{color:#333;background:#f0f0f0;border-radius:8px}
+      #${OVERLAY_ID} .dcbpv-share-popup .url-copy input{flex:1;padding:10px 12px;border:1px solid #e5e7eb;border-radius:8px;background:#f9fafb;color:#374151;font-size:12px;outline:none}
+      #${OVERLAY_ID} .dcbpv-share-popup .url-copy input:focus{border-color:#3b82f6;background:#fff}
+      #${OVERLAY_ID} .dcbpv-share-popup .url-copy button{padding:10px 16px;border:1px solid #3b82f6;border-radius:8px;background:#3b82f6;color:#fff;cursor:pointer;font-weight:500;font-size:13px;transition:.15s}
+      #${OVERLAY_ID} .dcbpv-share-popup .url-copy button:hover{background:#2563eb;border-color:#2563eb}
+      #${OVERLAY_ID} .dcbpv-share-close{position:absolute;top:12px;right:12px;border:none;background:transparent;color:#9ca3af;font-size:20px;cursor:pointer;padding:4px;transition:.15s;display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:6px}
+      #${OVERLAY_ID} .dcbpv-share-close:hover{color:#374151;background:#f3f4f6}
       @keyframes dcbpv-fade{from{opacity:0} to{opacity:1}}
-      @keyframes dcbpv-pop{from{transform:translateY(20px) scale(.96);opacity:0} to{transform:translateY(0) scale(1);opacity:1}}
+      @keyframes dcbpv-pop{from{transform:translateY(10px) scale(.98);opacity:0} to{transform:translateY(0) scale(1);opacity:1}}
     `;
     document.head.appendChild(style);
   };
 
-  function sanitizeClone(node){
+  function sanitizeContent(node){
     if (!node) return null;
     const cloned = node.cloneNode(true);
-    cloned.querySelectorAll("script, style").forEach(el => el.remove());
-    return cloned;
-  }
 
-  function collectComments(){
-    const wrap = document.querySelector(".comment_wrap[id^='comment_wrap_']");
-    if (!wrap) return null;
-    const cmtList = wrap.querySelector(".cmt_list");
-    if (!cmtList) return null;
-    
-    const list = [];
-    // 일반 댓글
-    const topLevelComments = cmtList.querySelectorAll(":scope > li.ub-content:not(.dory)");
-    topLevelComments.forEach(li => {
-      const info = li.querySelector(".cmt_info");
-      if (info) {
-        const nickEl = info.querySelector(".nickname em");
-        const nick = nickEl ? nickEl.textContent.trim() : (info.querySelector(".nickname")?.textContent?.trim() || "");
-        const ip   = info.querySelector(".ip")?.textContent?.trim() || "";
-        const date = info.querySelector(".date_time")?.textContent?.trim() || "";
-        const txt  = info.querySelector(".usertxt");
-        const body = txt ? txt.textContent.trim() : "";
-        if (nick || body) list.push({ meta: nick, ip, date, body, isReply: false });
-      }
-      
-      // 답글
-      const replies = li.querySelectorAll(".reply_list > li.ub-content");
-      replies.forEach(reply => {
-        const rInfo = reply.querySelector(".reply_info");
-        if (rInfo) {
-          const rNickEl = rInfo.querySelector(".nickname em");
-          const rNick = rNickEl ? rNickEl.textContent.trim() : (rInfo.querySelector(".nickname")?.textContent?.trim() || "");
-          const rIp   = rInfo.querySelector(".ip")?.textContent?.trim() || "";
-          const rDate = rInfo.querySelector(".date_time")?.textContent?.trim() || "";
-          const rTxt  = rInfo.querySelector(".usertxt");
-          const rBody = rTxt ? rTxt.textContent.trim() : "";
-          if (rNick || rBody) list.push({ meta: rNick, ip: rIp, date: rDate, body: rBody, isReply: true });
+    // 실행/스타일/버튼류 제거 (원본 페이지 JS 의존도를 낮춤)
+    cloned.querySelectorAll("script, style, button").forEach(el => el.remove());
+
+    // lazy 이미지가 data-original/data-src에 실제 URL을 들고 있는 경우가 많아서 src로 강제 반영
+    const imgs = Array.from(cloned.querySelectorAll("img"));
+    const normalized = [];
+    imgs.forEach(img => {
+      const dataOriginal = img.getAttribute("data-original");
+      const dataSrc = img.getAttribute("data-src");
+      const dataLazy = img.getAttribute("data-lazy");
+      const dataUrl = img.getAttribute("data-url");
+      const srcAttr = img.getAttribute("src");
+      const currentSrc = img.currentSrc || img.src;
+
+      const realSrc = dataOriginal || dataSrc || dataLazy || dataUrl || currentSrc || srcAttr;
+      if (realSrc) {
+        // src가 비었거나 lazy 클래스가 있으면 실 URL로 강제 치환
+        if (!srcAttr || img.classList.contains("lazy") || srcAttr === "about:blank") {
+          img.setAttribute("src", realSrc);
         }
-      });
+        img.classList.remove("lazy");
+        img.setAttribute("loading", "eager");
+        img.setAttribute("decoding", "async");
+        normalized.push({ src: img.getAttribute("src") || realSrc, alt: img.getAttribute("alt") || "" });
+      }
     });
-    
-    if (!list.length) return null;
-    return list;
-  }
 
-  function renderComments(container){
-    const comments = collectComments();
-    if (!comments){
-      container.innerHTML = '<div class="dcbpv-empty">댓글이 없습니다.</div>';
-      return;
+    // 텍스트 요약 (최대 500자)
+    const text = (cloned.innerText || cloned.textContent || "").replace(/\s+/g, " ").trim();
+    const maxLength = 500;
+    const summary = text.length > maxLength ? (text.slice(0, maxLength).trim() + "...") : text;
+
+    // “요약 버전” 컨테이너: 썸네일(최대 4장) + 요약 텍스트
+    const out = document.createElement("div");
+
+    const MAX_THUMBS = 4;
+    if (normalized.length) {
+      const grid = document.createElement("div");
+      grid.className = "dcbpv-imggrid";
+
+      const toShow = normalized.slice(0, MAX_THUMBS);
+      toShow.forEach(({ src, alt }) => {
+        const a = document.createElement("a");
+        a.className = "dcbpv-thumb";
+        a.href = src;
+        a.target = "_blank";
+        a.rel = "noreferrer noopener";
+
+        const im = document.createElement("img");
+        im.src = src;
+        im.alt = alt;
+        im.loading = "eager";
+        im.decoding = "async";
+        a.appendChild(im);
+        grid.appendChild(a);
+      });
+
+      if (normalized.length > MAX_THUMBS) {
+        const more = document.createElement("div");
+        more.className = "dcbpv-thumb more";
+        more.textContent = `+${normalized.length - MAX_THUMBS} more`;
+        grid.appendChild(more);
+      }
+
+      out.appendChild(grid);
     }
-    container.innerHTML = "";
-    comments.forEach(c => {
-      const el = document.createElement("div");
-      el.className = c.isReply ? "dcbpv-comment dcbpv-reply" : "dcbpv-comment";
-      el.innerHTML = `
-        <div class="meta">
-          <span>${c.meta || "익명"}</span>
-          ${c.ip ? `<span>${c.ip}</span>` : ""}
-          ${c.date ? `<span>${c.date}</span>` : ""}
-        </div>
-        <div>${c.body || ""}</div>
-      `;
-      container.appendChild(el);
-    });
+
+    if (summary) {
+      const div = document.createElement("div");
+      div.textContent = summary;
+      out.appendChild(div);
+    } else if (!normalized.length) {
+      out.innerHTML = '<div class="dcbpv-empty">본문을 불러오지 못했습니다.</div>';
+    }
+
+    return out;
   }
 
   function openOverlay(){
@@ -434,13 +451,12 @@ syncSettings(handleUrl);
     const date = writer?.querySelector(".gall_date")?.textContent?.trim() || "";
     const views = wrap.querySelector(".gall_count")?.textContent?.trim() || "";
 
-    const article = sanitizeClone(wrap.querySelector(".write_div"));
+    const article = sanitizeContent(wrap.querySelector(".write_div"));
     const overlay = document.createElement("div");
     overlay.id = OVERLAY_ID;
 
     const rec = {
       up: wrap.querySelector(".up_num")?.textContent?.trim() || "0",
-      upFix: wrap.querySelector(".sup_num .font_blue")?.textContent?.trim() || "0",
       down: wrap.querySelector(".down_num")?.textContent?.trim() || "0"
     };
 
@@ -457,35 +473,30 @@ syncSettings(handleUrl);
     const gallId = urlObj.searchParams.get("id") || "";
     const reportUrl = articleNo && gallId ? `https://gall.dcinside.com/singo/?id=singo&singo_id=${gallId}&singo_no=${articleNo}&ko_name=${encodeURIComponent(document.title)}&s_url=${encodeURIComponent(currentUrl)}&gall_type=G` : "";
 
-    const refreshCounts = () => {
-      rec.up = wrap.querySelector(".up_num")?.textContent?.trim() || rec.up;
-      rec.upFix = wrap.querySelector(".sup_num .font_blue")?.textContent?.trim() || rec.upFix;
-      rec.down = wrap.querySelector(".down_num")?.textContent?.trim() || rec.down;
-      renderCounts();
-    };
-
-    let countsBox;
-    function renderCounts(){
-      if (!countsBox) return;
-      countsBox.innerHTML = `
-        <div class="dcbpv-action-group">
-          <button class="dcbpv-btn" data-act="up">
-            <div class="dcbpv-btn-icon">👍</div>
-            <div class="dcbpv-btn-text">${rec.up}</div>
-          </button>
-          <button class="dcbpv-btn" data-act="down">
-            <div class="dcbpv-btn-icon">👎</div>
-            <div class="dcbpv-btn-text">${rec.down}</div>
-          </button>
-          <button class="dcbpv-btn secondary" data-act="share">
-            <div class="dcbpv-btn-icon">🔗</div>
-            <div class="dcbpv-btn-text">공유</div>
-          </button>
-          <button class="dcbpv-btn warn" data-act="report">
-            <div class="dcbpv-btn-icon">🚨</div>
-            <div class="dcbpv-btn-text">신고</div>
-          </button>
-        </div>
+    function renderActions(){
+      const actionsBox = overlay.querySelector("#dcbpv-actions");
+      if (!actionsBox) return;
+      actionsBox.innerHTML = `
+        <button class="dcbpv-btn primary" data-act="open">
+          <span class="dcbpv-btn-icon">🔗</span>
+          <span class="dcbpv-btn-text">원문 보기</span>
+        </button>
+        <button class="dcbpv-btn" data-act="up">
+          <span class="dcbpv-btn-icon">👍</span>
+          <span class="dcbpv-btn-text">${rec.up}</span>
+        </button>
+        <button class="dcbpv-btn" data-act="down">
+          <span class="dcbpv-btn-icon">👎</span>
+          <span class="dcbpv-btn-text">${rec.down}</span>
+        </button>
+        <button class="dcbpv-btn" data-act="share">
+          <span class="dcbpv-btn-icon">📤</span>
+          <span class="dcbpv-btn-text">공유</span>
+        </button>
+        ${reportUrl ? `<button class="dcbpv-btn warn" data-act="report">
+          <span class="dcbpv-btn-icon">🚨</span>
+          <span class="dcbpv-btn-text">신고</span>
+        </button>` : ''}
       `;
     }
 
@@ -498,6 +509,10 @@ syncSettings(handleUrl);
         showSharePopup();
         return;
       }
+      if (act === "open") {
+        window.open(currentUrl, "_blank");
+        return;
+      }
       const btn = recomBtns[act];
       if (!btn) {
         console.warn("[DCB] 버튼을 찾을 수 없습니다:", act);
@@ -505,10 +520,13 @@ syncSettings(handleUrl);
       }
       try {
         btn.click();
-        setTimeout(refreshCounts, 600);
+        setTimeout(() => {
+          rec.up = wrap.querySelector(".up_num")?.textContent?.trim() || rec.up;
+          rec.down = wrap.querySelector(".down_num")?.textContent?.trim() || rec.down;
+          renderActions();
+        }, 600);
       } catch (error) {
         console.error("[DCB] 버튼 클릭 오류:", error);
-        alert("❌ 추천/비추천 처리 중 오류가 발생했습니다.\n" + error.message);
       }
     };
 
@@ -518,18 +536,16 @@ syncSettings(handleUrl);
       popup.id = "dcbpv-share-popup";
       popup.className = "dcbpv-share-popup";
       popup.innerHTML = `
-        <button class="dcbpv-share-close" aria-label="닫기">✕</button>
-        <h3>📤 게시글 공유하기</h3>
+        <button class="dcbpv-share-close" aria-label="닫기">×</button>
+        <h3>공유하기</h3>
         <div class="share-btns">
-          <div class="share-btn" data-share="kakao">💬 카카오톡</div>
-          <div class="share-btn" data-share="x">𝕏 트위터</div>
-          <div class="share-btn" data-share="facebook">f 페이스북</div>
+          <div class="share-btn" data-share="x">트위터</div>
+          <div class="share-btn" data-share="facebook">페이스북</div>
         </div>
-        <div style="margin-top:20px;padding-top:20px;border-top:1px solid #e0e0e0">
-          <div style="font-size:13px;color:#666;margin-bottom:10px;font-weight:600">🔗 링크 복사</div>
+        <div style="margin-top:16px;padding-top:16px;border-top:1px solid #e5e7eb">
           <div class="url-copy">
             <input type="text" readonly value="${currentUrl}" id="dcbpv-url-input">
-            <button id="dcbpv-copy-btn">📋 복사</button>
+            <button id="dcbpv-copy-btn">복사</button>
           </div>
         </div>
       `;
@@ -542,21 +558,31 @@ syncSettings(handleUrl);
         document.execCommand("copy");
         const btn = popup.querySelector("#dcbpv-copy-btn");
         const orig = btn.textContent;
-        btn.textContent = "✓ 복사됨";
+        btn.textContent = "복사됨";
         setTimeout(() => btn.textContent = orig, 1500);
       };
       
       popup.querySelectorAll(".share-btn[data-share]").forEach(btn => {
         btn.onclick = () => {
           const type = btn.dataset.share;
-          if (type === "kakao") {
-            alert("카카오톡 공유는 원본 페이지에서 이용하세요.");
-          } else if (type === "x") {
-            window.open(`https://twitter.com/intent/tweet?url=${encodeURIComponent(currentUrl)}&text=${encodeURIComponent(title)}`, "_blank", "width=600,height=400");
+          if (type === "x") {
+            window.open(`https://twitter.com/intent/tweet?url=${encodeURIComponent(currentUrl)}&text=${encodeURIComponent(title)}`, "_blank");
           } else if (type === "facebook") {
-            window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(currentUrl)}`, "_blank", "width=600,height=400");
+            window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(currentUrl)}`, "_blank");
           }
         };
+      });
+    }
+
+    // 첨부파일 수집
+    const fileBox = wrap.querySelector(".appending_file_box");
+    const attachments = [];
+    if (fileBox) {
+      const fileLinks = fileBox.querySelectorAll(".appending_file a");
+      fileLinks.forEach(link => {
+        const fileName = link.textContent.trim();
+        const fileUrl = link.href;
+        if (fileName && fileUrl) attachments.push({ name: fileName, url: fileUrl });
       });
     }
 
@@ -567,41 +593,36 @@ syncSettings(handleUrl);
             <div class="dcbpv-title">${title || "제목 없음"}</div>
             <div class="dcbpv-sub">
               ${head ? `<span class="dcbpv-chip">${head}</span>` : ""}
-              ${nick ? `<span class="dcbpv-chip">✍️ ${nick}${uid ? ` (${uid})` : ""}</span>` : ""}
-              ${date ? `<span class="dcbpv-chip">📅 ${date}</span>` : ""}
-              ${views ? `<span class="dcbpv-chip">👁️ ${views}</span>` : ""}
+              ${nick ? `<span class="dcbpv-chip">${nick}${ip ? ` (${ip})` : ""}</span>` : ""}
+              ${date ? `<span class="dcbpv-chip">${date}</span>` : ""}
+              ${views ? `<span class="dcbpv-chip">${views}</span>` : ""}
             </div>
           </div>
-          <button class="dcbpv-close" aria-label="닫기">✕</button>
+          <button class="dcbpv-close" aria-label="닫기">×</button>
         </div>
         <div class="dcbpv-body">
-          <div class="dcbpv-col">
-            <div class="dcbpv-article">
-              <div class="dcbpv-content" id="dcbpv-article"></div>
-              <div class="dcbpv-actions" id="dcbpv-actions"></div>
+          <div class="dcbpv-content" id="dcbpv-article"></div>
+          ${attachments.length > 0 ? `
+            <div class="dcbpv-attachments">
+              <div class="dcbpv-attachments-title">첨부파일</div>
+              ${attachments.map(f => `<a href="${f.url}" target="_blank" class="dcbpv-attachment">📎 ${f.name}</a>`).join('')}
             </div>
-          </div>
-          <div class="dcbpv-col">
-            <div class="dcbpv-comments">
-              <h4>💬 댓글 미리보기</h4>
-              <div class="dcbpv-commentlist" id="dcbpv-commentlist"></div>
-            </div>
-          </div>
+          ` : ''}
+          <div class="dcbpv-actions" id="dcbpv-actions"></div>
         </div>
       </div>
     `;
 
     document.documentElement.appendChild(overlay);
 
-    countsBox = overlay.querySelector("#dcbpv-actions");
-    renderCounts();
+    renderActions();
     overlay.addEventListener("click", (e) => {
       const actBtn = e.target.closest(".dcbpv-btn[data-act]");
       if (actBtn) {
         handleAction(actBtn.dataset.act);
         return;
       }
-      if (e.target.classList.contains("dcbpv-close")) {
+      if (e.target.classList.contains("dcbpv-close") || e.target.closest(".dcbpv-close")) {
         overlay.remove();
       }
     });
@@ -613,14 +634,11 @@ syncSettings(handleUrl);
     const artHost = overlay.querySelector("#dcbpv-article");
     if (article) artHost.appendChild(article);
     else artHost.innerHTML = '<div class="dcbpv-empty">본문을 불러오지 못했습니다.</div>';
-
-    const commentHost = overlay.querySelector("#dcbpv-commentlist");
-    renderComments(commentHost);
   }
 
   function shouldOpen(target){
-    // 게시글 목록(.gall_tit)이나 뷰 페이지(.view_content_wrap) 모두 지원
-    return !!(target.closest && (target.closest(".view_content_wrap") || target.closest(".gall_tit")));
+    // 게시글 목록(.gall_tit)만 지원 (뷰 페이지 우클릭 미리보기 제거)
+    return !!(target.closest && target.closest(".gall_tit"));
   }
 
   document.addEventListener("contextmenu", (e) => {
@@ -641,9 +659,6 @@ syncSettings(handleUrl);
       }
       return;
     }
-    
-    // 뷰 페이지에서 우클릭 시: 바로 오버레이
-    openOverlay();
   }, true);
   
   // 외부 URL의 게시글을 가져와 미리보기
@@ -654,10 +669,10 @@ syncSettings(handleUrl);
     const loadingOverlay = document.createElement("div");
     loadingOverlay.id = OVERLAY_ID;
     loadingOverlay.innerHTML = `
-      <div class="dcbpv-panel" style="justify-content:center;align-items:center;">
-        <div style="text-align:center;color:#e6edf3;">
-          <div style="font-size:48px;margin-bottom:16px;">⏳</div>
-          <div style="font-size:18px;font-weight:600;">게시글 불러오는 중...</div>
+      <div class="dcbpv-panel" style="justify-content:center;align-items:center;min-height:200px;">
+        <div style="text-align:center;color:#6b7280;">
+          <div style="font-size:32px;margin-bottom:12px;">⏳</div>
+          <div style="font-size:14px;font-weight:500;">불러오는 중...</div>
         </div>
       </div>
     `;
@@ -683,12 +698,12 @@ syncSettings(handleUrl);
       showPreviewFromDOM(tempWrap, doc, url);
     } catch (err) {
       loadingOverlay.innerHTML = `
-        <div class="dcbpv-panel" style="justify-content:center;align-items:center;">
-          <div style="text-align:center;color:#e6edf3;">
-            <div style="font-size:48px;margin-bottom:16px;">❌</div>
-            <div style="font-size:18px;font-weight:600;margin-bottom:8px;">게시글을 불러올 수 없습니다</div>
-            <div style="font-size:14px;color:#9fb1c7;">${err.message}</div>
-            <button style="margin-top:16px;padding:10px 20px;border:1px solid #4f7cff;border-radius:8px;background:rgba(79,124,255,.12);color:#e6edf3;cursor:pointer;font-size:14px;font-weight:600;" onclick="this.closest('#${OVERLAY_ID}').remove()">닫기</button>
+        <div class="dcbpv-panel" style="justify-content:center;align-items:center;min-height:200px;">
+          <div style="text-align:center;color:#6b7280;">
+            <div style="font-size:32px;margin-bottom:12px;">❌</div>
+            <div style="font-size:14px;font-weight:500;margin-bottom:8px;">게시글을 불러올 수 없습니다</div>
+            <div style="font-size:12px;color:#9ca3af;margin-bottom:16px;">${err.message}</div>
+            <button style="padding:8px 16px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;color:#374151;cursor:pointer;font-size:13px;font-weight:500;transition:.15s;" onmouseover="this.style.background='#f9fafb'" onmouseout="this.style.background='#fff'" onclick="this.closest('#${OVERLAY_ID}').remove()">닫기</button>
           </div>
         </div>
       `;
@@ -705,72 +720,59 @@ syncSettings(handleUrl);
     const writer = wrap.querySelector(".gall_writer, .ub-writer");
     const nick = writer?.querySelector(".nickname em, .nickname")?.textContent?.trim() || "";
     const ip   = writer?.getAttribute("data-ip") || writer?.querySelector(".ip")?.textContent?.trim() || "";
-    const uid  = writer?.getAttribute("data-uid") || "";
     const date = writer?.querySelector(".gall_date")?.textContent?.trim() || "";
     const views = wrap.querySelector(".gall_count")?.textContent?.trim() || "";
     
-    const article = sanitizeClone(wrap.querySelector(".write_div"));
+    const article = sanitizeContent(wrap.querySelector(".write_div"));
     
     const rec = {
       up: wrap.querySelector(".up_num")?.textContent?.trim() || "0",
-      upFix: wrap.querySelector(".sup_num .font_blue")?.textContent?.trim() || "0",
       down: wrap.querySelector(".down_num")?.textContent?.trim() || "0"
     };
-    // 댓글 수집
-    const cmtWrap = doc.querySelector(".comment_wrap[id^='comment_wrap_']");
-    const comments = [];
-    console.log('[DCB Preview] 댓글 컨테이너:', cmtWrap);
-    if (cmtWrap) {
-      // .comment_box > .cmt_list 구조 확인
-      const commentBox = cmtWrap.querySelector(".comment_box");
-      console.log('[DCB Preview] comment_box:', commentBox);
-      
-      if (commentBox) {
-        const cmtList = commentBox.querySelector(".cmt_list");
-        console.log('[DCB Preview] cmt_list:', cmtList);
-        
-        if (cmtList) {
-          // 일반 댓글 수집
-          const topLevelComments = cmtList.querySelectorAll(":scope > li.ub-content:not(.dory)");
-          console.log('[DCB Preview] 상위 댓글 개수:', topLevelComments.length);
-          
-          topLevelComments.forEach(li => {
-            const info = li.querySelector(".cmt_info");
-            if (info) {
-              const nickEl = info.querySelector(".nickname em");
-              const nickText = nickEl ? nickEl.textContent.trim() : (info.querySelector(".nickname")?.textContent?.trim() || "");
-              const ipEl   = info.querySelector(".ip")?.textContent?.trim() || "";
-              const dateEl = info.querySelector(".date_time")?.textContent?.trim() || "";
-              const txt  = info.querySelector(".usertxt");
-              const body = txt ? txt.textContent.trim() : "";
-              console.log('[DCB Preview] 댓글:', { nickText, ipEl, dateEl, body });
-              if (nickText || body) comments.push({ meta: nickText, ip: ipEl, date: dateEl, body, isReply: false });
-            }
-            
-            // 답글 수집
-            const replies = li.querySelectorAll(".reply_list > li.ub-content");
-            replies.forEach(reply => {
-              const rInfo = reply.querySelector(".reply_info");
-              if (rInfo) {
-                const rNickEl = rInfo.querySelector(".nickname em");
-                const rNickText = rNickEl ? rNickEl.textContent.trim() : (rInfo.querySelector(".nickname")?.textContent?.trim() || "");
-                const rIpEl   = rInfo.querySelector(".ip")?.textContent?.trim() || "";
-                const rDateEl = rInfo.querySelector(".date_time")?.textContent?.trim() || "";
-                const rTxt  = rInfo.querySelector(".usertxt");
-                const rBody = rTxt ? rTxt.textContent.trim() : "";
-                if (rNickText || rBody) comments.push({ meta: rNickText, ip: rIpEl, date: rDateEl, body: rBody, isReply: true });
-              }
-            });
-          });
-        }
-      }
+    
+    // 첨부파일 수집
+    const fileBox = wrap.querySelector(".appending_file_box");
+    const attachments = [];
+    if (fileBox) {
+      const fileLinks = fileBox.querySelectorAll(".appending_file a");
+      fileLinks.forEach(link => {
+        const fileName = link.textContent.trim();
+        const fileUrl = link.href;
+        if (fileName && fileUrl) attachments.push({ name: fileName, url: fileUrl });
+      });
     }
-    console.log('[DCB Preview] 총 수집된 댓글:', comments.length, comments);
     
     const urlObj = new URL(sourceUrl);
     const gallId = urlObj.searchParams.get("id") || "";
     const articleNo = sourceUrl.match(/no=(\d+)/)?.[1] || "";
     const reportUrl = articleNo && gallId ? `https://gall.dcinside.com/singo/?id=singo&singo_id=${gallId}&singo_no=${articleNo}&ko_name=${encodeURIComponent(title)}&s_url=${encodeURIComponent(sourceUrl)}&gall_type=G` : "";
+    
+    function renderActions(){
+      const actionsBox = overlay.querySelector("#dcbpv-actions");
+      if (!actionsBox) return;
+      actionsBox.innerHTML = `
+        <button class="dcbpv-btn primary" data-act="open">
+          <span class="dcbpv-btn-icon">🔗</span>
+          <span class="dcbpv-btn-text">원문 보기</span>
+        </button>
+        <button class="dcbpv-btn" data-act="up-preview">
+          <span class="dcbpv-btn-icon">👍</span>
+          <span class="dcbpv-btn-text">${rec.up}</span>
+        </button>
+        <button class="dcbpv-btn" data-act="down-preview">
+          <span class="dcbpv-btn-icon">👎</span>
+          <span class="dcbpv-btn-text">${rec.down}</span>
+        </button>
+        <button class="dcbpv-btn" data-act="share-preview">
+          <span class="dcbpv-btn-icon">📤</span>
+          <span class="dcbpv-btn-text">공유</span>
+        </button>
+        ${reportUrl ? `<button class="dcbpv-btn warn" data-act="report-preview">
+          <span class="dcbpv-btn-icon">🚨</span>
+          <span class="dcbpv-btn-text">신고</span>
+        </button>` : ''}
+      `;
+    }
     
     overlay.innerHTML = `
       <div class="dcbpv-panel">
@@ -779,43 +781,22 @@ syncSettings(handleUrl);
             <div class="dcbpv-title">${title || "제목 없음"}</div>
             <div class="dcbpv-sub">
               ${head ? `<span class="dcbpv-chip">${head}</span>` : ""}
-              ${nick ? `<span class="dcbpv-chip">✍️ ${nick}${uid ? ` (${uid})` : ""}</span>` : ""}
-              ${date ? `<span class="dcbpv-chip">📅 ${date}</span>` : ""}
-              ${views ? `<span class="dcbpv-chip">👁️ ${views}</span>` : ""}
+              ${nick ? `<span class="dcbpv-chip">${nick}${ip ? ` (${ip})` : ""}</span>` : ""}
+              ${date ? `<span class="dcbpv-chip">${date}</span>` : ""}
+              ${views ? `<span class="dcbpv-chip">${views}</span>` : ""}
             </div>
           </div>
-          <button class="dcbpv-close" aria-label="닫기">✕</button>
+          <button class="dcbpv-close" aria-label="닫기">×</button>
         </div>
         <div class="dcbpv-body">
-          <div class="dcbpv-col">
-            <div class="dcbpv-article">
-              <div class="dcbpv-content" id="dcbpv-article"></div>
-              <div class="dcbpv-actions" id="dcbpv-actions">
-                <div class="dcbpv-action-group">
-                  <button class="dcbpv-btn" data-act="open">
-                    <div class="dcbpv-btn-icon">🔗</div>
-                    <div class="dcbpv-btn-text">원본</div>
-                  </button>
-                  <button class="dcbpv-btn" data-act="up-preview">
-                    <div class="dcbpv-btn-icon">👍</div>
-                    <div class="dcbpv-btn-text">${rec.up}</div>
-                  </button>
-                  <button class="dcbpv-btn" data-act="down-preview">
-                    <div class="dcbpv-btn-icon">👎</div>
-                    <div class="dcbpv-btn-text">${rec.down}</div>
-                  </button>
-                  <button class="dcbpv-btn secondary" data-act="share-preview">
-                    <div class="dcbpv-btn-icon">📤</div>
-                    <div class="dcbpv-btn-text">공유</div>
-                  </button>
-                  ${reportUrl ? `<button class="dcbpv-btn warn" data-act="report-preview">
-                    <div class="dcbpv-btn-icon">🚨</div>
-                    <div class="dcbpv-btn-text">신고</div>
-                  </button>` : ""}
-                </div>
-              </div>
+          <div class="dcbpv-content" id="dcbpv-article"></div>
+          ${attachments.length > 0 ? `
+            <div class="dcbpv-attachments">
+              <div class="dcbpv-attachments-title">첨부파일</div>
+              ${attachments.map(f => `<a href="${f.url}" target="_blank" class="dcbpv-attachment">📎 ${f.name}</a>`).join('')}
             </div>
-          </div>
+          ` : ''}
+          <div class="dcbpv-actions" id="dcbpv-actions"></div>
         </div>
       </div>
     `;
@@ -823,12 +804,18 @@ syncSettings(handleUrl);
     document.documentElement.appendChild(overlay);
     window.isPreviewOpen = true;
     
+    renderActions();
+    
     overlay.querySelector(".dcbpv-close").onclick = () => {
       overlay.remove();
       window.isPreviewOpen = false;
     };
     overlay.addEventListener("click", (e)=>{
       if (e.target.id === OVERLAY_ID) {
+        overlay.remove();
+        window.isPreviewOpen = false;
+      }
+      if (e.target.classList.contains("dcbpv-close") || e.target.closest(".dcbpv-close")) {
         overlay.remove();
         window.isPreviewOpen = false;
       }
@@ -907,12 +894,12 @@ syncSettings(handleUrl);
           }
           
           // 버튼 UI 업데이트
-          const btnText = isUp ? "👍" : "👎";
-          btn.innerHTML = `<div class="dcbpv-btn-icon">${btnText}</div><div class="dcbpv-btn-text">${newCount}</div>`;
+          const btnIcon = isUp ? "👍" : "👎";
+          btn.innerHTML = `<span class="dcbpv-btn-icon">${btnIcon}</span><span class="dcbpv-btn-text">${newCount}</span>`;
         } catch (e) {
           console.log("[DCB] 최신 수치 가져오기 실패");
-          const btnText = isUp ? "👍" : "👎";
-          btn.innerHTML = `<div class="dcbpv-btn-icon">${btnText}</div><div class="dcbpv-btn-text">+1</div>`;
+          const btnIcon = isUp ? "👍" : "👎";
+          btn.innerHTML = `<span class="dcbpv-btn-icon">${btnIcon}</span><span class="dcbpv-btn-text">+1</span>`;
         }
         
         alert(isUp ? "✅ 추천이 완료되었습니다!" : "✅ 비추천이 완료되었습니다!");
@@ -942,18 +929,16 @@ syncSettings(handleUrl);
     popup.id = "dcbpv-share-popup";
     popup.className = "dcbpv-share-popup";
     popup.innerHTML = `
-      <button class="dcbpv-share-close" aria-label="닫기">✕</button>
-      <h3>📤 게시글 공유하기</h3>
+      <button class="dcbpv-share-close" aria-label="닫기">×</button>
+      <h3>공유하기</h3>
       <div class="share-btns">
-        <div class="share-btn" data-share="kakao">💬 카카오톡</div>
-        <div class="share-btn" data-share="x">𝕏 트위터</div>
-        <div class="share-btn" data-share="facebook">f 페이스북</div>
+        <div class="share-btn" data-share="x">트위터</div>
+        <div class="share-btn" data-share="facebook">페이스북</div>
       </div>
-      <div style="margin-top:20px;padding-top:20px;border-top:1px solid #e0e0e0">
-        <div style="font-size:13px;color:#666;margin-bottom:10px;font-weight:600">🔗 링크 복사</div>
+      <div style="margin-top:16px;padding-top:16px;border-top:1px solid #e5e7eb">
         <div class="url-copy">
           <input type="text" readonly value="${url}" id="dcbpv-url-input-preview">
-          <button id="dcbpv-copy-btn-preview">📋 복사</button>
+          <button id="dcbpv-copy-btn-preview">복사</button>
         </div>
       </div>
     `;
@@ -967,19 +952,17 @@ syncSettings(handleUrl);
       document.execCommand("copy");
       const btn = popup.querySelector("#dcbpv-copy-btn-preview");
       const orig = btn.textContent;
-      btn.textContent = "✓ 복사됨";
+      btn.textContent = "복사됨";
       setTimeout(() => btn.textContent = orig, 1500);
     };
     
     popup.querySelectorAll(".share-btn[data-share]").forEach(btn => {
       btn.onclick = () => {
         const type = btn.dataset.share;
-        if (type === "kakao") {
-          alert("카카오톡 공유는 원본 페이지에서 이용하세요.");
-        } else if (type === "x") {
-          window.open(`https://twitter.com/intent/tweet?url=${encodeURIComponent(url)}&text=${encodeURIComponent(title)}`, "_blank", "width=600,height=400");
+        if (type === "x") {
+          window.open(`https://twitter.com/intent/tweet?url=${encodeURIComponent(url)}&text=${encodeURIComponent(title)}`, "_blank");
         } else if (type === "facebook") {
-          window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`, "_blank", "width=600,height=400");
+          window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`, "_blank");
         }
       };
     });
