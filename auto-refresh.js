@@ -10,6 +10,7 @@ auto-refresh.js - 자동 새로고침 기능 (현대화 버전)
   let remainingSeconds = 0;
   let pausedByReading = false;
   let pausedByPreview = false;
+  const listOnlyMode = true; // 자동 새로고침은 항상 목록 페이지 전용
   let pageVisible = true;
   let lastPostCount = 0;
   let noNewPostCount = 0; // 연속으로 새 게시물 없음 카운트
@@ -155,6 +156,10 @@ auto-refresh.js - 자동 새로고침 기능 (현대화 버전)
   const startAutoRefresh = () => {
     if (timerId) return;
     if (!pageVisible) return;
+    if (listOnlyMode && !isListView()) {
+      console.log('[DCB] 목록 페이지 전용 모드: 이 페이지에서 자동 새로고침 비활성화됨');
+      return;
+    }
     
     console.log(`[DCB] 자동 새로고침 시작: ${currentInterval}초 간격`);
     lastPostCount = getPostCount();
@@ -186,10 +191,11 @@ auto-refresh.js - 자동 새로고침 기능 (현대화 버전)
   };
 
   /* ───── 글 본문/댓글 감지: 읽는 중이면 새로고침 금지 ───── */
-  const isArticleView = () => /\/board\/view\//.test(location.pathname + location.search + location.hash);
+  const isArticleView = () => /\/board\/view(?:\/|$)/.test(location.pathname);
+  const isListView = () => /\/board\/lists(?:\/|$)/.test(location.pathname);
   const hasCommentSection = () => !!document.querySelector('.comment_wrap');
-  const isPreviewActive = () => pausedByPreview || !!window.isPreviewOpen;
-  const shouldPauseForReading = () => isPreviewActive() || (isArticleView() && hasCommentSection());
+  const isPreviewActive = () => pausedByPreview;
+  const shouldPauseForReading = () => isPreviewActive() || (isArticleView() && hasCommentSection()) || (listOnlyMode && !isListView());
 
   /* ───── 설정 적용 ───── */
   const apply = (enabled, interval) => {
@@ -215,7 +221,7 @@ auto-refresh.js - 자동 새로고침 기능 (현대화 버전)
   /* ───── 초기 설정 로드 ───── */
   chrome.storage.sync.get({ 
     autoRefreshEnabled: false, 
-    autoRefreshInterval: 60 
+    autoRefreshInterval: 60
   }, ({ autoRefreshEnabled, autoRefreshInterval }) => {
     apply(autoRefreshEnabled, autoRefreshInterval);
   });
@@ -278,6 +284,7 @@ auto-refresh.js - 자동 새로고침 기능 (현대화 버전)
   /* ───── 미리보기 오버레이 상태 연동 ───── */
   const handlePreviewState = (open) => {
     pausedByPreview = !!open;
+    window.isPreviewOpen = !!open; // 전역 상태 동기화
     pausedByReading = shouldPauseForReading();
 
     if (timerId && pausedByReading) {
@@ -293,6 +300,6 @@ auto-refresh.js - 자동 새로고침 기능 (현대화 버전)
     handlePreviewState(e.detail?.open);
   });
 
-  // 초기 상태 반영 (이미 열려 있는 경우)
-  handlePreviewState(window.isPreviewOpen);
+  // 초기 상태 반영 (미리보기는 기본적으로 닫혀있음)
+  handlePreviewState(false);
 })();
