@@ -679,6 +679,7 @@ syncSettings(handleUrl);
     createStyle();
     document.documentElement.appendChild(loadingOverlay);
     window.isPreviewOpen = true;
+    document.dispatchEvent(new CustomEvent('dcb-preview-state', { detail: { open: true } }));
     
     try {
       const response = await fetch(url);
@@ -694,7 +695,9 @@ syncSettings(handleUrl);
       
       // 기존 로딩 제거 후 실제 컨텐츠 표시
       loadingOverlay.remove();
+      // 로딩 완료 상태 > 본문 오버레이에서 다시 true 상태로 전환
       window.isPreviewOpen = false;
+      document.dispatchEvent(new CustomEvent('dcb-preview-state', { detail: { open: false } }));
       showPreviewFromDOM(tempWrap, doc, url);
     } catch (err) {
       loadingOverlay.innerHTML = `
@@ -803,21 +806,23 @@ syncSettings(handleUrl);
     
     document.documentElement.appendChild(overlay);
     window.isPreviewOpen = true;
+    document.dispatchEvent(new CustomEvent('dcb-preview-state', { detail: { open: true } }));
     
     renderActions();
     
-    overlay.querySelector(".dcbpv-close").onclick = () => {
+    function closePreviewOverlay() {
       overlay.remove();
       window.isPreviewOpen = false;
-    };
+      document.dispatchEvent(new CustomEvent('dcb-preview-state', { detail: { open: false } }));
+    }
+
+    overlay.querySelector(".dcbpv-close").onclick = closePreviewOverlay;
     overlay.addEventListener("click", (e)=>{
       if (e.target.id === OVERLAY_ID) {
-        overlay.remove();
-        window.isPreviewOpen = false;
+        closePreviewOverlay();
       }
       if (e.target.classList.contains("dcbpv-close") || e.target.closest(".dcbpv-close")) {
-        overlay.remove();
-        window.isPreviewOpen = false;
+        closePreviewOverlay();
       }
     });
     
