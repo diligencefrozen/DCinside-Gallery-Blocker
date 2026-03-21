@@ -160,7 +160,11 @@ auto-refresh.js - 자동 새로고침 기능 (현대화 버전)
       console.log('[DCB] 목록 페이지 전용 모드: 이 페이지에서 자동 새로고침 비활성화됨');
       return;
     }
-    
+    if (shouldPauseForReading()) {
+      console.log('[DCB] 미리보기/본문 읽기 중: 자동 새로고침 시작 불가');
+      return;
+    }
+
     console.log(`[DCB] 자동 새로고침 시작: ${currentInterval}초 간격`);
     lastPostCount = getPostCount();
     
@@ -172,6 +176,11 @@ auto-refresh.js - 자동 새로고침 기능 (현대화 버전)
         return;
       }
       
+      if (shouldPauseForReading()) {
+        console.log('[DCB] 미리보기/본문 읽기 중 - 새로고침 건너뜀');
+        return;
+      }
+
       adjustInterval(); // 간격 조정
       
       console.log('[DCB] 페이지 자동 새로고침 실행');
@@ -194,7 +203,7 @@ auto-refresh.js - 자동 새로고침 기능 (현대화 버전)
   const isArticleView = () => /\/board\/view(?:\/|$)/.test(location.pathname);
   const isListView = () => /\/board\/lists(?:\/|$)/.test(location.pathname);
   const hasCommentSection = () => !!document.querySelector('.comment_wrap');
-  const isPreviewActive = () => pausedByPreview;
+  const isPreviewActive = () => pausedByPreview || !!window.isPreviewOpen;
   const shouldPauseForReading = () => isPreviewActive() || (isArticleView() && hasCommentSection()) || (listOnlyMode && !isListView());
 
   /* ───── 설정 적용 ───── */
@@ -291,7 +300,7 @@ auto-refresh.js - 자동 새로고침 기능 (현대화 버전)
       stopAutoRefresh();
     }
 
-    if (autoRefreshEnabled && !pausedByReading && !timerId && pageVisible) {
+    if (autoRefreshEnabled && !shouldPauseForReading() && !timerId && pageVisible) {
       startAutoRefresh();
     }
   };
