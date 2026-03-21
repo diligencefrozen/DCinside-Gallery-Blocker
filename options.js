@@ -26,7 +26,8 @@ const recSelectors = [
 const recGallSelectors = [
   "div.ad_bottom_list[style]",
   "div.content_box.r_recommend[data-rand]",
-  "div.content_box.r_timebest"
+  "div.content_box.r_timebest",
+  "div.content_box.r_dcmedia"
 ];
 
 /* 검색(combine) 페이지 추천 숨김 */
@@ -35,7 +36,8 @@ const recSearchSelectors = [
   "div.content_box.r_recommend",
   "div.content_box.r_timebest",
   "div.integrate_cont.news_result",
-  "section.left_content"
+  "section.left_content",
+  "section.right_content"
 ];
 
 /* 백업 범위 및 기본값 */
