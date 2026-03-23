@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "디시갤 차단기",
   "short_name": "디시갤 차단기",
-  "version": "7.3.4.2026",
+  "version": "7.3.5.2026",
   "description": "갤러리, 글, 댓글, 유저까지, 보고 싶지 않은 콘텐츠를 차단합니다",
   "icons": {
     "16": "icons/16.png",
@@ -51,7 +51,9 @@
         "*://gall.dcinside.com/mgallery/board/lists*",
         "*://gall.dcinside.com/mgallery/board/view*",
         "*://gall.dcinside.com/mini/board/lists*",
-        "*://gall.dcinside.com/mini/board/view*"
+        "*://gall.dcinside.com/mini/board/view*",
+        "*://gall.dcinside.com/person/board/lists*",
+        "*://gall.dcinside.com/person/board/view*"
       ],
       "js": ["content_script.js"],
       "run_at": "document_start"
@@ -71,7 +73,9 @@
         "*://gall.dcinside.com/mgallery/board/*",
         "*://gall.dcinside.com/mini/board/*",
         "*://gall.dcinside.com/mgallery/*",
-        "*://gall.dcinside.com/mini/*"
+        "*://gall.dcinside.com/mini/*",
+        "*://gall.dcinside.com/person/board/lists*",
+        "*://gall.dcinside.com/person/board/view*"
       ],
       "js": ["cleaner-gall.js"],
       "run_at": "document_start"
@@ -93,7 +97,9 @@
       "matches": [
         "*://gall.dcinside.com/board/view*",
         "*://gall.dcinside.com/mgallery/board/view*",
-        "*://gall.dcinside.com/mini/board/view*"
+        "*://gall.dcinside.com/mini/board/view*",
+        "*://gall.dcinside.com/person/board/lists*",
+        "*://gall.dcinside.com/person/board/view*"
       ],
       "js": ["cleaner-comment.js"],
       "run_at": "document_start",
@@ -103,7 +109,9 @@
       "matches": [
         "*://gall.dcinside.com/board/view*",
         "*://gall.dcinside.com/mgallery/board/view*",
-        "*://gall.dcinside.com/mini/board/view*"
+        "*://gall.dcinside.com/mini/board/view*",
+        "*://gall.dcinside.com/person/board/lists*",
+        "*://gall.dcinside.com/person/board/view*"
       ],
       "js": ["cleaner-img-comment.js"],
       "run_at": "document_start",
@@ -113,7 +121,9 @@
       "matches": [
         "*://gall.dcinside.com/board/view*",
         "*://gall.dcinside.com/mgallery/board/view*",
-        "*://gall.dcinside.com/mini/board/view*"
+        "*://gall.dcinside.com/mini/board/view*",
+        "*://gall.dcinside.com/person/board/lists*",
+        "*://gall.dcinside.com/person/board/view*"
       ],
       "js": ["cleaner-dccon.js"],
       "run_at": "document_start",
@@ -132,7 +142,9 @@
         "*://gall.dcinside.com/mgallery/board/lists*",
         "*://gall.dcinside.com/mgallery/board/view*",
         "*://gall.dcinside.com/mini/board/lists*",
-        "*://gall.dcinside.com/mini/board/view*"
+        "*://gall.dcinside.com/mini/board/view*",
+        "*://gall.dcinside.com/person/board/lists*",
+        "*://gall.dcinside.com/person/board/view*"
       ],
       "js": ["cleaner-anonymous.js"],
       "run_at": "document_start",
@@ -157,7 +169,9 @@
         "*://gall.dcinside.com/mgallery/board/lists*",
         "*://gall.dcinside.com/mgallery/board/view*",
         "*://gall.dcinside.com/mini/board/lists*",
-        "*://gall.dcinside.com/mini/board/view*"
+        "*://gall.dcinside.com/mini/board/view*",
+        "*://gall.dcinside.com/person/board/lists*",
+        "*://gall.dcinside.com/person/board/view*"
       ],
       "js": ["auto-refresh.js"],
       "run_at": "document_end",
