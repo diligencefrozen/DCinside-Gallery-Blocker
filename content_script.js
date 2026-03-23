@@ -652,7 +652,8 @@ syncSettings(handleUrl);
     // 목록에서 우클릭 시: 해당 게시글 정보를 불러와 현재 창에서 오버레이
     const listItem = e.target.closest(".gall_tit");
     if (listItem) {
-      const link = listItem.querySelector("a[href*='/board/view/']");
+      //const link = listItem.querySelector("a[href*='/board/view/']");
+      const link = listItem.querySelector("a[href*='board/view']");
       if (link && link.href) {
         // 새 탭에서 컨텐츠를 가져와 현재 창 오버레이에 표시
         fetchAndShowPreview(link.href);
