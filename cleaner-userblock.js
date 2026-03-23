@@ -129,27 +129,16 @@
     return items;
   }
 
-  function maskOne(item, masked){
-    const { container, body } = item;
-    
-    // 이미 처리된 상태와 동일하면 스킵
-    const alreadyMasked = container.classList.contains('dcb-masked');
-    if (masked === alreadyMasked) return;
-    
-    if (masked){
-      if (!body.dataset.dcbOriginal){
-        body.dataset.dcbOriginal = body.innerHTML;
-      }
-      body.innerHTML = `<span class="dcb-blocked">차단된 댓글입니다</span>`;
-      container.classList.add('dcb-masked');
-    }else{
-      if (body.dataset.dcbOriginal){
-        body.innerHTML = body.dataset.dcbOriginal;
-        delete body.dataset.dcbOriginal;
-      }
-      container.classList.remove('dcb-masked');
-    }
-  }
+function maskOne(item, masked){
+  const { container } = item;
+  const targets = getHideTargets(item);
+
+  const alreadyMasked = container.classList.contains('dcb-masked');
+  if (masked === alreadyMasked) return;
+
+  targets.forEach(el => setHidden(el, masked));
+  container.classList.toggle('dcb-masked', masked);
+}
 
   function applyMask(tokens){
     const isIp = t => /^\d{1,3}(?:\.\d{1,3}){1,3}$/.test(t);
@@ -209,6 +198,44 @@
     else document.addEventListener('DOMContentLoaded', startMO, { once:true });
   };
   startMO();
+
+  function getHideTargets(item){
+  // 가장 이상적인 경우: 댓글 한 덩어리(li.ub-content) 자체를 숨김
+  const wholeItem =
+    item.container.closest?.('li.ub-content') ||
+    item.body.closest?.('li.ub-content');
+
+  if (wholeItem) return [wholeItem];
+
+  // fallback: 닉네임줄 + 본문줄 각각 숨김
+  const infoBox =
+    item.writer.closest('.cmt_nickbox, .cmt_info') ||
+    item.writer;
+
+  const bodyBox =
+    item.body.closest('.cmt_txtbox, .comment_box, .cmt_txt') ||
+    item.body;
+
+  return [...new Set([infoBox, bodyBox].filter(Boolean))];
+}
+
+function setHidden(el, hidden){
+  if (!el) return;
+
+  if (hidden){
+    if (!el.hasAttribute('data-dcb-prev-display')) {
+      el.setAttribute('data-dcb-prev-display', el.style.display || '');
+    }
+    el.style.display = 'none';
+  } else {
+    if (el.hasAttribute('data-dcb-prev-display')) {
+      el.style.display = el.getAttribute('data-dcb-prev-display');
+      el.removeAttribute('data-dcb-prev-display');
+    } else {
+      el.style.removeProperty('display');
+    }
+  }
+}
 
   // 설정 변경 즉시 반영
   chrome.storage.onChanged.addListener((changes, area)=>{
