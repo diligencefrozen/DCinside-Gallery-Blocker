@@ -8,6 +8,22 @@
     document.querySelectorAll("." + BADGE).forEach((el) => el.remove());
   }
 
+  function removeInjectedStyle() {
+    const st = document.getElementById(STYLE_ID);
+    if (st) st.remove();
+
+    // 혹시 예전 버전에서 BADGE id로 style을 넣었을 경우까지 정리
+    const legacyStyle = document.getElementById(BADGE);
+    if (legacyStyle && legacyStyle.tagName === "STYLE") {
+      legacyStyle.remove();
+    }
+  }
+
+  function restoreOriginalUi() {
+    removeAllBadges();
+    removeInjectedStyle();
+  }
+
   function ensureStyle() {
     const legacyStyle = document.getElementById(BADGE);
     if (legacyStyle && legacyStyle.tagName === "STYLE") {
@@ -39,7 +55,7 @@
       /* 닉네임 줄 전체를 안정적으로 한 줄처럼 정렬 */
       .cmt_nickbox{
         display:block !important;
-        margin-bottom:8px !important;   /* 댓글 본문과 간격 */
+        margin-bottom:8px !important;
         min-height:24px;
       }
 
@@ -147,7 +163,6 @@
     const nikcon = writer.querySelector(':scope > .writer_nikcon');
     const nick = writer.querySelector(':scope > .nickname');
 
-    // 닉네임 뒤, 아이콘 앞에 넣는 것이 가장 안정적
     if (nikcon) {
       nikcon.insertAdjacentElement("beforebegin", span);
     } else if (nick) {
@@ -158,19 +173,19 @@
   }
 
   function scan() {
-    ensureStyle();
-
     if (!showEnabled) {
-      removeAllBadges();
+      restoreOriginalUi();
       return;
     }
 
+    ensureStyle();
     document.querySelectorAll(".gall_writer").forEach(placeBadge);
   }
 
   try {
     if (chrome && chrome.storage && chrome.storage.sync) {
-      chrome.storage.sync.get({ showUidBadge: true }, ({ showUidBadge }) => {
+      chrome.storage.sync.get({ showUidBadge: false }, ({ showUidBadge }) => {
+      // chrome.storage.sync.get({ showUidBadge: true }, ({ showUidBadge }) => {
         showEnabled = !!showUidBadge;
         scan();
       });
