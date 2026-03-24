@@ -66,6 +66,91 @@
   }
   .switch input:checked + .slider{background:var(--accent);box-shadow:0 0 10px rgba(79,124,255,.5)}
   .switch input:checked + .slider:before{transform:translateX(22px)}
+
+  .memo-tools{
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+  align-items:center;
+}
+.memo-tools input[type="text"]{
+  flex:1 1 220px;
+}
+.memo-list{
+  list-style:none;
+  margin-top:10px;
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
+.memo-card{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+  background:#21262d;
+  border-radius:10px;
+  padding:12px;
+}
+.memo-meta{
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+}
+.memo-chip{
+  display:inline-flex;
+  align-items:center;
+  gap:4px;
+  padding:4px 8px;
+  border-radius:999px;
+  background:#30363d;
+  font-size:12px;
+  color:#e6edf3;
+}
+.memo-card textarea{
+  width:100%;
+  min-height:82px;
+  resize:vertical;
+  padding:10px 12px;
+  font-size:14px;
+  border:1px solid #30363d;
+  border-radius:8px;
+  background:#010409;
+  color:var(--fg);
+}
+.memo-card textarea:focus{
+  outline:2px solid var(--accent);
+  outline-offset:1px;
+}
+.memo-card .memo-bottom{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:10px;
+  flex-wrap:wrap;
+}
+.memo-card .memo-actions{
+  display:flex;
+  gap:8px;
+}
+.memo-card .memo-color{
+  width:46px;
+  height:32px;
+  border:1px solid #30363d;
+  border-radius:8px;
+  background:#010409;
+  padding:2px;
+}
+.memo-empty{
+  opacity:.75;
+  font-size:14px;
+  padding:12px 0;
+}
+.memo-status{
+  font-size:12px;
+  opacity:.95;
+  color:#9dd6a5;
+  min-height:16px;
+}
 </style>
 </head>
 <body>
@@ -217,6 +302,22 @@
     * 이미지 댓글: 이미지에 달린 댓글 영역만 숨김<br>
     * 디시콘: 본문과 댓글의 디시콘 숨김</p>
   </section>
+
+  <section class="card">
+  <h2>📝 이용자 메모 관리</h2>
+  <p class="note">회원은 아이디 기준, 비회원은 아이피 기준으로 저장됩니다.</p>
+
+  <div class="memo-tools">
+    <input id="memoSearchInput" type="text" placeholder="닉네임, 아이디, 아이피, 메모 내용 검색">
+    <button id="refreshMemoListBtn" type="button">새로고침</button>
+    <button id="exportUserMemoBtn" type="button">내보내기</button>
+    <button id="importUserMemoBtn" type="button">가져오기</button>
+    <input id="importUserMemoFile" type="file" accept=".json,application/json" style="display:none">
+  </div>
+
+  <p class="memo-status" id="userMemoStatus"></p>
+  <ul id="memoList" class="memo-list"></ul>
+</section>
 </main>
 
 <script src="options.js"></script>
