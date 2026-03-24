@@ -20,14 +20,12 @@
     display:flex;flex-direction:column;gap:22px;
   }
   h1{font-size:18px;letter-spacing:.5px;text-shadow:0 0 6px var(--neon)}
-  /* 스위치 */
   .switch{position:relative;width:46px;height:24px}
   .switch input{display:none}
   .slider{position:absolute;inset:0;background:#444;border-radius:34px;transition:.3s;cursor:pointer}
   .slider:before{content:"";position:absolute;left:3px;top:3px;width:18px;height:18px;background:#fff;border-radius:50%;transition:.3s}
   input:checked + .slider{background:var(--neon);box-shadow:0 0 8px var(--neon)}
   input:checked + .slider:before{transform:translateX(22px)}
-  /* 버튼 & 필드 */
   button{
     padding:8px 12px;font-size:14px;border:1px solid var(--neon);
     border-radius:8px;background:transparent;color:var(--light);cursor:pointer;transition:.25s
@@ -37,20 +35,17 @@
     padding:6px 4px;font-size:14px;width:72px;border:1px solid #444;
     border-radius:6px;background:#222;color:var(--light)
   }
-  /* 슬라이더: 두 슬라이더 모두 동일 폭/느낌으로 */
   input[type="range"]{
     display:block;
     width:100%;
     accent-color:var(--neon);
   }
   label.row{display:flex;align-items:center;gap:10px}
-  /* 라벨은 가변 폭, 입력/스위치는 고정 폭으로 우측 정렬 */
   label.row > span{flex:1 1 auto;min-width:110px}
   label.row > .switch,
   label.row > select,
   label.row > input[type="number"]{flex:0 0 auto}
 
-  /* UID 입력 */
   .row-input{
     display:flex;gap:8px;align-items:center;
   }
@@ -65,20 +60,88 @@
     min-width:56px;
     padding:8px 12px;
   }
+
+  .row-actions{
+    display:flex;
+    gap:8px;
+  }
+  .row-actions button{
+    flex:1 1 0;
+  }
+
   .muted{font-size:12px;opacity:.8}
   .hint{font-size:12px;opacity:.9;color:#c9d1d9;margin-top:6px}
+  .status{font-size:12px;opacity:.95;color:#9dd6a5;min-height:16px}
   ul#uidList{list-style:none;display:flex;flex-direction:column;gap:6px;max-height:120px;overflow:auto}
   ul#uidList li{display:flex;justify-content:space-between;align-items:center;border:1px solid #333;border-radius:8px;padding:6px 8px;background:#151a22}
   ul#uidList code{opacity:.9}
   .btn-danger{border-color:#ff6b6b}
   .btn-danger:hover{background:#ff6b6b;color:#000}
   .divider{height:1px;background:#1f2630;border:0;margin-top:-6px}
+
+.user-memo-quick{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+.user-memo-quick-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+}
+.user-memo-quick-head .hint{
+  margin-top:0;
+}
+#userMemoList{
+  list-style:none;
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  max-height:220px;
+  overflow:auto;
+}
+#userMemoList li{
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+  border:1px solid #333;
+  border-radius:8px;
+  padding:8px;
+  background:#151a22;
+}
+.user-memo-top{
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+}
+.user-memo-chip{
+  display:inline-flex;
+  align-items:center;
+  padding:2px 6px;
+  border-radius:999px;
+  background:#222b36;
+  color:#dbe5f0;
+  font-size:11px;
+}
+.user-memo-body{
+  font-size:12px;
+  line-height:1.4;
+  word-break:break-word;
+}
+.user-memo-actions{
+  display:flex;
+  justify-content:flex-end;
+}
+.user-memo-actions button{
+  padding:4px 8px;
+  font-size:12px;
+}
 </style>
 </head>
 <body>
   <h1>디시갤 차단기</h1>
 
-  <!-- 갤러리 차단 ON/OFF -->
   <label class="row">
     <span style="min-width:110px;">갤러리 차단</span>
     <label class="switch">
@@ -87,7 +150,6 @@
     </label>
   </label>
 
-  <!-- 차단 방식 -->
   <label class="row">
     <span style="min-width:110px;">차단 방식</span>
     <select id="blockMode">
@@ -98,7 +160,6 @@
   </label>
   <p class="hint" id="blockModeHint" style="font-size:11px;opacity:0.85"></p>
 
-  <!-- 댓글 숨기기 -->
   <label class="row">
     <span style="min-width:110px;">일반 댓글 숨기기</span>
     <label class="switch">
@@ -107,7 +168,6 @@
     </label>
   </label>
 
-  <!-- 이미지 댓글 숨기기 -->
   <label class="row">
     <span style="min-width:110px;">이미지 댓글 숨기기</span>
     <label class="switch">
@@ -116,7 +176,6 @@
     </label>
   </label>
 
-  <!-- 디시콘 숨기기 -->
   <label class="row">
     <span style="min-width:110px;">디시콘 숨기기</span>
     <label class="switch">
@@ -125,7 +184,6 @@
     </label>
   </label>
 
-  <!-- 페이지 미리보기 -->
   <label class="row">
     <span style="min-width:110px;">페이지 미리보기</span>
     <label class="switch">
@@ -137,7 +195,6 @@
 
   <hr class="divider">
 
-  <!-- 자동 새로고침 -->
   <label class="row">
     <span style="min-width:110px;">자동 새로고침</span>
     <label class="switch">
@@ -146,7 +203,6 @@
     </label>
   </label>
 
-  <!-- 새로고침 간격 -->
   <label class="row">
     <span style="min-width:110px;">새로고침 간격 (초)</span>
     <input type="number" id="autoRefreshIntervalNum" min="10" max="600" step="10">
@@ -156,7 +212,6 @@
 
   <hr class="divider">
 
-  <!-- 지연 시간 (초보 모드일 때만 표시) -->
   <div id="delaySection" style="display:none;">
     <label class="row">
       <span style="min-width:110px;">리다이렉트 지연 시간 (초)</span>
@@ -168,7 +223,6 @@
 
   <hr class="divider">
 
-  <!-- 페이지 숨김  -->
   <label class="row">
     <span style="min-width:110px;">메인 페이지 불필요한 영역 숨김</span>
     <label class="switch">
@@ -198,7 +252,6 @@
 
   <hr class="divider">
 
-  <!-- 사용자 차단 -->
   <label class="row">
     <span style="min-width:110px;">사용자 차단</span>
     <label class="switch">
@@ -207,7 +260,6 @@
     </label>
   </label>
 
-  <!-- 닉네임 옆 회원 ID 표시 -->
   <label class="row">
     <span style="min-width:110px;">닉네임 옆 회원 아이디 표시</span>
     <label class="switch">
@@ -216,7 +268,6 @@
     </label>
   </label>
 
-  <!-- 비회원 게시물 숨기기 -->
   <label class="row">
     <span style="min-width:110px;">비회원 게시물과 댓글 숨기기</span>
     <label class="switch">
@@ -225,7 +276,6 @@
     </label>
   </label>
 
-  <!-- 차단할 유저 아이디/아이피 -->
   <label class="row">
     <span style="min-width:110px;">차단할 유저 아이디와 아이피</span>
   </label>
@@ -237,7 +287,33 @@
   <div class="muted">* UID는 작성자 요소의 <code>data-uid</code> 값 또는 갤로그 주소의 사용자 ID입니다.</div>
   <div class="muted">* 비회원은 IP 앞부분(예: <code>39.7</code>)을 등록하면 일괄 차단됩니다.</div>
 
-  <!-- 옵션 페이지 -->
+  <hr class="divider">
+
+  <label class="row">
+    <span style="min-width:110px;">이용자 메모</span>
+    <label class="switch">
+      <input type="checkbox" id="userMemoEnabled">
+      <span class="slider"></span>
+    </label>
+  </label>
+  <p class="hint">디시 메모와 무관하게 확장프로그램 내부에만 저장됩니다.</p>
+  <div class="row-actions">
+    <button id="exportUserMemoBtn" type="button">내보내기</button>
+    <button id="importUserMemoBtn" type="button">가져오기</button>
+  </div>
+  <input id="importUserMemoFile" type="file" accept=".json,application/json" style="display:none">
+  <p class="status" id="userMemoTransferStatus"></p>
+
+<hr class="divider">
+
+<div class="user-memo-quick">
+  <div class="user-memo-quick-head">
+    <p class="hint">최근 이용자 메모</p>
+    <button id="refreshUserMemoListBtn" type="button">새로고침</button>
+  </div>
+  <ul id="userMemoList"></ul>
+</div>
+
   <button id="openOptions">설정 메뉴 열기</button>
 
   <script src="popup.js"></script>
