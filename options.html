@@ -151,6 +151,28 @@
   color:#9dd6a5;
   min-height:16px;
 }
+.support-card{
+  gap:12px;
+}
+.support-link{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:fit-content;
+  padding:10px 14px;
+  border:1px solid var(--accent);
+  border-radius:8px;
+  color:var(--accent);
+  text-decoration:none;
+  font-size:14px;
+  font-weight:600;
+  transition:.25s;
+}
+.support-link:hover{
+  background:var(--accent);
+  color:var(--bg-1);
+}
+
 </style>
 </head>
 <body>
@@ -318,6 +340,13 @@
   <p class="memo-status" id="userMemoStatus"></p>
   <ul id="memoList" class="memo-list"></ul>
 </section>
+
+<section class="card support-card">
+  <h2>📮 문의 / 버그 제보</h2>
+  <p class="note">확장프로그램 사용 중 문제를 발견했거나 개선 아이디어가 있다면, 아래 이슈 페이지에 남겨주세요.</p>
+  <a class="support-link" href="https://github.com/diligencefrozen/DCinside-Gallery-Blocker/issues" target="_blank" rel="noopener noreferrer">문의하기</a>
+</section>
+
 </main>
 
 <script src="options.js"></script>
