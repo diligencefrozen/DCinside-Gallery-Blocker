@@ -61,8 +61,8 @@
         cursor:pointer !important;
         user-select:none !important;
         pointer-events:auto !important;
-        position:relative !important;
-        z-index:9999 !important;
+        position:static !important;
+        z-index:auto !important;
       }
 
       .${TRIGGER_CLASS}.has-memo{
@@ -257,18 +257,33 @@
     return sanitizeText(txt, 60) || "알 수 없음";
   }
 
+function isMiniGalleryPage() {
+  return /^\/mini\/(?:board\/lists|board\/view)(?:\/|$)/.test(location.pathname);
+}
+
+function isMiniMemoTarget(writer) {
+  const uid = extractUid(writer);
+  if (uid) return true;
+
+  const ip = extractIp(writer);
+  if (ip) return true;
+
+  return false;
+}
+
 function getWriterMeta(writer) {
   const uid = extractUid(writer);
-
-  // 회원이면 UID만 사용하고 IP는 수집하지 않음
   const ip = uid ? "" : extractIp(writer);
-
   const nickname = extractNickname(writer);
+
+  if (isMiniGalleryPage() && !isMiniMemoTarget(writer)) {
+    return null;
+  }
 
   let key = "";
   if (uid) key = `uid:${uid}`;
   else if (ip) key = `ip:${ip}`;
-  else if (nickname) key = `nick:${nickname}`;
+  else if (!isMiniGalleryPage() && nickname) key = `nick:${nickname}`;
 
   if (!key) return null;
   return { key, uid, ip, nickname };
