@@ -24,86 +24,51 @@
     removeInjectedStyle();
   }
 
-  function ensureStyle() {
-    const legacyStyle = document.getElementById(BADGE);
-    if (legacyStyle && legacyStyle.tagName === "STYLE") {
-      legacyStyle.remove();
-    }
-
-    let st = document.getElementById(STYLE_ID);
-    if (!st) {
-      st = document.createElement("style");
-      st.id = STYLE_ID;
-      (document.head || document.documentElement).appendChild(st);
-    }
-
-    st.textContent = `
-      .${BADGE}{
-        display:inline-flex;
-        align-items:center;
-        margin-left:4px;
-        font-size:11px;
-        color:#98a2b3;
-        background:rgba(152,162,179,.15);
-        padding:1px 6px;
-        border-radius:10px;
-        line-height:1.2;
-        white-space:nowrap;
-        vertical-align:middle;
-      }
-
-      /* 닉네임 줄 전체를 안정적으로 한 줄처럼 정렬 */
-      .cmt_nickbox{
-        display:block !important;
-        margin-bottom:8px !important;
-        min-height:24px;
-      }
-
-      .cmt_nickbox .gall_writer{
-        display:inline-flex !important;
-        align-items:center !important;
-        gap:4px;
-        flex-wrap:wrap;
-        line-height:1.2;
-        position:relative;
-        z-index:2;
-      }
-
-      .cmt_nickbox .gall_writer .nickname{
-        display:inline-flex !important;
-        align-items:center !important;
-      }
-
-      .cmt_nickbox .gall_writer .writer_nikcon{
-        display:inline-flex !important;
-        align-items:center !important;
-        vertical-align:middle;
-        margin-left:2px;
-      }
-
-      .cmt_nickbox .gall_writer .writer_nikcon img.gallercon{
-        display:block;
-        vertical-align:middle;
-      }
-
-      /* 댓글 본문은 닉네임 줄 아래로 확실히 떨어뜨림 */
-      .clear.cmt_txtbox,
-      .cmt_txtbox{
-        clear:both !important;
-        display:block !important;
-        margin-top:4px !important;
-        position:relative;
-        z-index:1;
-      }
-
-      .clear.cmt_txtbox .usertxt.ub-word,
-      .cmt_txtbox .usertxt.ub-word,
-      p.usertxt.ub-word{
-        margin:0 !important;
-        line-height:1.45;
-      }
-    `;
+function ensureStyle() {
+  const legacyStyle = document.getElementById(BADGE);
+  if (legacyStyle && legacyStyle.tagName === "STYLE") {
+    legacyStyle.remove();
   }
+
+  let st = document.getElementById(STYLE_ID);
+  if (!st) {
+    st = document.createElement("style");
+    st.id = STYLE_ID;
+    (document.head || document.documentElement).appendChild(st);
+  }
+
+  st.textContent = `
+    .${BADGE}{
+      display:inline-flex;
+      align-items:center;
+      margin-left:4px;
+      font-size:11px;
+      color:#98a2b3;
+      background:rgba(152,162,179,.15);
+      padding:1px 6px;
+      border-radius:10px;
+      line-height:1.2;
+      white-space:nowrap;
+      vertical-align:middle;
+    }
+
+    .gall_writer .${BADGE}{
+      position:static !important;
+      z-index:auto !important;
+    }
+
+    .cmt_nickbox .gall_writer .nickname,
+    .cmt_nickbox .gall_writer .writer_nikcon,
+    .cmt_nickbox .gall_writer .${BADGE}{
+      vertical-align:middle;
+    }
+
+    .cmt_nickbox .gall_writer .writer_nikcon img.gallercon{
+      display:inline-block;
+      vertical-align:middle;
+    }
+  `;
+}
 
   const isIpLike = (s) =>
     /^\d{1,3}(?:\.\d{1,3}){1,3}$/.test(String(s || "").trim());
