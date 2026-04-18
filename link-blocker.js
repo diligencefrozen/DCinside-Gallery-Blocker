@@ -14,7 +14,17 @@
     ".btn_dcbest_rank_tab",         // 혹시 헤더 밖에 분리되어 있어도 추가 차단
     "[id^='dcbest_list_page_']",    // 페이징 관련
     ".main_tab_real_time_best",     // 실시간 베스트 / 실베라이트 탭
-    "a.allview_go[href*='id=dcbest']"
+    "a.allview_go[href*='id=dcbest']",
+    "a.concept_imgbox[href*='id=dcbest']", // 실베 썸네일 링크
+    "a.concept_imgbox[href*='id=dcbest']",
+    "a.concept_txtbox[href*='id=dcbest']",
+    "li:has(a.concept_imgbox[href*='id=dcbest'])",
+    "li:has(a.concept_txtbox[href*='id=dcbest'])",
+    ".content_box:has(a[href*='id=dcbest'])",
+    ".txt_box:has(a[href*='id=dcbest'])",
+    ".thumb_txt:has(a[href*='id=dcbest'])",
+    ".issue_content:has(a[href*='id=dcbest'])",
+    ".box:has(a[href*='id=dcbest'])"
   ]
 };
 
@@ -100,7 +110,20 @@
   /* ───── 숨길 대상 찾기 ───── */
   function getHideTarget(link) {
     if (!link || !(link instanceof Element)) return null;
-
+    
+    const directCard = link.closest(
+      [
+        "li:has(a[href*='id=dcbest'])",
+        ".content_box:has(a[href*='id=dcbest'])",
+        ".txt_box:has(a[href*='id=dcbest'])",
+        ".thumb_txt:has(a[href*='id=dcbest'])",
+        ".issue_content:has(a[href*='id=dcbest'])",
+        ".box:has(a[href*='id=dcbest'])"
+      ].join(",")
+    );
+    
+    if (directCard) return directCard;
+    
     return (
       link.closest(
         [
@@ -115,6 +138,8 @@
           ".txt_box",
           ".thumb_txt",
           ".issue_content",
+          ".concept_imgbox",
+          ".concept_txtbox",
           ".box"
         ].join(",")
       ) || link
