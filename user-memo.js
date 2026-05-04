@@ -7,6 +7,10 @@
   const MODAL_ID = "dcb-user-memo-modal";
   const DEFAULT_COLOR = "#6b7280";
 
+  const UID_BADGE_CLASS = "dcb-uid-badge";
+  const WRITER_TOOLS_CLASS = "dcb-writer-tools";
+  const WRITER_ENHANCED_CLASS = "dcb-writer-enhanced";
+
   const SYNC_DEFAULTS = {
     userMemoEnabled: true
   };
@@ -33,6 +37,17 @@
     return /^#[0-9a-fA-F]{6}$/.test(String(v || ""));
   }
 
+  function isListWriter(writer) {
+    return !!(
+      writer &&
+      writer.matches?.("td.gall_writer, .gall_list .gall_writer") &&
+      (
+        writer.getAttribute("data-loc") === "list" ||
+        writer.closest(".gall_list")
+      )
+    );
+  }
+
   function ensureStyle() {
     let st = document.getElementById(STYLE_ID);
     if (st) return st;
@@ -40,6 +55,187 @@
     st = document.createElement("style");
     st.id = STYLE_ID;
     st.textContent = `
+      .${WRITER_ENHANCED_CLASS}{
+        max-width:100% !important;
+      }
+
+      .${WRITER_TOOLS_CLASS}{
+        display:inline-flex !important;
+        align-items:center !important;
+        gap:4px !important;
+        flex-wrap:nowrap !important;
+        vertical-align:middle !important;
+        margin-left:5px !important;
+        max-width:100% !important;
+        white-space:nowrap !important;
+      }
+
+      .gall_writer.${WRITER_ENHANCED_CLASS}{
+        overflow:visible !important;
+      }
+
+      .gall_writer.${WRITER_ENHANCED_CLASS} > .nickname,
+      .gall_writer.${WRITER_ENHANCED_CLASS} > .writer_nikcon,
+      .gall_writer.${WRITER_ENHANCED_CLASS} > .${WRITER_TOOLS_CLASS}{
+        vertical-align:middle !important;
+      }
+
+      /*
+        댓글/본문 작성자 영역
+      */
+
+      .cmt_nickbox .gall_writer.${WRITER_ENHANCED_CLASS},
+      .cmt_info .gall_writer.${WRITER_ENHANCED_CLASS},
+      .reply_info .gall_writer.${WRITER_ENHANCED_CLASS}{
+        display:inline-flex !important;
+        align-items:center !important;
+        flex-wrap:wrap !important;
+        gap:3px !important;
+        max-width:100% !important;
+        white-space:normal !important;
+        overflow:visible !important;
+      }
+
+      .cmt_nickbox .gall_writer.${WRITER_ENHANCED_CLASS} > .nickname,
+      .cmt_info .gall_writer.${WRITER_ENHANCED_CLASS} > .nickname,
+      .reply_info .gall_writer.${WRITER_ENHANCED_CLASS} > .nickname{
+        flex:0 1 auto !important;
+        min-width:0 !important;
+        max-width:none !important;
+        white-space:normal !important;
+        overflow:visible !important;
+        text-overflow:clip !important;
+        word-break:break-all !important;
+      }
+
+      .cmt_nickbox .gall_writer.${WRITER_ENHANCED_CLASS} > .writer_nikcon,
+      .cmt_info .gall_writer.${WRITER_ENHANCED_CLASS} > .writer_nikcon,
+      .reply_info .gall_writer.${WRITER_ENHANCED_CLASS} > .writer_nikcon{
+        flex:0 0 auto !important;
+      }
+
+      .cmt_nickbox .gall_writer.${WRITER_ENHANCED_CLASS} > .${WRITER_TOOLS_CLASS},
+      .cmt_info .gall_writer.${WRITER_ENHANCED_CLASS} > .${WRITER_TOOLS_CLASS},
+      .reply_info .gall_writer.${WRITER_ENHANCED_CLASS} > .${WRITER_TOOLS_CLASS}{
+        flex:0 0 auto !important;
+        margin-left:5px !important;
+        transform:translateX(2px) !important;
+      }
+
+      /*
+        게시물 목록 작성자 칸 전용 최적화
+        - addbox 18px 확보
+        - 디시 기본 마크/주황 B/갤로그 아이콘 잘림 방지
+      */
+
+      .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS},
+      td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"]{
+        overflow:visible !important;
+        text-align:center !important;
+        vertical-align:middle !important;
+        white-space:normal !important;
+        line-height:1.12 !important;
+        padding-left:2px !important;
+        padding-right:2px !important;
+      }
+
+      .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} .addbox,
+      td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] .addbox{
+        display:flex !important;
+        align-items:center !important;
+        justify-content:center !important;
+        gap:2px !important;
+        width:100% !important;
+        max-width:100% !important;
+        min-width:0 !important;
+        min-height:18px !important;
+        height:18px !important;
+        line-height:18px !important;
+        overflow:visible !important;
+        box-sizing:border-box !important;
+      }
+
+      .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} .nickname,
+      td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] .nickname{
+        display:inline-block !important;
+        max-width:calc(100% - 22px) !important;
+        min-width:0 !important;
+        overflow:hidden !important;
+        text-overflow:ellipsis !important;
+        white-space:nowrap !important;
+        vertical-align:middle !important;
+        line-height:18px !important;
+      }
+
+      .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} .nickname em,
+      td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] .nickname em{
+        display:inline !important;
+        white-space:nowrap !important;
+        line-height:18px !important;
+      }
+
+      .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} .writer_nikcon,
+      td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] .writer_nikcon{
+        flex:0 0 auto !important;
+        display:inline-flex !important;
+        align-items:center !important;
+        justify-content:center !important;
+        width:auto !important;
+        min-width:12px !important;
+        max-width:22px !important;
+        height:18px !important;
+        max-height:18px !important;
+        overflow:visible !important;
+        vertical-align:middle !important;
+      }
+
+      .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} .addbox img,
+      td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] .addbox img,
+      .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} .writer_nikcon img,
+      td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] .writer_nikcon img{
+        display:inline-block !important;
+        vertical-align:middle !important;
+        max-width:18px !important;
+        max-height:18px !important;
+        object-fit:contain !important;
+        margin-left:1px !important;
+      }
+
+      .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} > .${WRITER_TOOLS_CLASS},
+      td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] > .${WRITER_TOOLS_CLASS}{
+        display:flex !important;
+        align-items:center !important;
+        justify-content:center !important;
+        gap:2px !important;
+        width:100% !important;
+        max-width:100% !important;
+        min-width:0 !important;
+        height:15px !important;
+        line-height:15px !important;
+        margin:0 !important;
+        padding:0 !important;
+        overflow:hidden !important;
+        white-space:nowrap !important;
+        transform:none !important;
+        box-sizing:border-box !important;
+      }
+
+      .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} .${UID_BADGE_CLASS},
+      td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] .${UID_BADGE_CLASS}{
+        flex:0 1 auto !important;
+        max-width:56px !important;
+        min-width:0 !important;
+        height:14px !important;
+        line-height:13px !important;
+        padding:0 4px !important;
+        font-size:9.5px !important;
+        border-radius:8px !important;
+        overflow:hidden !important;
+        text-overflow:ellipsis !important;
+        white-space:nowrap !important;
+        box-sizing:border-box !important;
+      }
+
       .${COMMENT_HOST_CLASS}{
         position:relative !important;
       }
@@ -84,12 +280,19 @@
         position:static !important;
         z-index:auto !important;
         box-sizing:border-box !important;
+        margin-left:0 !important;
+        margin-right:0 !important;
         transition:
           background-color .18s ease,
           border-color .18s ease,
           color .18s ease,
           transform .18s ease,
           box-shadow .18s ease !important;
+      }
+
+      .${WRITER_TOOLS_CLASS} > .${TRIGGER_CLASS}{
+        flex:0 0 auto !important;
+        max-width:min(320px, 45vw) !important;
       }
 
       .${TRIGGER_CLASS}::before{
@@ -121,6 +324,37 @@
       .cmt_info .${TRIGGER_CLASS},
       .reply_info .${TRIGGER_CLASS}{
         max-width:min(100%, 280px) !important;
+      }
+
+      /*
+        목록에서는 "메모 추가" 대신 "메모"로 줄이고,
+        버튼 자체도 미니 버튼으로 압축
+      */
+
+      .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} .${TRIGGER_CLASS},
+      td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] .${TRIGGER_CLASS}{
+        flex:0 1 auto !important;
+        max-width:42px !important;
+        min-width:0 !important;
+        min-height:14px !important;
+        height:15px !important;
+        max-height:15px !important;
+        padding:0 5px !important;
+        font-size:9.5px !important;
+        line-height:13px !important;
+        gap:3px !important;
+        border-radius:999px !important;
+        overflow:hidden !important;
+        text-overflow:ellipsis !important;
+        white-space:nowrap !important;
+        box-sizing:border-box !important;
+      }
+
+      .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} .${TRIGGER_CLASS}::before,
+      td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] .${TRIGGER_CLASS}::before{
+        width:4px !important;
+        height:4px !important;
+        flex:0 0 4px !important;
       }
 
       .dcb-user-memo-overlay{
@@ -261,7 +495,20 @@
         color:#ef4444 !important;
       }
 
-      @media (max-width: 640px){
+      @media (max-width:640px){
+        .cmt_nickbox .gall_writer.${WRITER_ENHANCED_CLASS},
+        .cmt_info .gall_writer.${WRITER_ENHANCED_CLASS},
+        .reply_info .gall_writer.${WRITER_ENHANCED_CLASS}{
+          row-gap:4px !important;
+        }
+
+        .cmt_nickbox .gall_writer.${WRITER_ENHANCED_CLASS} > .${WRITER_TOOLS_CLASS},
+        .cmt_info .gall_writer.${WRITER_ENHANCED_CLASS} > .${WRITER_TOOLS_CLASS},
+        .reply_info .gall_writer.${WRITER_ENHANCED_CLASS} > .${WRITER_TOOLS_CLASS}{
+          margin-left:7px !important;
+          transform:translateX(3px) !important;
+        }
+
         .${SLOT_CLASS}{
           margin:5px 0 7px !important;
         }
@@ -272,16 +519,26 @@
           padding:4px 9px !important;
         }
 
+        .${WRITER_TOOLS_CLASS} > .${TRIGGER_CLASS}{
+          max-width:min(240px, 55vw) !important;
+        }
+
+        .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} .${TRIGGER_CLASS},
+        td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] .${TRIGGER_CLASS}{
+          max-width:38px !important;
+          min-height:14px !important;
+          height:14px !important;
+          max-height:14px !important;
+          padding:0 4px !important;
+          font-size:9px !important;
+          line-height:12px !important;
+        }
+
         .dcb-user-memo-panel{
           width:min(100%, calc(100vw - 16px)) !important;
           padding:16px !important;
           border-radius:16px !important;
         }
-        
-        .gall_writer > .${TRIGGER_CLASS}{
-          margin-left:8px !important;
-        }
-      
       }
     `;
 
@@ -296,9 +553,21 @@
     });
   }
 
+  function cleanupEmptyWriterTools() {
+    document.querySelectorAll(`.${WRITER_TOOLS_CLASS}`).forEach((tools) => {
+      if (!tools.children.length) tools.remove();
+    });
+
+    document.querySelectorAll(`.${WRITER_ENHANCED_CLASS}`).forEach((writer) => {
+      const tools = writer.querySelector(`:scope > .${WRITER_TOOLS_CLASS}`);
+      if (!tools) writer.classList.remove(WRITER_ENHANCED_CLASS);
+    });
+  }
+
   function removeInjectedUi() {
     document.querySelectorAll(`.${TRIGGER_CLASS}`).forEach((el) => el.remove());
     cleanupEmptySlots();
+    cleanupEmptyWriterTools();
 
     document.querySelectorAll(`.${COMMENT_HOST_CLASS}`).forEach((el) => {
       el.classList.remove(COMMENT_HOST_CLASS);
@@ -341,8 +610,14 @@
   }
 
   function extractNickname(writer) {
-    const nickEl = writer.querySelector(':scope > .nickname em') || writer.querySelector('.nickname em');
-    const fallback = writer.querySelector(':scope > .nickname') || writer.querySelector('.nickname');
+    const nickEl =
+      writer.querySelector(':scope > .nickname em') ||
+      writer.querySelector('.nickname em');
+
+    const fallback =
+      writer.querySelector(':scope > .nickname') ||
+      writer.querySelector('.nickname');
+
     const txt = nickEl ? nickEl.textContent : (fallback ? fallback.textContent : '');
     return sanitizeText(txt, 60) || '알 수 없음';
   }
@@ -376,6 +651,7 @@
     else if (!isMiniGalleryPage() && nickname) key = `nick:${nickname}`;
 
     if (!key) return null;
+
     return { key, uid, ip, nickname };
   }
 
@@ -470,7 +746,18 @@
     };
   }
 
+  function getMetaFromTrigger(btn) {
+    return {
+      key: btn.dataset.memoKey || '',
+      uid: btn.dataset.memoUid || '',
+      ip: btn.dataset.memoIp || '',
+      nickname: btn.dataset.memoNickname || '알 수 없음'
+    };
+  }
+
   function openModal(meta) {
+    if (!meta || !meta.key) return;
+
     currentMeta = meta;
     ensureStyle();
     ensureModal();
@@ -549,19 +836,15 @@
     });
   }
 
-  function createTrigger(meta) {
+  function createTrigger() {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = TRIGGER_CLASS;
-    btn.dataset.memoKey = meta.key;
-    btn.dataset.memoUid = meta.uid || '';
-    btn.dataset.memoIp = meta.ip || '';
-    btn.dataset.memoNickname = meta.nickname || '';
 
     btn.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      openModal(meta);
+      openModal(getMetaFromTrigger(btn));
     }, true);
 
     btn.addEventListener('click', (e) => {
@@ -572,33 +855,37 @@
     return btn;
   }
 
-  function updateTrigger(btn, meta) {
+  function updateTrigger(btn, meta, writer) {
+    const listMode = isListWriter(writer);
+
     btn.dataset.memoKey = meta.key;
     btn.dataset.memoUid = meta.uid || '';
     btn.dataset.memoIp = meta.ip || '';
     btn.dataset.memoNickname = meta.nickname || '';
+    btn.dataset.loc = listMode ? 'list' : '';
 
     const saved = memoMap[meta.key];
+
     btn.classList.toggle('has-memo', !!saved);
+    btn.classList.toggle('is-list', listMode);
 
     if (saved && saved.memo) {
       const color = isValidColor(saved.color) ? saved.color : DEFAULT_COLOR;
+
       btn.textContent = saved.memo;
       btn.title = saved.memo;
+      btn.setAttribute('aria-label', `이용자 메모: ${saved.memo}`);
       btn.style.color = color;
       btn.style.borderColor = `${color}4d`;
       btn.style.background = `${color}14`;
     } else {
-      btn.textContent = '메모 추가';
+      btn.textContent = listMode ? '메모' : '메모 추가';
       btn.title = '이용자 메모 작성';
+      btn.setAttribute('aria-label', '이용자 메모 작성');
       btn.style.color = '';
       btn.style.borderColor = '';
       btn.style.background = '';
     }
-  }
-
-  function isCommentWriter(writer) {
-    return !!writer.closest('.cmt_nickbox, .cmt_info, .reply_info');
   }
 
   function getCommentHost(writer) {
@@ -619,47 +906,6 @@
     return null;
   }
 
-  function ensureCommentSlot(writer) {
-    const host = getCommentHost(writer);
-    if (!host || !host.parentElement) return null;
-
-    host.classList.add(COMMENT_HOST_CLASS);
-
-    const existing = getExistingCommentSlot(writer);
-    if (existing) return existing;
-
-    const slot = document.createElement('div');
-    slot.className = SLOT_CLASS;
-    slot.setAttribute('data-role', 'user-memo-slot');
-
-    let insertBefore = host.nextElementSibling;
-    while (insertBefore) {
-      if (insertBefore.classList.contains(SLOT_CLASS)) {
-        insertBefore.parentElement?.removeChild(insertBefore);
-        break;
-      }
-
-      if (insertBefore.matches?.('.date_time, .rpl_date, .reply_date, .fr')) {
-        insertBefore = insertBefore.nextElementSibling;
-        continue;
-      }
-
-      if (insertBefore.matches?.('.cmt_txtbox, .reply_txtbox, .usertxt, .btn_reply_write_all')) {
-        break;
-      }
-
-      break;
-    }
-
-    if (insertBefore) {
-      host.parentElement.insertBefore(slot, insertBefore);
-    } else {
-      host.insertAdjacentElement('afterend', slot);
-    }
-
-    return slot;
-  }
-
   function removeTriggerForWriter(writer) {
     writer.querySelectorAll(`.${TRIGGER_CLASS}`).forEach((el) => el.remove());
 
@@ -667,39 +913,68 @@
     if (slot) {
       slot.querySelectorAll(`.${TRIGGER_CLASS}`).forEach((el) => el.remove());
     }
+
+    cleanupEmptySlots();
+    cleanupEmptyWriterTools();
+  }
+
+  function ensureWriterTools(writer) {
+    writer.classList.add(WRITER_ENHANCED_CLASS);
+
+    let tools = writer.querySelector(`:scope > .${WRITER_TOOLS_CLASS}`);
+    if (!tools) {
+      tools = document.createElement("span");
+      tools.className = WRITER_TOOLS_CLASS;
+    }
+
+    const listMode = isListWriter(writer);
+    const addbox = writer.querySelector(":scope > .addbox");
+    const nikcon = writer.querySelector(":scope > .writer_nikcon");
+    const nick = writer.querySelector(":scope > .nickname");
+
+    if (listMode && addbox) {
+      if (addbox.nextSibling !== tools) {
+        addbox.insertAdjacentElement("afterend", tools);
+      }
+      return tools;
+    }
+
+    if (nikcon) {
+      if (nikcon.nextSibling !== tools) {
+        nikcon.insertAdjacentElement("afterend", tools);
+      }
+    } else if (nick) {
+      if (nick.nextSibling !== tools) {
+        nick.insertAdjacentElement("afterend", tools);
+      }
+    } else if (addbox) {
+      if (addbox.nextSibling !== tools) {
+        addbox.insertAdjacentElement("afterend", tools);
+      }
+    } else if (tools.parentElement !== writer) {
+      writer.appendChild(tools);
+    }
+
+    return tools;
   }
 
   function placeTriggerInline(writer, btn) {
-    const nikcon = writer.querySelector(':scope > .writer_nikcon');
-    const nick = writer.querySelector(':scope > .nickname');
+    const tools = ensureWriterTools(writer);
+    const uidBadge = tools.querySelector(`.${UID_BADGE_CLASS}`);
 
-    if (nikcon) {
-      if (btn.nextSibling !== nikcon) {
-        writer.insertBefore(btn, nikcon);
+    if (uidBadge) {
+      if (uidBadge.nextSibling !== btn) {
+        uidBadge.insertAdjacentElement("afterend", btn);
       }
       return;
     }
 
-    if (nick) {
-      if (nick.nextSibling !== btn) {
-        if (nick.nextSibling) writer.insertBefore(btn, nick.nextSibling);
-        else writer.appendChild(btn);
-      }
-      return;
+    if (btn.parentElement !== tools) {
+      tools.appendChild(btn);
     }
-
-    if (!btn.parentElement) writer.appendChild(btn);
   }
 
   function placeTrigger(writer, btn) {
-    if (isCommentWriter(writer)) {
-      const slot = ensureCommentSlot(writer);
-      if (slot && btn.parentElement !== slot) {
-        slot.appendChild(btn);
-      }
-      return;
-    }
-
     placeTriggerInline(writer, btn);
   }
 
@@ -717,15 +992,18 @@
       return;
     }
 
-    let btn = writer.querySelector(`:scope > .${TRIGGER_CLASS}`);
+    let btn =
+      writer.querySelector(`:scope > .${WRITER_TOOLS_CLASS} > .${TRIGGER_CLASS}`) ||
+      writer.querySelector(`:scope > .${TRIGGER_CLASS}`);
 
-    if (!btn && isCommentWriter(writer)) {
-      const slot = ensureCommentSlot(writer);
-      btn = slot?.querySelector(`.${TRIGGER_CLASS}[data-memo-key="${CSS.escape(meta.key)}"]`) || null;
+    if (!btn) {
+      const slot = getExistingCommentSlot(writer);
+      btn = slot?.querySelector(`.${TRIGGER_CLASS}`) || null;
     }
 
-    btn = btn || createTrigger(meta);
-    updateTrigger(btn, meta);
+    btn = btn || createTrigger();
+
+    updateTrigger(btn, meta, writer);
     placeTrigger(writer, btn);
   }
 
@@ -737,8 +1015,11 @@
 
     ensureStyle();
     ensureModal();
+
     document.querySelectorAll('.gall_writer').forEach(renderWriter);
+
     cleanupEmptySlots();
+    cleanupEmptyWriterTools();
   }
 
   function queueRender() {
@@ -760,9 +1041,11 @@
         node.id === STYLE_ID ||
         node.classList?.contains(TRIGGER_CLASS) ||
         node.classList?.contains(SLOT_CLASS) ||
+        node.classList?.contains(WRITER_TOOLS_CLASS) ||
         node.closest?.(`#${MODAL_ID}`) ||
         node.closest?.(`.${TRIGGER_CLASS}`) ||
-        node.closest?.(`.${SLOT_CLASS}`)
+        node.closest?.(`.${SLOT_CLASS}`) ||
+        node.closest?.(`.${WRITER_TOOLS_CLASS}`)
       )
     );
   }
@@ -790,7 +1073,7 @@
   }
 
   function initObserver() {
-    if (!document.body) return;
+    if (!document.body || observer) return;
 
     observer = new MutationObserver((mutations) => {
       if (!shouldReactToMutations(mutations)) return;
