@@ -43,7 +43,7 @@ const BACKUP_KEYS = [
   "hideMainEnabled", "hideGallEnabled", "hideSearchEnabled",
   "enabled", "galleryBlockEnabled", "blockMode", "autoRefreshEnabled",
   "autoRefreshInterval", "delay", "showUidBadge", "linkWarnEnabled", "hideDCGray",
-  "previewEnabled", "hideAnonymousEnabled"
+  "previewEnabled", "hideAnonymousEnabled", "compactListEnabled"
 ];
 
 const BACKUP_DEFAULTS = {
@@ -69,7 +69,8 @@ const BACKUP_DEFAULTS = {
   linkWarnEnabled: true,
   hideDCGray: undefined,
   previewEnabled: false,
-  hideAnonymousEnabled: false
+  hideAnonymousEnabled: false,
+  compactListEnabled: false
 };
 
 /* ───── DOM 캐시 ───── */
