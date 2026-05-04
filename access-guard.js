@@ -1,0 +1,452 @@
+// access-guard.js
+(() => {
+  const REDIRECT_URL = "https://www.dcinside.com/";
+  const STYLE_ID = "dcb-access-guard-style";
+  const OVERLAY_ID = "dcb-access-guard-overlay";
+  const BLOCKED_CLASS = "dcb-access-guard-blocked";
+
+  /*
+    기본 차단은 실베만.
+    무출산 갤러리/asdf12 같은 것은 사용자가 blockedIds에 추가한 값으로 처리한다.
+  */
+  const BUILTIN = ["dcbest"];
+
+  const DEFAULTS = {
+    galleryBlockEnabled: undefined,
+    enabled: true,
+    blockMode: "smart",
+    blockedIds: [],
+    delay: 0
+  };
+
+  let settings = {
+    enabled: true,
+    blockMode: "smart",
+    delay: 0,
+    blockedSet: new Set(BUILTIN)
+  };
+
+  let redirectTimer = null;
+
+  function norm(v) {
+    return String(v || "").trim().toLowerCase();
+  }
+
+  function escapeHtml(v) {
+    return String(v || "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#39;");
+  }
+
+  function clampDelay(v) {
+    const n = Number(v);
+    if (!Number.isFinite(n)) return 0;
+    return Math.max(0, Math.min(10, n));
+  }
+
+  /*
+    사용자가 차단 목록에 아래 둘 중 무엇을 넣어도 ID만 추출한다.
+
+    1) asdf12
+    2) https://gall.dcinside.com/mgallery/board/lists?id=asdf12
+  */
+  function extractGalleryId(input) {
+    const raw = String(input || "").trim();
+    if (!raw) return "";
+
+    try {
+      const url = new URL(raw, location.href);
+
+      if (!url.hostname.endsWith("dcinside.com")) {
+        return norm(raw);
+      }
+
+      const id = url.searchParams.get("id");
+      if (id) return norm(id);
+
+      const pathMatch = url.pathname.match(/^\/(?:mgallery|mini|person)\/([^/?#]+)/i);
+      if (pathMatch?.[1]) return norm(pathMatch[1]);
+
+      return "";
+    } catch {
+      return norm(raw)
+        .replace(/^id=/i, "")
+        .split(/[?#&\s]/)[0]
+        .trim();
+    }
+  }
+
+  function getGalleryIdFromUrl(urlLike = location.href) {
+    try {
+      const url = new URL(urlLike, location.href);
+
+      if (!url.hostname.endsWith("dcinside.com")) return "";
+
+      const id = url.searchParams.get("id");
+      if (id) return norm(id);
+
+      const pathMatch = url.pathname.match(/^\/(?:mgallery|mini|person)\/([^/?#]+)/i);
+      if (pathMatch?.[1]) return norm(pathMatch[1]);
+
+      return "";
+    } catch {
+      return "";
+    }
+  }
+
+  function getAllBlockedGalleryIds(blockedIds) {
+    const userIds = Array.isArray(blockedIds)
+      ? blockedIds.map(extractGalleryId).filter(Boolean)
+      : [];
+
+    return Array.from(
+      new Set([
+        ...BUILTIN.map(extractGalleryId).filter(Boolean),
+        ...userIds
+      ])
+    );
+  }
+
+  function isBlockedGallery(gid) {
+    gid = norm(gid);
+    if (!gid) return false;
+    return settings.blockedSet.has(gid);
+  }
+
+  function clearRedirectTimer() {
+    if (redirectTimer) {
+      clearTimeout(redirectTimer);
+      redirectTimer = null;
+    }
+  }
+
+  /*
+    이전 버전 access-guard.js가 남긴 inline style 복구.
+    직접 지정했던 값과 일치할 때만 제거한다.
+  */
+  function cleanupLegacyInlineStyles() {
+    try {
+      const html = document.documentElement;
+
+      if (html.style.background === "rgb(2, 6, 23)" || html.style.background === "#020617") {
+        html.style.background = "";
+      }
+
+      if (html.style.color === "rgb(248, 250, 252)" || html.style.color === "#f8fafc") {
+        html.style.color = "";
+      }
+    } catch {}
+  }
+
+  function ensureStyle() {
+    if (document.getElementById(STYLE_ID)) return;
+
+    const st = document.createElement("style");
+    st.id = STYLE_ID;
+    st.textContent = `
+      html.${BLOCKED_CLASS},
+      html.${BLOCKED_CLASS} body {
+        overflow: hidden !important;
+      }
+
+      #${OVERLAY_ID} {
+        position: fixed !important;
+        inset: 0 !important;
+        z-index: 2147483647 !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        padding: 24px !important;
+        box-sizing: border-box !important;
+        background:
+          radial-gradient(circle at top, rgba(59,130,246,.18), transparent 34%),
+          rgba(15,23,42,.96) !important;
+        color: #f8fafc !important;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+      }
+
+      #${OVERLAY_ID} .dcb-access-card {
+        width: min(460px, calc(100vw - 32px)) !important;
+        padding: 28px !important;
+        border: 1px solid rgba(148,163,184,.28) !important;
+        border-radius: 22px !important;
+        background: rgba(15,23,42,.88) !important;
+        box-shadow: 0 28px 80px rgba(0,0,0,.4) !important;
+        text-align: center !important;
+        box-sizing: border-box !important;
+      }
+
+      #${OVERLAY_ID} .dcb-access-icon {
+        width: 44px !important;
+        height: 44px !important;
+        margin: 0 auto 14px !important;
+        border-radius: 999px !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        background: rgba(239,68,68,.14) !important;
+        border: 1px solid rgba(248,113,113,.35) !important;
+        color: #fecaca !important;
+        font-size: 22px !important;
+        font-weight: 800 !important;
+      }
+
+      #${OVERLAY_ID} .dcb-access-title {
+        margin: 0 0 8px !important;
+        font-size: 20px !important;
+        font-weight: 800 !important;
+        letter-spacing: -0.02em !important;
+        line-height: 1.3 !important;
+      }
+
+      #${OVERLAY_ID} .dcb-access-desc {
+        margin: 0 0 18px !important;
+        color: #cbd5e1 !important;
+        font-size: 14px !important;
+        line-height: 1.6 !important;
+      }
+
+      #${OVERLAY_ID} .dcb-access-id {
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        max-width: 100% !important;
+        margin-bottom: 18px !important;
+        padding: 5px 10px !important;
+        border-radius: 999px !important;
+        background: rgba(148,163,184,.12) !important;
+        border: 1px solid rgba(148,163,184,.2) !important;
+        color: #e2e8f0 !important;
+        font-size: 12px !important;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+      }
+
+      #${OVERLAY_ID} .dcb-access-actions {
+        display: flex !important;
+        justify-content: center !important;
+        gap: 8px !important;
+        flex-wrap: wrap !important;
+      }
+
+      #${OVERLAY_ID} .dcb-access-btn {
+        appearance: none !important;
+        border: 1px solid rgba(148,163,184,.26) !important;
+        border-radius: 12px !important;
+        padding: 9px 13px !important;
+        background: rgba(255,255,255,.06) !important;
+        color: #f8fafc !important;
+        font-size: 13px !important;
+        font-weight: 700 !important;
+        cursor: pointer !important;
+      }
+
+      #${OVERLAY_ID} .dcb-access-btn.primary {
+        background: #3b82f6 !important;
+        border-color: #3b82f6 !important;
+        color: #fff !important;
+      }
+    `;
+
+    (document.head || document.documentElement).appendChild(st);
+  }
+
+  function mountOverlay(ov) {
+    const mount = () => {
+      if (document.body) {
+        document.body.appendChild(ov);
+      } else {
+        document.documentElement.appendChild(ov);
+      }
+    };
+
+    mount();
+  }
+
+  function showBlockedOverlay(gid) {
+    ensureStyle();
+    cleanupLegacyInlineStyles();
+
+    document.documentElement.classList.add(BLOCKED_CLASS);
+
+    let ov = document.getElementById(OVERLAY_ID);
+
+    if (!ov) {
+      ov = document.createElement("div");
+      ov.id = OVERLAY_ID;
+      mountOverlay(ov);
+    }
+
+    ov.innerHTML = `
+      <div class="dcb-access-card" role="dialog" aria-modal="true" aria-labelledby="dcb-access-title">
+        <div class="dcb-access-icon">!</div>
+        <h1 id="dcb-access-title" class="dcb-access-title">차단된 갤러리입니다</h1>
+        <p class="dcb-access-desc">
+          이 갤러리는 사용자의 차단 목록에 포함되어 있습니다.
+          검색, 외부 링크, 주소창 입력, 북마크로 접근해도 차단됩니다.
+        </p>
+        <div class="dcb-access-id" title="${escapeHtml(gid)}">ID: ${escapeHtml(gid)}</div>
+        <div class="dcb-access-actions">
+          <button type="button" class="dcb-access-btn primary" data-act="home">디시 메인으로 이동</button>
+        </div>
+      </div>
+    `;
+
+    ov.onclick = (e) => {
+      const btn = e.target.closest("[data-act]");
+      if (!btn) return;
+
+      const act = btn.getAttribute("data-act");
+      if (act === "home") {
+        goSafePage();
+      }
+    };
+  }
+
+  function clearBlockedOverlay() {
+    clearRedirectTimer();
+
+    document.documentElement.classList.remove(BLOCKED_CLASS);
+
+    const ov = document.getElementById(OVERLAY_ID);
+    if (ov) ov.remove();
+
+    cleanupLegacyInlineStyles();
+  }
+
+  function goSafePage() {
+    try {
+      location.replace(REDIRECT_URL);
+    } catch {
+      location.href = REDIRECT_URL;
+    }
+  }
+
+  function enforceAccess() {
+    const gid = getGalleryIdFromUrl(location.href);
+
+    if (!settings.enabled) {
+      clearBlockedOverlay();
+      return;
+    }
+
+    if (!gid || !isBlockedGallery(gid)) {
+      clearBlockedOverlay();
+      return;
+    }
+
+    if (settings.blockMode === "redirect") {
+      if (settings.delay <= 0) {
+        goSafePage();
+        return;
+      }
+
+      showBlockedOverlay(gid);
+
+      clearRedirectTimer();
+      redirectTimer = setTimeout(() => {
+        goSafePage();
+      }, settings.delay * 1000);
+
+      return;
+    }
+
+    showBlockedOverlay(gid);
+  }
+
+  function loadSettingsThenEnforce() {
+    try {
+      chrome.storage.sync.get(DEFAULTS, (conf) => {
+        const gEnabled =
+          typeof conf.galleryBlockEnabled === "boolean"
+            ? conf.galleryBlockEnabled
+            : !!conf.enabled;
+
+        settings.enabled = !!gEnabled;
+        settings.blockMode = String(conf.blockMode || "smart");
+        settings.delay = clampDelay(conf.delay);
+        settings.blockedSet = new Set(
+          getAllBlockedGalleryIds(conf.blockedIds)
+        );
+
+        enforceAccess();
+      });
+    } catch {
+      settings.enabled = true;
+      settings.blockedSet = new Set(BUILTIN.map(extractGalleryId));
+      enforceAccess();
+    }
+  }
+
+  function bindStorageChange() {
+    try {
+      chrome.storage.onChanged.addListener((changes, area) => {
+        if (area !== "sync") return;
+
+        const important =
+          changes.galleryBlockEnabled ||
+          changes.enabled ||
+          changes.blockMode ||
+          changes.blockedIds ||
+          changes.delay;
+
+        if (important) {
+          loadSettingsThenEnforce();
+        }
+      });
+    } catch {}
+  }
+
+  function patchHistory() {
+    const rawPushState = history.pushState;
+    const rawReplaceState = history.replaceState;
+
+    history.pushState = function (...args) {
+      const ret = rawPushState.apply(this, args);
+      queueMicrotask(loadSettingsThenEnforce);
+      return ret;
+    };
+
+    history.replaceState = function (...args) {
+      const ret = rawReplaceState.apply(this, args);
+      queueMicrotask(loadSettingsThenEnforce);
+      return ret;
+    };
+
+    window.addEventListener("popstate", loadSettingsThenEnforce, true);
+  }
+
+  function interceptClicks() {
+    document.addEventListener(
+      "click",
+      (e) => {
+        const a = e.target.closest?.("a[href]");
+        if (!a) return;
+
+        const gid = getGalleryIdFromUrl(a.href);
+        if (!gid || !isBlockedGallery(gid)) return;
+
+        e.preventDefault();
+        e.stopPropagation();
+
+        showBlockedOverlay(gid);
+      },
+      true
+    );
+  }
+
+  function boot() {
+    ensureStyle();
+    cleanupLegacyInlineStyles();
+    loadSettingsThenEnforce();
+    bindStorageChange();
+    patchHistory();
+    interceptClicks();
+  }
+
+  boot();
+})();
