@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "디시갤 차단기",
   "short_name": "디시갤 차단기",
-  "version": "7.3.8.2026",
+  "version": "7.3.9.2026",
   "description": "갤러리, 글, 댓글, 유저까지, 보고 싶지 않은 콘텐츠를 차단합니다",
   "icons": {
     "16": "icons/16.png",
@@ -44,6 +44,16 @@
   "minimum_chrome_version": "105",
 
   "content_scripts": [
+    {
+      "matches": [
+        "*://gall.dcinside.com/*"
+      ],
+      "js": [
+        "access-guard.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": false
+    },
     {
       "matches": [
         "*://gall.dcinside.com/board/lists*",
@@ -191,6 +201,19 @@
       "js": ["auto-refresh.js"],
       "run_at": "document_end",
       "all_frames": false
-    }
+    },
+    {
+    "matches": [
+      "*://gall.dcinside.com/board/lists*",
+      "*://gall.dcinside.com/mgallery/board/lists*",
+      "*://gall.dcinside.com/mini/board/lists*",
+      "*://gall.dcinside.com/person/board/lists*"
+    ],
+    "js": [
+      "compact-list.js"
+    ],
+    "run_at": "document_start",
+    "all_frames": false
+  }
   ]
 }
