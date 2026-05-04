@@ -14,6 +14,7 @@ const autoRefreshIntervalRange = document.getElementById("autoRefreshIntervalRan
 const delayNum = document.getElementById("delayNum");
 const delayRange = document.getElementById("delayRange");
 const openOptionsBtn = document.getElementById("openOptions");
+const compactListToggle = document.getElementById("compactListEnabled");
 
 const userBlockEl = document.getElementById("userBlockEnabled") || document.getElementById("hideDCGray");
 const uidInput = document.getElementById("uidInput");
@@ -94,7 +95,9 @@ const DEFAULTS = {
   linkWarnEnabled: true,
 
   /* 독립 이용자 메모 */
-  userMemoEnabled: true
+  userMemoEnabled: true,
+
+  compactListEnabled: false
 };
 
 function sanitizeUid(s) {
@@ -177,7 +180,7 @@ chrome.storage.sync.get(DEFAULTS, (conf) => {
     previewEnabled, autoRefreshEnabled, autoRefreshInterval,
     userBlockEnabled, blockedUids,
     hideMainEnabled, hideGallEnabled, hideSearchEnabled,
-    showUidBadge, hideAnonymousEnabled, userMemoEnabled
+    showUidBadge, hideAnonymousEnabled, userMemoEnabled, compactListEnabled
   } = conf;
 
   toggle.checked = enabled;
@@ -205,6 +208,7 @@ chrome.storage.sync.get(DEFAULTS, (conf) => {
   if (toggleUidBadge) toggleUidBadge.checked = !!showUidBadge;
   if (hideAnonymousToggle) hideAnonymousToggle.checked = !!hideAnonymousEnabled;
   if (userMemoEnabledToggle) userMemoEnabledToggle.checked = !!userMemoEnabled;
+  if (compactListToggle) compactListToggle.checked = !!compactListEnabled;
 });
 
 /* ───────── 이벤트 바인딩 ───────── */
@@ -302,6 +306,13 @@ if (hideAnonymousToggle) {
 }
 if (userMemoEnabledToggle) {
   userMemoEnabledToggle.onchange = (e) => chrome.storage.sync.set({ userMemoEnabled: !!e.target.checked });
+}
+if (compactListToggle) {
+  compactListToggle.onchange = (e) => {
+    chrome.storage.sync.set({
+      compactListEnabled: !!e.target.checked
+    });
+  };
 }
 
 /* ───────── 이용자 메모 JSON ───────── */
@@ -586,6 +597,10 @@ chrome.storage.onChanged.addListener((c, a) => {
       renderPopupMemoList();
     });
   }
+
+  if (c.compactListEnabled && compactListToggle) {
+  compactListToggle.checked = !!c.compactListEnabled.newValue;
+ }
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === "local" && changes.userMemos) {
