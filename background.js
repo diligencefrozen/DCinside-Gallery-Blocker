@@ -231,24 +231,24 @@ async function syncRules() {
   const curr = await chrome.declarativeNetRequest.getDynamicRules();
   const currIds = getOurRuleIds(curr);
 
-  if (!gEnabled) {
+  /*
+    DNR(main_frame 네트워크 차단)은 하드 모드 전용이다.
+
+    smart    : 페이지를 로드한 뒤 경고 + 이번만 보기 제공
+    redirect : 페이지를 로드한 뒤 카운트다운 후 메인으로 이동
+    block    : 페이지 로드 전 네트워크 단계에서 완전 차단
+  */
+  if (!gEnabled || conf.blockMode !== "block") {
     if (currIds.length) {
       await chrome.declarativeNetRequest.updateDynamicRules({
         removeRuleIds: currIds
       });
     }
 
-    console.log("[DNR] gallery blocking disabled - rules cleared");
+    console.log(`[DNR] hard access rules cleared - enabled=${gEnabled}, mode=${conf.blockMode}`);
     return;
   }
 
-  /*
-    사용자가 추가한 차단 갤러리는 Google, 주소창, 북마크, 내부 검색으로
-    우회 접근할 수 있으므로 갤러리 차단 기능이 켜져 있으면 DNR을 항상 동기화한다.
-
-    blockMode는 기존 content script의 표시 방식에만 사용하고,
-    main_frame 접근 방어는 여기서 먼저 수행한다.
-  */
   const ids = getAllBlockedGalleryIds(conf.blockedIds);
   const rules = makeRules(ids);
 
