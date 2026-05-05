@@ -91,8 +91,12 @@ function handleUrl(){
   if(!gBlockEnabled) return; // 차단 완전 OFF
   if(blockMode==="block") return; // 하드모드는 DNR이 처리
 
+  // access-guard.js가 이미 접근 차단 UI를 띄운 경우 중복 오버레이를 만들지 않는다.
+  if(document.getElementById("dcb-access-guard-overlay")) return;
+
   const gid = getGalleryId();
   if(!gid || !blockedSet.has(gid)) return;
+
   // 스마트 모드에서만 임시 허용을 존중
   if(blockMode === "smart" && isTempAllowed(gid)) return;
   if(document.getElementById("dcblock-overlay")) return;
