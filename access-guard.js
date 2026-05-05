@@ -4,6 +4,7 @@
   const STYLE_ID = "dcb-access-guard-style";
   const OVERLAY_ID = "dcb-access-guard-overlay";
   const BLOCKED_CLASS = "dcb-access-guard-blocked";
+  const TEMP_ALLOW_KEY = "dcb-temp-allow";
 
   /*
     기본 차단은 실베만.
@@ -118,9 +119,33 @@
 
   function clearRedirectTimer() {
     if (redirectTimer) {
-      clearTimeout(redirectTimer);
+      clearInterval(redirectTimer);
       redirectTimer = null;
     }
+  }
+
+  function getTempAllowedIds() {
+    try {
+      const raw = sessionStorage.getItem(TEMP_ALLOW_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed.map(norm).filter(Boolean) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function isTempAllowed(gid) {
+    return getTempAllowedIds().includes(norm(gid));
+  }
+
+  function addTempAllow(gid) {
+    try {
+      const id = norm(gid);
+      if (!id) return;
+
+      const next = Array.from(new Set([...getTempAllowedIds(), id]));
+      sessionStorage.setItem(TEMP_ALLOW_KEY, JSON.stringify(next));
+    } catch {}
   }
 
   /*
@@ -267,26 +292,31 @@
     mount();
   }
 
-  function showBlockedOverlay(gid) {
+  function getOrCreateOverlay() {
     ensureStyle();
     cleanupLegacyInlineStyles();
 
     document.documentElement.classList.add(BLOCKED_CLASS);
 
     let ov = document.getElementById(OVERLAY_ID);
-
     if (!ov) {
       ov = document.createElement("div");
       ov.id = OVERLAY_ID;
       mountOverlay(ov);
     }
 
+    return ov;
+  }
+
+  function showBlockedOverlay(gid) {
+    const ov = getOrCreateOverlay();
+
     ov.innerHTML = `
       <div class="dcb-access-card" role="dialog" aria-modal="true" aria-labelledby="dcb-access-title">
         <div class="dcb-access-icon">!</div>
         <h1 id="dcb-access-title" class="dcb-access-title">차단된 갤러리입니다</h1>
         <p class="dcb-access-desc">
-          이 갤러리는 사용자의 차단 목록에 포함되어 있습니다.
+          하드 모드가 적용되어 이 갤러리 접근이 차단되었습니다.
           검색, 외부 링크, 주소창 입력, 북마크로 접근해도 차단됩니다.
         </p>
         <div class="dcb-access-id" title="${escapeHtml(gid)}">ID: ${escapeHtml(gid)}</div>
@@ -300,9 +330,89 @@
       const btn = e.target.closest("[data-act]");
       if (!btn) return;
 
+      if (btn.getAttribute("data-act") === "home") {
+        goSafePage();
+      }
+    };
+  }
+
+  function showRedirectOverlay(gid, seconds) {
+    const ov = getOrCreateOverlay();
+    const safeGid = escapeHtml(gid);
+
+    const render = (left) => {
+      ov.innerHTML = `
+        <div class="dcb-access-card" role="dialog" aria-modal="true" aria-labelledby="dcb-access-title">
+          <div class="dcb-access-icon">!</div>
+          <h1 id="dcb-access-title" class="dcb-access-title">차단된 갤러리입니다</h1>
+          <p class="dcb-access-desc">
+            초보 모드가 적용되어 ${Math.max(0, left)}초 후 디시 메인으로 이동합니다.
+          </p>
+          <div class="dcb-access-id" title="${safeGid}">ID: ${safeGid}</div>
+          <div class="dcb-access-actions">
+            <button type="button" class="dcb-access-btn primary" data-act="home">지금 이동</button>
+          </div>
+        </div>
+      `;
+    };
+
+    let left = Math.max(1, Math.ceil(Number(seconds) || 1));
+    render(left);
+
+    ov.onclick = (e) => {
+      const btn = e.target.closest("[data-act]");
+      if (!btn) return;
+
+      if (btn.getAttribute("data-act") === "home") {
+        goSafePage();
+      }
+    };
+
+    clearRedirectTimer();
+    redirectTimer = setInterval(() => {
+      left -= 1;
+      if (left <= 0) {
+        clearRedirectTimer();
+        goSafePage();
+        return;
+      }
+      render(left);
+    }, 1000);
+  }
+
+  function showSmartOverlay(gid) {
+    const ov = getOrCreateOverlay();
+
+    ov.innerHTML = `
+      <div class="dcb-access-card" role="dialog" aria-modal="true" aria-labelledby="dcb-access-title">
+        <div class="dcb-access-icon">!</div>
+        <h1 id="dcb-access-title" class="dcb-access-title">차단된 갤러리입니다</h1>
+        <p class="dcb-access-desc">
+          스마트 모드가 적용되어 접근 전에 한 번 더 확인합니다.
+          이번 세션에서만 허용하거나 디시 메인으로 이동할 수 있습니다.
+        </p>
+        <div class="dcb-access-id" title="${escapeHtml(gid)}">ID: ${escapeHtml(gid)}</div>
+        <div class="dcb-access-actions">
+          <button type="button" class="dcb-access-btn primary" data-act="home">디시 메인으로 이동</button>
+          <button type="button" class="dcb-access-btn" data-act="allow-once">이번만 보기</button>
+        </div>
+      </div>
+    `;
+
+    ov.onclick = (e) => {
+      const btn = e.target.closest("[data-act]");
+      if (!btn) return;
+
       const act = btn.getAttribute("data-act");
+
       if (act === "home") {
         goSafePage();
+        return;
+      }
+
+      if (act === "allow-once") {
+        addTempAllow(gid);
+        clearBlockedOverlay();
       }
     };
   }
@@ -326,6 +436,32 @@
     }
   }
 
+  function applyBlockMode(gid) {
+    if (settings.blockMode === "smart") {
+      if (isTempAllowed(gid)) {
+        clearBlockedOverlay();
+        return;
+      }
+
+      clearRedirectTimer();
+      showSmartOverlay(gid);
+      return;
+    }
+
+    if (settings.blockMode === "redirect") {
+      if (settings.delay <= 0) {
+        goSafePage();
+        return;
+      }
+
+      showRedirectOverlay(gid, settings.delay);
+      return;
+    }
+
+    clearRedirectTimer();
+    showBlockedOverlay(gid);
+  }
+
   function enforceAccess() {
     const gid = getGalleryIdFromUrl(location.href);
 
@@ -339,23 +475,7 @@
       return;
     }
 
-    if (settings.blockMode === "redirect") {
-      if (settings.delay <= 0) {
-        goSafePage();
-        return;
-      }
-
-      showBlockedOverlay(gid);
-
-      clearRedirectTimer();
-      redirectTimer = setTimeout(() => {
-        goSafePage();
-      }, settings.delay * 1000);
-
-      return;
-    }
-
-    showBlockedOverlay(gid);
+    applyBlockMode(gid);
   }
 
   function loadSettingsThenEnforce() {
@@ -424,16 +544,27 @@
     document.addEventListener(
       "click",
       (e) => {
+        if (!settings.enabled) return;
+
         const a = e.target.closest?.("a[href]");
         if (!a) return;
 
         const gid = getGalleryIdFromUrl(a.href);
         if (!gid || !isBlockedGallery(gid)) return;
 
+        if (settings.blockMode === "smart") {
+          /*
+            스마트 모드는 실제 대상 페이지로 이동시킨 뒤 그 페이지에서
+            경고/이번만 보기 UI를 보여준다. 여기서 막으면 사용자가
+            같은 링크를 두 번 눌러야 하는 문제가 생긴다.
+          */
+          return;
+        }
+
         e.preventDefault();
         e.stopPropagation();
 
-        showBlockedOverlay(gid);
+        applyBlockMode(gid);
       },
       true
     );
