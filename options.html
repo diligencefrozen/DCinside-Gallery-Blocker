@@ -21,7 +21,6 @@
     display:flex; justify-content:center; align-items:flex-start;
     padding:40px 0;
   }
-  /* ───── 카드 레이아웃 ───── */
   .wrapper{width:100%;max-width:760px;display:flex;flex-direction:column;gap:48px;padding:0 24px;}
   .card{
     background:var(--bg-2); border-radius:18px; padding:28px 32px;
@@ -31,7 +30,6 @@
   h1{font-size:26px;font-weight:600;margin-bottom:8px;color:var(--accent);}
   h2{font-size:20px;font-weight:600}
   .note{margin-top:4px;font-size:13px;opacity:.8}
-  /* ───── 폼 / 리스트 ───── */
   .row{display:flex;gap:12px;align-items:center}
   input[type="text"]{
     flex:1;padding:10px 12px;font-size:15px;
@@ -54,7 +52,6 @@
   code{background:#30363d;padding:2px 6px;border-radius:4px;font-size:13px}
   @media(max-width:480px){.card{padding:20px}h1{font-size:22px}}
 
-  /* ───── 스위치 ───── */
   .switch{position:relative;width:48px;height:26px}
   .switch input{display:none}
   .switch .slider{
@@ -67,7 +64,7 @@
   .switch input:checked + .slider{background:var(--accent);box-shadow:0 0 10px rgba(79,124,255,.5)}
   .switch input:checked + .slider:before{transform:translateX(22px)}
 
-  .memo-tools{
+.memo-tools{
   display:flex;
   gap:8px;
   flex-wrap:wrap;
@@ -172,18 +169,90 @@
   background:var(--accent);
   color:var(--bg-1);
 }
+.keyword-panel{
+  display:flex;
+  flex-direction:column;
+  gap:14px;
+}
 
+.keyword-targets{
+  display:grid;
+  grid-template-columns:repeat(2, minmax(0, 1fr));
+  gap:10px;
+}
+
+.keyword-target-item{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  padding:10px 12px;
+  border:1px solid #30363d;
+  border-radius:10px;
+  background:#0d1117;
+}
+
+.keyword-target-item span{
+  font-size:14px;
+}
+
+.keyword-input-row{
+  display:flex;
+  gap:10px;
+  align-items:center;
+}
+
+.keyword-input-row input[type="text"]{
+  flex:1;
+}
+
+.keyword-list{
+  list-style:none;
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  max-height:240px;
+  overflow:auto;
+}
+
+.keyword-list li{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:10px;
+  background:#21262d;
+  border:1px solid #30363d;
+  border-radius:8px;
+  padding:8px 10px;
+}
+
+.keyword-list code{
+  word-break:break-all;
+  line-height:1.4;
+}
+
+.keyword-empty{
+  opacity:.75;
+  font-size:14px;
+  background:transparent !important;
+  border:0 !important;
+  padding:0 !important;
+}
+
+.keyword-status{
+  min-height:16px;
+  font-size:12px;
+  color:#9dd6a5;
+}
 </style>
 </head>
 <body>
 <main class="wrapper">
-  <!-- 헤더 -->
   <section class="card" style="align-items:center;text-align:center">
     <h1>디시갤 차단기 설정</h1>
     <p class="note">차단할 갤러리와 숨길 영역을 손쉽게 관리하세요.</p>
   </section>
 
-  <!-- 백업/복원 -->
   <section class="card">
     <h2>📦 설정 백업/복원</h2>
     <p class="note">현재 저장된 설정을 JSON 파일로 내보내거나 불러올 수 있습니다.</p>
@@ -195,7 +264,6 @@
     <p class="note">불러오면 기존 설정이 덮어씌워집니다. (chrome.storage.sync 기준)</p>
   </section>
 
-  <!-- 페이지 미리보기 -->
   <section class="card">
     <h2>🖥️ 페이지 미리보기</h2>
     <div class="row" style="justify-content:space-between;align-items:center">
@@ -207,7 +275,71 @@
     </div>
   </section>
 
-  <!-- 사용자 차단(UID) -->
+  <section class="card keyword-panel">
+  <h2>🔎 키워드 차단 모드</h2>
+
+  <div class="row" style="justify-content:space-between;align-items:center">
+    <div>
+      <p class="note">
+        게시물 목록 제목, 게시물 제목, 본문, 댓글에 포함된 키워드를 감지해 차단합니다.
+      </p>
+      <p class="note">
+        이미지 안에 박힌 글자는 텍스트가 아니므로 감지하지 않습니다.
+      </p>
+    </div>
+
+    <label class="switch" title="키워드 차단 모드">
+      <input type="checkbox" id="optionKeywordBlockEnabled">
+      <span class="slider"></span>
+    </label>
+  </div>
+
+  <div>
+    <h3 style="font-size:15px;margin-bottom:10px;">차단 대상</h3>
+
+    <div class="keyword-targets">
+      <label class="keyword-target-item">
+        <span>게시물 목록 제목</span>
+        <input type="checkbox" id="keywordTargetListTitle">
+      </label>
+
+      <label class="keyword-target-item">
+        <span>게시물 제목</span>
+        <input type="checkbox" id="keywordTargetViewTitle">
+      </label>
+
+      <label class="keyword-target-item">
+        <span>게시물 본문</span>
+        <input type="checkbox" id="keywordTargetViewBody">
+      </label>
+
+      <label class="keyword-target-item">
+        <span>댓글</span>
+        <input type="checkbox" id="keywordTargetComments">
+      </label>
+    </div>
+  </div>
+
+  <div>
+    <h3 style="font-size:15px;margin-bottom:10px;">차단 키워드 추가</h3>
+
+    <div class="keyword-input-row">
+      <input id="optionKeywordInput" type="text" placeholder="예: 보기 싫은 단어">
+      <button id="optionAddKeywordBtn" type="button">추가</button>
+    </div>
+
+    <p class="note">
+      등록한 키워드는 대소문자와 공백 차이를 정리해서 비교합니다.
+    </p>
+  </div>
+
+  <div>
+    <h3 style="font-size:15px;margin-bottom:10px;">차단 키워드 리스트</h3>
+    <ul id="optionKeywordList" class="keyword-list"></ul>
+    <p id="optionKeywordStatus" class="keyword-status"></p>
+  </div>
+</section>
+
   <section class="card">
     <h2>사용자 차단</h2>
     <div class="row" style="justify-content:space-between">
@@ -227,7 +359,6 @@
     <p class="note">* 비회원은 IP 앞부분(예: <code>39.7</code>)을 등록하면 일괄 차단됩니다.</p>
   </section>
 
-  <!-- 직접 갤러리 입력 -->
   <section class="card">
     <h2>직접 갤러리 ID 추가</h2>
     <div class="row">
@@ -237,7 +368,6 @@
     <ul id="list"></ul>
   </section>
 
-  <!-- 추천 갤러리 -->
   <section class="card">
     <h2>🛡️ 추천 차단 갤러리</h2>
     <p class="note">악성 게시물이 자주 업로드된 갤러리입니다.</p>
@@ -245,7 +375,6 @@
     <ul id="recList"></ul>
   </section>
 
-  <!-- 메인 페이지 숨김 -->
   <section class="card">
     <h2>🧹 메인 페이지 영역 숨기기</h2>
     <p class="note">디시인사이드 메인에서 제거할 영역을 지정하세요.<br>
@@ -258,7 +387,6 @@
     <ul id="selList"></ul>
   </section>
 
-  <!-- 갤러리 페이지 숨김 -->
   <section class="card">
     <h2>🧹 갤러리 페이지 영역 숨기기</h2>
     <p class="note">갤러리(게시글,목록) 페이지에서 숨길 영역을 지정하세요.<br>
@@ -271,7 +399,6 @@
     <ul id="gallSelList"></ul>
   </section>
 
-  <!-- 검색 페이지 숨김 -->
   <section class="card">
     <h2>🧹 검색 페이지 영역 숨기기</h2>
     <p class="note">검색 페이지에서 숨길 영역을 지정하세요.<br>
@@ -284,7 +411,6 @@
     <ul id="searchSelList"></ul>
   </section>
 
-  <!-- 비회원 게시물 숨기기 -->
   <section class="card">
     <h2>👻 비회원 게시물 숨기기</h2>
     <div class="row" style="justify-content:space-between;align-items:center">
@@ -296,7 +422,6 @@
     </div>
   </section>
 
-  <!-- 댓글 숨기기 -->
   <section class="card">
     <h2>💬 댓글 숨기기</h2>
     <div class="row" style="justify-content:space-between;margin-bottom:12px">
@@ -326,27 +451,26 @@
   </section>
 
   <section class="card">
-  <h2>📝 이용자 메모 관리</h2>
-  <p class="note">회원은 아이디 기준, 비회원은 아이피 기준으로 저장됩니다.</p>
+    <h2>📝 이용자 메모 관리</h2>
+    <p class="note">회원은 아이디 기준, 비회원은 아이피 기준으로 저장됩니다.</p>
 
-  <div class="memo-tools">
-    <input id="memoSearchInput" type="text" placeholder="닉네임, 아이디, 아이피, 메모 내용 검색">
-    <button id="refreshMemoListBtn" type="button">새로고침</button>
-    <button id="exportUserMemoBtn" type="button">내보내기</button>
-    <button id="importUserMemoBtn" type="button">가져오기</button>
-    <input id="importUserMemoFile" type="file" accept=".json,application/json" style="display:none">
-  </div>
+    <div class="memo-tools">
+      <input id="memoSearchInput" type="text" placeholder="닉네임, 아이디, 아이피, 메모 내용 검색">
+      <button id="refreshMemoListBtn" type="button">새로고침</button>
+      <button id="exportUserMemoBtn" type="button">내보내기</button>
+      <button id="importUserMemoBtn" type="button">가져오기</button>
+      <input id="importUserMemoFile" type="file" accept=".json,application/json" style="display:none">
+    </div>
 
-  <p class="memo-status" id="userMemoStatus"></p>
-  <ul id="memoList" class="memo-list"></ul>
-</section>
+    <p class="memo-status" id="userMemoStatus"></p>
+    <ul id="memoList" class="memo-list"></ul>
+  </section>
 
-<section class="card support-card">
-  <h2>📮 문의 / 버그 제보</h2>
-  <p class="note">확장프로그램 사용 중 문제를 발견했거나 개선 아이디어가 있다면, 아래 이슈 페이지에 남겨주세요.</p>
-  <a class="support-link" href="https://chromewebstore.google.com/detail/%EB%94%94%EC%8B%9C%EA%B0%A4-%EC%B0%A8%EB%8B%A8%EA%B8%B0/fnfmdbldnhadkadklplhcjcojjiaopgg/reviews?hl=ko" target="_blank" rel="noopener noreferrer">문의하기</a>
-</section>
-
+  <section class="card support-card">
+    <h2>📮 문의 / 버그 제보</h2>
+    <p class="note">확장프로그램 사용 중 문제를 발견했거나 개선 아이디어가 있다면, 아래 이슈 페이지에 남겨주세요.</p>
+    <a class="support-link" href="https://chromewebstore.google.com/detail/%EB%94%94%EC%8B%9C%EA%B0%A4-%EC%B0%A8%EB%8B%A8%EA%B8%B0/fnfmdbldnhadkadklplhcjcojjiaopgg/reviews?hl=ko" target="_blank" rel="noopener noreferrer">문의하기</a>
+  </section>
 </main>
 
 <script src="options.js"></script>
