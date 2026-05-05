@@ -37,13 +37,21 @@ const recSearchSelectors = [
   "section.right_content"
 ];
 
+const KEYWORD_DEFAULT_TARGETS = {
+  listTitle: true,
+  viewTitle: true,
+  viewBody: true,
+  comments: true
+};
+
 const BACKUP_KEYS = [
   "blockedIds", "removeSelectors", "removeSelectorsGall", "removeSelectorsSearch",
   "userBlockEnabled", "blockedUids", "hideComment", "hideImgComment", "hideDccon",
   "hideMainEnabled", "hideGallEnabled", "hideSearchEnabled",
   "enabled", "galleryBlockEnabled", "blockMode", "autoRefreshEnabled",
   "autoRefreshInterval", "delay", "showUidBadge", "linkWarnEnabled", "hideDCGray",
-  "previewEnabled", "hideAnonymousEnabled", "compactListEnabled"
+  "previewEnabled", "hideAnonymousEnabled", "compactListEnabled",
+  "keywordBlockEnabled", "blockedKeywords", "keywordBlockTargets"
 ];
 
 const BACKUP_DEFAULTS = {
@@ -70,7 +78,10 @@ const BACKUP_DEFAULTS = {
   hideDCGray: undefined,
   previewEnabled: false,
   hideAnonymousEnabled: false,
-  compactListEnabled: false
+  compactListEnabled: false,
+  keywordBlockEnabled: false,
+  blockedKeywords: [],
+  keywordBlockTargets: KEYWORD_DEFAULT_TARGETS
 };
 
 /* ───── DOM 캐시 ───── */
@@ -119,6 +130,18 @@ const importUserMemoFile = document.getElementById("importUserMemoFile");
 const memoList = document.getElementById("memoList");
 const userMemoStatus = document.getElementById("userMemoStatus");
 
+/* 키워드 차단 DOM */
+const optionKeywordBlockEnabled = document.getElementById("optionKeywordBlockEnabled");
+const optionKeywordInput = document.getElementById("optionKeywordInput");
+const optionAddKeywordBtn = document.getElementById("optionAddKeywordBtn");
+const optionKeywordList = document.getElementById("optionKeywordList");
+const optionKeywordStatus = document.getElementById("optionKeywordStatus");
+
+const keywordTargetListTitle = document.getElementById("keywordTargetListTitle");
+const keywordTargetViewTitle = document.getElementById("keywordTargetViewTitle");
+const keywordTargetViewBody = document.getElementById("keywordTargetViewBody");
+const keywordTargetComments = document.getElementById("keywordTargetComments");
+
 /* ───── 공통 유틸 ───── */
 const norm = s => String(s || "").trim().toLowerCase();
 const sanitizeUid = s => String(s || "").trim().replace(/\s+/g, "");
@@ -134,12 +157,14 @@ function isValidColor(v) {
 function formatDate(ts) {
   const n = Number(ts) || 0;
   if (!n) return "-";
+
   const d = new Date(n);
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   const hh = String(d.getHours()).padStart(2, "0");
   const mm = String(d.getMinutes()).padStart(2, "0");
+
   return `${y}-${m}-${day} ${hh}:${mm}`;
 }
 
@@ -151,10 +176,15 @@ function sanitizeImport(raw) {
   if (!body || typeof body !== "object") throw new Error("invalid");
 
   const patch = {};
+
   BACKUP_KEYS.forEach(k => {
-    if (Object.prototype.hasOwnProperty.call(body, k)) patch[k] = body[k];
+    if (Object.prototype.hasOwnProperty.call(body, k)) {
+      patch[k] = body[k];
+    }
   });
+
   if (!Object.keys(patch).length) throw new Error("empty");
+
   return patch;
 }
 
@@ -162,11 +192,14 @@ function downloadJson(filename, data) {
   const blob = new Blob([JSON.stringify(data, null, 2)], {
     type: "application/json;charset=utf-8"
   });
+
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
+
   a.href = url;
   a.download = filename;
   a.click();
+
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
@@ -177,6 +210,7 @@ function exportSettings() {
       exportedAt: new Date().toISOString(),
       data: snapshot
     };
+
     const ts = new Date().toISOString().replace(/[:.]/g, "-");
     downloadJson(`dcb-settings-${ts}.json`, payload);
   });
@@ -184,11 +218,14 @@ function exportSettings() {
 
 function importSettingsFromFile(file) {
   if (!file) return;
+
   const reader = new FileReader();
+
   reader.onload = () => {
     try {
       const parsed = JSON.parse(reader.result);
       const patch = sanitizeImport(parsed);
+
       chrome.storage.sync.set(patch, () => {
         alert("백업을 불러왔습니다. 페이지를 새로고침합니다.");
         location.reload();
@@ -198,13 +235,162 @@ function importSettingsFromFile(file) {
       alert("백업 파일을 불러오지 못했습니다. JSON 형식을 확인하세요.");
     }
   };
+
   reader.readAsText(file);
+}
+
+/* ───── 키워드 차단 관리 ───── */
+function sanitizeKeyword(v) {
+  return String(v || "")
+    .normalize("NFKC")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function setKeywordStatus(text, isError = false) {
+  if (!optionKeywordStatus) return;
+
+  optionKeywordStatus.textContent = text || "";
+  optionKeywordStatus.style.color = isError ? "#ff8d8d" : "#9dd6a5";
+}
+
+function normalizeKeywordList(list) {
+  const seen = new Set();
+  const out = [];
+
+  (Array.isArray(list) ? list : []).forEach((raw) => {
+    const keyword = sanitizeKeyword(raw);
+    const key = keyword.toLowerCase();
+
+    if (!keyword || seen.has(key)) return;
+
+    seen.add(key);
+    out.push(keyword);
+  });
+
+  return out;
+}
+
+function getKeywordTargetsFromUI() {
+  return {
+    listTitle: keywordTargetListTitle ? !!keywordTargetListTitle.checked : true,
+    viewTitle: keywordTargetViewTitle ? !!keywordTargetViewTitle.checked : true,
+    viewBody: keywordTargetViewBody ? !!keywordTargetViewBody.checked : true,
+    comments: keywordTargetComments ? !!keywordTargetComments.checked : true
+  };
+}
+
+function renderKeywordTargets(targets = {}) {
+  const merged = {
+    ...KEYWORD_DEFAULT_TARGETS,
+    ...(targets || {})
+  };
+
+  if (keywordTargetListTitle) keywordTargetListTitle.checked = !!merged.listTitle;
+  if (keywordTargetViewTitle) keywordTargetViewTitle.checked = !!merged.viewTitle;
+  if (keywordTargetViewBody) keywordTargetViewBody.checked = !!merged.viewBody;
+  if (keywordTargetComments) keywordTargetComments.checked = !!merged.comments;
+}
+
+function renderKeywordList(list) {
+  if (!optionKeywordList) return;
+
+  const keywords = normalizeKeywordList(list);
+  optionKeywordList.innerHTML = "";
+
+  if (!keywords.length) {
+    const li = document.createElement("li");
+    li.className = "keyword-empty";
+    li.textContent = "등록된 차단 키워드가 없습니다.";
+    optionKeywordList.appendChild(li);
+    setKeywordStatus("");
+    return;
+  }
+
+  keywords.forEach((keyword, idx) => {
+    const li = document.createElement("li");
+
+    const code = document.createElement("code");
+    code.textContent = keyword;
+
+    const del = document.createElement("button");
+    del.type = "button";
+    del.textContent = "삭제";
+    del.dataset.keywordIdx = String(idx);
+
+    li.appendChild(code);
+    li.appendChild(del);
+    optionKeywordList.appendChild(li);
+  });
+
+  setKeywordStatus(`현재 ${keywords.length}개의 키워드가 차단 리스트에 등록되어 있습니다.`);
+}
+
+function saveKeywordList(mutator) {
+  chrome.storage.sync.get(
+    {
+      blockedKeywords: []
+    },
+    ({ blockedKeywords }) => {
+      const list = Array.isArray(blockedKeywords)
+        ? blockedKeywords.slice()
+        : [];
+
+      mutator(list);
+
+      const next = normalizeKeywordList(list);
+
+      chrome.storage.sync.set(
+        {
+          blockedKeywords: next
+        },
+        () => {
+          renderKeywordList(next);
+          setKeywordStatus(`차단 키워드 ${next.length}개 저장 완료`);
+        }
+      );
+    }
+  );
+}
+
+function saveKeywordTargets() {
+  const next = getKeywordTargetsFromUI();
+
+  chrome.storage.sync.set(
+    {
+      keywordBlockTargets: next
+    },
+    () => {
+      setKeywordStatus("키워드 차단 대상 설정 저장 완료");
+    }
+  );
+}
+
+function lockKeywordOptionUI(disabled) {
+  const nodes = [
+    optionKeywordInput,
+    optionAddKeywordBtn,
+    keywordTargetListTitle,
+    keywordTargetViewTitle,
+    keywordTargetViewBody,
+    keywordTargetComments
+  ];
+
+  nodes.forEach((el) => {
+    if (!el) return;
+    el.disabled = !!disabled;
+    el.style.opacity = disabled ? 0.55 : 1;
+  });
 }
 
 /* ───── 갤러리 차단 ───── */
 function renderUser(ids) {
+  if (!listEl) return;
+
   listEl.innerHTML = "";
+
   const vis = ids.filter(id => !builtinBlocked.includes(id));
+
   if (!vis.length) {
     listEl.innerHTML = '<p class="note">아직 추가된 갤러리가 없습니다.</p>';
     return;
@@ -213,26 +399,36 @@ function renderUser(ids) {
   vis.sort().forEach(id => {
     const li = document.createElement("li");
     li.innerHTML = `<span>${id}</span>`;
+
     const del = document.createElement("button");
     del.textContent = "삭제";
     del.onclick = () =>
       chrome.storage.sync.get({ blockedIds: [] }, ({ blockedIds }) =>
         updateBlocked(blockedIds.filter(x => norm(x) !== id)));
+
     li.appendChild(del);
     listEl.appendChild(li);
   });
 }
 
 function renderRec(blocked) {
+  if (!recList) return;
+
   recList.innerHTML = "";
+
   recommendedIds.forEach(id => {
     const li = document.createElement("li");
     const btn = document.createElement("button");
     const already = blocked.includes(id);
+
     btn.textContent = already ? "✓ 추가됨" : "추가";
     btn.disabled = already;
     btn.className = already ? "added" : "";
-    if (!already) btn.onclick = () => updateBlocked([...blocked, id]);
+
+    if (!already) {
+      btn.onclick = () => updateBlocked([...blocked, id]);
+    }
+
     li.textContent = id + " ";
     li.appendChild(btn);
     recList.appendChild(li);
@@ -240,19 +436,25 @@ function renderRec(blocked) {
 }
 
 function renderSel(arr, targetUl, key) {
+  if (!targetUl) return;
+
   targetUl.innerHTML = "";
+
   if (!arr.length) {
     targetUl.innerHTML = '<p class="note">숨길 영역이 없습니다.</p>';
     return;
   }
+
   arr.forEach(sel => {
     const li = document.createElement("li");
     li.innerHTML = `<span>${sel}</span>`;
+
     const del = document.createElement("button");
     del.textContent = "삭제";
     del.onclick = () =>
       chrome.storage.sync.get({ [key]: [] }, store =>
         updateSel(store[key].filter(s => s !== sel), key, targetUl));
+
     li.appendChild(del);
     targetUl.appendChild(li);
   });
@@ -260,6 +462,7 @@ function renderSel(arr, targetUl, key) {
 
 function updateBlocked(next) {
   const uniq = [...new Set(next.map(norm))];
+
   chrome.storage.sync.set({ blockedIds: uniq }, () => {
     renderUser(uniq);
     renderRec(uniq);
@@ -268,30 +471,45 @@ function updateBlocked(next) {
 
 function updateSel(list, key, targetUl) {
   const uniq = [...new Set(list.map(s => s.trim()).filter(Boolean))];
-  chrome.storage.sync.set({ [key]: uniq }, () => renderSel(uniq, targetUl, key));
+
+  chrome.storage.sync.set({ [key]: uniq }, () => {
+    renderSel(uniq, targetUl, key);
+  });
 }
 
 /* ───── 사용자 차단(UID) ───── */
 function lockUserBlockUI(disabled) {
   if (!uidInput || !addUidBtn) return;
-  uidInput.disabled = addUidBtn.disabled = !!disabled;
+
+  uidInput.disabled = !!disabled;
+  addUidBtn.disabled = !!disabled;
+
   const op = disabled ? 0.5 : 1;
-  uidInput.style.opacity = addUidBtn.style.opacity = op;
+  uidInput.style.opacity = op;
+  addUidBtn.style.opacity = op;
 }
 
 function renderUidList(uids) {
+  if (!uidListEl) return;
+
   uidListEl.innerHTML = "";
+
   if (!uids || !uids.length) {
-    uidListEl.innerHTML = '<li class="note" style="background:transparent;padding:0">등록된 유저 아이디가 없습니다.</li>';
+    uidListEl.innerHTML =
+      '<li class="note" style="background:transparent;padding:0">등록된 유저 아이디가 없습니다.</li>';
     return;
   }
 
   uids.forEach((uid, idx) => {
     const li = document.createElement("li");
     li.innerHTML = `<code>${uid}</code>`;
+
     const del = document.createElement("button");
     del.textContent = "삭제";
-    del.onclick = () => saveUidList(list => { list.splice(idx, 1); });
+    del.onclick = () => saveUidList(list => {
+      list.splice(idx, 1);
+    });
+
     li.appendChild(del);
     uidListEl.appendChild(li);
   });
@@ -300,15 +518,21 @@ function renderUidList(uids) {
 function saveUidList(mutator) {
   chrome.storage.sync.get({ blockedUids: [] }, ({ blockedUids }) => {
     const list = Array.isArray(blockedUids) ? blockedUids.slice() : [];
+
     mutator(list);
+
     const uniq = Array.from(new Set(list.map(sanitizeUid).filter(Boolean)));
-    chrome.storage.sync.set({ blockedUids: uniq }, () => renderUidList(uniq));
+
+    chrome.storage.sync.set({ blockedUids: uniq }, () => {
+      renderUidList(uniq);
+    });
   });
 }
 
 /* ───── 이용자 메모 관리 ───── */
 function setMemoStatus(text, isError = false) {
   if (!userMemoStatus) return;
+
   userMemoStatus.textContent = text || "";
   userMemoStatus.style.color = isError ? "#ff8d8d" : "#9dd6a5";
 }
@@ -356,6 +580,7 @@ function setUserMemos(next) {
 
 function memoMatchesFilter(key, item, query) {
   if (!query) return true;
+
   const q = query.toLowerCase();
 
   const haystack = [
@@ -482,11 +707,82 @@ async function renderMemoList() {
   });
 }
 
-/* ───── 이벤트 ───── */
-if (exportBtn) exportBtn.onclick = () => exportSettings();
+/* ───── 이벤트: 키워드 차단 ───── */
+if (optionKeywordBlockEnabled) {
+  optionKeywordBlockEnabled.addEventListener("change", (e) => {
+    const on = !!e.target.checked;
+
+    lockKeywordOptionUI(!on);
+
+    chrome.storage.sync.set(
+      {
+        keywordBlockEnabled: on
+      },
+      () => {
+        setKeywordStatus(
+          on ? "키워드 차단 모드가 켜졌습니다." : "키워드 차단 모드가 꺼졌습니다."
+        );
+      }
+    );
+  });
+}
+
+if (optionAddKeywordBtn && optionKeywordInput) {
+  optionAddKeywordBtn.addEventListener("click", () => {
+    const keyword = sanitizeKeyword(optionKeywordInput.value);
+
+    if (!keyword) {
+      setKeywordStatus("추가할 키워드를 입력하세요.", true);
+      return;
+    }
+
+    saveKeywordList((list) => {
+      list.push(keyword);
+    });
+
+    optionKeywordInput.value = "";
+    optionKeywordInput.focus();
+  });
+
+  optionKeywordInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      optionAddKeywordBtn.click();
+    }
+  });
+}
+
+if (optionKeywordList) {
+  optionKeywordList.addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-keyword-idx]");
+    if (!btn) return;
+
+    const idx = Number(btn.dataset.keywordIdx);
+
+    saveKeywordList((list) => {
+      list.splice(idx, 1);
+    });
+  });
+}
+
+[
+  keywordTargetListTitle,
+  keywordTargetViewTitle,
+  keywordTargetViewBody,
+  keywordTargetComments
+].forEach((el) => {
+  if (!el) return;
+  el.addEventListener("change", saveKeywordTargets);
+});
+
+/* ───── 이벤트: 백업/복원 ───── */
+if (exportBtn) {
+  exportBtn.onclick = () => exportSettings();
+}
 
 if (importBtn && importFileEl) {
   importBtn.onclick = () => importFileEl.click();
+
   importFileEl.onchange = () => {
     const [file] = importFileEl.files || [];
     importSettingsFromFile(file);
@@ -494,72 +790,111 @@ if (importBtn && importFileEl) {
   };
 }
 
-addBtn.onclick = () => {
-  const id = norm(newIdInput.value);
-  if (!id || builtinBlocked.includes(id)) return;
+/* ───── 이벤트: 갤러리 차단 ───── */
+if (addBtn && newIdInput) {
+  addBtn.onclick = () => {
+    const id = norm(newIdInput.value);
+    if (!id || builtinBlocked.includes(id)) return;
 
-  chrome.storage.sync.get({ blockedIds: [] }, ({ blockedIds }) => {
-    if (!blockedIds.map(norm).includes(id)) updateBlocked([...blockedIds, id]);
-    newIdInput.value = "";
+    chrome.storage.sync.get({ blockedIds: [] }, ({ blockedIds }) => {
+      if (!blockedIds.map(norm).includes(id)) {
+        updateBlocked([...blockedIds, id]);
+      }
+
+      newIdInput.value = "";
+    });
+  };
+
+  newIdInput.addEventListener("keyup", e => {
+    if (e.key === "Enter") addBtn.onclick();
   });
-};
-newIdInput.addEventListener("keyup", e => { if (e.key === "Enter") addBtn.onclick(); });
+}
 
-addAllRec.onclick = () =>
-  chrome.storage.sync.get({ blockedIds: [] }, ({ blockedIds }) =>
-    updateBlocked([...new Set([...blockedIds, ...recommendedIds])]));
+if (addAllRec) {
+  addAllRec.onclick = () =>
+    chrome.storage.sync.get({ blockedIds: [] }, ({ blockedIds }) =>
+      updateBlocked([...new Set([...blockedIds, ...recommendedIds])]));
+}
 
-addSelBtn.onclick = () => {
-  const sel = newSel.value.trim();
-  if (!sel) return;
+/* ───── 이벤트: 메인 페이지 셀렉터 ───── */
+if (addSelBtn && newSel) {
+  addSelBtn.onclick = () => {
+    const sel = newSel.value.trim();
+    if (!sel) return;
 
-  chrome.storage.sync.get({ removeSelectors: [] }, ({ removeSelectors }) => {
-    if (!removeSelectors.includes(sel)) {
-      updateSel([...removeSelectors, sel], "removeSelectors", selList);
-    }
-    newSel.value = "";
+    chrome.storage.sync.get({ removeSelectors: [] }, ({ removeSelectors }) => {
+      if (!removeSelectors.includes(sel)) {
+        updateSel([...removeSelectors, sel], "removeSelectors", selList);
+      }
+
+      newSel.value = "";
+    });
+  };
+
+  newSel.addEventListener("keyup", e => {
+    if (e.key === "Enter") addSelBtn.onclick();
   });
-};
-newSel.addEventListener("keyup", e => { if (e.key === "Enter") addSelBtn.onclick(); });
+}
 
-addRecSel.onclick = () =>
-  chrome.storage.sync.get({ removeSelectors: [] }, ({ removeSelectors }) =>
-    updateSel([...new Set([...removeSelectors, ...recSelectors])], "removeSelectors", selList));
+if (addRecSel) {
+  addRecSel.onclick = () =>
+    chrome.storage.sync.get({ removeSelectors: [] }, ({ removeSelectors }) =>
+      updateSel([...new Set([...removeSelectors, ...recSelectors])], "removeSelectors", selList));
+}
 
-addGallSelBtn.onclick = () => {
-  const sel = newGallSel.value.trim();
-  if (!sel) return;
+/* ───── 이벤트: 갤러리 페이지 셀렉터 ───── */
+if (addGallSelBtn && newGallSel) {
+  addGallSelBtn.onclick = () => {
+    const sel = newGallSel.value.trim();
+    if (!sel) return;
 
-  chrome.storage.sync.get({ removeSelectorsGall: [] }, ({ removeSelectorsGall }) => {
-    if (!removeSelectorsGall.includes(sel)) {
-      updateSel([...removeSelectorsGall, sel], "removeSelectorsGall", gallSelList);
-    }
-    newGallSel.value = "";
+    chrome.storage.sync.get({ removeSelectorsGall: [] }, ({ removeSelectorsGall }) => {
+      if (!removeSelectorsGall.includes(sel)) {
+        updateSel([...removeSelectorsGall, sel], "removeSelectorsGall", gallSelList);
+      }
+
+      newGallSel.value = "";
+    });
+  };
+
+  newGallSel.addEventListener("keyup", e => {
+    if (e.key === "Enter") addGallSelBtn.onclick();
   });
-};
-newGallSel.addEventListener("keyup", e => { if (e.key === "Enter") addGallSelBtn.onclick(); });
+}
 
-addRecGallSel.onclick = () =>
-  chrome.storage.sync.get({ removeSelectorsGall: [] }, ({ removeSelectorsGall }) =>
-    updateSel([...new Set([...removeSelectorsGall, ...recGallSelectors])], "removeSelectorsGall", gallSelList));
+if (addRecGallSel) {
+  addRecGallSel.onclick = () =>
+    chrome.storage.sync.get({ removeSelectorsGall: [] }, ({ removeSelectorsGall }) =>
+      updateSel([...new Set([...removeSelectorsGall, ...recGallSelectors])], "removeSelectorsGall", gallSelList));
+}
 
-addSearchSelBtn.onclick = () => {
-  const sel = newSearchSel.value.trim();
-  if (!sel) return;
+/* ───── 이벤트: 검색 페이지 셀렉터 ───── */
+if (addSearchSelBtn && newSearchSel) {
+  addSearchSelBtn.onclick = () => {
+    const sel = newSearchSel.value.trim();
+    if (!sel) return;
 
-  chrome.storage.sync.get({ removeSelectorsSearch: [] }, ({ removeSelectorsSearch }) => {
-    if (!removeSelectorsSearch.includes(sel)) {
-      updateSel([...removeSelectorsSearch, sel], "removeSelectorsSearch", searchSelList);
-    }
-    newSearchSel.value = "";
+    chrome.storage.sync.get({ removeSelectorsSearch: [] }, ({ removeSelectorsSearch }) => {
+      if (!removeSelectorsSearch.includes(sel)) {
+        updateSel([...removeSelectorsSearch, sel], "removeSelectorsSearch", searchSelList);
+      }
+
+      newSearchSel.value = "";
+    });
+  };
+
+  newSearchSel.addEventListener("keyup", e => {
+    if (e.key === "Enter") addSearchSelBtn.onclick();
   });
-};
-newSearchSel.addEventListener("keyup", e => { if (e.key === "Enter") addSearchSelBtn.onclick(); });
+}
 
-addRecSearchSel.onclick = () =>
-  chrome.storage.sync.get({ removeSelectorsSearch: [] }, ({ removeSelectorsSearch }) =>
-    updateSel([...new Set([...removeSelectorsSearch, ...recSearchSelectors])], "removeSelectorsSearch", searchSelList));
+if (addRecSearchSel) {
+  addRecSearchSel.onclick = () =>
+    chrome.storage.sync.get({ removeSelectorsSearch: [] }, ({ removeSelectorsSearch }) =>
+      updateSel([...new Set([...removeSelectorsSearch, ...recSearchSelectors])], "removeSelectorsSearch", searchSelList));
+}
 
+/* ───── 이벤트: 사용자 차단 ───── */
 if (userBlockEl) {
   userBlockEl.addEventListener("change", e => {
     const on = !!e.target.checked;
@@ -572,7 +907,9 @@ if (addUidBtn && uidInput) {
   addUidBtn.addEventListener("click", () => {
     const v = sanitizeUid(uidInput.value);
     if (!v) return;
+
     saveUidList(list => list.push(v));
+
     uidInput.value = "";
     uidInput.focus();
   });
@@ -589,12 +926,17 @@ if (uidListEl) {
   uidListEl.addEventListener("click", e => {
     const btn = e.target.closest("button");
     if (!btn) return;
+
     const idx = Array.from(uidListEl.children).indexOf(btn.parentElement);
     if (idx < 0) return;
-    saveUidList(list => { list.splice(idx, 1); });
+
+    saveUidList(list => {
+      list.splice(idx, 1);
+    });
   });
 }
 
+/* ───── 이벤트: 댓글/미리보기/비회원 ───── */
 if (hideCommentEl) {
   hideCommentEl.addEventListener("change", e => {
     chrome.storage.sync.set({ hideComment: !!e.target.checked });
@@ -625,7 +967,7 @@ if (hideAnonymousEl) {
   });
 }
 
-/* 메모 관리 이벤트 */
+/* ───── 이벤트: 메모 관리 ───── */
 if (memoSearchInput) {
   memoSearchInput.addEventListener("input", () => {
     renderMemoList();
@@ -643,11 +985,13 @@ if (exportUserMemoBtn) {
   exportUserMemoBtn.addEventListener("click", async () => {
     const userMemos = await getUserMemos();
     const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+
     downloadJson(`dcb-user-memos-${stamp}.json`, {
       version: 1,
       exportedAt: new Date().toISOString(),
       userMemos
     });
+
     setMemoStatus(`내보내기 완료 · ${Object.keys(userMemos).length}건`);
   });
 }
@@ -673,6 +1017,7 @@ if (importUserMemoBtn && importUserMemoFile) {
       };
 
       await setUserMemos(merged);
+
       setMemoStatus(`가져오기 완료 · ${Object.keys(imported).length}건 반영`);
       renderMemoList();
     } catch (err) {
@@ -698,24 +1043,46 @@ chrome.storage.sync.get(
     hideDccon: false,
     previewEnabled: false,
     hideAnonymousEnabled: false,
-    hideDCGray: undefined
+    hideDCGray: undefined,
+
+    keywordBlockEnabled: false,
+    blockedKeywords: [],
+    keywordBlockTargets: KEYWORD_DEFAULT_TARGETS
   },
-  ({ blockedIds, removeSelectors, removeSelectorsGall, removeSelectorsSearch, userBlockEnabled, blockedUids, hideComment, hideImgComment, hideDccon, previewEnabled, hideAnonymousEnabled, hideDCGray }) => {
+  ({
+    blockedIds,
+    removeSelectors,
+    removeSelectorsGall,
+    removeSelectorsSearch,
+    userBlockEnabled,
+    blockedUids,
+    hideComment,
+    hideImgComment,
+    hideDccon,
+    previewEnabled,
+    hideAnonymousEnabled,
+    hideDCGray,
+
+    keywordBlockEnabled,
+    blockedKeywords,
+    keywordBlockTargets
+  }) => {
     if (typeof userBlockEnabled !== "boolean" && typeof hideDCGray === "boolean") {
       userBlockEnabled = hideDCGray;
       chrome.storage.sync.set({ userBlockEnabled });
     }
 
-    renderUser(blockedIds.map(norm));
-    renderRec(blockedIds.map(norm));
-    renderSel(removeSelectors, selList, "removeSelectors");
-    renderSel(removeSelectorsGall, gallSelList, "removeSelectorsGall");
-    renderSel(removeSelectorsSearch, searchSelList, "removeSelectorsSearch");
+    renderUser((blockedIds || []).map(norm));
+    renderRec((blockedIds || []).map(norm));
+    renderSel(removeSelectors || [], selList, "removeSelectors");
+    renderSel(removeSelectorsGall || [], gallSelList, "removeSelectorsGall");
+    renderSel(removeSelectorsSearch || [], searchSelList, "removeSelectorsSearch");
 
     if (userBlockEl) {
       userBlockEl.checked = !!userBlockEnabled;
       lockUserBlockUI(!userBlockEnabled);
     }
+
     renderUidList(blockedUids || []);
 
     if (hideCommentEl) hideCommentEl.checked = !!hideComment;
@@ -723,6 +1090,14 @@ chrome.storage.sync.get(
     if (hideDcconEl) hideDcconEl.checked = !!hideDccon;
     if (previewEnabledEl) previewEnabledEl.checked = !!previewEnabled;
     if (hideAnonymousEl) hideAnonymousEl.checked = !!hideAnonymousEnabled;
+
+    if (optionKeywordBlockEnabled) {
+      optionKeywordBlockEnabled.checked = !!keywordBlockEnabled;
+      lockKeywordOptionUI(!keywordBlockEnabled);
+    }
+
+    renderKeywordTargets(keywordBlockTargets || KEYWORD_DEFAULT_TARGETS);
+    renderKeywordList(blockedKeywords || []);
   }
 );
 
@@ -736,21 +1111,60 @@ chrome.storage.onChanged.addListener((changes, area) => {
       renderUser(ids);
       renderRec(ids);
     }
-    if (changes.removeSelectors) renderSel(changes.removeSelectors.newValue || [], selList, "removeSelectors");
-    if (changes.removeSelectorsGall) renderSel(changes.removeSelectorsGall.newValue || [], gallSelList, "removeSelectorsGall");
-    if (changes.removeSelectorsSearch) renderSel(changes.removeSelectorsSearch.newValue || [], searchSelList, "removeSelectorsSearch");
+
+    if (changes.removeSelectors) {
+      renderSel(changes.removeSelectors.newValue || [], selList, "removeSelectors");
+    }
+
+    if (changes.removeSelectorsGall) {
+      renderSel(changes.removeSelectorsGall.newValue || [], gallSelList, "removeSelectorsGall");
+    }
+
+    if (changes.removeSelectorsSearch) {
+      renderSel(changes.removeSelectorsSearch.newValue || [], searchSelList, "removeSelectorsSearch");
+    }
 
     if (changes.userBlockEnabled && userBlockEl) {
       userBlockEl.checked = !!changes.userBlockEnabled.newValue;
       lockUserBlockUI(!changes.userBlockEnabled.newValue);
     }
-    if (changes.blockedUids) renderUidList(changes.blockedUids.newValue || []);
 
-    if (changes.hideComment && hideCommentEl) hideCommentEl.checked = !!changes.hideComment.newValue;
-    if (changes.hideImgComment && hideImgCommentEl) hideImgCommentEl.checked = !!changes.hideImgComment.newValue;
-    if (changes.hideDccon && hideDcconEl) hideDcconEl.checked = !!changes.hideDccon.newValue;
-    if (changes.previewEnabled && previewEnabledEl) previewEnabledEl.checked = !!changes.previewEnabled.newValue;
-    if (changes.hideAnonymousEnabled && hideAnonymousEl) hideAnonymousEl.checked = !!changes.hideAnonymousEnabled.newValue;
+    if (changes.blockedUids) {
+      renderUidList(changes.blockedUids.newValue || []);
+    }
+
+    if (changes.hideComment && hideCommentEl) {
+      hideCommentEl.checked = !!changes.hideComment.newValue;
+    }
+
+    if (changes.hideImgComment && hideImgCommentEl) {
+      hideImgCommentEl.checked = !!changes.hideImgComment.newValue;
+    }
+
+    if (changes.hideDccon && hideDcconEl) {
+      hideDcconEl.checked = !!changes.hideDccon.newValue;
+    }
+
+    if (changes.previewEnabled && previewEnabledEl) {
+      previewEnabledEl.checked = !!changes.previewEnabled.newValue;
+    }
+
+    if (changes.hideAnonymousEnabled && hideAnonymousEl) {
+      hideAnonymousEl.checked = !!changes.hideAnonymousEnabled.newValue;
+    }
+
+    if (changes.keywordBlockEnabled && optionKeywordBlockEnabled) {
+      optionKeywordBlockEnabled.checked = !!changes.keywordBlockEnabled.newValue;
+      lockKeywordOptionUI(!changes.keywordBlockEnabled.newValue);
+    }
+
+    if (changes.blockedKeywords) {
+      renderKeywordList(changes.blockedKeywords.newValue || []);
+    }
+
+    if (changes.keywordBlockTargets) {
+      renderKeywordTargets(changes.keywordBlockTargets.newValue || KEYWORD_DEFAULT_TARGETS);
+    }
   }
 
   if (area === "local" && changes.userMemos) {
