@@ -79,6 +79,28 @@
   .btn-danger:hover{background:#ff6b6b;color:#000}
   .divider{height:1px;background:#1f2630;border:0;margin-top:-6px}
 
+  ul#keywordList{
+    list-style:none;
+    display:flex;
+    flex-direction:column;
+    gap:6px;
+    max-height:120px;
+    overflow:auto;
+  }
+  ul#keywordList li{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    border:1px solid #333;
+    border-radius:8px;
+    padding:6px 8px;
+    background:#151a22;
+  }
+  ul#keywordList code{
+    opacity:.9;
+    word-break:break-all;
+  }
+
 .user-memo-quick{
   display:flex;
   flex-direction:column;
@@ -196,6 +218,23 @@
   <hr class="divider">
 
   <label class="row">
+    <span style="min-width:110px;">키워드 차단 모드</span>
+    <label class="switch">
+      <input type="checkbox" id="keywordBlockEnabled">
+      <span class="slider"></span>
+    </label>
+  </label>
+  <p class="hint">게시물 목록 제목, 게시물 제목, 본문, 댓글에 포함된 키워드를 감지해 숨깁니다.</p>
+
+  <div class="row-input">
+    <input id="keywordInput" type="text" placeholder="예: 보기 싫은 단어">
+    <button id="addKeywordBtn" type="button">추가</button>
+  </div>
+  <ul id="keywordList"></ul>
+
+  <hr class="divider">
+
+  <label class="row">
     <span style="min-width:110px;">자동 새로고침</span>
     <label class="switch">
       <input type="checkbox" id="autoRefreshEnabled">
@@ -277,13 +316,13 @@
   </label>
 
   <label class="row">
-  <span style="min-width:110px;">컴팩트 모드</span>
-  <label class="switch">
-    <input type="checkbox" id="compactListEnabled">
-    <span class="slider"></span>
+    <span style="min-width:110px;">컴팩트 모드</span>
+    <label class="switch">
+      <input type="checkbox" id="compactListEnabled">
+      <span class="slider"></span>
+    </label>
   </label>
-</label>
-<p class="hint">게시물 목록을 더 촘촘하게 표시합니다. UID와 메모 버튼은 목록에서 작게 정리됩니다.</p>
+  <p class="hint">게시물 목록을 더 촘촘하게 표시합니다. UID와 메모 버튼은 목록에서 작게 정리됩니다.</p>
 
   <label class="row">
     <span style="min-width:110px;">차단할 유저 아이디와 아이피</span>
@@ -313,15 +352,15 @@
   <input id="importUserMemoFile" type="file" accept=".json,application/json" style="display:none">
   <p class="status" id="userMemoTransferStatus"></p>
 
-<hr class="divider">
+  <hr class="divider">
 
-<div class="user-memo-quick">
-  <div class="user-memo-quick-head">
-    <p class="hint">최근 이용자 메모</p>
-    <button id="refreshUserMemoListBtn" type="button">새로고침</button>
+  <div class="user-memo-quick">
+    <div class="user-memo-quick-head">
+      <p class="hint">최근 이용자 메모</p>
+      <button id="refreshUserMemoListBtn" type="button">새로고침</button>
+    </div>
+    <ul id="userMemoList"></ul>
   </div>
-  <ul id="userMemoList"></ul>
-</div>
 
   <button id="openOptions">설정 메뉴 열기</button>
 
