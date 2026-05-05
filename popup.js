@@ -16,6 +16,11 @@ const delayRange = document.getElementById("delayRange");
 const openOptionsBtn = document.getElementById("openOptions");
 const compactListToggle = document.getElementById("compactListEnabled");
 
+const keywordBlockToggle = document.getElementById("keywordBlockEnabled");
+const keywordInput = document.getElementById("keywordInput");
+const addKeywordBtn = document.getElementById("addKeywordBtn");
+const keywordListEl = document.getElementById("keywordList");
+
 const userBlockEl = document.getElementById("userBlockEnabled") || document.getElementById("hideDCGray");
 const uidInput = document.getElementById("uidInput");
 const addUidBtn = document.getElementById("addUidBtn");
@@ -35,42 +40,10 @@ const exportUserMemoBtn = document.getElementById("exportUserMemoBtn");
 const importUserMemoBtn = document.getElementById("importUserMemoBtn");
 const importUserMemoFile = document.getElementById("importUserMemoFile");
 const userMemoTransferStatus = document.getElementById("userMemoTransferStatus");
+const userMemoList = document.getElementById("userMemoList");
+const refreshUserMemoListBtn = document.getElementById("refreshUserMemoListBtn");
 
-/* ───────── util ───────── */
-function lockDelay(disabled) {
-  delayNum.disabled = disabled;
-  delayRange.disabled = disabled;
-  const op = disabled ? 0.5 : 1;
-  delayNum.style.opacity = delayRange.style.opacity = op;
-}
-
-function updateBlockModeHint(mode) {
-  if (!blockModeHint) return;
-  const hints = {
-    smart: "✨ 경고 화면 표시 후 선택 가능 (추천)",
-    redirect: "⏱️ 카운트다운 후 자동 리다이렉트",
-    block: "🚫 완전 차단 (네트워크 레벨)"
-  };
-  blockModeHint.textContent = hints[mode] || "";
-
-  if (delaySection) {
-    delaySection.style.display = mode === "redirect" ? "block" : "none";
-  }
-}
-
-function lockUserBlockUI(disabled) {
-  if (!uidInput || !addUidBtn) return;
-  uidInput.disabled = addUidBtn.disabled = !!disabled;
-  const op = disabled ? 0.5 : 1;
-  uidInput.style.opacity = addUidBtn.style.opacity = op;
-}
-
-function setMemoTransferStatus(text, isError = false) {
-  if (!userMemoTransferStatus) return;
-  userMemoTransferStatus.textContent = text || "";
-  userMemoTransferStatus.style.color = isError ? "#ff8d8d" : "#9dd6a5";
-}
-
+/* ───────── defaults ───────── */
 const DEFAULTS = {
   enabled: true,
   blockMode: "smart",
@@ -78,6 +51,16 @@ const DEFAULTS = {
   hideImgComment: false,
   hideDccon: false,
   previewEnabled: false,
+
+  keywordBlockEnabled: false,
+  blockedKeywords: [],
+  keywordBlockTargets: {
+    listTitle: true,
+    viewTitle: true,
+    viewBody: true,
+    comments: true
+  },
+
   autoRefreshEnabled: false,
   autoRefreshInterval: 60,
   delay: 5,
@@ -94,20 +77,113 @@ const DEFAULTS = {
   hideAnonymousEnabled: false,
   linkWarnEnabled: true,
 
-  /* 독립 이용자 메모 */
   userMemoEnabled: true,
-
   compactListEnabled: false
 };
+
+/* ───────── util ───────── */
+function setChecked(el, value) {
+  if (el) el.checked = !!value;
+}
+
+function setValue(el, value) {
+  if (el) el.value = value;
+}
+
+function lockDelay(disabled) {
+  if (!delayNum || !delayRange) return;
+  delayNum.disabled = !!disabled;
+  delayRange.disabled = !!disabled;
+  const op = disabled ? 0.5 : 1;
+  delayNum.style.opacity = op;
+  delayRange.style.opacity = op;
+}
+
+function updateBlockModeHint(mode) {
+  if (blockModeHint) {
+    const hints = {
+      smart: "✨ 경고 화면 표시 후 선택 가능 (추천)",
+      redirect: "⏱️ 카운트다운 후 자동 리다이렉트",
+      block: "🚫 완전 차단 (네트워크 레벨)"
+    };
+    blockModeHint.textContent = hints[mode] || "";
+  }
+
+  if (delaySection) {
+    delaySection.style.display = mode === "redirect" ? "block" : "none";
+  }
+
+  lockDelay(mode !== "redirect");
+}
+
+function lockUserBlockUI(disabled) {
+  if (!uidInput || !addUidBtn) return;
+  uidInput.disabled = !!disabled;
+  addUidBtn.disabled = !!disabled;
+  const op = disabled ? 0.5 : 1;
+  uidInput.style.opacity = op;
+  addUidBtn.style.opacity = op;
+}
+
+function lockKeywordBlockUI(disabled) {
+  if (!keywordInput || !addKeywordBtn) return;
+  keywordInput.disabled = !!disabled;
+  addKeywordBtn.disabled = !!disabled;
+  const op = disabled ? 0.5 : 1;
+  keywordInput.style.opacity = op;
+  addKeywordBtn.style.opacity = op;
+}
+
+function setMemoTransferStatus(text, isError = false) {
+  if (!userMemoTransferStatus) return;
+  userMemoTransferStatus.textContent = text || "";
+  userMemoTransferStatus.style.color = isError ? "#ff8d8d" : "#9dd6a5";
+}
 
 function sanitizeUid(s) {
   return String(s || "").trim().replace(/\s+/g, "");
 }
 
+function sanitizeKeyword(v) {
+  return String(v || "")
+    .normalize("NFKC")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function sanitizeText(v, max = 80) {
+  return String(v || "").replace(/\s+/g, " ").trim().slice(0, max);
+}
+
+function downloadJson(filename, data) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], {
+    type: "application/json;charset=utf-8"
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+}
+
+/* ───────── UID 차단 목록 ───────── */
 function renderUidList(list) {
   if (!uidListEl) return;
+
   uidListEl.innerHTML = "";
-  (list || []).forEach((uid, idx) => {
+  const uids = Array.isArray(list) ? list : [];
+
+  if (!uids.length) {
+    const li = document.createElement("li");
+    li.className = "row";
+    li.style.justifyContent = "space-between";
+    li.innerHTML = `<span class="muted">등록된 유저 아이디와 아이피가 없습니다.</span>`;
+    uidListEl.appendChild(li);
+    return;
+  }
+
+  uids.forEach((uid, idx) => {
     const li = document.createElement("li");
     li.className = "row";
     li.style.justifyContent = "space-between";
@@ -125,18 +201,51 @@ function saveUidList(mutator) {
   });
 }
 
-function downloadJson(filename, data) {
-  const blob = new Blob([JSON.stringify(data, null, 2)], {
-    type: "application/json;charset=utf-8"
+/* ───────── 키워드 차단 목록 ───────── */
+function renderKeywordList(list) {
+  if (!keywordListEl) return;
+
+  keywordListEl.innerHTML = "";
+  const keywords = Array.isArray(list) ? list : [];
+
+  if (!keywords.length) {
+    const li = document.createElement("li");
+    li.innerHTML = `<span class="muted">등록된 키워드가 없습니다.</span>`;
+    keywordListEl.appendChild(li);
+    return;
+  }
+
+  keywords.forEach((keyword, idx) => {
+    const li = document.createElement("li");
+    li.innerHTML = `
+      <code>${keyword}</code>
+      <button class="btn btn-danger" data-keyword-idx="${idx}">삭제</button>
+    `;
+    keywordListEl.appendChild(li);
   });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1500);
 }
 
+function saveKeywordList(mutator) {
+  chrome.storage.sync.get(DEFAULTS, (conf) => {
+    const list = Array.isArray(conf.blockedKeywords) ? conf.blockedKeywords.slice() : [];
+    mutator(list);
+
+    const seen = new Set();
+    const uniq = [];
+
+    list.forEach((item) => {
+      const keyword = sanitizeKeyword(item);
+      const key = keyword.toLowerCase();
+      if (!keyword || seen.has(key)) return;
+      seen.add(key);
+      uniq.push(keyword);
+    });
+
+    chrome.storage.sync.set({ blockedKeywords: uniq }, () => renderKeywordList(uniq));
+  });
+}
+
+/* ───────── 이용자 메모 ───────── */
 function normalizeImportedMemoObject(raw) {
   const source =
     raw && typeof raw === "object"
@@ -148,7 +257,7 @@ function normalizeImportedMemoObject(raw) {
   Object.entries(source).forEach(([key, value]) => {
     if (!key || !value || typeof value !== "object") return;
 
-    const memo = String(value.memo ?? "").trim();
+    const memo = sanitizeText(value.memo, 80);
     if (!memo) return;
 
     const color = /^#[0-9a-fA-F]{6}$/.test(String(value.color || ""))
@@ -156,16 +265,93 @@ function normalizeImportedMemoObject(raw) {
       : "#999999";
 
     next[String(key)] = {
-      memo: memo.slice(0, 80),
+      memo,
       color,
-      nickname: String(value.nickname || "").trim().slice(0, 60),
-      uid: String(value.uid || "").trim().slice(0, 80),
-      ip: String(value.ip || "").trim().slice(0, 80),
+      nickname: sanitizeText(value.nickname, 60),
+      uid: sanitizeText(value.uid, 80),
+      ip: sanitizeText(value.ip, 80),
       updatedAt: Number(value.updatedAt) || Date.now()
     };
   });
 
   return next;
+}
+
+function getUserMemos() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get({ userMemos: {} }, ({ userMemos }) => {
+      resolve(userMemos || {});
+    });
+  });
+}
+
+function setUserMemos(next) {
+  return new Promise((resolve) => {
+    chrome.storage.local.set({ userMemos: next }, resolve);
+  });
+}
+
+async function renderPopupMemoList() {
+  if (!userMemoList) return;
+
+  const userMemos = await getUserMemos();
+  const rows = Object.entries(userMemos)
+    .sort((a, b) => (Number(b[1].updatedAt) || 0) - (Number(a[1].updatedAt) || 0))
+    .slice(0, 8);
+
+  userMemoList.innerHTML = "";
+
+  if (!rows.length) {
+    const li = document.createElement("li");
+    li.textContent = "저장된 이용자 메모가 없습니다.";
+    userMemoList.appendChild(li);
+    return;
+  }
+
+  rows.forEach(([key, item]) => {
+    const li = document.createElement("li");
+
+    const top = document.createElement("div");
+    top.className = "user-memo-top";
+
+    const chips = [
+      item.uid ? `아이디: ${item.uid}` : "",
+      item.ip ? `아이피: ${item.ip}` : "",
+      item.nickname ? `닉네임: ${item.nickname}` : ""
+    ].filter(Boolean);
+
+    chips.forEach((text) => {
+      const chip = document.createElement("span");
+      chip.className = "user-memo-chip";
+      chip.textContent = text;
+      top.appendChild(chip);
+    });
+
+    const body = document.createElement("div");
+    body.className = "user-memo-body";
+    body.textContent = sanitizeText(item.memo, 80) || "(빈 메모)";
+
+    const actions = document.createElement("div");
+    actions.className = "user-memo-actions";
+
+    const deleteBtn = document.createElement("button");
+    deleteBtn.type = "button";
+    deleteBtn.className = "btn-danger";
+    deleteBtn.textContent = "삭제";
+
+    deleteBtn.addEventListener("click", async () => {
+      const next = await getUserMemos();
+      delete next[key];
+      await setUserMemos(next);
+      renderPopupMemoList();
+    });
+
+    actions.appendChild(deleteBtn);
+    li.appendChild(top);
+    li.appendChild(body);
+    li.appendChild(actions);
+    userMemoList.appendChild(li);
+  });
 }
 
 /* ───────── 초기 로드 ───────── */
@@ -176,85 +362,160 @@ chrome.storage.sync.get(DEFAULTS, (conf) => {
   }
 
   const {
-    enabled, blockMode, hideComment, hideImgComment, hideDccon, delay,
-    previewEnabled, autoRefreshEnabled, autoRefreshInterval,
-    userBlockEnabled, blockedUids,
-    hideMainEnabled, hideGallEnabled, hideSearchEnabled,
-    showUidBadge, hideAnonymousEnabled, userMemoEnabled, compactListEnabled
+    enabled,
+    blockMode,
+    hideComment,
+    hideImgComment,
+    hideDccon,
+    previewEnabled,
+    keywordBlockEnabled,
+    blockedKeywords,
+    autoRefreshEnabled,
+    autoRefreshInterval,
+    delay,
+    userBlockEnabled,
+    blockedUids,
+    hideMainEnabled,
+    hideGallEnabled,
+    hideSearchEnabled,
+    showUidBadge,
+    hideAnonymousEnabled,
+    userMemoEnabled,
+    compactListEnabled
   } = conf;
 
-  toggle.checked = enabled;
-  blockModeSel.value = blockMode;
+  setChecked(toggle, enabled);
+  setValue(blockModeSel, blockMode);
   updateBlockModeHint(blockMode);
-  hideCmtToggle.checked = hideComment;
-  hideImgCmtToggle.checked = hideImgComment;
-  hideDcconToggle.checked = hideDccon;
-  if (previewToggle) previewToggle.checked = !!previewEnabled;
-  autoRefreshToggle.checked = autoRefreshEnabled;
-  autoRefreshIntervalNum.value = autoRefreshInterval;
-  autoRefreshIntervalRange.value = autoRefreshInterval;
-  delayNum.value = delay;
-  delayRange.value = delay;
 
-  if (userBlockEl) {
-    userBlockEl.checked = !!userBlockEnabled;
-    lockUserBlockUI(!userBlockEnabled);
-  }
+  setChecked(hideCmtToggle, hideComment);
+  setChecked(hideImgCmtToggle, hideImgComment);
+  setChecked(hideDcconToggle, hideDccon);
+  setChecked(previewToggle, previewEnabled);
+
+  setChecked(keywordBlockToggle, keywordBlockEnabled);
+  lockKeywordBlockUI(!keywordBlockEnabled);
+  renderKeywordList(blockedKeywords);
+
+  setChecked(autoRefreshToggle, autoRefreshEnabled);
+  setValue(autoRefreshIntervalNum, autoRefreshInterval);
+  setValue(autoRefreshIntervalRange, autoRefreshInterval);
+  setValue(delayNum, delay);
+  setValue(delayRange, delay);
+
+  setChecked(userBlockEl, userBlockEnabled);
+  lockUserBlockUI(!userBlockEnabled);
   renderUidList(blockedUids);
 
-  if (toggleHideMain) toggleHideMain.checked = !!hideMainEnabled;
-  if (toggleHideGall) toggleHideGall.checked = !!hideGallEnabled;
-  if (toggleHideSearch) toggleHideSearch.checked = !!hideSearchEnabled;
-  if (toggleUidBadge) toggleUidBadge.checked = !!showUidBadge;
-  if (hideAnonymousToggle) hideAnonymousToggle.checked = !!hideAnonymousEnabled;
-  if (userMemoEnabledToggle) userMemoEnabledToggle.checked = !!userMemoEnabled;
-  if (compactListToggle) compactListToggle.checked = !!compactListEnabled;
+  setChecked(toggleHideMain, hideMainEnabled);
+  setChecked(toggleHideGall, hideGallEnabled);
+  setChecked(toggleHideSearch, hideSearchEnabled);
+  setChecked(toggleUidBadge, showUidBadge);
+  setChecked(hideAnonymousToggle, hideAnonymousEnabled);
+  setChecked(userMemoEnabledToggle, userMemoEnabled);
+  setChecked(compactListToggle, compactListEnabled);
 });
 
 /* ───────── 이벤트 바인딩 ───────── */
-toggle.onchange = (e) => {
-  chrome.storage.sync.set({ enabled: !!e.target.checked });
-};
-
-blockModeSel.onchange = (e) => {
-  const mode = e.target.value;
-  chrome.storage.sync.set({ blockMode: mode });
-  updateBlockModeHint(mode);
-};
-
-hideCmtToggle.onchange = (e) =>
-  chrome.storage.sync.set({ hideComment: e.target.checked });
-
-hideImgCmtToggle.onchange = (e) =>
-  chrome.storage.sync.set({ hideImgComment: e.target.checked });
-
-hideDcconToggle.onchange = (e) =>
-  chrome.storage.sync.set({ hideDccon: e.target.checked });
-
-if (previewToggle) {
-  previewToggle.onchange = (e) => {
-    chrome.storage.sync.set({ previewEnabled: !!e.target.checked });
+if (toggle) {
+  toggle.onchange = (e) => {
+    chrome.storage.sync.set({ enabled: !!e.target.checked });
   };
 }
 
-autoRefreshToggle.onchange = (e) =>
-  chrome.storage.sync.set({ autoRefreshEnabled: e.target.checked });
+if (blockModeSel) {
+  blockModeSel.onchange = (e) => {
+    const mode = e.target.value;
+    chrome.storage.sync.set({ blockMode: mode });
+    updateBlockModeHint(mode);
+  };
+}
+
+if (hideCmtToggle) {
+  hideCmtToggle.onchange = (e) => chrome.storage.sync.set({ hideComment: !!e.target.checked });
+}
+
+if (hideImgCmtToggle) {
+  hideImgCmtToggle.onchange = (e) => chrome.storage.sync.set({ hideImgComment: !!e.target.checked });
+}
+
+if (hideDcconToggle) {
+  hideDcconToggle.onchange = (e) => chrome.storage.sync.set({ hideDccon: !!e.target.checked });
+}
+
+if (previewToggle) {
+  previewToggle.onchange = (e) => chrome.storage.sync.set({ previewEnabled: !!e.target.checked });
+}
+
+if (keywordBlockToggle) {
+  keywordBlockToggle.onchange = (e) => {
+    const on = !!e.target.checked;
+    lockKeywordBlockUI(!on);
+    chrome.storage.sync.set({ keywordBlockEnabled: on });
+  };
+}
+
+if (addKeywordBtn && keywordInput) {
+  addKeywordBtn.onclick = () => {
+    const keyword = sanitizeKeyword(keywordInput.value);
+    if (!keyword) return;
+
+    saveKeywordList((list) => list.push(keyword));
+    keywordInput.value = "";
+    keywordInput.focus();
+  };
+
+  keywordInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      addKeywordBtn.click();
+    }
+  });
+}
+
+if (keywordListEl) {
+  keywordListEl.addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-keyword-idx]");
+    if (!btn) return;
+
+    const idx = Number(btn.dataset.keywordIdx);
+    saveKeywordList((list) => {
+      list.splice(idx, 1);
+    });
+  });
+}
+
+if (autoRefreshToggle) {
+  autoRefreshToggle.onchange = (e) => chrome.storage.sync.set({ autoRefreshEnabled: !!e.target.checked });
+}
 
 function updateAutoRefreshInterval(v) {
   const num = Math.max(10, Math.min(600, parseInt(v, 10) || 60));
-  autoRefreshIntervalNum.value = autoRefreshIntervalRange.value = num;
+  setValue(autoRefreshIntervalNum, num);
+  setValue(autoRefreshIntervalRange, num);
   chrome.storage.sync.set({ autoRefreshInterval: num });
 }
-autoRefreshIntervalNum.oninput = (e) => updateAutoRefreshInterval(e.target.value);
-autoRefreshIntervalRange.oninput = (e) => updateAutoRefreshInterval(e.target.value);
+
+if (autoRefreshIntervalNum) {
+  autoRefreshIntervalNum.oninput = (e) => updateAutoRefreshInterval(e.target.value);
+}
+if (autoRefreshIntervalRange) {
+  autoRefreshIntervalRange.oninput = (e) => updateAutoRefreshInterval(e.target.value);
+}
 
 function updateDelay(v) {
   const num = Math.max(0, Math.min(10, parseFloat(v) || 0));
-  delayNum.value = delayRange.value = num;
+  setValue(delayNum, num);
+  setValue(delayRange, num);
   chrome.storage.sync.set({ delay: num });
 }
-delayNum.oninput = (e) => updateDelay(e.target.value);
-delayRange.oninput = (e) => updateDelay(e.target.value);
+
+if (delayNum) {
+  delayNum.oninput = (e) => updateDelay(e.target.value);
+}
+if (delayRange) {
+  delayRange.oninput = (e) => updateDelay(e.target.value);
+}
 
 if (userBlockEl) {
   userBlockEl.onchange = (e) => {
@@ -268,10 +529,12 @@ if (addUidBtn && uidInput) {
   addUidBtn.onclick = () => {
     const v = sanitizeUid(uidInput.value);
     if (!v) return;
+
     saveUidList((list) => list.push(v));
     uidInput.value = "";
     uidInput.focus();
   };
+
   uidInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
       e.preventDefault();
@@ -284,8 +547,11 @@ if (uidListEl) {
   uidListEl.addEventListener("click", (e) => {
     const btn = e.target.closest("button[data-idx]");
     if (!btn) return;
+
     const idx = Number(btn.dataset.idx);
-    saveUidList((list) => { list.splice(idx, 1); });
+    saveUidList((list) => {
+      list.splice(idx, 1);
+    });
   });
 }
 
@@ -308,11 +574,7 @@ if (userMemoEnabledToggle) {
   userMemoEnabledToggle.onchange = (e) => chrome.storage.sync.set({ userMemoEnabled: !!e.target.checked });
 }
 if (compactListToggle) {
-  compactListToggle.onchange = (e) => {
-    chrome.storage.sync.set({
-      compactListEnabled: !!e.target.checked
-    });
-  };
+  compactListToggle.onchange = (e) => chrome.storage.sync.set({ compactListEnabled: !!e.target.checked });
 }
 
 /* ───────── 이용자 메모 JSON ───────── */
@@ -350,6 +612,7 @@ if (importUserMemoBtn && importUserMemoFile) {
         };
         chrome.storage.local.set({ userMemos: merged }, () => {
           setMemoTransferStatus(`가져오기 완료 · ${Object.keys(imported).length}건 반영`);
+          renderPopupMemoList();
         });
       });
     } catch (err) {
@@ -360,257 +623,63 @@ if (importUserMemoBtn && importUserMemoFile) {
   });
 }
 
+if (refreshUserMemoListBtn) {
+  refreshUserMemoListBtn.addEventListener("click", () => {
+    renderPopupMemoList();
+  });
+}
+
 /* ───────── 스토리지 외부 변경 반영 ───────── */
 chrome.storage.onChanged.addListener((c, a) => {
   if (a === "sync") {
-    if (c.enabled) toggle.checked = c.enabled.newValue;
+    if (c.enabled) setChecked(toggle, c.enabled.newValue);
     if (c.blockMode) {
-      blockModeSel.value = c.blockMode.newValue;
+      setValue(blockModeSel, c.blockMode.newValue);
       updateBlockModeHint(c.blockMode.newValue);
     }
-    if (c.hideComment) hideCmtToggle.checked = c.hideComment.newValue;
-    if (c.hideImgComment) hideImgCmtToggle.checked = c.hideImgComment.newValue;
-    if (c.hideDccon) hideDcconToggle.checked = c.hideDccon.newValue;
-    if (c.previewEnabled && previewToggle) {
-      previewToggle.checked = !!c.previewEnabled.newValue;
+    if (c.hideComment) setChecked(hideCmtToggle, c.hideComment.newValue);
+    if (c.hideImgComment) setChecked(hideImgCmtToggle, c.hideImgComment.newValue);
+    if (c.hideDccon) setChecked(hideDcconToggle, c.hideDccon.newValue);
+    if (c.previewEnabled) setChecked(previewToggle, c.previewEnabled.newValue);
+
+    if (c.keywordBlockEnabled) {
+      setChecked(keywordBlockToggle, c.keywordBlockEnabled.newValue);
+      lockKeywordBlockUI(!c.keywordBlockEnabled.newValue);
     }
-    if (c.autoRefreshEnabled) autoRefreshToggle.checked = c.autoRefreshEnabled.newValue;
+    if (c.blockedKeywords) renderKeywordList(c.blockedKeywords.newValue || []);
+
+    if (c.autoRefreshEnabled) setChecked(autoRefreshToggle, c.autoRefreshEnabled.newValue);
     if (c.autoRefreshInterval) {
-      autoRefreshIntervalNum.value = c.autoRefreshInterval.newValue;
-      autoRefreshIntervalRange.value = c.autoRefreshInterval.newValue;
+      setValue(autoRefreshIntervalNum, c.autoRefreshInterval.newValue);
+      setValue(autoRefreshIntervalRange, c.autoRefreshInterval.newValue);
     }
     if (c.delay) {
-      delayNum.value = c.delay.newValue;
-      delayRange.value = c.delay.newValue;
+      setValue(delayNum, c.delay.newValue);
+      setValue(delayRange, c.delay.newValue);
     }
-    if (c.userBlockEnabled && userBlockEl) {
-      userBlockEl.checked = !!c.userBlockEnabled.newValue;
+    if (c.userBlockEnabled) {
+      setChecked(userBlockEl, c.userBlockEnabled.newValue);
       lockUserBlockUI(!c.userBlockEnabled.newValue);
     }
     if (c.blockedUids) renderUidList(c.blockedUids.newValue || []);
-    if (c.hideMainEnabled && toggleHideMain) toggleHideMain.checked = !!c.hideMainEnabled.newValue;
-    if (c.hideGallEnabled && toggleHideGall) toggleHideGall.checked = !!c.hideGallEnabled.newValue;
-    if (c.hideSearchEnabled && toggleHideSearch) toggleHideSearch.checked = !!c.hideSearchEnabled.newValue;
-    if (c.showUidBadge && toggleUidBadge) toggleUidBadge.checked = !!c.showUidBadge.newValue;
-    if (c.hideAnonymousEnabled && hideAnonymousToggle) hideAnonymousToggle.checked = !!c.hideAnonymousEnabled.newValue;
-    if (c.userMemoEnabled && userMemoEnabledToggle) userMemoEnabledToggle.checked = !!c.userMemoEnabled.newValue;
+    if (c.hideMainEnabled) setChecked(toggleHideMain, c.hideMainEnabled.newValue);
+    if (c.hideGallEnabled) setChecked(toggleHideGall, c.hideGallEnabled.newValue);
+    if (c.hideSearchEnabled) setChecked(toggleHideSearch, c.hideSearchEnabled.newValue);
+    if (c.showUidBadge) setChecked(toggleUidBadge, c.showUidBadge.newValue);
+    if (c.hideAnonymousEnabled) setChecked(hideAnonymousToggle, c.hideAnonymousEnabled.newValue);
+    if (c.userMemoEnabled) setChecked(userMemoEnabledToggle, c.userMemoEnabled.newValue);
+    if (c.compactListEnabled) setChecked(compactListToggle, c.compactListEnabled.newValue);
   }
 
   if (a === "local" && c.userMemos) {
     const count = Object.keys(c.userMemos.newValue || {}).length;
     setMemoTransferStatus(`메모 저장소 갱신 · 현재 ${count}건`);
+    renderPopupMemoList();
   }
-
-  (() => {
-  const userMemoList = document.getElementById("userMemoList");
-  const refreshUserMemoListBtn = document.getElementById("refreshUserMemoListBtn");
-
-  if (!userMemoList) return;
-
-  function sanitizeText(v, max = 80) {
-    return String(v || "").replace(/\s+/g, " ").trim().slice(0, max);
-  }
-
-  function getUserMemos() {
-    return new Promise((resolve) => {
-      chrome.storage.local.get({ userMemos: {} }, ({ userMemos }) => {
-        resolve(userMemos || {});
-      });
-    });
-  }
-
-  function setUserMemos(next) {
-    return new Promise((resolve) => {
-      chrome.storage.local.set({ userMemos: next }, resolve);
-    });
-  }
-
-  async function renderPopupMemoList() {
-    const userMemos = await getUserMemos();
-
-    const rows = Object.entries(userMemos)
-      .sort((a, b) => (Number(b[1].updatedAt) || 0) - (Number(a[1].updatedAt) || 0))
-      .slice(0, 8);
-
-    userMemoList.innerHTML = "";
-
-    if (!rows.length) {
-      const li = document.createElement("li");
-      li.textContent = "저장된 이용자 메모가 없습니다.";
-      userMemoList.appendChild(li);
-      return;
-    }
-
-    rows.forEach(([key, item]) => {
-      const li = document.createElement("li");
-
-      const top = document.createElement("div");
-      top.className = "user-memo-top";
-
-      const chips = [
-        item.uid ? `아이디: ${item.uid}` : "",
-        item.ip ? `아이피: ${item.ip}` : "",
-        item.nickname ? `닉네임: ${item.nickname}` : ""
-      ].filter(Boolean);
-
-      chips.forEach((text) => {
-        const chip = document.createElement("span");
-        chip.className = "user-memo-chip";
-        chip.textContent = text;
-        top.appendChild(chip);
-      });
-
-      const body = document.createElement("div");
-      body.className = "user-memo-body";
-      body.textContent = sanitizeText(item.memo, 80) || "(빈 메모)";
-
-      const actions = document.createElement("div");
-      actions.className = "user-memo-actions";
-
-      const deleteBtn = document.createElement("button");
-      deleteBtn.type = "button";
-      deleteBtn.className = "btn-danger";
-      deleteBtn.textContent = "삭제";
-
-      deleteBtn.addEventListener("click", async () => {
-        const next = await getUserMemos();
-        delete next[key];
-        await setUserMemos(next);
-        renderPopupMemoList();
-      });
-
-      actions.appendChild(deleteBtn);
-
-      li.appendChild(top);
-      li.appendChild(body);
-      li.appendChild(actions);
-
-      userMemoList.appendChild(li);
-    });
-  }
-
-  if (refreshUserMemoListBtn) {
-    refreshUserMemoListBtn.addEventListener("click", () => {
-      renderPopupMemoList();
-    });
-  }
-
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === "local" && changes.userMemos) {
-      renderPopupMemoList();
-    }
-  });
-
-  renderPopupMemoList();
-})();
-
-(() => {
-  const userMemoList = document.getElementById("userMemoList");
-  const refreshUserMemoListBtn = document.getElementById("refreshUserMemoListBtn");
-
-  if (!userMemoList) return;
-
-  function sanitizeText(v, max = 80) {
-    return String(v || "").replace(/\s+/g, " ").trim().slice(0, max);
-  }
-
-  function getUserMemos() {
-    return new Promise((resolve) => {
-      chrome.storage.local.get({ userMemos: {} }, ({ userMemos }) => {
-        resolve(userMemos || {});
-      });
-    });
-  }
-
-  function setUserMemos(next) {
-    return new Promise((resolve) => {
-      chrome.storage.local.set({ userMemos: next }, resolve);
-    });
-  }
-
-  async function renderPopupMemoList() {
-    const userMemos = await getUserMemos();
-
-    const rows = Object.entries(userMemos)
-      .sort((a, b) => (Number(b[1].updatedAt) || 0) - (Number(a[1].updatedAt) || 0))
-      .slice(0, 8);
-
-    userMemoList.innerHTML = "";
-
-    if (!rows.length) {
-      const li = document.createElement("li");
-      li.textContent = "저장된 이용자 메모가 없습니다.";
-      userMemoList.appendChild(li);
-      return;
-    }
-
-    rows.forEach(([key, item]) => {
-      const li = document.createElement("li");
-
-      const top = document.createElement("div");
-      top.className = "user-memo-top";
-
-      const chips = [
-        item.uid ? `아이디: ${item.uid}` : "",
-        item.ip ? `아이피: ${item.ip}` : "",
-        item.nickname ? `닉네임: ${item.nickname}` : ""
-      ].filter(Boolean);
-
-      chips.forEach((text) => {
-        const chip = document.createElement("span");
-        chip.className = "user-memo-chip";
-        chip.textContent = text;
-        top.appendChild(chip);
-      });
-
-      const body = document.createElement("div");
-      body.className = "user-memo-body";
-      body.textContent = sanitizeText(item.memo, 80) || "(빈 메모)";
-
-      const actions = document.createElement("div");
-      actions.className = "user-memo-actions";
-
-      const deleteBtn = document.createElement("button");
-      deleteBtn.type = "button";
-      deleteBtn.className = "btn-danger";
-      deleteBtn.textContent = "삭제";
-
-      deleteBtn.addEventListener("click", async () => {
-        const next = await getUserMemos();
-        delete next[key];
-        await setUserMemos(next);
-        renderPopupMemoList();
-      });
-
-      actions.appendChild(deleteBtn);
-
-      li.appendChild(top);
-      li.appendChild(body);
-      li.appendChild(actions);
-
-      userMemoList.appendChild(li);
-    });
-  }
-
-  if (refreshUserMemoListBtn) {
-    refreshUserMemoListBtn.addEventListener("click", () => {
-      renderPopupMemoList();
-    });
-  }
-
-  if (c.compactListEnabled && compactListToggle) {
-  compactListToggle.checked = !!c.compactListEnabled.newValue;
- }
-
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === "local" && changes.userMemos) {
-      renderPopupMemoList();
-    }
-  });
-
-  renderPopupMemoList();
-})();
-
 });
 
-openOptionsBtn.onclick = () => chrome.runtime.openOptionsPage();
+renderPopupMemoList();
+
+if (openOptionsBtn) {
+  openOptionsBtn.onclick = () => chrome.runtime.openOptionsPage();
+}
