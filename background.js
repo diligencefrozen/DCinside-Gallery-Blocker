@@ -8,11 +8,6 @@ const BUILTIN = ["dcbest"];             // 기본 차단: 실베
 const RULE_NS = 40_000;                 // DNR rule id namespace
 const RULE_MAX_OFFSET = 20_000;         // 이 확장프로그램이 쓰는 동적 규칙 범위
 
-/* ───── 컨텍스트 메뉴 ID ───── */
-const CTX_ROOT = "dcb-root";
-const CTX_BLOCK_USER = "dcb-block-user";
-const CTX_OPEN_OPTIONS = "dcb-open-options";
-
 /* ───── 유틸 ───── */
 function norm(v) {
   return String(v || "").trim().toLowerCase();
@@ -85,8 +80,36 @@ function getOurRuleIds(rules) {
     .filter((id) => id >= RULE_NS && id < RULE_NS + RULE_MAX_OFFSET);
 }
 
-/* ───── 설치/업데이트: 기본값 주입 + 메뉴 생성 ───── */
+function normalizeUserBlockToken(token) {
+  return String(token || "")
+    .trim()
+    .replace(/^\(|\)$/g, "")
+    .trim();
+}
+
+function showActionBadge(tabId, text) {
+  if (!tabId) return;
+
+  chrome.action.setBadgeText({ tabId, text });
+  setTimeout(() => {
+    chrome.action.setBadgeText({ tabId, text: "" });
+  }, 1100);
+}
+
+/* 이전 버전에서 생성된 우클릭 메뉴 제거 */
+function clearLegacyContextMenus() {
+  try {
+    if (!chrome.contextMenus?.removeAll) return;
+    chrome.contextMenus.removeAll(() => void chrome.runtime.lastError);
+  } catch (_) {
+    // contextMenus 권한/초기화 타이밍 문제는 차단 기능과 무관하므로 무시한다.
+  }
+}
+
+/* ───── 설치/업데이트: 기본값 주입 ───── */
 chrome.runtime.onInstalled.addListener(async ({ reason }) => {
+  clearLegacyContextMenus();
+
   if (reason === "install") {
     const seed = await chrome.storage.sync.get([
       "blockMode",
@@ -120,47 +143,11 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
     }
   }
 
-  createContextMenus();
   syncRules();
 });
 
-/* 서비스워커가 재시작될 때도 메뉴가 확실히 있도록 */
-createContextMenus();
-
-/* ───── 컨텍스트 메뉴 생성 ───── */
-function createContextMenus() {
-  try {
-    chrome.contextMenus.removeAll(() => {
-      chrome.contextMenus.create({
-        id: CTX_ROOT,
-        title: "디시갤 차단기",
-        contexts: ["all"],
-        documentUrlPatterns: ["*://gall.dcinside.com/*"]
-      });
-
-      chrome.contextMenus.create({
-        id: CTX_BLOCK_USER,
-        parentId: CTX_ROOT,
-        title: "해당 이용자 즉시 차단!",
-        contexts: ["all"],
-        documentUrlPatterns: ["*://gall.dcinside.com/*"]
-      });
-
-      chrome.contextMenus.create({
-        id: CTX_OPEN_OPTIONS,
-        parentId: CTX_ROOT,
-        title: "설정 열기",
-        contexts: ["all"],
-        documentUrlPatterns: ["*://gall.dcinside.com/*"]
-      });
-    });
-  } catch (e) {
-    /*
-      서비스워커 첫 부팅 직후 권한/컨텍스트 준비 타이밍 문제로
-      실패할 수 있으므로 조용히 무시한다.
-    */
-  }
-}
+/* 서비스워커가 재시작될 때도 과거 메뉴가 남지 않도록 정리 */
+clearLegacyContextMenus();
 
 /* ───── DNR 규칙 생성 ───── */
 function makeRules(ids) {
@@ -277,47 +264,15 @@ chrome.storage.onChanged.addListener((c, area) => {
   }
 });
 
-/* ───── 우클릭 후보 수신 (ctx-probe.js) ───── */
-const lastCtxByTab = new Map();
+/* ───── 사용자 즉시 차단 ───── */
+async function addBlockedUserToken(token) {
+  const cleanToken = normalizeUserBlockToken(token);
 
-chrome.runtime.onMessage.addListener((msg, sender) => {
-  if (msg?.type === "dcb.ctxCandidate" && sender.tab?.id != null) {
-    lastCtxByTab.set(sender.tab.id, {
-      uid: msg.uid || "",
-      ip: msg.ip || ""
-    });
-  }
-});
-
-/* ───── 컨텍스트 메뉴 클릭 처리 ───── */
-chrome.contextMenus.onClicked.addListener(async (info, tab) => {
-  if (!tab?.id) return;
-
-  if (info.menuItemId === CTX_OPEN_OPTIONS) {
-    chrome.runtime.openOptionsPage();
-    return;
-  }
-
-  if (info.menuItemId !== CTX_BLOCK_USER) return;
-
-  const cand = lastCtxByTab.get(tab.id) || {};
-  const sel = (info.selectionText || "").trim();
-
-  const uidFromSel = sel.match(/[A-Za-z0-9_\-]{3,}/)?.[0] || "";
-  const ipFromSel = sel.match(/(\d{1,3}\.\d{1,3})/)?.[1] || "";
-
-  const token =
-    (cand.uid && cand.uid.trim()) ||
-    (cand.ip && cand.ip.trim()) ||
-    uidFromSel ||
-    ipFromSel;
-
-  if (!token) {
-    chrome.action.setBadgeText({ tabId: tab.id, text: "?" });
-    setTimeout(() => {
-      chrome.action.setBadgeText({ tabId: tab.id, text: "" });
-    }, 1200);
-    return;
+  if (!cleanToken) {
+    return {
+      ok: false,
+      reason: "EMPTY_TOKEN"
+    };
   }
 
   const { blockedUids = [], userBlockEnabled = true } =
@@ -326,28 +281,56 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       userBlockEnabled: true
     });
 
-  const next = Array.from(new Set([...blockedUids, token]));
+  const prev = Array.isArray(blockedUids) ? blockedUids : [];
+  const alreadyBlocked = prev.includes(cleanToken);
+  const next = alreadyBlocked ? prev : [...prev, cleanToken];
 
-  await chrome.storage.sync.set({
-    blockedUids: next
-  });
+  if (!alreadyBlocked) {
+    await chrome.storage.sync.set({
+      blockedUids: next
+    });
+  }
 
-  chrome.action.setBadgeText({
-    tabId: tab.id,
-    text: userBlockEnabled ? "✔" : "OFF"
-  });
+  return {
+    ok: true,
+    token: cleanToken,
+    added: !alreadyBlocked,
+    alreadyBlocked,
+    count: next.length,
+    userBlockEnabled
+  };
+}
 
-  setTimeout(() => {
-    chrome.action.setBadgeText({ tabId: tab.id, text: "" });
-  }, 1200);
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg?.type !== "dcb.instantCtxBlock") return;
+
+  addBlockedUserToken(msg.token)
+    .then((res) => {
+      const tabId = sender.tab?.id;
+
+      if (!res.ok) {
+        showActionBadge(tabId, "?");
+        sendResponse(res);
+        return;
+      }
+
+      showActionBadge(tabId, res.userBlockEnabled ? "✔" : "OFF");
+      sendResponse(res);
+    })
+    .catch((error) => {
+      showActionBadge(sender.tab?.id, "!");
+      sendResponse({
+        ok: false,
+        reason: "ERROR",
+        message: error?.message || String(error)
+      });
+    });
+
+  return true;
 });
 
-/* 탭 닫힘 시 캐시 정리 */
-chrome.tabs.onRemoved.addListener((tabId) => {
-  lastCtxByTab.delete(tabId);
-});
-
-/* 아이콘(툴바) 클릭 → 옵션 페이지 */
+/* 아이콘(툴바) 클릭 → 옵션 페이지
+   default_popup이 설정된 상태에서는 보통 팝업이 우선 열린다. */
 chrome.action.onClicked.addListener(() => {
   chrome.runtime.openOptionsPage();
 });
