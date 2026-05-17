@@ -20,6 +20,10 @@ const keywordBlockToggle = document.getElementById("keywordBlockEnabled");
 const keywordInput = document.getElementById("keywordInput");
 const addKeywordBtn = document.getElementById("addKeywordBtn");
 const keywordListEl = document.getElementById("keywordList");
+const keywordTargetListTitle = document.getElementById("keywordTargetListTitle");
+const keywordTargetViewTitle = document.getElementById("keywordTargetViewTitle");
+const keywordTargetViewBody = document.getElementById("keywordTargetViewBody");
+const keywordTargetComments = document.getElementById("keywordTargetComments");
 
 const userBlockEl = document.getElementById("userBlockEnabled") || document.getElementById("hideDCGray");
 const uidInput = document.getElementById("uidInput");
@@ -126,12 +130,22 @@ function lockUserBlockUI(disabled) {
 }
 
 function lockKeywordBlockUI(disabled) {
-  if (!keywordInput || !addKeywordBtn) return;
-  keywordInput.disabled = !!disabled;
-  addKeywordBtn.disabled = !!disabled;
+  const nodes = [
+    keywordInput,
+    addKeywordBtn,
+    keywordTargetListTitle,
+    keywordTargetViewTitle,
+    keywordTargetViewBody,
+    keywordTargetComments
+  ];
+
   const op = disabled ? 0.5 : 1;
-  keywordInput.style.opacity = op;
-  addKeywordBtn.style.opacity = op;
+
+  nodes.forEach((el) => {
+    if (!el) return;
+    el.disabled = !!disabled;
+    el.style.opacity = op;
+  });
 }
 
 function setMemoTransferStatus(text, isError = false) {
@@ -243,6 +257,75 @@ function saveKeywordList(mutator) {
 
     chrome.storage.sync.set({ blockedKeywords: uniq }, () => renderKeywordList(uniq));
   });
+}
+
+function normalizeKeywordTargets(targets = {}) {
+  const src = targets && typeof targets === "object" ? targets : {};
+
+  /*
+    popup/options/keyword-blocker.js가 같은 저장 키(keywordBlockTargets)를 공유한다.
+    일부 사용자의 기존 저장값이 부분 객체로 남아 있어도 false 값이 기본값 true로 덮이지 않도록
+    boolean 여부를 명확히 확인해서 병합한다.
+  */
+  return {
+    listTitle:
+      typeof src.listTitle === "boolean"
+        ? src.listTitle
+        : DEFAULTS.keywordBlockTargets.listTitle,
+    viewTitle:
+      typeof src.viewTitle === "boolean"
+        ? src.viewTitle
+        : DEFAULTS.keywordBlockTargets.viewTitle,
+    viewBody:
+      typeof src.viewBody === "boolean"
+        ? src.viewBody
+        : DEFAULTS.keywordBlockTargets.viewBody,
+    comments:
+      typeof src.comments === "boolean"
+        ? src.comments
+        : DEFAULTS.keywordBlockTargets.comments
+  };
+}
+
+function renderKeywordTargets(targets = {}) {
+  const merged = normalizeKeywordTargets(targets);
+
+  setChecked(keywordTargetListTitle, merged.listTitle);
+  setChecked(keywordTargetViewTitle, merged.viewTitle);
+  setChecked(keywordTargetViewBody, merged.viewBody);
+  setChecked(keywordTargetComments, merged.comments);
+}
+
+function getKeywordTargetsFromUI() {
+  return normalizeKeywordTargets({
+    listTitle: keywordTargetListTitle ? !!keywordTargetListTitle.checked : true,
+    viewTitle: keywordTargetViewTitle ? !!keywordTargetViewTitle.checked : true,
+    viewBody: keywordTargetViewBody ? !!keywordTargetViewBody.checked : true,
+    comments: keywordTargetComments ? !!keywordTargetComments.checked : true
+  });
+}
+
+function saveKeywordTargets() {
+  const next = getKeywordTargetsFromUI();
+
+  // popup은 수명이 짧으므로 먼저 현재 화면을 확정 상태로 고정한다.
+  renderKeywordTargets(next);
+
+  chrome.storage.sync.set(
+    {
+      keywordBlockTargets: next
+    },
+    () => {
+      if (chrome.runtime.lastError) {
+        console.warn("[DCB] keywordBlockTargets save failed:", chrome.runtime.lastError.message);
+
+        // 저장 실패 시 실제 저장값을 다시 읽어 UI와 저장소 상태를 맞춘다.
+        chrome.storage.sync.get({ keywordBlockTargets: DEFAULTS.keywordBlockTargets }, (conf) => {
+          renderKeywordTargets(conf.keywordBlockTargets);
+        });
+      }
+    }
+  );
 }
 
 /* ───────── 이용자 메모 ───────── */
@@ -370,6 +453,7 @@ chrome.storage.sync.get(DEFAULTS, (conf) => {
     previewEnabled,
     keywordBlockEnabled,
     blockedKeywords,
+    keywordBlockTargets,
     autoRefreshEnabled,
     autoRefreshInterval,
     delay,
@@ -394,6 +478,7 @@ chrome.storage.sync.get(DEFAULTS, (conf) => {
   setChecked(previewToggle, previewEnabled);
 
   setChecked(keywordBlockToggle, keywordBlockEnabled);
+  renderKeywordTargets(keywordBlockTargets);
   lockKeywordBlockUI(!keywordBlockEnabled);
   renderKeywordList(blockedKeywords);
 
@@ -484,6 +569,19 @@ if (keywordListEl) {
     });
   });
 }
+
+[
+  keywordTargetListTitle,
+  keywordTargetViewTitle,
+  keywordTargetViewBody,
+  keywordTargetComments
+].forEach((el) => {
+  if (!el) return;
+
+  // input은 change보다 먼저 발생하므로 popup을 바로 닫아도 저장 누락 가능성을 줄인다.
+  el.addEventListener("input", saveKeywordTargets);
+  el.addEventListener("change", saveKeywordTargets);
+});
 
 if (autoRefreshToggle) {
   autoRefreshToggle.onchange = (e) => chrome.storage.sync.set({ autoRefreshEnabled: !!e.target.checked });
@@ -647,6 +745,7 @@ chrome.storage.onChanged.addListener((c, a) => {
       lockKeywordBlockUI(!c.keywordBlockEnabled.newValue);
     }
     if (c.blockedKeywords) renderKeywordList(c.blockedKeywords.newValue || []);
+    if (c.keywordBlockTargets) renderKeywordTargets(c.keywordBlockTargets.newValue || DEFAULTS.keywordBlockTargets);
 
     if (c.autoRefreshEnabled) setChecked(autoRefreshToggle, c.autoRefreshEnabled.newValue);
     if (c.autoRefreshInterval) {
