@@ -7,28 +7,45 @@
   const STYLE_ID = "dcb-instant-block-style";
 
   /*
-    작성자 컨테이너와 작성자 내부 클릭 가능 요소를 분리한다.
-
+    작성자 정보를 실제로 가지고 있거나, 작성자 정보 추출 범위로 삼을 컨테이너.
+    .cmt_info는 댓글 작성자 영역에서 닉네임/갤로그/메모 버튼의 형제 요소까지
+    함께 읽어 UID/IP를 얻기 위해 유지한다.
   */
   const WRITER_CONTAINER_SELECTOR = [
     ".gall_writer",
     ".ub-writer",
-    ".cmt_info"
+    ".cmt_info",
+    ".writer_info",
+    ".user_info"
   ].join(",");
 
+  /*
+    실제로 마우스를 올렸을 때 안내 팝업이 떠야 하는 작성자 조작부.
+    댓글 본문(.cmt_txtbox, .usertxt, .ub-word 등)은 절대 포함하지 않는다.
+  */
   const AUTHOR_HIT_SELECTOR = [
-    ".gall_writer",
-    ".ub-writer",
-    ".cmt_info",
-    ".writer_nikcon",
     ".nickname",
     ".nick_name",
+    ".writer_nikcon",
     ".dcb-writer-tools",
     ".dcb-user-memo-trigger",
-    "[data-uid]",
-    "[data-ip]",
-    "[data-memo-uid]",
-    "[data-memo-ip]"
+    ".dcb-uid-badge",
+    '[onclick*="gallog.dcinside.com"]',
+    '[href*="gallog.dcinside.com"]',
+    '[title*="갤로그"]'
+  ].join(",");
+
+  /*
+    댓글/본문 텍스트 영역.
+    이 영역에서는 상위에 data-uid/data-ip가 있더라도 작성자 hover/right-click으로 보지 않는다.
+  */
+  const NON_AUTHOR_TEXT_SELECTOR = [
+    ".cmt_txtbox",
+    ".usertxt",
+    ".ub-word",
+    ".write_div",
+    ".dccon_comment_box",
+    ".comment_dccon"
   ].join(",");
 
   const closest = (el, sel) => (el && el.closest ? el.closest(sel) : null);
@@ -113,8 +130,24 @@
     return child?.getAttribute?.(name) || "";
   }
 
-  function findActionableAuthorEl(start) {
+  function getAuthorHitElement(start) {
+    if (!(start instanceof Element)) return null;
+
     const hit = closest(start, AUTHOR_HIT_SELECTOR);
+    if (!hit) return null;
+
+    /*
+      댓글 본문 내부에서 발생한 이벤트가 상위 data-uid/data-ip 컨테이너로
+      끌려 올라가 작성자 hover/right-click으로 오인되는 것을 막는다.
+    */
+    const textBox = closest(start, NON_AUTHOR_TEXT_SELECTOR);
+    if (textBox && !textBox.contains(hit)) return null;
+
+    return hit;
+  }
+
+  function findActionableAuthorEl(start) {
+    const hit = getAuthorHitElement(start);
     if (!hit) return null;
 
     const writerContainer = closest(hit, WRITER_CONTAINER_SELECTOR);
@@ -130,8 +163,7 @@
     return hit;
   }
 
-  function pickBlockToken(target) {
-    const author = findActionableAuthorEl(target);
+  function extractBlockToken(author) {
     if (!author) return "";
 
     let uid =
@@ -148,6 +180,11 @@
     if (!ip) ip = ipPrefixFromText(author);
 
     return normalizeToken(uid || ip);
+  }
+
+  function pickBlockToken(target) {
+    const author = findActionableAuthorEl(target);
+    return extractBlockToken(author);
   }
 
   function ensureToastStyle() {
@@ -251,28 +288,21 @@
       #${HINT_ID} {
         position: fixed;
         z-index: 2147483646;
-        display: flex;
-        align-items: center;
-        gap: 7px;
-        max-width: 260px;
-        padding: 8px 10px;
-        border: 1px solid rgba(226, 232, 240, 0.92);
-        border-radius: 999px;
-        background: rgba(255, 255, 255, 0.96);
+        width: 286px;
+        padding: 12px 13px;
+        border: 1px solid rgba(203, 213, 225, 0.96);
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.98);
         color: #0f172a;
         box-shadow:
-          0 14px 36px rgba(15, 23, 42, 0.16),
-          0 2px 8px rgba(15, 23, 42, 0.06);
-        backdrop-filter: blur(10px) saturate(1.06);
-        -webkit-backdrop-filter: blur(10px) saturate(1.06);
+          0 18px 46px rgba(15, 23, 42, 0.18),
+          0 3px 12px rgba(15, 23, 42, 0.07);
+        backdrop-filter: blur(12px) saturate(1.08);
+        -webkit-backdrop-filter: blur(12px) saturate(1.08);
         font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
-        font-size: 12px;
-        font-weight: 800;
-        line-height: 1.2;
-        letter-spacing: -0.01em;
         pointer-events: none;
         opacity: 0;
-        transform: translateY(4px) scale(0.98);
+        transform: translateY(5px) scale(0.98);
         transition: opacity 120ms ease, transform 120ms ease;
       }
 
@@ -281,23 +311,103 @@
         transform: translateY(0) scale(1);
       }
 
-      #${HINT_ID} .dcb-hover-dot {
+      #${HINT_ID} .dcb-hover-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+      }
+
+      #${HINT_ID} .dcb-hover-icon {
         display: inline-flex;
         align-items: center;
         justify-content: center;
         flex: 0 0 auto;
-        width: 20px;
-        height: 20px;
+        width: 26px;
+        height: 26px;
         border-radius: 999px;
         background: #111827;
         color: #ffffff;
-        font-size: 11px;
+        font-size: 13px;
         font-weight: 900;
+        line-height: 1;
       }
 
-      #${HINT_ID} .dcb-hover-muted {
+      #${HINT_ID} .dcb-hover-title-wrap {
+        min-width: 0;
+      }
+
+      #${HINT_ID} .dcb-hover-title {
+        margin: 0;
+        color: #020617;
+        font-size: 13px;
+        font-weight: 900;
+        line-height: 1.25;
+        letter-spacing: -0.02em;
+      }
+
+      #${HINT_ID} .dcb-hover-subtitle {
+        margin: 2px 0 0;
         color: #64748b;
-        font-weight: 700;
+        font-size: 11px;
+        font-weight: 750;
+        line-height: 1.25;
+        letter-spacing: -0.01em;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      #${HINT_ID} .dcb-hover-body {
+        margin: 9px 0 0;
+        color: #334155;
+        font-size: 12px;
+        font-weight: 650;
+        line-height: 1.45;
+        letter-spacing: -0.01em;
+      }
+
+      #${HINT_ID} .dcb-hover-action {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        margin-top: 9px;
+        padding: 6px 8px;
+        border-radius: 10px;
+        background: #f1f5f9;
+        color: #0f172a;
+        font-size: 11px;
+        font-weight: 850;
+        line-height: 1;
+        letter-spacing: -0.01em;
+      }
+
+      #${HINT_ID} .dcb-hover-key {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 42px;
+        height: 20px;
+        padding: 0 7px;
+        border: 1px solid rgba(148, 163, 184, 0.75);
+        border-bottom-width: 2px;
+        border-radius: 7px;
+        background: #ffffff;
+        color: #020617;
+        font-size: 11px;
+        font-weight: 900;
+        line-height: 1;
+      }
+
+      #${HINT_ID} .dcb-hover-token {
+        display: block;
+        margin-top: 7px;
+        color: #64748b;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+        font-size: 10.5px;
+        font-weight: 800;
+        line-height: 1.3;
+        word-break: break-all;
       }
     `;
 
@@ -353,15 +463,15 @@
   let hoverHintTimer = null;
   let activeHoverAuthor = null;
 
-  function positionHoverHint(hint, author) {
-    const rect = author.getBoundingClientRect();
+  function positionHoverHint(hint, anchor) {
+    const rect = anchor.getBoundingClientRect();
     const pad = 8;
     const hintRect = hint.getBoundingClientRect();
 
-    let top = rect.top - hintRect.height - 8;
+    let top = rect.top - hintRect.height - 9;
     let left = rect.left + Math.min(12, Math.max(0, rect.width / 2 - 24));
 
-    if (top < pad) top = rect.bottom + 8;
+    if (top < pad) top = rect.bottom + 9;
     if (left + hintRect.width > window.innerWidth - pad) {
       left = window.innerWidth - hintRect.width - pad;
     }
@@ -381,8 +491,8 @@
     }, 140);
   }
 
-  function showHoverHint(author) {
-    if (!userBlockEnabledCache || !author || activeHoverAuthor === author) return;
+  function showHoverHint({ author, hit, token }) {
+    if (!userBlockEnabledCache || !author || !hit || activeHoverAuthor === author) return;
 
     ensureToastStyle();
     activeHoverAuthor = author;
@@ -393,19 +503,34 @@
     const hint = document.createElement("div");
     hint.id = HINT_ID;
     hint.innerHTML = `
-      <span class="dcb-hover-dot">↗</span>
-      <span>우클릭 즉시 차단 <span class="dcb-hover-muted">· 작성자 영역</span></span>
+      <div class="dcb-hover-head">
+        <span class="dcb-hover-icon">🚫</span>
+        <div class="dcb-hover-title-wrap">
+          <p class="dcb-hover-title">작성자 즉시 차단</p>
+          <p class="dcb-hover-subtitle">이 작성자를 바로 차단할 수 있습니다</p>
+        </div>
+      </div>
+      <p class="dcb-hover-body">
+        이 영역을 <b>우클릭</b>하면 해당 사용자를 차단 목록에 추가합니다.
+      </p>
+      <span class="dcb-hover-action">
+        <span class="dcb-hover-key">우클릭</span>
+        차단 목록에 추가
+      </span>
+      ${token ? `<span class="dcb-hover-token">대상: ${escapeHtml(token)}</span>` : ""}
     `;
 
     (document.body || document.documentElement).appendChild(hint);
-    positionHoverHint(hint, author);
+    positionHoverHint(hint, hit);
     requestAnimationFrame(() => hint.classList.add("show"));
   }
 
   function scheduleHoverHint(target) {
+    const hit = getAuthorHitElement(target);
     const author = findActionableAuthorEl(target);
+    const token = extractBlockToken(author);
 
-    if (!author || !pickBlockToken(author)) {
+    if (!hit || !author || !token) {
       activeHoverAuthor = null;
       if (hoverHintTimer) clearTimeout(hoverHintTimer);
       hideHoverHint();
@@ -416,8 +541,8 @@
     if (hoverHintTimer) clearTimeout(hoverHintTimer);
 
     hoverHintTimer = setTimeout(() => {
-      showHoverHint(author);
-    }, 220);
+      showHoverHint({ author, hit, token });
+    }, 180);
   }
 
   function sendInstantBlock(token) {
