@@ -100,6 +100,28 @@
     opacity:.9;
     word-break:break-all;
   }
+  .keyword-targets{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:6px;
+    margin-top:8px;
+  }
+  .keyword-target-item{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:6px;
+    border:1px solid #333;
+    border-radius:8px;
+    padding:6px 8px;
+    background:#151a22;
+    font-size:12px;
+    color:#dbe5f0;
+  }
+  .keyword-target-item input{
+    flex:0 0 auto;
+    accent-color:var(--neon);
+  }
 
 .user-memo-quick{
   display:flex;
@@ -159,6 +181,53 @@
   padding:4px 8px;
   font-size:12px;
 }
+
+  .quick-guide{
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+    padding:12px;
+    border:1px solid rgba(79,124,255,.32);
+    border-radius:14px;
+    background:linear-gradient(180deg, rgba(79,124,255,.14), rgba(79,124,255,.06));
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.05);
+  }
+  .quick-guide-title{
+    display:flex;
+    align-items:center;
+    gap:7px;
+    color:#f8fbff;
+    font-size:13px;
+    font-weight:700;
+    letter-spacing:-.01em;
+  }
+  .quick-guide-title .pill{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    height:20px;
+    padding:0 7px;
+    border-radius:999px;
+    background:#4f7cff;
+    color:#0d1117;
+    font-size:10px;
+    font-weight:800;
+    letter-spacing:.02em;
+  }
+  .quick-guide p{
+    margin:0;
+    color:#c9d7ff;
+    font-size:12px;
+    line-height:1.52;
+  }
+  .quick-guide strong{
+    color:#ffffff;
+    font-weight:800;
+  }
+  .quick-guide .mini-note{
+    color:#93a4bd;
+    font-size:11px;
+  }
 </style>
 </head>
 <body>
@@ -225,6 +294,25 @@
     </label>
   </label>
   <p class="hint">게시물 목록 제목, 게시물 제목, 본문, 댓글에 포함된 키워드를 감지해 숨깁니다.</p>
+
+  <div class="keyword-targets" aria-label="키워드 차단 대상">
+    <label class="keyword-target-item">
+      <span>목록 제목</span>
+      <input type="checkbox" id="keywordTargetListTitle">
+    </label>
+    <label class="keyword-target-item">
+      <span>게시물 제목</span>
+      <input type="checkbox" id="keywordTargetViewTitle">
+    </label>
+    <label class="keyword-target-item">
+      <span>본문</span>
+      <input type="checkbox" id="keywordTargetViewBody">
+    </label>
+    <label class="keyword-target-item">
+      <span>댓글</span>
+      <input type="checkbox" id="keywordTargetComments">
+    </label>
+  </div>
 
   <div class="row-input">
     <input id="keywordInput" type="text" placeholder="예: 보기 싫은 단어">
@@ -298,6 +386,15 @@
       <span class="slider"></span>
     </label>
   </label>
+
+  <div class="quick-guide" role="note" aria-label="빠른 이용자 차단 안내">
+    <div class="quick-guide-title">
+      <span class="pill">TIP</span>
+      <span>빠른 이용자 차단</span>
+    </div>
+    <p><strong>작성자 닉네임 · 갤로그 아이콘 · 메모 버튼</strong> 위에서 우클릭하면 바로 차단됩니다.</p>
+    <p class="mini-note">글 제목이나 본문을 우클릭하면 기존 브라우저 메뉴가 열립니다.</p>
+  </div>
 
   <label class="row">
     <span style="min-width:110px;">닉네임 옆 회원 아이디 표시</span>
