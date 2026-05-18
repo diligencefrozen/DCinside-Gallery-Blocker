@@ -1,3 +1,36 @@
+<div align="center">
+
+  <img src="https://github.com/diligencefrozen/DCinside-Gallery-Blocker/blob/main/IntroducingDCB_final.png?raw=true" alt="DCinside Gallery Blocker" width="820">
+
+  <h1>DCinside Gallery Blocker</h1>
+
+  <p>
+    <strong>Block unwanted galleries, posts, comments, and users.</strong><br/>
+    Less noise. More focus.
+  </p>
+
+  <p>
+    <a href="https://chromewebstore.google.com/detail/fnfmdbldnhadkadklplhcjcojjiaopgg">
+      <img src="https://img.shields.io/chrome-web-store/v/fnfmdbldnhadkadklplhcjcojjiaopgg?label=Chrome%20Web%20Store&style=for-the-badge" alt="Chrome Web Store Version">
+    </a>
+    <a href="https://chromewebstore.google.com/detail/fnfmdbldnhadkadklplhcjcojjiaopgg">
+      <img src="https://img.shields.io/chrome-web-store/users/fnfmdbldnhadkadklplhcjcojjiaopgg?label=Users&style=for-the-badge" alt="Chrome Web Store Users">
+    </a>
+    <a href="https://chromewebstore.google.com/detail/fnfmdbldnhadkadklplhcjcojjiaopgg">
+      <img src="https://img.shields.io/chrome-web-store/stars/fnfmdbldnhadkadklplhcjcojjiaopgg?label=Rating&style=for-the-badge" alt="Chrome Web Store Rating">
+    </a>
+  </p>
+
+  <p>
+    <a href="https://chromewebstore.google.com/detail/fnfmdbldnhadkadklplhcjcojjiaopgg">
+      <strong>Install from the Chrome Web Store →</strong>
+    </a>
+  </p>
+
+</div>
+
+---
+
 # DCinside Gallery Blocker
 
 Less noise. More focus.
