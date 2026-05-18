@@ -413,6 +413,19 @@
       if (act === "allow-once") {
         addTempAllow(gid);
         clearBlockedOverlay();
+
+        /*
+          이번만 보기는 현재 차단 갤러리 페이지 접근만 허용한다.
+          페이지 안의 차단 갤러리 링크/최근방문/사이드바 요소는
+          link-blocker.js가 계속 숨겨야 하므로 즉시 재스캔 이벤트를 보낸다.
+        */
+        try {
+          window.dispatchEvent(
+            new CustomEvent("dcb-access-allow-once", {
+              detail: { gid }
+            })
+          );
+        } catch {}
       }
     };
   }
