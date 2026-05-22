@@ -51,7 +51,8 @@ const BACKUP_KEYS = [
   "enabled", "galleryBlockEnabled", "blockMode", "autoRefreshEnabled",
   "autoRefreshInterval", "delay", "showUidBadge", "linkWarnEnabled", "hideDCGray",
   "previewEnabled", "hideAnonymousEnabled", "compactListEnabled",
-  "keywordBlockEnabled", "blockedKeywords", "keywordBlockTargets"
+  "keywordBlockEnabled", "blockedKeywords", "keywordBlockTargets",
+  "keywordHideEnabled", "hiddenKeywords", "keywordHideTargets"
 ];
 
 const BACKUP_DEFAULTS = {
@@ -81,7 +82,10 @@ const BACKUP_DEFAULTS = {
   compactListEnabled: false,
   keywordBlockEnabled: false,
   blockedKeywords: [],
-  keywordBlockTargets: KEYWORD_DEFAULT_TARGETS
+  keywordBlockTargets: KEYWORD_DEFAULT_TARGETS,
+  keywordHideEnabled: false,
+  hiddenKeywords: [],
+  keywordHideTargets: KEYWORD_DEFAULT_TARGETS
 };
 
 /* ───── DOM 캐시 ───── */
