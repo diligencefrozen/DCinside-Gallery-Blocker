@@ -328,69 +328,137 @@
   </section>
 
   <section class="card keyword-panel">
-  <h2>🔎 키워드 차단 모드</h2>
+    <h2>🔎 키워드 차단 모드</h2>
 
-  <div class="row" style="justify-content:space-between;align-items:center">
+    <div class="row" style="justify-content:space-between;align-items:center">
+      <div>
+        <p class="note">
+          게시물 목록 제목, 게시물 제목, 본문, 댓글에 포함된 키워드를 감지해 완전히 차단합니다.
+        </p>
+        <p class="note">
+          이미지 안에 박힌 글자는 텍스트가 아니므로 감지하지 않습니다.
+        </p>
+      </div>
+
+      <label class="switch" title="키워드 차단 모드">
+        <input type="checkbox" id="optionKeywordBlockEnabled">
+        <span class="slider"></span>
+      </label>
+    </div>
+
     <div>
+      <h3 style="font-size:15px;margin-bottom:10px;">차단 대상</h3>
+
+      <div class="keyword-targets">
+        <label class="keyword-target-item">
+          <span>게시물 목록 제목</span>
+          <input type="checkbox" id="keywordTargetListTitle">
+        </label>
+
+        <label class="keyword-target-item">
+          <span>게시물 제목</span>
+          <input type="checkbox" id="keywordTargetViewTitle">
+        </label>
+
+        <label class="keyword-target-item">
+          <span>게시물 본문</span>
+          <input type="checkbox" id="keywordTargetViewBody">
+        </label>
+
+        <label class="keyword-target-item">
+          <span>댓글</span>
+          <input type="checkbox" id="keywordTargetComments">
+        </label>
+      </div>
+    </div>
+
+    <div>
+      <h3 style="font-size:15px;margin-bottom:10px;">차단 키워드 추가</h3>
+
+      <div class="keyword-input-row">
+        <input id="optionKeywordInput" type="text" placeholder="예: 완전히 차단할 단어">
+        <button id="optionAddKeywordBtn" type="button">추가</button>
+      </div>
+
       <p class="note">
-        게시물 목록 제목, 게시물 제목, 본문, 댓글에 포함된 키워드를 감지해 차단합니다.
+        등록한 키워드는 대소문자와 공백 차이를 정리해서 비교합니다.
       </p>
+    </div>
+
+    <div>
+      <h3 style="font-size:15px;margin-bottom:10px;">차단 키워드 리스트</h3>
+      <ul id="optionKeywordList" class="keyword-list"></ul>
+      <p id="optionKeywordStatus" class="keyword-status"></p>
+    </div>
+  </section>
+
+  <section class="card keyword-panel">
+    <h2>👁️ 키워드 숨기기 모드</h2>
+
+    <div class="row" style="justify-content:space-between;align-items:center">
+      <div>
+        <p class="note">
+          숨길 키워드가 포함된 글이나 댓글을 접어둡니다. 숨겨진 항목은 “계속 보기”로 다시 열 수 있습니다.
+        </p>
+        <p class="note">
+          기존 키워드 차단 기능과 별도로 동작합니다.
+        </p>
+      </div>
+
+      <label class="switch" title="숨긴 키워드 계속 보기 모드">
+        <input type="checkbox" id="optionKeywordHideEnabled">
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <div>
+      <h3 style="font-size:15px;margin-bottom:10px;">차단 대상</h3>
+
+      <div class="keyword-targets">
+        <label class="keyword-target-item">
+          <span>게시물 목록 제목</span>
+          <input type="checkbox" id="optionKeywordHideTargetListTitle">
+        </label>
+
+        <label class="keyword-target-item">
+          <span>게시물 제목</span>
+          <input type="checkbox" id="optionKeywordHideTargetViewTitle">
+        </label>
+
+        <label class="keyword-target-item">
+          <span>게시물 본문</span>
+          <input type="checkbox" id="optionKeywordHideTargetViewBody">
+        </label>
+
+        <label class="keyword-target-item">
+          <span>댓글</span>
+          <input type="checkbox" id="optionKeywordHideTargetComments">
+        </label>
+      </div>
+    </div>
+
+    <div>
+      <h3 style="font-size:15px;margin-bottom:10px;">차단 키워드 추가</h3>
+
+      <div class="keyword-input-row">
+        <input id="optionHideKeywordInput" type="text" placeholder="예: 숨길 단어">
+        <button id="optionAddHideKeywordBtn" type="button">추가</button>
+      </div>
+
       <p class="note">
-        이미지 안에 박힌 글자는 텍스트가 아니므로 감지하지 않습니다.
+        쉼표로 여러 차단 키워드를 한 번에 추가할 수 있습니다. 예: 단어1, 단어2
       </p>
     </div>
 
-    <label class="switch" title="키워드 차단 모드">
-      <input type="checkbox" id="optionKeywordBlockEnabled">
-      <span class="slider"></span>
-    </label>
-  </div>
-
-  <div>
-    <h3 style="font-size:15px;margin-bottom:10px;">차단 대상</h3>
-
-    <div class="keyword-targets">
-      <label class="keyword-target-item">
-        <span>게시물 목록 제목</span>
-        <input type="checkbox" id="keywordTargetListTitle">
-      </label>
-
-      <label class="keyword-target-item">
-        <span>게시물 제목</span>
-        <input type="checkbox" id="keywordTargetViewTitle">
-      </label>
-
-      <label class="keyword-target-item">
-        <span>게시물 본문</span>
-        <input type="checkbox" id="keywordTargetViewBody">
-      </label>
-
-      <label class="keyword-target-item">
-        <span>댓글</span>
-        <input type="checkbox" id="keywordTargetComments">
-      </label>
+    <div>
+      <h3 style="font-size:15px;margin-bottom:10px;">차단 키워드 리스트</h3>
+      <ul id="optionHideKeywordList" class="keyword-list"></ul>
+      <p id="optionHideKeywordStatus" class="keyword-status"></p>
+      <p class="note">
+        기존 키워드 차단과 달리, 이 모드에서는 차단된 항목을 “계속 보기”로 열 수 있습니다.
+      </p>
     </div>
-  </div>
-
-  <div>
-    <h3 style="font-size:15px;margin-bottom:10px;">차단 키워드 추가</h3>
-
-    <div class="keyword-input-row">
-      <input id="optionKeywordInput" type="text" placeholder="예: 보기 싫은 단어">
-      <button id="optionAddKeywordBtn" type="button">추가</button>
-    </div>
-
-    <p class="note">
-      등록한 키워드는 대소문자와 공백 차이를 정리해서 비교합니다.
-    </p>
-  </div>
-
-  <div>
-    <h3 style="font-size:15px;margin-bottom:10px;">차단 키워드 리스트</h3>
-    <ul id="optionKeywordList" class="keyword-list"></ul>
-    <p id="optionKeywordStatus" class="keyword-status"></p>
-  </div>
-</section>
+  </section>
 
   <section class="card">
     <h2>사용자 차단</h2>
@@ -535,5 +603,6 @@
 </main>
 
 <script src="options.js"></script>
+<script src="keyword-hide-ui.js"></script>
 </body>
 </html>
