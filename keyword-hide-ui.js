@@ -1,0 +1,387 @@
+// keyword-hide-ui.js
+// popup.html / options.html에서 "키워드 차단(계속 보기)" 설정 UI를 저장하고 렌더링합니다.
+// 실제 디시 페이지에서 글/댓글을 접어두는 작업은 keyword-hider.js가 담당합니다.
+// 내부 저장 키는 기존 호환성을 위해 hiddenKeywords / keywordHideEnabled / keywordHideTargets를 유지합니다.
+
+(() => {
+  if (window.__DCB_KEYWORD_HIDE_UI_BOUND__) return;
+  window.__DCB_KEYWORD_HIDE_UI_BOUND__ = true;
+
+  const DEFAULTS = {
+    keywordHideEnabled: false,
+    hiddenKeywords: [],
+    keywordHideTargets: {
+      listTitle: true,
+      viewTitle: true,
+      viewBody: true,
+      comments: true
+    }
+  };
+
+  const CONTEXTS = [
+    {
+      name: "popup",
+      enabled: "keywordHideEnabled",
+      input: "hideKeywordInput",
+      add: "addHideKeywordBtn",
+      list: "hideKeywordList",
+      status: null,
+      targets: {
+        listTitle: "keywordHideTargetListTitle",
+        viewTitle: "keywordHideTargetViewTitle",
+        viewBody: "keywordHideTargetViewBody",
+        comments: "keywordHideTargetComments"
+      }
+    },
+    {
+      name: "options",
+      enabled: "optionKeywordHideEnabled",
+      input: "optionHideKeywordInput",
+      add: "optionAddHideKeywordBtn",
+      list: "optionHideKeywordList",
+      status: "optionHideKeywordStatus",
+      targets: {
+        listTitle: "optionKeywordHideTargetListTitle",
+        viewTitle: "optionKeywordHideTargetViewTitle",
+        viewBody: "optionKeywordHideTargetViewBody",
+        comments: "optionKeywordHideTargetComments"
+      }
+    }
+  ];
+
+  let activeContext = null;
+  let state = {
+    keywordHideEnabled: DEFAULTS.keywordHideEnabled,
+    hiddenKeywords: [...DEFAULTS.hiddenKeywords],
+    keywordHideTargets: { ...DEFAULTS.keywordHideTargets }
+  };
+
+  function hasChromeStorage() {
+    return (
+      typeof chrome !== "undefined" &&
+      chrome.storage &&
+      chrome.storage.sync
+    );
+  }
+
+  function $(id) {
+    return document.getElementById(id);
+  }
+
+  function normalizeKeyword(value) {
+    return String(value || "")
+      .normalize("NFKC")
+      .trim();
+  }
+
+  function keywordCompareKey(value) {
+    return normalizeKeyword(value).toLowerCase();
+  }
+
+  function escapeHtml(value) {
+    return String(value || "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#39;");
+  }
+
+  function detectContext() {
+    return CONTEXTS.find((context) => {
+      return (
+        $(context.enabled) ||
+        $(context.input) ||
+        $(context.add) ||
+        $(context.list)
+      );
+    }) || null;
+  }
+
+  function getTargetElement(key) {
+    if (!activeContext) return null;
+    return $(activeContext.targets[key]);
+  }
+
+  function setStatus(message) {
+    if (!activeContext || !activeContext.status) return;
+
+    const status = $(activeContext.status);
+    if (!status) return;
+
+    status.textContent = message || "";
+
+    if (message) {
+      window.clearTimeout(setStatus._timer);
+      setStatus._timer = window.setTimeout(() => {
+        status.textContent = "";
+      }, 1600);
+    }
+  }
+
+  function loadState(callback) {
+    if (!hasChromeStorage()) return;
+
+    chrome.storage.sync.get(DEFAULTS, (config) => {
+      state = {
+        keywordHideEnabled: Boolean(config.keywordHideEnabled),
+        hiddenKeywords: Array.isArray(config.hiddenKeywords)
+          ? config.hiddenKeywords
+          : [],
+        keywordHideTargets: {
+          ...DEFAULTS.keywordHideTargets,
+          ...(config.keywordHideTargets || {})
+        }
+      };
+
+      callback();
+    });
+  }
+
+  function saveState(partial, message) {
+    if (!hasChromeStorage()) return;
+
+    state = {
+      ...state,
+      ...partial,
+      keywordHideTargets: {
+        ...state.keywordHideTargets,
+        ...(partial.keywordHideTargets || {})
+      }
+    };
+
+    chrome.storage.sync.set(partial, () => {
+      render();
+      setStatus(message || "저장되었습니다.");
+    });
+  }
+
+  function render() {
+    if (!activeContext) return;
+
+    const enabled = $(activeContext.enabled);
+    if (enabled) {
+      enabled.checked = Boolean(state.keywordHideEnabled);
+    }
+
+    Object.keys(DEFAULTS.keywordHideTargets).forEach((key) => {
+      const input = getTargetElement(key);
+      if (input) {
+        input.checked = Boolean(state.keywordHideTargets[key]);
+      }
+    });
+
+    renderKeywordList();
+  }
+
+  function renderKeywordList() {
+    if (!activeContext) return;
+
+    const list = $(activeContext.list);
+    if (!list) return;
+
+    const keywords = Array.isArray(state.hiddenKeywords)
+      ? state.hiddenKeywords
+      : [];
+
+    if (!keywords.length) {
+      list.innerHTML = `<li class="keyword-empty">등록된 차단 키워드가 없습니다.</li>`;
+      return;
+    }
+
+    list.innerHTML = keywords
+      .map((keyword, index) => {
+        return `
+          <li>
+            <code title="${escapeHtml(keyword)}">${escapeHtml(keyword)}</code>
+            <button type="button" data-hide-keyword-remove="${index}">삭제</button>
+          </li>
+        `;
+      })
+      .join("");
+  }
+
+  function parseKeywordInput(rawValue) {
+    const source = normalizeKeyword(rawValue);
+    if (!source) return [];
+
+    return source
+      .split(",")
+      .map(normalizeKeyword)
+      .filter(Boolean);
+  }
+
+  function addKeyword() {
+    if (!activeContext) return;
+
+    const input = $(activeContext.input);
+    if (!input) return;
+
+    const additions = parseKeywordInput(input.value);
+    if (!additions.length) {
+      input.focus();
+      return;
+    }
+
+    const current = Array.isArray(state.hiddenKeywords)
+      ? [...state.hiddenKeywords]
+      : [];
+
+    const seen = new Set(current.map(keywordCompareKey));
+    const filtered = [];
+
+    additions.forEach((keyword) => {
+      const key = keywordCompareKey(keyword);
+      if (seen.has(key)) return;
+
+      seen.add(key);
+      filtered.push(keyword);
+    });
+
+    if (!filtered.length) {
+      input.value = "";
+      input.focus();
+      setStatus("이미 등록된 차단 키워드입니다.");
+      return;
+    }
+
+    saveState(
+      {
+        hiddenKeywords: [...current, ...filtered]
+      },
+      "차단 키워드가 추가되었습니다."
+    );
+
+    input.value = "";
+    input.focus();
+  }
+
+  function removeKeyword(index) {
+    const current = Array.isArray(state.hiddenKeywords)
+      ? [...state.hiddenKeywords]
+      : [];
+
+    if (index < 0 || index >= current.length) return;
+
+    current.splice(index, 1);
+
+    saveState(
+      {
+        hiddenKeywords: current
+      },
+      "차단 키워드가 삭제되었습니다."
+    );
+  }
+
+  function bindEnabled() {
+    const enabled = $(activeContext.enabled);
+    if (!enabled) return;
+
+    enabled.addEventListener("change", () => {
+      saveState(
+        {
+          keywordHideEnabled: Boolean(enabled.checked)
+        },
+        Boolean(enabled.checked)
+          ? "키워드 숨기기 모드가 켜졌습니다."
+          : "키워드 숨기기 모드가 꺼졌습니다."
+      );
+    });
+  }
+
+  function bindTargets() {
+    Object.keys(DEFAULTS.keywordHideTargets).forEach((key) => {
+      const input = getTargetElement(key);
+      if (!input) return;
+
+      input.addEventListener("change", () => {
+        saveState(
+          {
+            keywordHideTargets: {
+              ...state.keywordHideTargets,
+              [key]: Boolean(input.checked)
+            }
+          },
+          "차단 대상이 저장되었습니다."
+        );
+      });
+    });
+  }
+
+  function bindKeywordInput() {
+    const input = $(activeContext.input);
+    const addButton = $(activeContext.add);
+    const list = $(activeContext.list);
+
+    if (addButton) {
+      addButton.addEventListener("click", addKeyword);
+    }
+
+    if (input) {
+      input.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter") return;
+
+        event.preventDefault();
+        addKeyword();
+      });
+    }
+
+    if (list) {
+      list.addEventListener("click", (event) => {
+        const button = event.target.closest("[data-hide-keyword-remove]");
+        if (!button) return;
+
+        const index = Number(button.getAttribute("data-hide-keyword-remove"));
+        removeKeyword(index);
+      });
+    }
+  }
+
+  function bindStorageChanges() {
+    if (
+      typeof chrome === "undefined" ||
+      !chrome.storage ||
+      !chrome.storage.onChanged
+    ) {
+      return;
+    }
+
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== "sync") return;
+
+      const touched =
+        changes.keywordHideEnabled ||
+        changes.hiddenKeywords ||
+        changes.keywordHideTargets;
+
+      if (!touched) return;
+
+      loadState(render);
+    });
+  }
+
+  function bind() {
+    bindEnabled();
+    bindTargets();
+    bindKeywordInput();
+    bindStorageChanges();
+  }
+
+  function init() {
+    if (!hasChromeStorage()) return;
+
+    activeContext = detectContext();
+    if (!activeContext) return;
+
+    loadState(() => {
+      render();
+      bind();
+    });
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init, { once: true });
+  } else {
+    init();
+  }
+})();
