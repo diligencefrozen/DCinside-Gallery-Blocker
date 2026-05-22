@@ -79,7 +79,8 @@
   .btn-danger:hover{background:#ff6b6b;color:#000}
   .divider{height:1px;background:#1f2630;border:0;margin-top:-6px}
 
-  ul#keywordList{
+  ul#keywordList,
+  ul#hideKeywordList{
     list-style:none;
     display:flex;
     flex-direction:column;
@@ -87,7 +88,8 @@
     max-height:120px;
     overflow:auto;
   }
-  ul#keywordList li{
+  ul#keywordList li,
+  ul#hideKeywordList li{
     display:flex;
     justify-content:space-between;
     align-items:center;
@@ -96,9 +98,15 @@
     padding:6px 8px;
     background:#151a22;
   }
-  ul#keywordList code{
+  ul#keywordList code,
+  ul#hideKeywordList code{
     opacity:.9;
     word-break:break-all;
+  }
+  .keyword-empty{
+    font-size:12px;
+    opacity:.75;
+    padding:6px 0;
   }
   .keyword-targets{
     display:grid;
@@ -293,7 +301,7 @@
       <span class="slider"></span>
     </label>
   </label>
-  <p class="hint">게시물 목록 제목, 게시물 제목, 본문, 댓글에 포함된 키워드를 감지해 숨깁니다.</p>
+  <p class="hint">게시물 목록 제목, 게시물 제목, 본문, 댓글에 포함된 키워드를 감지해 완전히 차단합니다.</p>
 
   <div class="keyword-targets" aria-label="키워드 차단 대상">
     <label class="keyword-target-item">
@@ -315,10 +323,47 @@
   </div>
 
   <div class="row-input">
-    <input id="keywordInput" type="text" placeholder="예: 보기 싫은 단어">
+    <input id="keywordInput" type="text" placeholder="예: 완전히 차단할 단어">
     <button id="addKeywordBtn" type="button">추가</button>
   </div>
   <ul id="keywordList"></ul>
+
+  <hr class="divider">
+
+  <label class="row">
+    <span style="min-width:110px;">키워드 숨기기 모드</span>
+    <label class="switch">
+      <input type="checkbox" id="keywordHideEnabled">
+      <span class="slider"></span>
+    </label>
+  </label>
+  <p class="hint">완전히 막지 않고 접어둔 뒤, 필요하면 “계속 보기”로 열 수 있습니다.</p>
+
+  <div class="keyword-targets" aria-label="키워드 숨기기 대상">
+    <label class="keyword-target-item">
+      <span>목록 제목</span>
+      <input type="checkbox" id="keywordHideTargetListTitle">
+    </label>
+    <label class="keyword-target-item">
+      <span>게시물 제목</span>
+      <input type="checkbox" id="keywordHideTargetViewTitle">
+    </label>
+    <label class="keyword-target-item">
+      <span>본문</span>
+      <input type="checkbox" id="keywordHideTargetViewBody">
+    </label>
+    <label class="keyword-target-item">
+      <span>댓글</span>
+      <input type="checkbox" id="keywordHideTargetComments">
+    </label>
+  </div>
+
+  <div class="row-input">
+    <input id="hideKeywordInput" type="text" placeholder="예: 숨길 단어">
+    <button id="addHideKeywordBtn" type="button">추가</button>
+  </div>
+  <ul id="hideKeywordList"></ul>
+  <p class="hint">기존 키워드 차단과 달리, 차단된 항목을 “계속 보기”로 다시 열 수 있습니다.</p>
 
   <hr class="divider">
 
@@ -462,5 +507,6 @@
   <button id="openOptions">설정 메뉴 열기</button>
 
   <script src="popup.js"></script>
+  <script src="keyword-hide-ui.js"></script>
 </body>
 </html>
