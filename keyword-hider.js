@@ -252,7 +252,7 @@
     placeholder.dataset.dcbSoftKey = key;
     placeholder.innerHTML = `
       <td colspan="${colSpan}">
-        <span class="dcb-keyword-soft-title">숨겨 줄 키워드가 포함된 게시글</span>
+        <span class="dcb-keyword-soft-title">차단 키워드가 포함된 게시글</span>
         <span class="dcb-keyword-soft-chip" title="${escapeHtml(keyword.label)}">${escapeHtml(keyword.label)}</span>
         <button type="button" class="dcb-keyword-soft-btn" data-dcb-soft-action="show">계속 보기</button>
       </td>
@@ -363,7 +363,7 @@
 
     const postNo = getPostNoFromUrl();
     const key = `article:${postNo || location.href}:${source}:${matched.needle}`;
-    hideElementWithBox(bodyNode, matched, key, "숨겨 줄 키워드가 포함된 게시글 본문");
+    hideElementWithBox(bodyNode, matched, key, "차단 키워드가 포함된 게시글 본문");
   }
 
   function getCommentCandidates() {
