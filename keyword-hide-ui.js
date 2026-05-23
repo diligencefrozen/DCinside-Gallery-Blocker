@@ -1,5 +1,5 @@
 // keyword-hide-ui.js
-// popup.html / options.html에서 "키워드 차단(계속 보기)" 설정 UI를 저장하고 렌더링합니다.
+// popup.html / options.html에서 "키워드 숨기기(계속 보기)" 설정 UI를 저장하고 렌더링합니다.
 // 실제 디시 페이지에서 글/댓글을 접어두는 작업은 keyword-hider.js가 담당합니다.
 // 내부 저장 키는 기존 호환성을 위해 hiddenKeywords / keywordHideEnabled / keywordHideTargets를 유지합니다.
 
@@ -49,6 +49,8 @@
     }
   ];
 
+  const IME_FINALIZE_GRACE_MS = 80;
+
   let activeContext = null;
   let state = {
     keywordHideEnabled: DEFAULTS.keywordHideEnabled,
@@ -88,14 +90,16 @@
   }
 
   function detectContext() {
-    return CONTEXTS.find((context) => {
-      return (
-        $(context.enabled) ||
-        $(context.input) ||
-        $(context.add) ||
-        $(context.list)
-      );
-    }) || null;
+    return (
+      CONTEXTS.find((context) => {
+        return (
+          $(context.enabled) ||
+          $(context.input) ||
+          $(context.add) ||
+          $(context.list)
+        );
+      }) || null
+    );
   }
 
   function getTargetElement(key) {
@@ -308,18 +312,67 @@
     });
   }
 
+  function createImeGuard() {
+    let isComposing = false;
+    let lastCompositionEndAt = 0;
+
+    function markCompositionStart() {
+      isComposing = true;
+    }
+
+    function markCompositionEnd() {
+      isComposing = false;
+      lastCompositionEndAt = Date.now();
+    }
+
+    function isImeEnterEvent(event) {
+      const recentlyEnded =
+        Date.now() - lastCompositionEndAt < IME_FINALIZE_GRACE_MS;
+
+      return (
+        isComposing ||
+        event.isComposing ||
+        event.keyCode === 229 ||
+        event.which === 229 ||
+        recentlyEnded
+      );
+    }
+
+    return {
+      markCompositionStart,
+      markCompositionEnd,
+      isImeEnterEvent
+    };
+  }
+
   function bindKeywordInput() {
     const input = $(activeContext.input);
     const addButton = $(activeContext.add);
     const list = $(activeContext.list);
+    const imeGuard = createImeGuard();
 
     if (addButton) {
       addButton.addEventListener("click", addKeyword);
     }
 
     if (input) {
+      input.addEventListener("compositionstart", () => {
+        imeGuard.markCompositionStart();
+      });
+
+      input.addEventListener("compositionend", () => {
+        imeGuard.markCompositionEnd();
+      });
+
       input.addEventListener("keydown", (event) => {
         if (event.key !== "Enter") return;
+
+        // 한글/일본어/중국어 IME 조합 확정용 Enter는 키워드 추가로 처리하지 않습니다.
+        // 일부 Chromium 환경에서는 compositionend 직후 keydown Enter가 들어와서
+        // 마지막 글자만 별도 키워드로 추가되는 문제가 발생할 수 있습니다.
+        if (imeGuard.isImeEnterEvent(event)) {
+          return;
+        }
 
         event.preventDefault();
         addKeyword();
