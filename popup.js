@@ -15,6 +15,8 @@ const delayNum = document.getElementById("delayNum");
 const delayRange = document.getElementById("delayRange");
 const openOptionsBtn = document.getElementById("openOptions");
 const compactListToggle = document.getElementById("compactListEnabled");
+const dcOfficialDarkModeToggle = document.getElementById("dcOfficialDarkMode");
+const dcThemeStatus = document.getElementById("dcThemeStatus");
 
 const keywordBlockToggle = document.getElementById("keywordBlockEnabled");
 const keywordInput = document.getElementById("keywordInput");
@@ -197,6 +199,109 @@ function downloadJson(filename, data) {
   a.download = filename;
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1500);
+}
+
+
+/* ───────── 디시 공식 테마 브리지 ───────── */
+let dcThemeApplying = false;
+let dcThemeRequestSeq = 0;
+let dcThemeOptimisticUntil = 0;
+let dcThemeOptimisticState = null;
+
+function isDcInsideUrl(url) {
+  try {
+    const host = new URL(url || "").hostname;
+    return /(^|\.)dcinside\.com$/i.test(host);
+  } catch (_) {
+    return false;
+  }
+}
+
+function setDcThemeStatus(text, isError = false) {
+  if (!dcThemeStatus) return;
+  dcThemeStatus.textContent = text || "";
+  dcThemeStatus.style.color = isError ? "#ffb4b4" : "#94a3b8";
+}
+
+function setDcThemeBusy(isBusy) {
+  dcThemeApplying = !!isBusy;
+  if (!dcOfficialDarkModeToggle) return;
+  dcOfficialDarkModeToggle.disabled = !!isBusy;
+  const switchEl = dcOfficialDarkModeToggle.closest(".switch");
+  if (switchEl) switchEl.classList.toggle("is-busy", !!isBusy);
+}
+
+function lockDcThemeUi(state, duration = 1800) {
+  dcThemeOptimisticState = !!state;
+  dcThemeOptimisticUntil = Date.now() + duration;
+  setChecked(dcOfficialDarkModeToggle, dcThemeOptimisticState);
+}
+
+function shouldKeepOptimisticThemeState() {
+  return dcThemeOptimisticState !== null && Date.now() < dcThemeOptimisticUntil;
+}
+
+function clearDcThemeOptimisticLock() {
+  dcThemeOptimisticState = null;
+  dcThemeOptimisticUntil = 0;
+}
+
+function applyDcThemeStateToUi(isDark) {
+  setChecked(dcOfficialDarkModeToggle, !!isDark);
+  setDcThemeStatus(isDark ? "Current · Dark" : "Current · Light");
+}
+
+function sendDcThemeMessage(message, callback) {
+  if (!chrome.tabs || !chrome.tabs.query) {
+    callback(null, "활성 탭 접근 불가", null);
+    return;
+  }
+
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    if (chrome.runtime.lastError) {
+      callback(null, chrome.runtime.lastError.message, null);
+      return;
+    }
+
+    const tab = tabs && tabs[0];
+    if (!tab || !tab.id) {
+      callback(null, "활성 탭 없음", null);
+      return;
+    }
+
+    chrome.tabs.sendMessage(tab.id, message, (response) => {
+      if (chrome.runtime.lastError) {
+        callback(null, chrome.runtime.lastError.message, tab);
+        return;
+      }
+      callback(response || null, null, tab);
+    });
+  });
+}
+
+
+function clearLegacyDcThemePreference() {
+  if (!chrome.storage || !chrome.storage.sync) return;
+  chrome.storage.sync.remove("dcbDcDarkMode");
+}
+
+function refreshDcThemeState() {
+  if (!dcOfficialDarkModeToggle || dcThemeApplying || shouldKeepOptimisticThemeState()) return;
+
+  const seq = ++dcThemeRequestSeq;
+  setDcThemeStatus("Checking…");
+
+  sendDcThemeMessage({ type: "DCB_DC_THEME_GET_STATE" }, (state) => {
+    if (seq !== dcThemeRequestSeq || dcThemeApplying || shouldKeepOptimisticThemeState()) return;
+
+    if (!state || !state.available) {
+      setChecked(dcOfficialDarkModeToggle, false);
+      setDcThemeStatus("DC page only", false);
+      return;
+    }
+
+    applyDcThemeStateToUi(!!state.isDark);
+  });
 }
 
 /* ───────── UID 차단 목록 ───────── */
@@ -524,6 +629,9 @@ chrome.storage.sync.get(DEFAULTS, (conf) => {
   setChecked(noticeBlockToggle, noticeBlockEnabled);
   setChecked(userMemoEnabledToggle, userMemoEnabled);
   setChecked(compactListToggle, compactListEnabled);
+  setChecked(dcOfficialDarkModeToggle, false);
+  clearLegacyDcThemePreference();
+  refreshDcThemeState();
 });
 
 /* ───────── 이벤트 바인딩 ───────── */
@@ -531,6 +639,56 @@ if (toggle) {
   toggle.onchange = (e) => {
     const on = !!e.target.checked;
     chrome.storage.sync.set({ galleryBlockEnabled: on, enabled: on });
+  };
+}
+
+
+if (dcOfficialDarkModeToggle) {
+  dcOfficialDarkModeToggle.onchange = (e) => {
+    if (dcThemeApplying) {
+      if (shouldKeepOptimisticThemeState()) setChecked(dcOfficialDarkModeToggle, dcThemeOptimisticState);
+      return;
+    }
+
+    const requested = !!e.target.checked;
+    const seq = ++dcThemeRequestSeq;
+
+    // Optimistic lock: the page result is correct, so do not let a stale
+    // GET response or a late official-button hint bounce the switch back.
+    lockDcThemeUi(requested, 2600);
+    setDcThemeBusy(true);
+    setDcThemeStatus(requested ? "Switching to dark…" : "Switching to light…");
+
+    sendDcThemeMessage({ type: "DCB_DC_THEME_SET_STATE", enabled: requested }, (state, error, tab) => {
+      if (seq !== dcThemeRequestSeq) return;
+      setDcThemeBusy(false);
+
+      if (!state || !state.available) {
+        if (isDcInsideUrl(tab && tab.url)) {
+          // DC may reload or rebuild the page while darkmode() is being applied.
+          // Keep the user's requested visual state instead of flashing back.
+          applyDcThemeStateToUi(requested);
+          window.setTimeout(() => {
+            if (seq === dcThemeRequestSeq) clearDcThemeOptimisticLock();
+          }, 2600);
+          return;
+        }
+
+        clearDcThemeOptimisticLock();
+        setChecked(dcOfficialDarkModeToggle, false);
+        setDcThemeStatus(error ? "DC page only" : "DC page only", false);
+        return;
+      }
+
+      const isDark = typeof state.requestedState === "boolean"
+        ? !!state.requestedState
+        : requested;
+
+      applyDcThemeStateToUi(isDark);
+      window.setTimeout(() => {
+        if (seq === dcThemeRequestSeq) clearDcThemeOptimisticLock();
+      }, 2600);
+    });
   };
 }
 
