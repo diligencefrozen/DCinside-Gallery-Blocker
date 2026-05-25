@@ -50,9 +50,10 @@ const BACKUP_KEYS = [
   "hideMainEnabled", "hideGallEnabled", "hideSearchEnabled",
   "enabled", "galleryBlockEnabled", "blockMode", "autoRefreshEnabled",
   "autoRefreshInterval", "delay", "showUidBadge", "linkWarnEnabled", "hideDCGray",
-  "previewEnabled", "hideAnonymousEnabled", "compactListEnabled",
+  "previewEnabled", "hideAnonymousEnabled", "gamemecaBlockEnabled", "doryBlockEnabled", "noticeBlockEnabled", "compactListEnabled",
   "keywordBlockEnabled", "blockedKeywords", "keywordBlockTargets",
-  "keywordHideEnabled", "hiddenKeywords", "keywordHideTargets"
+  "keywordHideEnabled", "hiddenKeywords", "keywordHideTargets",
+  "dcbFontFamily", "dcbFontCustomFamily", "dcbFontScale", "dcbApplyFontToDc"
 ];
 
 const BACKUP_DEFAULTS = {
@@ -74,18 +75,25 @@ const BACKUP_DEFAULTS = {
   autoRefreshEnabled: false,
   autoRefreshInterval: 60,
   delay: 5,
-  showUidBadge: true,
+  showUidBadge: false,
   linkWarnEnabled: true,
   hideDCGray: undefined,
   previewEnabled: false,
   hideAnonymousEnabled: false,
+  gamemecaBlockEnabled: true,
+  doryBlockEnabled: true,
+  noticeBlockEnabled: true,
   compactListEnabled: false,
   keywordBlockEnabled: false,
   blockedKeywords: [],
   keywordBlockTargets: KEYWORD_DEFAULT_TARGETS,
   keywordHideEnabled: false,
   hiddenKeywords: [],
-  keywordHideTargets: KEYWORD_DEFAULT_TARGETS
+  keywordHideTargets: KEYWORD_DEFAULT_TARGETS,
+  dcbFontFamily: "Noto Sans KR",
+  dcbFontCustomFamily: "",
+  dcbFontScale: 100,
+  dcbApplyFontToDc: true
 };
 
 /* ───── DOM 캐시 ───── */
@@ -115,11 +123,30 @@ const uidInput = document.getElementById("uidInput");
 const addUidBtn = document.getElementById("addUidBtn");
 const uidListEl = document.getElementById("uidList");
 
+const galleryBlockEnabledEl = document.getElementById("galleryBlockEnabled");
+const blockModeEl = document.getElementById("blockMode");
+const blockModeHintEl = document.getElementById("blockModeHint");
+const delayNumEl = document.getElementById("delayNum");
+const delayRangeEl = document.getElementById("delayRange");
+const delaySectionEl = document.getElementById("delaySection");
+const autoRefreshEnabledEl = document.getElementById("autoRefreshEnabled");
+const autoRefreshIntervalNumEl = document.getElementById("autoRefreshIntervalNum");
+const autoRefreshIntervalRangeEl = document.getElementById("autoRefreshIntervalRange");
+const toggleHideMainEl = document.getElementById("toggleHideMain");
+const toggleHideGallEl = document.getElementById("toggleHideGall");
+const toggleHideSearchEl = document.getElementById("toggleHideSearch");
+const toggleUidBadgeEl = document.getElementById("toggleUidBadge");
+const compactListEnabledEl = document.getElementById("compactListEnabled");
+const userMemoEnabledEl = document.getElementById("userMemoEnabled");
+
 const previewEnabledEl = document.getElementById("previewEnabled");
 const hideCommentEl = document.getElementById("hideComment");
 const hideImgCommentEl = document.getElementById("hideImgComment");
 const hideDcconEl = document.getElementById("hideDccon");
 const hideAnonymousEl = document.getElementById("hideAnonymousEnabled");
+const gamemecaBlockEnabledEl = document.getElementById("gamemecaBlockEnabled");
+const doryBlockEnabledEl = document.getElementById("doryBlockEnabled");
+const noticeBlockEnabledEl = document.getElementById("noticeBlockEnabled");
 
 const exportBtn = document.getElementById("exportBtn");
 const importBtn = document.getElementById("importBtn");
@@ -149,6 +176,69 @@ const keywordTargetComments = document.getElementById("keywordTargetComments");
 /* ───── 공통 유틸 ───── */
 const norm = s => String(s || "").trim().toLowerCase();
 const sanitizeUid = s => String(s || "").trim().replace(/\s+/g, "");
+
+function setChecked(el, value) {
+  if (el) el.checked = !!value;
+}
+
+function setValue(el, value) {
+  if (el) el.value = value;
+}
+
+function clampNumber(value, min, max, fallback) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(min, Math.min(max, n));
+}
+
+function getGalleryBlockEnabled(conf = {}) {
+  return typeof conf.galleryBlockEnabled === "boolean"
+    ? conf.galleryBlockEnabled
+    : !!conf.enabled;
+}
+
+function lockDelay(disabled) {
+  const nodes = [delayNumEl, delayRangeEl];
+  const op = disabled ? 0.55 : 1;
+
+  nodes.forEach((el) => {
+    if (!el) return;
+    el.disabled = !!disabled;
+    el.style.opacity = op;
+  });
+}
+
+function updateBlockModeHint(mode) {
+  const hints = {
+    smart: "✨ 경고 화면을 보여주고 이번만 보기 선택을 제공합니다.",
+    redirect: "⏱️ 설정한 시간 후 디시 메인으로 자동 이동합니다.",
+    block: "🚫 페이지 로드 전 네트워크 단계에서 완전히 차단합니다."
+  };
+
+  if (blockModeHintEl) {
+    blockModeHintEl.textContent = hints[mode] || "차단 방식을 선택하세요.";
+  }
+
+  if (delaySectionEl) {
+    delaySectionEl.style.display = mode === "redirect" ? "flex" : "none";
+  }
+
+  lockDelay(mode !== "redirect");
+}
+
+function updateDelay(value) {
+  const num = clampNumber(value, 0, 10, 5);
+  setValue(delayNumEl, num);
+  setValue(delayRangeEl, num);
+  chrome.storage.sync.set({ delay: num });
+}
+
+function updateAutoRefreshInterval(value) {
+  const num = Math.round(clampNumber(value, 10, 600, 60) / 10) * 10;
+  setValue(autoRefreshIntervalNumEl, num);
+  setValue(autoRefreshIntervalRangeEl, num);
+  chrome.storage.sync.set({ autoRefreshInterval: num });
+}
 
 function sanitizeText(v, max = 80) {
   return String(v || "").replace(/\s+/g, " ").trim().slice(0, max);
@@ -940,6 +1030,80 @@ if (uidListEl) {
   });
 }
 
+/* ───── 이벤트: 접근 차단/자동 새로고침/표시 옵션 ───── */
+if (galleryBlockEnabledEl) {
+  galleryBlockEnabledEl.addEventListener("change", (e) => {
+    const on = !!e.target.checked;
+    chrome.storage.sync.set({ galleryBlockEnabled: on, enabled: on });
+  });
+}
+
+if (blockModeEl) {
+  blockModeEl.addEventListener("change", (e) => {
+    const mode = e.target.value;
+    chrome.storage.sync.set({ blockMode: mode });
+    updateBlockModeHint(mode);
+  });
+}
+
+if (delayNumEl) {
+  delayNumEl.addEventListener("input", (e) => updateDelay(e.target.value));
+}
+
+if (delayRangeEl) {
+  delayRangeEl.addEventListener("input", (e) => updateDelay(e.target.value));
+}
+
+if (autoRefreshEnabledEl) {
+  autoRefreshEnabledEl.addEventListener("change", (e) => {
+    chrome.storage.sync.set({ autoRefreshEnabled: !!e.target.checked });
+  });
+}
+
+if (autoRefreshIntervalNumEl) {
+  autoRefreshIntervalNumEl.addEventListener("input", (e) => updateAutoRefreshInterval(e.target.value));
+}
+
+if (autoRefreshIntervalRangeEl) {
+  autoRefreshIntervalRangeEl.addEventListener("input", (e) => updateAutoRefreshInterval(e.target.value));
+}
+
+if (toggleHideMainEl) {
+  toggleHideMainEl.addEventListener("change", (e) => {
+    chrome.storage.sync.set({ hideMainEnabled: !!e.target.checked });
+  });
+}
+
+if (toggleHideGallEl) {
+  toggleHideGallEl.addEventListener("change", (e) => {
+    chrome.storage.sync.set({ hideGallEnabled: !!e.target.checked });
+  });
+}
+
+if (toggleHideSearchEl) {
+  toggleHideSearchEl.addEventListener("change", (e) => {
+    chrome.storage.sync.set({ hideSearchEnabled: !!e.target.checked });
+  });
+}
+
+if (toggleUidBadgeEl) {
+  toggleUidBadgeEl.addEventListener("change", (e) => {
+    chrome.storage.sync.set({ showUidBadge: !!e.target.checked });
+  });
+}
+
+if (compactListEnabledEl) {
+  compactListEnabledEl.addEventListener("change", (e) => {
+    chrome.storage.sync.set({ compactListEnabled: !!e.target.checked });
+  });
+}
+
+if (userMemoEnabledEl) {
+  userMemoEnabledEl.addEventListener("change", (e) => {
+    chrome.storage.sync.set({ userMemoEnabled: !!e.target.checked });
+  });
+}
+
 /* ───── 이벤트: 댓글/미리보기/비회원 ───── */
 if (hideCommentEl) {
   hideCommentEl.addEventListener("change", e => {
@@ -968,6 +1132,24 @@ if (previewEnabledEl) {
 if (hideAnonymousEl) {
   hideAnonymousEl.addEventListener("change", e => {
     chrome.storage.sync.set({ hideAnonymousEnabled: !!e.target.checked });
+  });
+}
+
+if (gamemecaBlockEnabledEl) {
+  gamemecaBlockEnabledEl.addEventListener("change", e => {
+    chrome.storage.sync.set({ gamemecaBlockEnabled: !!e.target.checked });
+  });
+}
+
+if (doryBlockEnabledEl) {
+  doryBlockEnabledEl.addEventListener("change", e => {
+    chrome.storage.sync.set({ doryBlockEnabled: !!e.target.checked });
+  });
+}
+
+if (noticeBlockEnabledEl) {
+  noticeBlockEnabledEl.addEventListener("change", e => {
+    chrome.storage.sync.set({ noticeBlockEnabled: !!e.target.checked });
   });
 }
 
@@ -1042,16 +1224,34 @@ chrome.storage.sync.get(
     removeSelectorsSearch: [],
     userBlockEnabled: true,
     blockedUids: [],
+    enabled: true,
+    galleryBlockEnabled: undefined,
+    blockMode: "smart",
+    autoRefreshEnabled: false,
+    autoRefreshInterval: 60,
+    delay: 5,
+    hideMainEnabled: true,
+    hideGallEnabled: true,
+    hideSearchEnabled: true,
+    showUidBadge: false,
+    compactListEnabled: false,
+    userMemoEnabled: true,
     hideComment: false,
     hideImgComment: false,
     hideDccon: false,
     previewEnabled: false,
     hideAnonymousEnabled: false,
+    gamemecaBlockEnabled: true,
+    doryBlockEnabled: true,
+    noticeBlockEnabled: true,
     hideDCGray: undefined,
 
     keywordBlockEnabled: false,
     blockedKeywords: [],
-    keywordBlockTargets: KEYWORD_DEFAULT_TARGETS
+    keywordBlockTargets: KEYWORD_DEFAULT_TARGETS,
+    dcbFontFamily: "Noto Sans KR",
+    dcbFontCustomFamily: "",
+    dcbApplyFontToDc: true
   },
   ({
     blockedIds,
@@ -1060,11 +1260,26 @@ chrome.storage.sync.get(
     removeSelectorsSearch,
     userBlockEnabled,
     blockedUids,
+    enabled,
+    galleryBlockEnabled,
+    blockMode,
+    autoRefreshEnabled,
+    autoRefreshInterval,
+    delay,
+    hideMainEnabled,
+    hideGallEnabled,
+    hideSearchEnabled,
+    showUidBadge,
+    compactListEnabled,
+    userMemoEnabled,
     hideComment,
     hideImgComment,
     hideDccon,
     previewEnabled,
     hideAnonymousEnabled,
+    gamemecaBlockEnabled,
+    doryBlockEnabled,
+    noticeBlockEnabled,
     hideDCGray,
 
     keywordBlockEnabled,
@@ -1089,11 +1304,29 @@ chrome.storage.sync.get(
 
     renderUidList(blockedUids || []);
 
+    setChecked(galleryBlockEnabledEl, getGalleryBlockEnabled({ galleryBlockEnabled, enabled }));
+    setValue(blockModeEl, blockMode || "smart");
+    updateBlockModeHint(blockMode || "smart");
+    setChecked(autoRefreshEnabledEl, autoRefreshEnabled);
+    setValue(autoRefreshIntervalNumEl, autoRefreshInterval);
+    setValue(autoRefreshIntervalRangeEl, autoRefreshInterval);
+    setValue(delayNumEl, delay);
+    setValue(delayRangeEl, delay);
+    setChecked(toggleHideMainEl, hideMainEnabled);
+    setChecked(toggleHideGallEl, hideGallEnabled);
+    setChecked(toggleHideSearchEl, hideSearchEnabled);
+    setChecked(toggleUidBadgeEl, showUidBadge);
+    setChecked(compactListEnabledEl, compactListEnabled);
+    setChecked(userMemoEnabledEl, userMemoEnabled);
+
     if (hideCommentEl) hideCommentEl.checked = !!hideComment;
     if (hideImgCommentEl) hideImgCommentEl.checked = !!hideImgComment;
     if (hideDcconEl) hideDcconEl.checked = !!hideDccon;
     if (previewEnabledEl) previewEnabledEl.checked = !!previewEnabled;
     if (hideAnonymousEl) hideAnonymousEl.checked = !!hideAnonymousEnabled;
+    if (gamemecaBlockEnabledEl) gamemecaBlockEnabledEl.checked = gamemecaBlockEnabled !== false;
+    if (doryBlockEnabledEl) doryBlockEnabledEl.checked = doryBlockEnabled !== false;
+    if (noticeBlockEnabledEl) noticeBlockEnabledEl.checked = noticeBlockEnabled !== false;
 
     if (optionKeywordBlockEnabled) {
       optionKeywordBlockEnabled.checked = !!keywordBlockEnabled;
@@ -1137,6 +1370,38 @@ chrome.storage.onChanged.addListener((changes, area) => {
       renderUidList(changes.blockedUids.newValue || []);
     }
 
+    if ((changes.galleryBlockEnabled || changes.enabled) && galleryBlockEnabledEl) {
+      chrome.storage.sync.get({ galleryBlockEnabled: undefined, enabled: true }, (conf) => {
+        setChecked(galleryBlockEnabledEl, getGalleryBlockEnabled(conf));
+      });
+    }
+
+    if (changes.blockMode) {
+      setValue(blockModeEl, changes.blockMode.newValue);
+      updateBlockModeHint(changes.blockMode.newValue || "smart");
+    }
+
+    if (changes.delay) {
+      setValue(delayNumEl, changes.delay.newValue);
+      setValue(delayRangeEl, changes.delay.newValue);
+    }
+
+    if (changes.autoRefreshEnabled) {
+      setChecked(autoRefreshEnabledEl, changes.autoRefreshEnabled.newValue);
+    }
+
+    if (changes.autoRefreshInterval) {
+      setValue(autoRefreshIntervalNumEl, changes.autoRefreshInterval.newValue);
+      setValue(autoRefreshIntervalRangeEl, changes.autoRefreshInterval.newValue);
+    }
+
+    if (changes.hideMainEnabled) setChecked(toggleHideMainEl, changes.hideMainEnabled.newValue);
+    if (changes.hideGallEnabled) setChecked(toggleHideGallEl, changes.hideGallEnabled.newValue);
+    if (changes.hideSearchEnabled) setChecked(toggleHideSearchEl, changes.hideSearchEnabled.newValue);
+    if (changes.showUidBadge) setChecked(toggleUidBadgeEl, changes.showUidBadge.newValue);
+    if (changes.compactListEnabled) setChecked(compactListEnabledEl, changes.compactListEnabled.newValue);
+    if (changes.userMemoEnabled) setChecked(userMemoEnabledEl, changes.userMemoEnabled.newValue);
+
     if (changes.hideComment && hideCommentEl) {
       hideCommentEl.checked = !!changes.hideComment.newValue;
     }
@@ -1155,6 +1420,18 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
     if (changes.hideAnonymousEnabled && hideAnonymousEl) {
       hideAnonymousEl.checked = !!changes.hideAnonymousEnabled.newValue;
+    }
+
+    if (changes.gamemecaBlockEnabled && gamemecaBlockEnabledEl) {
+      gamemecaBlockEnabledEl.checked = changes.gamemecaBlockEnabled.newValue !== false;
+    }
+
+    if (changes.doryBlockEnabled && doryBlockEnabledEl) {
+      doryBlockEnabledEl.checked = changes.doryBlockEnabled.newValue !== false;
+    }
+
+    if (changes.noticeBlockEnabled && noticeBlockEnabledEl) {
+      noticeBlockEnabledEl.checked = changes.noticeBlockEnabled.newValue !== false;
     }
 
     if (changes.keywordBlockEnabled && optionKeywordBlockEnabled) {
