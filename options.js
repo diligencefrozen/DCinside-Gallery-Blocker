@@ -152,6 +152,10 @@ const exportBtn = document.getElementById("exportBtn");
 const importBtn = document.getElementById("importBtn");
 const importFileEl = document.getElementById("importFile");
 
+const optionDcOfficialDarkModeToggle = document.getElementById("optionDcOfficialDarkMode");
+const optionDcThemeStatus = document.getElementById("optionDcThemeStatus");
+const optionDcThemeRefresh = document.getElementById("optionDcThemeRefresh");
+
 /* 메모 관리 DOM */
 const memoSearchInput = document.getElementById("memoSearchInput");
 const refreshMemoListBtn = document.getElementById("refreshMemoListBtn");
@@ -224,6 +228,120 @@ function updateBlockModeHint(mode) {
   }
 
   lockDelay(mode !== "redirect");
+}
+
+
+/* ───── 옵션 페이지: 디시 공식 다크모드 ───── */
+let optionDcThemeApplying = false;
+let optionDcThemeSeq = 0;
+let optionDcThemeOptimisticUntil = 0;
+let optionDcThemeOptimisticState = null;
+
+function setOptionDcThemeStatus(text, isError = false) {
+  if (!optionDcThemeStatus) return;
+  optionDcThemeStatus.textContent = text || "";
+  optionDcThemeStatus.style.color = isError ? "#ffb4b4" : "#8b9bb4";
+}
+
+function setOptionDcThemeBusy(isBusy) {
+  optionDcThemeApplying = !!isBusy;
+  if (!optionDcOfficialDarkModeToggle) return;
+  optionDcOfficialDarkModeToggle.disabled = !!isBusy;
+  const switchEl = optionDcOfficialDarkModeToggle.closest(".switch");
+  if (switchEl) switchEl.classList.toggle("is-busy", !!isBusy);
+}
+
+function isDcInsideTab(tab) {
+  try {
+    const host = new URL((tab && tab.url) || "").hostname;
+    return /(^|\.)dcinside\.com$/i.test(host);
+  } catch (_) {
+    return false;
+  }
+}
+
+function lockOptionDcThemeUi(state, duration = 2600) {
+  optionDcThemeOptimisticState = !!state;
+  optionDcThemeOptimisticUntil = Date.now() + duration;
+  setChecked(optionDcOfficialDarkModeToggle, optionDcThemeOptimisticState);
+}
+
+function shouldKeepOptionDcThemeState() {
+  return optionDcThemeOptimisticState !== null && Date.now() < optionDcThemeOptimisticUntil;
+}
+
+function clearOptionDcThemeLock() {
+  optionDcThemeOptimisticState = null;
+  optionDcThemeOptimisticUntil = 0;
+}
+
+function applyOptionDcThemeUi(isDark) {
+  setChecked(optionDcOfficialDarkModeToggle, !!isDark);
+  setOptionDcThemeStatus(isDark ? "Current · Dark" : "Current · Light");
+}
+
+function findDcInsideTab(callback) {
+  if (!chrome.tabs || !chrome.tabs.query) {
+    callback(null, "탭 접근 불가");
+    return;
+  }
+
+  const url = [
+    "*://gall.dcinside.com/*",
+    "*://www.dcinside.com/*"
+  ];
+
+  chrome.tabs.query({ url }, (tabs) => {
+    if (chrome.runtime.lastError) {
+      callback(null, chrome.runtime.lastError.message);
+      return;
+    }
+
+    const list = Array.isArray(tabs) ? tabs.filter(isDcInsideTab) : [];
+    const selected =
+      list.find(tab => tab.active && tab.currentWindow) ||
+      list.find(tab => tab.active) ||
+      list[0] ||
+      null;
+
+    callback(selected, selected ? null : "열린 DC 탭 없음");
+  });
+}
+
+function sendOptionDcThemeMessage(message, callback) {
+  findDcInsideTab((tab, findError) => {
+    if (!tab || !tab.id) {
+      callback(null, findError || "열린 DC 탭 없음", null);
+      return;
+    }
+
+    chrome.tabs.sendMessage(tab.id, message, (response) => {
+      if (chrome.runtime.lastError) {
+        callback(null, chrome.runtime.lastError.message, tab);
+        return;
+      }
+      callback(response || null, null, tab);
+    });
+  });
+}
+
+function refreshOptionDcThemeState() {
+  if (!optionDcOfficialDarkModeToggle || optionDcThemeApplying || shouldKeepOptionDcThemeState()) return;
+
+  const seq = ++optionDcThemeSeq;
+  setOptionDcThemeStatus("Checking DC tab…");
+
+  sendOptionDcThemeMessage({ type: "DCB_DC_THEME_GET_STATE" }, (state) => {
+    if (seq !== optionDcThemeSeq || optionDcThemeApplying || shouldKeepOptionDcThemeState()) return;
+
+    if (!state || !state.available) {
+      setChecked(optionDcOfficialDarkModeToggle, false);
+      setOptionDcThemeStatus("Open a DC tab first", false);
+      return;
+    }
+
+    applyOptionDcThemeUi(!!state.isDark);
+  });
 }
 
 function updateDelay(value) {
@@ -1153,6 +1271,55 @@ if (noticeBlockEnabledEl) {
   });
 }
 
+/* ───── 이벤트: 디시 공식 다크모드 ───── */
+if (optionDcThemeRefresh) {
+  optionDcThemeRefresh.addEventListener("click", () => {
+    clearOptionDcThemeLock();
+    refreshOptionDcThemeState();
+  });
+}
+
+if (optionDcOfficialDarkModeToggle) {
+  optionDcOfficialDarkModeToggle.addEventListener("change", (e) => {
+    if (optionDcThemeApplying) {
+      if (shouldKeepOptionDcThemeState()) setChecked(optionDcOfficialDarkModeToggle, optionDcThemeOptimisticState);
+      return;
+    }
+
+    const requested = !!e.target.checked;
+    const seq = ++optionDcThemeSeq;
+    lockOptionDcThemeUi(requested, 2600);
+    setOptionDcThemeBusy(true);
+    setOptionDcThemeStatus(requested ? "Switching to dark…" : "Switching to light…");
+
+    sendOptionDcThemeMessage({ type: "DCB_DC_THEME_SET_STATE", enabled: requested }, (state, error, tab) => {
+      if (seq !== optionDcThemeSeq) return;
+      setOptionDcThemeBusy(false);
+
+      if (!state || !state.available) {
+        if (isDcInsideTab(tab)) {
+          applyOptionDcThemeUi(requested);
+          window.setTimeout(() => {
+            if (seq === optionDcThemeSeq) clearOptionDcThemeLock();
+          }, 2600);
+          return;
+        }
+
+        clearOptionDcThemeLock();
+        setChecked(optionDcOfficialDarkModeToggle, false);
+        setOptionDcThemeStatus("Open a DC tab first", false);
+        return;
+      }
+
+      const isDark = typeof state.requestedState === "boolean" ? !!state.requestedState : requested;
+      applyOptionDcThemeUi(isDark);
+      window.setTimeout(() => {
+        if (seq === optionDcThemeSeq) clearOptionDcThemeLock();
+      }, 2600);
+    });
+  });
+}
+
 /* ───── 이벤트: 메모 관리 ───── */
 if (memoSearchInput) {
   memoSearchInput.addEventListener("input", () => {
@@ -1335,6 +1502,7 @@ chrome.storage.sync.get(
 
     renderKeywordTargets(keywordBlockTargets || KEYWORD_DEFAULT_TARGETS);
     renderKeywordList(blockedKeywords || []);
+    refreshOptionDcThemeState();
   }
 );
 
