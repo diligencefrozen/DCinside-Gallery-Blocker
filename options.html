@@ -5,7 +5,7 @@
 <title>디시갤 차단기 - 설정</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400&display=swap" rel="stylesheet" />
 <style>
   :root{
     --accent:#4f7cff;
@@ -16,7 +16,7 @@
   *{box-sizing:border-box;margin:0;padding:0}
   html,body{height:100%}
   body{
-    font-family:'Inter',sans-serif;
+    font-family:'Noto Sans KR',system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
     background:var(--bg-1); color:var(--fg);
     display:flex; justify-content:center; align-items:flex-start;
     padding:40px 0;
@@ -296,6 +296,153 @@
   font-size:12px;
   line-height:1.5;
 }
+
+
+  .settings-grid{
+    display:grid;
+    grid-template-columns:repeat(2, minmax(0, 1fr));
+    gap:12px;
+  }
+  .setting-row{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:14px;
+    padding:12px 14px;
+    border:1px solid #30363d;
+    border-radius:12px;
+    background:#0d1117;
+  }
+  .setting-copy{
+    display:flex;
+    flex-direction:column;
+    gap:4px;
+    min-width:0;
+  }
+  .setting-copy strong{
+    font-size:14px;
+    color:#f0f6fc;
+  }
+  .setting-copy span{
+    font-size:12px;
+    line-height:1.45;
+    color:#8b949e;
+  }
+  .control-row{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    flex-wrap:wrap;
+  }
+  select,
+  input[type="number"]{
+    padding:10px 12px;
+    font-size:15px;
+    border:1px solid #30363d;
+    border-radius:8px;
+    background:#010409;
+    color:var(--fg);
+  }
+  select:focus,
+  input[type="number"]:focus{
+    outline:2px solid var(--accent);
+    outline-offset:1px;
+  }
+  input[type="range"]{
+    width:100%;
+    accent-color:var(--accent);
+  }
+  .range-row{
+    display:grid;
+    grid-template-columns:120px 1fr;
+    align-items:center;
+    gap:12px;
+  }
+  .section-mini-title{
+    margin-top:4px;
+    font-size:15px;
+    color:#f0f6fc;
+  }
+  .stack{
+    display:flex;
+    flex-direction:column;
+    gap:12px;
+  }
+  @media(max-width:720px){
+    .settings-grid{grid-template-columns:1fr}
+    .range-row{grid-template-columns:1fr}
+  }
+
+
+.font-card{
+  border:1px solid rgba(79,124,255,.55);
+  box-shadow:0 8px 18px rgba(79,124,255,.12), 0 6px 12px rgba(0,0,0,.35);
+}
+.font-control-grid{
+  display:grid;
+  grid-template-columns:1.3fr 1fr;
+  gap:12px;
+  align-items:center;
+}
+.font-custom-input{
+  display:none;
+  width:100%;
+}
+.font-open-link{
+  display:inline-flex;
+  align-items:center;
+  width:fit-content;
+  color:#9ecbff;
+  text-decoration:none;
+  font-size:13px;
+  font-weight:700;
+}
+.font-open-link:hover{text-decoration:underline}
+.font-size-control{gap:8px}
+.font-size-inline{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center}
+.font-size-inline input[type="range"]{width:100%;min-width:0}
+.font-scale-value{font-size:13px;color:#c9d1d9;white-space:nowrap}
+.font-apply-row{
+  grid-column:1 / -1;
+  display:grid;
+  grid-template-columns:minmax(0, 1fr) auto;
+  align-items:center;
+  gap:16px;
+}
+.font-apply-row .setting-copy{min-width:0}
+.font-apply-row .setting-copy span{max-width:100%;word-break:keep-all}
+.font-apply-switch{
+  flex:0 0 auto;
+  width:46px;
+  height:26px;
+}
+.font-apply-switch .slider{
+  border:1px solid #30363d;
+  background:#30363d;
+  box-shadow:inset 0 1px 2px rgba(0,0,0,.25);
+}
+.font-apply-switch .slider:before{
+  left:3px;
+  top:3px;
+  width:18px;
+  height:18px;
+  box-shadow:0 2px 6px rgba(0,0,0,.35);
+}
+.font-apply-switch input:checked + .slider{
+  background:var(--accent);
+  border-color:var(--accent);
+  box-shadow:0 0 0 3px rgba(79,124,255,.16);
+}
+.font-apply-switch input:checked + .slider:before{transform:translateX(20px)}
+@media(max-width:720px){
+  .font-control-grid{grid-template-columns:1fr}
+  .font-apply-row{grid-template-columns:1fr auto}
+}
+@media(max-width:480px){
+  .font-apply-row{grid-template-columns:1fr;align-items:flex-start}
+}
+
+
 </style>
 </head>
 <body>
@@ -303,6 +450,47 @@
   <section class="card" style="align-items:center;text-align:center">
     <h1>디시갤 차단기 설정</h1>
     <p class="note">차단할 갤러리와 숨길 영역을 손쉽게 관리하세요.</p>
+  </section>
+
+
+  <section class="card stack font-card">
+    <h2>🔤 글꼴 설정</h2>
+    <p class="note">기본값은 <strong>Noto Sans Korean / Noto Sans KR Regular 400</strong>입니다. 선택한 글꼴은 options, popup, 디시인사이드 페이지에 함께 적용됩니다.</p>
+
+    <div class="font-control-grid">
+      <div class="stack">
+        <label class="setting-copy" for="dcbFontFamily">
+          <strong>사용할 Google Fonts 한글 글꼴</strong>
+          <span>아래 목록에서 바로 선택하거나, 직접 입력을 골라 원하는 Google Fonts family name을 넣으세요.</span>
+        </label>
+        <select id="dcbFontFamily" title="사용할 글꼴 선택"></select>
+        <input id="dcbFontCustomFamily" class="font-custom-input" type="text" placeholder="예: Noto Sans KR, Gowun Dodum, IBM Plex Sans KR">
+      </div>
+
+      <div class="stack font-size-control">
+        <label class="setting-copy" for="dcbFontScale">
+          <strong>글자 크기 보정</strong>
+          <span>글꼴이 너무 작거나 크게 보이면 90%~140% 범위에서 조정하세요.</span>
+        </label>
+        <div class="font-size-inline">
+          <input type="range" id="dcbFontScale" min="90" max="140" step="5" value="100">
+          <output id="dcbFontScaleValue" class="font-scale-value">100%</output>
+        </div>
+      </div>
+
+      <div class="setting-row font-apply-row">
+        <div class="setting-copy">
+          <strong>디시 페이지에도 적용</strong>
+          <span id="dcbFontHint">기본값: Noto Sans Korean Regular 400</span>
+        </div>
+        <label class="switch font-apply-switch" title="디시 페이지 글꼴 적용">
+          <input type="checkbox" id="dcbApplyFontToDc">
+          <span class="slider"></span>
+        </label>
+      </div>
+    </div>
+
+    <a id="dcbGoogleFontsLink" class="font-open-link" href="https://fonts.google.com/?query=korean&amp;preview.script=Kore&amp;preview.lang=ko_Kore" target="_blank" rel="noopener noreferrer">Google Fonts 한글 글꼴 둘러보기 ↗</a>
   </section>
 
   <section class="card">
@@ -314,6 +502,138 @@
       <input id="importFile" type="file" accept="application/json,.json" style="display:none">
     </div>
     <p class="note">불러오면 기존 설정이 덮어씌워집니다. (chrome.storage.sync 기준)</p>
+  </section>
+
+  <section class="card stack">
+    <h2>🚧 갤러리 접근 차단</h2>
+    <p class="note">차단 갤러리에 들어갔을 때 어떤 방식으로 막을지 설정합니다. popup의 “갤러리 차단”과 같은 설정입니다.</p>
+
+    <div class="setting-row">
+      <div class="setting-copy">
+        <strong>갤러리 차단</strong>
+        <span>등록된 차단 갤러리 접근을 막습니다.</span>
+      </div>
+      <label class="switch" title="갤러리 차단">
+        <input type="checkbox" id="galleryBlockEnabled">
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <div class="setting-row">
+      <div class="setting-copy">
+        <strong>차단 방식</strong>
+        <span id="blockModeHint">차단 방식을 선택하세요.</span>
+      </div>
+      <select id="blockMode" title="차단 방식">
+        <option value="smart">스마트</option>
+        <option value="redirect">초보</option>
+        <option value="block">하드</option>
+      </select>
+    </div>
+
+    <div id="delaySection" class="stack">
+      <h3 class="section-mini-title">리다이렉트 지연 시간</h3>
+      <div class="range-row">
+        <input type="number" id="delayNum" min="0" max="10" step="0.5" title="리다이렉트 지연 시간 초">
+        <input type="range" id="delayRange" min="0" max="10" step="0.5" title="리다이렉트 지연 시간 슬라이더">
+      </div>
+      <p class="note">초보 모드에서 카운트다운 후 메인으로 이동하기까지 기다리는 시간입니다.</p>
+    </div>
+  </section>
+
+  <section class="card stack">
+    <h2>🔄 자동 새로고침</h2>
+    <p class="note">갤러리 목록을 일정 간격으로 새로고침합니다. 본문/댓글을 읽는 중에는 방해를 줄이도록 일시중지됩니다.</p>
+
+    <div class="setting-row">
+      <div class="setting-copy">
+        <strong>자동 새로고침</strong>
+        <span>현재 페이지를 설정한 간격마다 갱신합니다.</span>
+      </div>
+      <label class="switch" title="자동 새로고침">
+        <input type="checkbox" id="autoRefreshEnabled">
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <div class="range-row">
+      <input type="number" id="autoRefreshIntervalNum" min="10" max="600" step="10" title="새로고침 간격 초">
+      <input type="range" id="autoRefreshIntervalRange" min="10" max="600" step="10" title="새로고침 간격 슬라이더">
+    </div>
+    <p class="note">최소 10초, 최대 600초(10분)까지 설정 가능합니다.</p>
+  </section>
+
+  <section class="card stack">
+    <h2>🧩 화면/표시 빠른 설정</h2>
+    <p class="note">자주 쓰는 표시 옵션을 한 곳에 모았습니다. 숨길 영역의 세부 CSS 선택자는 아래 영역 숨기기 섹션에서 관리합니다.</p>
+
+    <div class="settings-grid">
+      <div class="setting-row">
+        <div class="setting-copy">
+          <strong>메인 페이지 영역 숨김</strong>
+          <span>www.dcinside.com의 불필요한 영역을 숨깁니다.</span>
+        </div>
+        <label class="switch" title="메인 페이지 영역 숨김">
+          <input type="checkbox" id="toggleHideMain">
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <div class="setting-row">
+        <div class="setting-copy">
+          <strong>갤러리 페이지 영역 숨김</strong>
+          <span>갤러리 목록/게시글의 지정 영역을 숨깁니다.</span>
+        </div>
+        <label class="switch" title="갤러리 페이지 영역 숨김">
+          <input type="checkbox" id="toggleHideGall">
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <div class="setting-row">
+        <div class="setting-copy">
+          <strong>검색 페이지 영역 숨김</strong>
+          <span>search.dcinside.com의 지정 영역을 숨깁니다.</span>
+        </div>
+        <label class="switch" title="검색 페이지 영역 숨김">
+          <input type="checkbox" id="toggleHideSearch">
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <div class="setting-row">
+        <div class="setting-copy">
+          <strong>닉네임 옆 회원 ID 표시</strong>
+          <span>작성자 닉네임 옆에 UID 배지를 표시합니다.</span>
+        </div>
+        <label class="switch" title="닉네임 옆 회원 아이디 표시">
+          <input type="checkbox" id="toggleUidBadge">
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <div class="setting-row">
+        <div class="setting-copy">
+          <strong>컴팩트 모드</strong>
+          <span>게시물 목록을 더 촘촘하게 정리합니다.</span>
+        </div>
+        <label class="switch" title="컴팩트 모드">
+          <input type="checkbox" id="compactListEnabled">
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <div class="setting-row">
+        <div class="setting-copy">
+          <strong>이용자 메모</strong>
+          <span>확장프로그램 내부 메모 표시 기능을 켜거나 끕니다.</span>
+        </div>
+        <label class="switch" title="이용자 메모">
+          <input type="checkbox" id="userMemoEnabled">
+          <span class="slider"></span>
+        </label>
+      </div>
+    </div>
   </section>
 
   <section class="card">
@@ -552,6 +872,41 @@
   </section>
 
   <section class="card">
+    <h2>🎮 게임메카 글/댓글 숨기기</h2>
+    <div class="row" style="justify-content:space-between;align-items:center">
+      <span class="note">닉네임 <code>게임메카</code> 또는 UID <code>gamemeca</code>로 작성된 글과 댓글을 숨깁니다.</span>
+      <label class="switch" title="게임메카 글/댓글 숨기기">
+        <input type="checkbox" id="gamemecaBlockEnabled">
+        <span class="slider"></span>
+      </label>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>🤖 댓글돌이 광고 숨기기</h2>
+    <div class="row" style="justify-content:space-between;align-items:center">
+      <span class="note">닉네임 <code>댓글돌이</code>, <code>dory</code> 댓글, <code>issuefeed</code>형 댓글돌이 광고 댓글을 숨깁니다.</span>
+      <label class="switch" title="댓글돌이 광고 댓글 숨기기">
+        <input type="checkbox" id="doryBlockEnabled">
+        <span class="slider"></span>
+      </label>
+    </div>
+    <p class="note">예: <code>&lt;span class="gall_writer" data-nick="댓글돌이"&gt;</code>, <code>&lt;li class="ub-content dory"&gt;</code></p>
+  </section>
+
+  <section class="card">
+    <h2>📢 운영자 광고, 설문 글 숨기기</h2>
+    <div class="row" style="justify-content:space-between;align-items:center">
+      <span class="note">목록에서 <code>AD</code> 또는 <code>설문</code> 딱지가 붙은 운영자의 글을 숨깁니다.</span>
+      <label class="switch" title="운영자 공지/AD/설문 숨기기">
+        <input type="checkbox" id="noticeBlockEnabled">
+        <span class="slider"></span>
+      </label>
+    </div>
+    <p class="note">예: <code>&lt;td class="gall_subject"&gt;&lt;b&gt;AD&lt;/b&gt;&lt;/td&gt;</code>, <code>&lt;b&gt;설문&lt;/b&gt;</code></p>
+  </section>
+
+  <section class="card">
     <h2>💬 댓글 숨기기</h2>
     <div class="row" style="justify-content:space-between;margin-bottom:12px">
       <span>일반 댓글 숨기기</span>
@@ -602,6 +957,8 @@
   </section>
 </main>
 
+<script src="font-config.js"></script>
+<script src="font-ui.js"></script>
 <script src="options.js"></script>
 <script src="keyword-hide-ui.js"></script>
 </body>
