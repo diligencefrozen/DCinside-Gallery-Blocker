@@ -116,7 +116,14 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
       "galleryBlockEnabled",
       "enabled",
       "userBlockEnabled",
-      "blockedIds"
+      "gamemecaBlockEnabled",
+      "doryBlockEnabled",
+      "noticeBlockEnabled",
+      "blockedIds",
+      "dcbFontFamily",
+      "dcbFontCustomFamily",
+      "dcbFontScale",
+      "dcbApplyFontToDc"
     ]);
 
     const patch = {};
@@ -134,8 +141,36 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
       patch.userBlockEnabled = true;
     }
 
+    if (typeof seed.gamemecaBlockEnabled === "undefined") {
+      patch.gamemecaBlockEnabled = true;
+    }
+
+    if (typeof seed.doryBlockEnabled === "undefined") {
+      patch.doryBlockEnabled = true;
+    }
+
+    if (typeof seed.noticeBlockEnabled === "undefined") {
+      patch.noticeBlockEnabled = true;
+    }
+
     if (!Array.isArray(seed.blockedIds)) {
       patch.blockedIds = [];
+    }
+
+    if (typeof seed.dcbFontFamily === "undefined") {
+      patch.dcbFontFamily = "Noto Sans KR";
+    }
+
+    if (typeof seed.dcbFontCustomFamily === "undefined") {
+      patch.dcbFontCustomFamily = "";
+    }
+
+    if (typeof seed.dcbFontScale === "undefined") {
+      patch.dcbFontScale = 100;
+    }
+
+    if (typeof seed.dcbApplyFontToDc === "undefined") {
+      patch.dcbApplyFontToDc = true;
     }
 
     if (Object.keys(patch).length) {
