@@ -36,6 +36,9 @@ const toggleHideSearch = document.getElementById("toggleHideSearch");
 
 const toggleUidBadge = document.getElementById("toggleUidBadge");
 const hideAnonymousToggle = document.getElementById("hideAnonymousEnabled");
+const gamemecaBlockToggle = document.getElementById("gamemecaBlockEnabled");
+const doryBlockToggle = document.getElementById("doryBlockEnabled");
+const noticeBlockToggle = document.getElementById("noticeBlockEnabled");
 const delaySection = document.getElementById("delaySection");
 
 /* 독립 이용자 메모 */
@@ -50,6 +53,7 @@ const refreshUserMemoListBtn = document.getElementById("refreshUserMemoListBtn")
 /* ───────── defaults ───────── */
 const DEFAULTS = {
   enabled: true,
+  galleryBlockEnabled: undefined,
   blockMode: "smart",
   hideComment: false,
   hideImgComment: false,
@@ -79,10 +83,18 @@ const DEFAULTS = {
 
   showUidBadge: false,
   hideAnonymousEnabled: false,
+  gamemecaBlockEnabled: true,
+  doryBlockEnabled: true,
+  noticeBlockEnabled: true,
   linkWarnEnabled: true,
 
   userMemoEnabled: true,
-  compactListEnabled: false
+  compactListEnabled: false,
+
+  dcbFontFamily: "Noto Sans KR",
+  dcbFontCustomFamily: "",
+  dcbFontScale: 100,
+  dcbApplyFontToDc: true
 };
 
 /* ───────── util ───────── */
@@ -92,6 +104,12 @@ function setChecked(el, value) {
 
 function setValue(el, value) {
   if (el) el.value = value;
+}
+
+function getGalleryBlockEnabled(conf = {}) {
+  return typeof conf.galleryBlockEnabled === "boolean"
+    ? conf.galleryBlockEnabled
+    : !!conf.enabled;
 }
 
 function lockDelay(disabled) {
@@ -446,6 +464,7 @@ chrome.storage.sync.get(DEFAULTS, (conf) => {
 
   const {
     enabled,
+    galleryBlockEnabled,
     blockMode,
     hideComment,
     hideImgComment,
@@ -464,11 +483,14 @@ chrome.storage.sync.get(DEFAULTS, (conf) => {
     hideSearchEnabled,
     showUidBadge,
     hideAnonymousEnabled,
+    gamemecaBlockEnabled,
+    doryBlockEnabled,
+    noticeBlockEnabled,
     userMemoEnabled,
     compactListEnabled
   } = conf;
 
-  setChecked(toggle, enabled);
+  setChecked(toggle, getGalleryBlockEnabled({ galleryBlockEnabled, enabled }));
   setValue(blockModeSel, blockMode);
   updateBlockModeHint(blockMode);
 
@@ -497,6 +519,9 @@ chrome.storage.sync.get(DEFAULTS, (conf) => {
   setChecked(toggleHideSearch, hideSearchEnabled);
   setChecked(toggleUidBadge, showUidBadge);
   setChecked(hideAnonymousToggle, hideAnonymousEnabled);
+  setChecked(gamemecaBlockToggle, gamemecaBlockEnabled);
+  setChecked(doryBlockToggle, doryBlockEnabled);
+  setChecked(noticeBlockToggle, noticeBlockEnabled);
   setChecked(userMemoEnabledToggle, userMemoEnabled);
   setChecked(compactListToggle, compactListEnabled);
 });
@@ -504,7 +529,8 @@ chrome.storage.sync.get(DEFAULTS, (conf) => {
 /* ───────── 이벤트 바인딩 ───────── */
 if (toggle) {
   toggle.onchange = (e) => {
-    chrome.storage.sync.set({ enabled: !!e.target.checked });
+    const on = !!e.target.checked;
+    chrome.storage.sync.set({ galleryBlockEnabled: on, enabled: on });
   };
 }
 
@@ -668,6 +694,15 @@ if (toggleUidBadge) {
 if (hideAnonymousToggle) {
   hideAnonymousToggle.onchange = (e) => chrome.storage.sync.set({ hideAnonymousEnabled: !!e.target.checked });
 }
+if (gamemecaBlockToggle) {
+  gamemecaBlockToggle.onchange = (e) => chrome.storage.sync.set({ gamemecaBlockEnabled: !!e.target.checked });
+}
+if (doryBlockToggle) {
+  doryBlockToggle.onchange = (e) => chrome.storage.sync.set({ doryBlockEnabled: !!e.target.checked });
+}
+if (noticeBlockToggle) {
+  noticeBlockToggle.onchange = (e) => chrome.storage.sync.set({ noticeBlockEnabled: !!e.target.checked });
+}
 if (userMemoEnabledToggle) {
   userMemoEnabledToggle.onchange = (e) => chrome.storage.sync.set({ userMemoEnabled: !!e.target.checked });
 }
@@ -730,7 +765,11 @@ if (refreshUserMemoListBtn) {
 /* ───────── 스토리지 외부 변경 반영 ───────── */
 chrome.storage.onChanged.addListener((c, a) => {
   if (a === "sync") {
-    if (c.enabled) setChecked(toggle, c.enabled.newValue);
+    if (c.galleryBlockEnabled || c.enabled) {
+      chrome.storage.sync.get({ galleryBlockEnabled: undefined, enabled: true }, (conf) => {
+        setChecked(toggle, getGalleryBlockEnabled(conf));
+      });
+    }
     if (c.blockMode) {
       setValue(blockModeSel, c.blockMode.newValue);
       updateBlockModeHint(c.blockMode.newValue);
@@ -766,6 +805,9 @@ chrome.storage.onChanged.addListener((c, a) => {
     if (c.hideSearchEnabled) setChecked(toggleHideSearch, c.hideSearchEnabled.newValue);
     if (c.showUidBadge) setChecked(toggleUidBadge, c.showUidBadge.newValue);
     if (c.hideAnonymousEnabled) setChecked(hideAnonymousToggle, c.hideAnonymousEnabled.newValue);
+    if (c.gamemecaBlockEnabled) setChecked(gamemecaBlockToggle, c.gamemecaBlockEnabled.newValue);
+    if (c.doryBlockEnabled) setChecked(doryBlockToggle, c.doryBlockEnabled.newValue);
+    if (c.noticeBlockEnabled) setChecked(noticeBlockToggle, c.noticeBlockEnabled.newValue);
     if (c.userMemoEnabled) setChecked(userMemoEnabledToggle, c.userMemoEnabled.newValue);
     if (c.compactListEnabled) setChecked(compactListToggle, c.compactListEnabled.newValue);
   }
