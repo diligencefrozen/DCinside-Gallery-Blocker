@@ -14,18 +14,54 @@
   }
   *{box-sizing:border-box;margin:0;padding:0}
   body{
-    width:280px;padding:20px;
+    width:320px;padding:20px;
     background:var(--dark);color:var(--light);
     font-family:"Noto Sans KR",system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
     display:flex;flex-direction:column;gap:22px;
   }
   h1{font-size:18px;letter-spacing:.5px;text-shadow:0 0 6px var(--neon)}
-  .switch{position:relative;width:46px;height:24px}
-  .switch input{display:none}
-  .slider{position:absolute;inset:0;background:#444;border-radius:34px;transition:.3s;cursor:pointer}
-  .slider:before{content:"";position:absolute;left:3px;top:3px;width:18px;height:18px;background:#fff;border-radius:50%;transition:.3s}
-  input:checked + .slider{background:var(--neon);box-shadow:0 0 8px var(--neon)}
-  input:checked + .slider:before{transform:translateX(22px)}
+  .switch{
+    position:relative;
+    display:inline-flex;
+    flex:0 0 44px;
+    width:44px;
+    height:24px;
+    vertical-align:middle;
+  }
+  .switch input{
+    position:absolute;
+    opacity:0;
+    width:0;
+    height:0;
+  }
+  .slider{
+    position:absolute;
+    inset:1px;
+    background:#3a4250;
+    border:1px solid rgba(148,163,184,.16);
+    border-radius:999px;
+    cursor:pointer;
+    transition:background .22s ease,border-color .22s ease,box-shadow .22s ease;
+  }
+  .slider:before{
+    content:"";
+    position:absolute;
+    left:2px;
+    top:2px;
+    width:18px;
+    height:18px;
+    background:#fff;
+    border-radius:50%;
+    box-shadow:0 1px 4px rgba(0,0,0,.28);
+    transition:transform .22s ease;
+  }
+  input:checked + .slider{
+    background:linear-gradient(135deg,#4f7cff,#6b8dff);
+    border-color:rgba(219,234,254,.36);
+    box-shadow:0 0 0 3px rgba(79,124,255,.16);
+  }
+  input:checked + .slider:before{transform:translateX(18px)}
+  .switch input:focus-visible + .slider{outline:2px solid rgba(219,234,254,.7);outline-offset:2px}
   button{
     padding:8px 12px;font-size:14px;border:1px solid var(--neon);
     border-radius:8px;background:transparent;color:var(--light);cursor:pointer;transition:.25s
@@ -40,7 +76,7 @@
     width:100%;
     accent-color:var(--neon);
   }
-  label.row{display:flex;align-items:center;gap:10px}
+  label.row{display:flex;align-items:center;gap:10px;min-height:28px;padding-right:2px}
   label.row > span{flex:1 1 auto;min-width:110px}
   label.row > .switch,
   label.row > select,
@@ -82,56 +118,175 @@
   .font-panel{
     display:flex;
     flex-direction:column;
-    gap:8px;
-    padding:10px;
-    border:1px solid #1f6feb;
-    border-radius:12px;
-    background:#111826;
-    box-shadow:0 0 10px rgba(79,124,255,.16);
+    gap:10px;
+    padding:12px;
+    border:1px solid rgba(148,163,184,.24);
+    border-radius:16px;
+    background:linear-gradient(180deg, rgba(17,24,39,.98), rgba(15,23,42,.94));
+    box-shadow:0 12px 28px rgba(0,0,0,.24), inset 0 1px 0 rgba(255,255,255,.04);
   }
   .font-panel-head{
     display:flex;
     justify-content:space-between;
     align-items:center;
+    gap:10px;
+    min-width:0;
+  }
+  .font-brand{
+    display:flex;
+    align-items:center;
+    gap:9px;
+    min-width:0;
+  }
+  .font-mark{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    flex:0 0 auto;
+    width:30px;
+    height:30px;
+    border-radius:10px;
+    background:#f8fafc;
+    color:#0f172a;
+    font-size:13px;
+    font-weight:800;
+    letter-spacing:-.04em;
+  }
+  .font-title-stack{
+    display:flex;
+    flex-direction:column;
+    gap:1px;
+    min-width:0;
+  }
+  .font-title-stack strong{
+    color:#f8fafc;
+    font-size:13px;
+    font-weight:800;
+    letter-spacing:-.02em;
+    line-height:1.1;
+    white-space:nowrap;
+  }
+  .font-title-stack span{
+    color:#94a3b8;
+    font-size:10.5px;
+    line-height:1.1;
+    white-space:nowrap;
+  }
+  .font-link{
+    flex:0 0 auto;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    height:26px;
+    padding:0 9px;
+    border:1px solid rgba(148,163,184,.28);
+    border-radius:999px;
+    color:#dbeafe;
+    background:rgba(15,23,42,.72);
+    text-decoration:none;
+    font-size:10.5px;
+    font-weight:700;
+    letter-spacing:.01em;
+    white-space:nowrap;
+  }
+  .font-link:hover{border-color:rgba(219,234,254,.5);background:rgba(30,41,59,.86)}
+  .font-field{
+    display:grid;
+    grid-template-columns:54px minmax(0,1fr);
+    align-items:center;
     gap:8px;
   }
-  .font-panel-head strong{font-size:13px;color:#f0f6fc}
-  .font-link{font-size:11px;color:#9ecbff;text-decoration:none}
-  .font-link:hover{text-decoration:underline}
+  .font-field label,
+  .font-size-row label{
+    color:#94a3b8;
+    font-size:11px;
+    font-weight:750;
+    letter-spacing:.02em;
+    white-space:nowrap;
+  }
   .font-select{
     width:100%;
-    min-height:34px;
+    min-width:0;
+    height:36px;
+    padding:0 30px 0 10px;
+    border:1px solid rgba(148,163,184,.26);
+    border-radius:10px;
+    background:#0b1120;
+    color:#f8fafc;
+    font-size:13px;
+    font-weight:650;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
   }
   .font-custom{
     display:none;
     width:100%;
-    padding:8px 10px;
+    min-width:0;
+    height:36px;
+    padding:0 10px;
     font-size:13px;
-    border:1px solid #444;
-    border-radius:8px;
-    background:#222;
+    border:1px solid rgba(148,163,184,.26);
+    border-radius:10px;
+    background:#0b1120;
     color:var(--light);
   }
-  .font-apply-row{
+  .font-custom::placeholder{color:#64748b}
+  .font-select:focus,
+  .font-custom:focus{
+    outline:2px solid rgba(79,124,255,.55);
+    outline-offset:1px;
+  }
+  .font-toggle-row{
     display:flex;
     justify-content:space-between;
     align-items:center;
-    gap:8px;
+    gap:12px;
+    min-width:0;
+    padding:9px 8px 9px 10px;
+    border:1px solid rgba(148,163,184,.18);
+    border-radius:12px;
+    background:rgba(15,23,42,.64);
   }
-  .font-apply-row span{font-size:12px;color:#c9d1d9}
+  .font-toggle-copy{
+    display:flex;
+    flex-direction:column;
+    gap:2px;
+    min-width:0;
+  }
+  .font-toggle-copy span{
+    color:#e5eefb;
+    font-size:12px;
+    font-weight:760;
+    line-height:1.15;
+    white-space:nowrap;
+  }
+  .font-toggle-copy small{
+    display:block;
+    max-width:210px;
+    color:#94a3b8;
+    font-size:10.5px;
+    line-height:1.2;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+  .font-toggle-row > .switch{margin-left:auto}
   .font-size-row{
     display:grid;
-    grid-template-columns:auto 1fr auto;
+    grid-template-columns:54px minmax(0,1fr) 44px;
     align-items:center;
     gap:8px;
   }
-  .font-size-row span,
+  .font-size-row input[type="range"]{width:100%;min-width:0}
   .font-scale-value{
-    font-size:12px;
-    color:#c9d1d9;
+    color:#e5eefb;
+    font-size:11px;
+    font-weight:800;
+    text-align:right;
     white-space:nowrap;
+    font-variant-numeric:tabular-nums;
   }
-  .font-size-row input[type="range"]{width:100%}
 
 
   ul#keywordList,
@@ -291,6 +446,59 @@
     color:#93a4bd;
     font-size:11px;
   }
+
+  .theme-panel{
+    display:flex;
+    align-items:center;
+    gap:12px;
+    min-width:0;
+    padding:12px 12px;
+    border:1px solid rgba(148,163,184,.18);
+    border-radius:16px;
+    background:linear-gradient(145deg,rgba(15,23,42,.88),rgba(2,6,23,.72));
+    box-shadow:0 12px 28px rgba(0,0,0,.22),inset 0 1px 0 rgba(255,255,255,.04);
+  }
+  .theme-mark{
+    flex:0 0 34px;
+    width:34px;
+    height:34px;
+    border-radius:12px;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    background:rgba(79,124,255,.18);
+    color:#dbeafe;
+    font-size:17px;
+    font-weight:900;
+    line-height:1;
+  }
+  .theme-copy{
+    display:flex;
+    flex-direction:column;
+    gap:2px;
+    flex:1 1 auto;
+    min-width:0;
+  }
+  .theme-copy strong{
+    color:#f8fafc;
+    font-size:13px;
+    font-weight:820;
+    line-height:1.15;
+  }
+  .theme-copy small{
+    display:block;
+    max-width:170px;
+    color:#94a3b8;
+    font-size:11px;
+    line-height:1.25;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+  .theme-panel > .switch{margin-left:auto}
+
+  .switch.is-busy{opacity:.72;pointer-events:none}
+  .switch input:disabled + .slider{cursor:wait}
 </style>
 </head>
 <body>
@@ -299,24 +507,50 @@
 
   <div class="font-panel" aria-label="글꼴 설정">
     <div class="font-panel-head">
-      <strong>글꼴 · Noto Sans Korean 400</strong>
-      <a id="dcbGoogleFontsLink" class="font-link" href="https://fonts.google.com/?query=korean&amp;preview.script=Kore&amp;preview.lang=ko_Kore" target="_blank" rel="noopener noreferrer">Google Fonts</a>
+      <div class="font-brand">
+        <span class="font-mark">Aa</span>
+        <div class="font-title-stack">
+          <strong>Typography</strong>
+          <span>UI &amp; DC font</span>
+        </div>
+      </div>
+      <a id="dcbGoogleFontsLink" class="font-link" href="https://fonts.google.com/?query=korean&amp;preview.script=Kore&amp;preview.lang=ko_Kore" target="_blank" rel="noopener noreferrer">Fonts ↗</a>
     </div>
-    <select id="dcbFontFamily" class="font-select" title="사용할 글꼴 선택"></select>
-    <input id="dcbFontCustomFamily" class="font-custom" type="text" placeholder="예: Noto Sans KR, Gowun Dodum">
+
+    <div class="font-field">
+      <label for="dcbFontFamily">Family</label>
+      <select id="dcbFontFamily" class="font-select" title="사용할 글꼴 선택"></select>
+    </div>
+    <input id="dcbFontCustomFamily" class="font-custom" type="text" placeholder="Google Fonts family name">
+
     <div class="font-size-row" title="선택한 글꼴이 작거나 크게 보일 때 보정합니다">
-      <span>글자 크기</span>
+      <label for="dcbFontScale">Size</label>
       <input type="range" id="dcbFontScale" min="90" max="140" step="5" value="100">
       <output id="dcbFontScaleValue" class="font-scale-value">100%</output>
     </div>
-    <label class="font-apply-row">
-      <span>디시 페이지에도 적용</span>
-      <label class="switch">
+
+    <label class="font-toggle-row">
+      <span class="font-toggle-copy">
+        <span>Apply to DC</span>
+        <small id="dcbFontHint">Default · 100% · ON</small>
+      </span>
+      <span class="switch">
         <input type="checkbox" id="dcbApplyFontToDc">
         <span class="slider"></span>
-      </label>
+      </span>
     </label>
-    <p class="hint" id="dcbFontHint">기본값: Noto Sans Korean Regular 400</p>
+  </div>
+
+  <div class="theme-panel" aria-label="디시 공식 테마 설정">
+    <span class="theme-mark" aria-hidden="true">◐</span>
+    <span class="theme-copy">
+      <strong>다크모드</strong>
+      <small id="dcThemeStatus">Current · Light</small>
+    </span>
+    <label class="switch" title="디시인사이드 공식 다크모드 전환">
+      <input type="checkbox" id="dcOfficialDarkMode">
+      <span class="slider"></span>
+    </label>
   </div>
 
   <label class="row">
