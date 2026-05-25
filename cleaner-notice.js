@@ -14,13 +14,30 @@
   let observer = null;
   let scheduled = false;
 
-  function normalizeBadge(value) {
-    const text = String(value || "")
+  function normalizeText(value) {
+    return String(value || "")
       .normalize("NFKC")
-      .replace(/\s+/g, "")
+      .replace(/[\u200B-\u200D\uFEFF]/g, "")
+      .replace(/\s+/g, " ")
       .trim();
+  }
 
+  function normalizeBadge(value) {
+    const text = normalizeText(value).replace(/\s+/g, "");
     return /^[a-z]+$/i.test(text) ? text.toUpperCase() : text;
+  }
+
+  function firstToken(value) {
+    const token = normalizeText(value).split(" ")[0] || "";
+    return /^[a-z]+$/i.test(token) ? token.toUpperCase() : token;
+  }
+
+  function isTargetBadgeValue(value) {
+    const exact = normalizeBadge(value);
+    if (TARGET_BADGES.has(exact)) return true;
+
+    const token = firstToken(value);
+    return TARGET_BADGES.has(token);
   }
 
   function ensureStyle() {
@@ -47,15 +64,24 @@
     });
   }
 
+  function getOwnText(el) {
+    if (!el) return "";
+    return Array.from(el.childNodes)
+      .filter((node) => node.nodeType === Node.TEXT_NODE)
+      .map((node) => node.textContent)
+      .join(" ");
+  }
+
   function subjectMatches(subject) {
     if (!subject) return false;
 
     const candidates = [
+      getOwnText(subject),
       subject.querySelector("b")?.textContent,
       subject.textContent
     ];
 
-    return candidates.some((value) => TARGET_BADGES.has(normalizeBadge(value)));
+    return candidates.some(isTargetBadgeValue);
   }
 
   function findListContainer(subject) {
@@ -66,6 +92,42 @@
       ".gall_list tr, tr.ub-content, tr[data-no], tr.gall_tr, " +
       ".gall_list li.ub-content, .gall_list li.gall_item, li.ub-content, li.gall_item, .gall_item"
     );
+  }
+
+  function rowHasOperatorWriter(row) {
+    if (!row) return false;
+
+    const writer = row.querySelector(
+      ".gall_writer, .ub-writer, td.writer, .writer, [data-nick='운영자'], [data-uid='admin']"
+    );
+
+    const writerText = normalizeText(writer?.textContent || "");
+    if (writerText.includes("운영자")) return true;
+
+    // 일부 DCInside 특수 목록은 셀 클래스가 빠져도 첫 줄에 `... 운영자 날짜 ...` 형태로 렌더링된다.
+    return /(?:^|\s)운영자(?:\s|$)/.test(normalizeText(row.textContent));
+  }
+
+  function rowHasNoticeBadge(row) {
+    if (!row) return false;
+
+    const cells = Array.from(row.children).filter((el) => el.nodeType === 1);
+
+    const candidateCells = [
+      ...row.querySelectorAll(".gall_num, .gall_subject, .gall_tit, .ub-word"),
+      ...cells.slice(0, 3)
+    ];
+
+    return candidateCells.some((cell) => {
+      const values = [
+        getOwnText(cell),
+        cell.querySelector("b")?.textContent,
+        cell.firstElementChild?.textContent,
+        cell.textContent
+      ];
+
+      return values.some(isTargetBadgeValue);
+    });
   }
 
   function markBlocked(el) {
@@ -85,11 +147,25 @@
     ensureStyle();
     clearMarks();
 
+    // 1) 최신/특수 DCInside 목록 구조 대응:
+    //    - 일반/인물 갤러리: `번호` 칸에 설문/AD가 들어옴
+    //    - 마이너/미니 갤러리: `말머리` 또는 제목 쪽에 들어오는 변형 존재
+    //    - 운영자 작성 행만 숨겨서 일반 게시글 오탐을 줄임
+    document.querySelectorAll(
+      ".gall_list tbody tr, .gall_list tr, tr.ub-content, tr[data-no], tr.gall_tr"
+    ).forEach((row) => {
+      if (row.classList.contains(BLOCKED_CLASS)) return;
+      if (!rowHasOperatorWriter(row)) return;
+      if (!rowHasNoticeBadge(row)) return;
+      markBlocked(row);
+    });
+
+    // 2) 기존 방식 유지: 말머리 칸만 명확히 잡히는 구형 구조/리스트형 구조 대응
     document.querySelectorAll("td.gall_subject, .gall_subject").forEach((subject) => {
       if (!subjectMatches(subject)) return;
 
       const container = findListContainer(subject);
-      if (container) markBlocked(container);
+      if (container && rowHasOperatorWriter(container)) markBlocked(container);
     });
   }
 
