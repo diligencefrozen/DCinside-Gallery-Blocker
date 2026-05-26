@@ -152,7 +152,7 @@ const exportBtn = document.getElementById("exportBtn");
 const importBtn = document.getElementById("importBtn");
 const importFileEl = document.getElementById("importFile");
 
-const optionDcOfficialDarkModeToggle = document.getElementById("optionDcOfficialDarkMode");
+const optionDcDarkModeToggle = document.getElementById("optionDcDarkMode");
 const optionDcThemeStatus = document.getElementById("optionDcThemeStatus");
 const optionDcThemeRefresh = document.getElementById("optionDcThemeRefresh");
 
@@ -231,7 +231,7 @@ function updateBlockModeHint(mode) {
 }
 
 
-/* ───── 옵션 페이지: 디시 공식 다크모드 ───── */
+/* ───── 옵션 페이지: 다크모드 ───── */
 let optionDcThemeApplying = false;
 let optionDcThemeSeq = 0;
 let optionDcThemeOptimisticUntil = 0;
@@ -245,9 +245,9 @@ function setOptionDcThemeStatus(text, isError = false) {
 
 function setOptionDcThemeBusy(isBusy) {
   optionDcThemeApplying = !!isBusy;
-  if (!optionDcOfficialDarkModeToggle) return;
-  optionDcOfficialDarkModeToggle.disabled = !!isBusy;
-  const switchEl = optionDcOfficialDarkModeToggle.closest(".switch");
+  if (!optionDcDarkModeToggle) return;
+  optionDcDarkModeToggle.disabled = !!isBusy;
+  const switchEl = optionDcDarkModeToggle.closest(".switch");
   if (switchEl) switchEl.classList.toggle("is-busy", !!isBusy);
 }
 
@@ -263,7 +263,7 @@ function isDcInsideTab(tab) {
 function lockOptionDcThemeUi(state, duration = 2600) {
   optionDcThemeOptimisticState = !!state;
   optionDcThemeOptimisticUntil = Date.now() + duration;
-  setChecked(optionDcOfficialDarkModeToggle, optionDcThemeOptimisticState);
+  setChecked(optionDcDarkModeToggle, optionDcThemeOptimisticState);
 }
 
 function shouldKeepOptionDcThemeState() {
@@ -276,7 +276,7 @@ function clearOptionDcThemeLock() {
 }
 
 function applyOptionDcThemeUi(isDark) {
-  setChecked(optionDcOfficialDarkModeToggle, !!isDark);
+  setChecked(optionDcDarkModeToggle, !!isDark);
   setOptionDcThemeStatus(isDark ? "Current · Dark" : "Current · Light");
 }
 
@@ -326,7 +326,7 @@ function sendOptionDcThemeMessage(message, callback) {
 }
 
 function refreshOptionDcThemeState() {
-  if (!optionDcOfficialDarkModeToggle || optionDcThemeApplying || shouldKeepOptionDcThemeState()) return;
+  if (!optionDcDarkModeToggle || optionDcThemeApplying || shouldKeepOptionDcThemeState()) return;
 
   const seq = ++optionDcThemeSeq;
   setOptionDcThemeStatus("Checking DC tab…");
@@ -335,7 +335,7 @@ function refreshOptionDcThemeState() {
     if (seq !== optionDcThemeSeq || optionDcThemeApplying || shouldKeepOptionDcThemeState()) return;
 
     if (!state || !state.available) {
-      setChecked(optionDcOfficialDarkModeToggle, false);
+      setChecked(optionDcDarkModeToggle, false);
       setOptionDcThemeStatus("Open a DC tab first", false);
       return;
     }
@@ -1271,7 +1271,7 @@ if (noticeBlockEnabledEl) {
   });
 }
 
-/* ───── 이벤트: 디시 공식 다크모드 ───── */
+/* ───── 이벤트: 다크모드 ───── */
 if (optionDcThemeRefresh) {
   optionDcThemeRefresh.addEventListener("click", () => {
     clearOptionDcThemeLock();
@@ -1279,10 +1279,10 @@ if (optionDcThemeRefresh) {
   });
 }
 
-if (optionDcOfficialDarkModeToggle) {
-  optionDcOfficialDarkModeToggle.addEventListener("change", (e) => {
+if (optionDcDarkModeToggle) {
+  optionDcDarkModeToggle.addEventListener("change", (e) => {
     if (optionDcThemeApplying) {
-      if (shouldKeepOptionDcThemeState()) setChecked(optionDcOfficialDarkModeToggle, optionDcThemeOptimisticState);
+      if (shouldKeepOptionDcThemeState()) setChecked(optionDcDarkModeToggle, optionDcThemeOptimisticState);
       return;
     }
 
@@ -1306,7 +1306,7 @@ if (optionDcOfficialDarkModeToggle) {
         }
 
         clearOptionDcThemeLock();
-        setChecked(optionDcOfficialDarkModeToggle, false);
+        setChecked(optionDcDarkModeToggle, false);
         setOptionDcThemeStatus("Open a DC tab first", false);
         return;
       }
