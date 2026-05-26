@@ -4,8 +4,11 @@ cleaner-comment.js
 (() => {
   const SELS = [
     'div#focus_cmt.view_comment[tabindex]',
-    'a.reply_numbox',          
-    'span.reply_num'
+    'a.reply_numbox',
+    'span.reply_num',
+    'button.btn_cmt_delete',
+    '.btn_cmt_delete',
+    'input.article_chkbox'
   ];
   const STYLE_ID = 'dcb-hide-comment-style';
   const CSS_RULE = `${SELS.join(',')}{display:none !important}`;
