@@ -122,6 +122,13 @@
         transform:translateX(2px) !important;
       }
 
+      .cmt_nickbox .gall_writer.${WRITER_ENHANCED_CLASS} .btn_cmt_delete,
+      .cmt_info .gall_writer.${WRITER_ENHANCED_CLASS} .btn_cmt_delete,
+      .reply_info .gall_writer.${WRITER_ENHANCED_CLASS} .btn_cmt_delete,
+      .${COMMENT_HOST_CLASS} .btn_cmt_delete{
+        display:none !important;
+      }
+
       /*
         게시물 목록 작성자 칸 전용 최적화
         - addbox 18px 확보
