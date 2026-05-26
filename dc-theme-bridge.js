@@ -1,7 +1,7 @@
 /* dc-theme-bridge.js
- * Bridges the popup toggle to DCInside's official darkmode() switch.
- * Important: DCInside's darkmode() is a toggle function, not a setter.
- * This bridge detects the *visible* official theme state and clicks only when needed.
+ * Connects the extension toggle to the page theme switch.
+ * Important: the page theme function is a toggle, not a setter.
+ * This bridge detects the visible theme state and switches only when needed.
  */
 (() => {
   if (window.__DCB_DC_THEME_BRIDGE__) return;
@@ -23,7 +23,7 @@
       .toLowerCase();
   }
 
-  function getOfficialToggle() {
+  function getPageThemeToggle() {
     const selectors = [
       "a.darkonoff[onclick*='darkmode']",
       ".darkmodebox a[onclick*='darkmode']",
@@ -41,7 +41,7 @@
   }
 
   function getToggleHintState() {
-    const toggle = getOfficialToggle();
+    const toggle = getPageThemeToggle();
     if (!toggle) return null;
 
     const text = normalizeText([
@@ -56,7 +56,7 @@
       icon && icon.className
     ].join(" "));
 
-    // DC's official button usually describes the next action.
+    // The page theme button usually describes the next action.
     // "야간모드" / dark icon means the current page is still Light.
     if (/야간\s*모드|다크\s*모드|dark\s*mode|night\s*mode/.test(text)) {
       if (!/주간\s*모드|라이트\s*모드|light\s*mode|day\s*mode|해제|끄기|off/.test(text)) {
@@ -129,8 +129,8 @@
   }
 
   function readCurrentThemeState() {
-    // The visible page colors are the most reliable source after the official
-    // darkmode() toggle runs. Some DC pages keep the official button text as
+    // The visible page colors are the most reliable signal after toggling.
+    // Some pages keep the theme button text as
     // "야간모드" even after the page has visibly switched to Dark.
     const byVisibleColor = getVisibleThemeState();
     if (typeof byVisibleColor === "boolean") return byVisibleColor;
@@ -146,37 +146,37 @@
     return readCurrentThemeState();
   }
 
-  function canAttemptOfficialToggle() {
+  function canAttemptPageThemeToggle() {
     return /(^|\.)dcinside\.com$/i.test(location.hostname) && !!document.documentElement;
   }
 
-  function injectOfficialCallOnce() {
+  function injectPageThemeToggleOnce() {
     const script = document.createElement("script");
     script.textContent = `(() => { try { if (typeof darkmode === "function") darkmode(); } catch (e) {} })();`;
     (document.documentElement || document.head || document.body).appendChild(script);
     script.remove();
   }
 
-  function clickOfficialToggleOnce() {
-    const toggle = getOfficialToggle();
+  function clickPageThemeToggleOnce() {
+    const toggle = getPageThemeToggle();
     if (toggle) {
       toggle.click();
       return true;
     }
 
-    injectOfficialCallOnce();
+    injectPageThemeToggleOnce();
     return true;
   }
 
   function detectSource() {
     if (typeof getVisibleThemeState() === "boolean") return "visible-color";
-    if (typeof getToggleHintState() === "boolean") return "official-toggle";
+    if (typeof getToggleHintState() === "boolean") return "page-toggle";
     return "fallback-light";
   }
 
   function statePayload() {
     return {
-      available: !!getOfficialToggle() || canAttemptOfficialToggle(),
+      available: !!getPageThemeToggle() || canAttemptPageThemeToggle(),
       isDark: isDark(),
       isApplying: applying,
       source: detectSource(),
@@ -199,7 +199,7 @@
     const started = Date.now();
     while (Date.now() - started < timeout) {
       // Re-check actual rendered colors first. This prevents the popup toggle
-      // from bouncing back when the official button text lags behind.
+      // from bouncing back when the page button text lags behind.
       const byVisibleColor = getVisibleThemeState();
       if (typeof byVisibleColor === "boolean" && byVisibleColor === desired) return true;
 
@@ -228,7 +228,7 @@
       let clicked = false;
 
       if (before !== desired) {
-        clicked = clickOfficialToggleOnce();
+        clicked = clickPageThemeToggleOnce();
         await waitForDesiredState(desired);
       }
 
@@ -238,7 +238,7 @@
       payload.requestedState = desired;
       payload.clicked = clicked;
 
-      // If the official button label still reports the old state right after
+      // If the page button label still reports the old state right after
       // the click, keep the popup switch locked to the user's requested state.
       // The next popup open will re-read the actual rendered page state.
       if (clicked && payload.isDark !== desired) {
@@ -252,13 +252,13 @@
     }
   }
 
-  function syncManualOfficialToggle() {
+  function syncManualThemeToggle() {
     window.clearTimeout(manualSyncTimer);
     manualSyncTimer = window.setTimeout(rememberState, 120);
   }
 
   function observeThemeSignals() {
-    const observer = new MutationObserver(syncManualOfficialToggle);
+    const observer = new MutationObserver(syncManualThemeToggle);
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class", "style"] });
 
     if (document.body) {
