@@ -15,7 +15,7 @@ const delayNum = document.getElementById("delayNum");
 const delayRange = document.getElementById("delayRange");
 const openOptionsBtn = document.getElementById("openOptions");
 const compactListToggle = document.getElementById("compactListEnabled");
-const dcOfficialDarkModeToggle = document.getElementById("dcOfficialDarkMode");
+const dcDarkModeToggle = document.getElementById("dcDarkMode");
 const dcThemeStatus = document.getElementById("dcThemeStatus");
 
 const keywordBlockToggle = document.getElementById("keywordBlockEnabled");
@@ -202,7 +202,7 @@ function downloadJson(filename, data) {
 }
 
 
-/* ───────── 디시 공식 테마 브리지 ───────── */
+/* ───────── 다크모드 브리지 ───────── */
 let dcThemeApplying = false;
 let dcThemeRequestSeq = 0;
 let dcThemeOptimisticUntil = 0;
@@ -225,16 +225,16 @@ function setDcThemeStatus(text, isError = false) {
 
 function setDcThemeBusy(isBusy) {
   dcThemeApplying = !!isBusy;
-  if (!dcOfficialDarkModeToggle) return;
-  dcOfficialDarkModeToggle.disabled = !!isBusy;
-  const switchEl = dcOfficialDarkModeToggle.closest(".switch");
+  if (!dcDarkModeToggle) return;
+  dcDarkModeToggle.disabled = !!isBusy;
+  const switchEl = dcDarkModeToggle.closest(".switch");
   if (switchEl) switchEl.classList.toggle("is-busy", !!isBusy);
 }
 
 function lockDcThemeUi(state, duration = 1800) {
   dcThemeOptimisticState = !!state;
   dcThemeOptimisticUntil = Date.now() + duration;
-  setChecked(dcOfficialDarkModeToggle, dcThemeOptimisticState);
+  setChecked(dcDarkModeToggle, dcThemeOptimisticState);
 }
 
 function shouldKeepOptimisticThemeState() {
@@ -247,7 +247,7 @@ function clearDcThemeOptimisticLock() {
 }
 
 function applyDcThemeStateToUi(isDark) {
-  setChecked(dcOfficialDarkModeToggle, !!isDark);
+  setChecked(dcDarkModeToggle, !!isDark);
   setDcThemeStatus(isDark ? "Current · Dark" : "Current · Light");
 }
 
@@ -286,7 +286,7 @@ function clearLegacyDcThemePreference() {
 }
 
 function refreshDcThemeState() {
-  if (!dcOfficialDarkModeToggle || dcThemeApplying || shouldKeepOptimisticThemeState()) return;
+  if (!dcDarkModeToggle || dcThemeApplying || shouldKeepOptimisticThemeState()) return;
 
   const seq = ++dcThemeRequestSeq;
   setDcThemeStatus("Checking…");
@@ -295,7 +295,7 @@ function refreshDcThemeState() {
     if (seq !== dcThemeRequestSeq || dcThemeApplying || shouldKeepOptimisticThemeState()) return;
 
     if (!state || !state.available) {
-      setChecked(dcOfficialDarkModeToggle, false);
+      setChecked(dcDarkModeToggle, false);
       setDcThemeStatus("DC page only", false);
       return;
     }
@@ -629,7 +629,7 @@ chrome.storage.sync.get(DEFAULTS, (conf) => {
   setChecked(noticeBlockToggle, noticeBlockEnabled);
   setChecked(userMemoEnabledToggle, userMemoEnabled);
   setChecked(compactListToggle, compactListEnabled);
-  setChecked(dcOfficialDarkModeToggle, false);
+  setChecked(dcDarkModeToggle, false);
   clearLegacyDcThemePreference();
   refreshDcThemeState();
 });
@@ -643,10 +643,10 @@ if (toggle) {
 }
 
 
-if (dcOfficialDarkModeToggle) {
-  dcOfficialDarkModeToggle.onchange = (e) => {
+if (dcDarkModeToggle) {
+  dcDarkModeToggle.onchange = (e) => {
     if (dcThemeApplying) {
-      if (shouldKeepOptimisticThemeState()) setChecked(dcOfficialDarkModeToggle, dcThemeOptimisticState);
+      if (shouldKeepOptimisticThemeState()) setChecked(dcDarkModeToggle, dcThemeOptimisticState);
       return;
     }
 
@@ -654,7 +654,7 @@ if (dcOfficialDarkModeToggle) {
     const seq = ++dcThemeRequestSeq;
 
     // Optimistic lock: the page result is correct, so do not let a stale
-    // GET response or a late official-button hint bounce the switch back.
+    // GET response or a late page-button hint bounce the switch back.
     lockDcThemeUi(requested, 2600);
     setDcThemeBusy(true);
     setDcThemeStatus(requested ? "Switching to dark…" : "Switching to light…");
@@ -675,7 +675,7 @@ if (dcOfficialDarkModeToggle) {
         }
 
         clearDcThemeOptimisticLock();
-        setChecked(dcOfficialDarkModeToggle, false);
+        setChecked(dcDarkModeToggle, false);
         setDcThemeStatus(error ? "DC page only" : "DC page only", false);
         return;
       }
