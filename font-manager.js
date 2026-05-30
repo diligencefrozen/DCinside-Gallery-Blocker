@@ -125,6 +125,15 @@
       }
 
       ${scaleRule}
+
+      button.btn_cmt_delete,
+      .btn_cmt_delete {
+        font-size: 0 !important;
+        line-height: 0 !important;
+        text-indent: -9999px !important;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+      }
     `;
   }
 
