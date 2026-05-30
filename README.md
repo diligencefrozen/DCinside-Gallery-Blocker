@@ -2,12 +2,6 @@
 
   <img src="https://github.com/diligencefrozen/DCinside-Gallery-Blocker/blob/main/IntroducingDCB_final.png?raw=true" alt="DCinside Gallery Blocker" width="820">
 
-  <h1>DCinside Gallery Blocker</h1>
-
-  <p>
-    <strong>Block unwanted galleries, posts, comments, and users.</strong><br/>
-    Less noise. More focus.
-  </p>
 
   <p>
     <a href="https://chromewebstore.google.com/detail/fnfmdbldnhadkadklplhcjcojjiaopgg">
