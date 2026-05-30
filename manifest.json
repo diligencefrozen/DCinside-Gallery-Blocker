@@ -52,6 +52,18 @@
     {
       "matches": [
         "*://gall.dcinside.com/*",
+        "*://www.dcinside.com/*",
+        "*://search.dcinside.com/*"
+      ],
+      "js": [
+        "area-picker.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": true
+    },
+    {
+      "matches": [
+        "*://gall.dcinside.com/*",
         "*://www.dcinside.com/*"
       ],
       "js": [
@@ -68,6 +80,16 @@
         "access-guard.js"
       ],
       "run_at": "document_start",
+      "all_frames": false
+    },
+    {
+      "matches": [
+        "*://gall.dcinside.com/*"
+      ],
+      "js": [
+        "gallery-quick-block.js"
+      ],
+      "run_at": "document_end",
       "all_frames": false
     },
     {
