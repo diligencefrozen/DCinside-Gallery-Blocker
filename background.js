@@ -7,6 +7,7 @@ const MAIN_URL = "https://www.dcinside.com";
 const BUILTIN = ["dcbest"];             // 기본 차단: 실베
 const RULE_NS = 40_000;                 // DNR rule id namespace
 const RULE_MAX_OFFSET = 20_000;         // 이 확장프로그램이 쓰는 동적 규칙 범위
+const AREA_PICKER_MENU_ID = "dcb-area-picker-select";
 
 /* ───── 유틸 ───── */
 function norm(v) {
@@ -96,11 +97,29 @@ function showActionBadge(tabId, text) {
   }, 1100);
 }
 
-/* 이전 버전에서 생성된 우클릭 메뉴 제거 */
-function clearLegacyContextMenus() {
+/* 우클릭 메뉴 재구성 */
+function resetContextMenus() {
   try {
     if (!chrome.contextMenus?.removeAll) return;
-    chrome.contextMenus.removeAll(() => void chrome.runtime.lastError);
+
+    chrome.contextMenus.removeAll(() => {
+      void chrome.runtime.lastError;
+
+      try {
+        chrome.contextMenus.create({
+          id: AREA_PICKER_MENU_ID,
+          title: "🧹 이 영역 숨기기",
+          contexts: ["all"],
+          documentUrlPatterns: [
+            "*://gall.dcinside.com/*",
+            "*://www.dcinside.com/*",
+            "*://search.dcinside.com/*"
+          ]
+        }, () => void chrome.runtime.lastError);
+      } catch (_) {
+        // contextMenus 초기화 타이밍 문제는 핵심 차단 기능과 무관하므로 무시한다.
+      }
+    });
   } catch (_) {
     // contextMenus 권한/초기화 타이밍 문제는 차단 기능과 무관하므로 무시한다.
   }
@@ -108,7 +127,7 @@ function clearLegacyContextMenus() {
 
 /* ───── 설치/업데이트: 기본값 주입 ───── */
 chrome.runtime.onInstalled.addListener(async ({ reason }) => {
-  clearLegacyContextMenus();
+  resetContextMenus();
 
   if (reason === "install") {
     const seed = await chrome.storage.sync.get([
@@ -181,8 +200,8 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
   syncRules();
 });
 
-/* 서비스워커가 재시작될 때도 과거 메뉴가 남지 않도록 정리 */
-clearLegacyContextMenus();
+/* 서비스워커가 재시작될 때도 우클릭 메뉴를 안정적으로 재구성 */
+resetContextMenus();
 
 /* ───── DNR 규칙 생성 ───── */
 function makeRules(ids) {
@@ -362,6 +381,32 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     });
 
   return true;
+});
+
+/* ───── 우클릭 메뉴: 영역 숨기기 선택 ───── */
+chrome.contextMenus?.onClicked?.addListener((info, tab) => {
+  if (info.menuItemId !== AREA_PICKER_MENU_ID || !tab?.id) return;
+
+  const done = (res) => {
+    if (chrome.runtime.lastError) {
+      showActionBadge(tab.id, "?");
+      return;
+    }
+
+    if (res?.ok) {
+      showActionBadge(tab.id, "✔");
+    } else {
+      showActionBadge(tab.id, "!");
+    }
+  };
+
+  const message = { type: "dcb.areaPicker.blockContextTarget" };
+
+  if (typeof info.frameId === "number") {
+    chrome.tabs.sendMessage(tab.id, message, { frameId: info.frameId }, done);
+  } else {
+    chrome.tabs.sendMessage(tab.id, message, done);
+  }
 });
 
 /* 아이콘(툴바) 클릭 → 옵션 페이지
