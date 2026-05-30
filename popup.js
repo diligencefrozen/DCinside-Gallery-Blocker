@@ -3,6 +3,7 @@
 /* ───────── DOM ───────── */
 const toggle = document.getElementById("toggle");
 const blockModeSel = document.getElementById("blockMode");
+const quickBlockButtonPositionSel = document.getElementById("quickBlockButtonPosition");
 const blockModeHint = document.getElementById("blockModeHint");
 const hideCmtToggle = document.getElementById("hideComment");
 const hideImgCmtToggle = document.getElementById("hideImgComment");
@@ -17,6 +18,10 @@ const openOptionsBtn = document.getElementById("openOptions");
 const compactListToggle = document.getElementById("compactListEnabled");
 const dcDarkModeToggle = document.getElementById("dcDarkMode");
 const dcThemeStatus = document.getElementById("dcThemeStatus");
+const quickGalleryPanel = document.getElementById("quickGalleryPanel");
+const currentGalleryIdEl = document.getElementById("currentGalleryId");
+const blockCurrentGalleryBtn = document.getElementById("blockCurrentGalleryBtn");
+const blockCurrentGalleryStatus = document.getElementById("blockCurrentGalleryStatus");
 
 const keywordBlockToggle = document.getElementById("keywordBlockEnabled");
 const keywordInput = document.getElementById("keywordInput");
@@ -57,6 +62,7 @@ const DEFAULTS = {
   enabled: true,
   galleryBlockEnabled: undefined,
   blockMode: "smart",
+  quickBlockButtonPosition: "right-top",
   hideComment: false,
   hideImgComment: false,
   hideDccon: false,
@@ -92,6 +98,7 @@ const DEFAULTS = {
 
   userMemoEnabled: true,
   compactListEnabled: false,
+  blockedIds: [],
 
   dcbFontFamily: "Noto Sans KR",
   dcbFontCustomFamily: "",
@@ -112,6 +119,20 @@ function getGalleryBlockEnabled(conf = {}) {
   return typeof conf.galleryBlockEnabled === "boolean"
     ? conf.galleryBlockEnabled
     : !!conf.enabled;
+}
+
+const QUICK_BLOCK_POSITION_VALUES = new Set([
+  "right-top",
+  "right-middle",
+  "right-bottom",
+  "left-top",
+  "left-middle",
+  "left-bottom"
+]);
+
+function normalizeQuickBlockPosition(value) {
+  const key = String(value || "").trim().toLowerCase();
+  return QUICK_BLOCK_POSITION_VALUES.has(key) ? key : "right-top";
 }
 
 function lockDelay(disabled) {
@@ -199,6 +220,167 @@ function downloadJson(filename, data) {
   a.download = filename;
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1500);
+}
+
+function isDcInsideHost(hostname) {
+  const host = String(hostname || "").trim().toLowerCase();
+  return host === "dcinside.com" || host.endsWith(".dcinside.com");
+}
+
+function isPlainGalleryId(v) {
+  return /^[a-z0-9_-]+$/i.test(String(v || "").trim());
+}
+
+function normalizeGalleryId(input) {
+  const raw = String(input || "").trim();
+  if (!raw) return "";
+
+  if (/^id\s*=/i.test(raw)) {
+    return raw.replace(/^id\s*=\s*/i, "").split(/[&#?\s]/)[0].trim().toLowerCase();
+  }
+
+  if (isPlainGalleryId(raw)) {
+    return raw.toLowerCase();
+  }
+
+  try {
+    const url = new URL(raw);
+
+    if (!isDcInsideHost(url.hostname)) {
+      return "";
+    }
+
+    const qsId = url.searchParams.get("id");
+    if (qsId) return qsId.trim().toLowerCase();
+
+    const pathMatch = url.pathname.match(/^\/(?:mgallery|mini|person)\/([^/?#]+)/i);
+    if (pathMatch && pathMatch[1]) return pathMatch[1].trim().toLowerCase();
+
+    return "";
+  } catch (_) {
+    return raw
+      .toLowerCase()
+      .replace(/^id\s*=\s*/i, "")
+      .split(/[?#&\s]/)[0]
+      .trim();
+  }
+}
+
+function getBlockedGallerySet(blockedIds = []) {
+  const builtin = ["dcbest"];
+  const userIds = Array.isArray(blockedIds) ? blockedIds : [];
+
+  return new Set(
+    [...builtin, ...userIds]
+      .map(normalizeGalleryId)
+      .filter(Boolean)
+  );
+}
+
+let currentGalleryIdForPopup = "";
+
+function setQuickGalleryStatus(text, isError = false) {
+  if (!blockCurrentGalleryStatus) return;
+  blockCurrentGalleryStatus.textContent = text || "";
+  blockCurrentGalleryStatus.style.color = isError ? "#ffb4b4" : "#9dd6a5";
+}
+
+function setQuickGalleryButtonState({ gid = "", alreadyBlocked = false, isDcPage = false } = {}) {
+  currentGalleryIdForPopup = gid;
+
+  if (currentGalleryIdEl) {
+    currentGalleryIdEl.textContent = gid || "감지 안 됨";
+    currentGalleryIdEl.title = gid || "";
+  }
+
+  if (!blockCurrentGalleryBtn) return;
+
+  if (!gid) {
+    blockCurrentGalleryBtn.disabled = true;
+    blockCurrentGalleryBtn.textContent = "현재 갤러리 차단";
+    setQuickGalleryStatus(
+      isDcPage
+        ? "이 페이지에서는 갤러리 ID를 찾지 못했습니다."
+        : "갤러리 페이지에서 팝업을 열면 바로 차단할 수 있습니다.",
+      isDcPage
+    );
+    return;
+  }
+
+  if (alreadyBlocked) {
+    blockCurrentGalleryBtn.disabled = true;
+    blockCurrentGalleryBtn.textContent = "이미 차단됨";
+    setQuickGalleryStatus(`${gid} 갤러리는 이미 차단 목록에 있습니다.`);
+    return;
+  }
+
+  blockCurrentGalleryBtn.disabled = false;
+  blockCurrentGalleryBtn.textContent = "현재 갤러리 차단";
+  setQuickGalleryStatus(`ID를 찾을 필요 없이 ${gid} 갤러리를 바로 차단합니다.`);
+}
+
+function refreshQuickGalleryState() {
+  if (!quickGalleryPanel || !chrome.tabs || !chrome.tabs.query) return;
+
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    const tab = tabs && tabs[0];
+    const url = tab && tab.url ? String(tab.url) : "";
+    let isDcPage = false;
+
+    try {
+      isDcPage = isDcInsideHost(new URL(url).hostname);
+    } catch (_) {
+      isDcPage = false;
+    }
+
+    const gid = normalizeGalleryId(url);
+
+    if (!gid) {
+      setQuickGalleryButtonState({ gid: "", isDcPage });
+      return;
+    }
+
+    chrome.storage.sync.get({ blockedIds: [] }, ({ blockedIds }) => {
+      const blockedSet = getBlockedGallerySet(blockedIds);
+      setQuickGalleryButtonState({
+        gid,
+        alreadyBlocked: blockedSet.has(gid),
+        isDcPage
+      });
+    });
+  });
+}
+
+function addCurrentGalleryToBlocked() {
+  const gid = normalizeGalleryId(currentGalleryIdForPopup);
+  if (!gid || !blockCurrentGalleryBtn) return;
+
+  blockCurrentGalleryBtn.disabled = true;
+  setQuickGalleryStatus("차단 목록에 추가하는 중…");
+
+  chrome.storage.sync.get({ blockedIds: [] }, ({ blockedIds }) => {
+    const prev = Array.isArray(blockedIds) ? blockedIds : [];
+    const normalized = prev.map(normalizeGalleryId).filter(Boolean);
+    const blockedSet = getBlockedGallerySet(prev);
+
+    if (blockedSet.has(gid)) {
+      setQuickGalleryButtonState({ gid, alreadyBlocked: true, isDcPage: true });
+      return;
+    }
+
+    const next = Array.from(new Set([...normalized, gid]));
+
+    chrome.storage.sync.set({ blockedIds: next }, () => {
+      if (chrome.runtime.lastError) {
+        blockCurrentGalleryBtn.disabled = false;
+        setQuickGalleryStatus("저장 실패: 확장 프로그램 저장소 상태를 확인해 주세요.", true);
+        return;
+      }
+
+      setQuickGalleryButtonState({ gid, alreadyBlocked: true, isDcPage: true });
+      setQuickGalleryStatus(`${gid} 갤러리를 차단 목록에 추가했습니다.`);
+    });
+  });
 }
 
 
@@ -571,6 +753,7 @@ chrome.storage.sync.get(DEFAULTS, (conf) => {
     enabled,
     galleryBlockEnabled,
     blockMode,
+    quickBlockButtonPosition,
     hideComment,
     hideImgComment,
     hideDccon,
@@ -597,6 +780,7 @@ chrome.storage.sync.get(DEFAULTS, (conf) => {
 
   setChecked(toggle, getGalleryBlockEnabled({ galleryBlockEnabled, enabled }));
   setValue(blockModeSel, blockMode);
+  setValue(quickBlockButtonPositionSel, normalizeQuickBlockPosition(quickBlockButtonPosition));
   updateBlockModeHint(blockMode);
 
   setChecked(hideCmtToggle, hideComment);
@@ -632,6 +816,7 @@ chrome.storage.sync.get(DEFAULTS, (conf) => {
   setChecked(dcDarkModeToggle, false);
   clearLegacyDcThemePreference();
   refreshDcThemeState();
+  refreshQuickGalleryState();
 });
 
 /* ───────── 이벤트 바인딩 ───────── */
@@ -640,6 +825,10 @@ if (toggle) {
     const on = !!e.target.checked;
     chrome.storage.sync.set({ galleryBlockEnabled: on, enabled: on });
   };
+}
+
+if (blockCurrentGalleryBtn) {
+  blockCurrentGalleryBtn.addEventListener("click", addCurrentGalleryToBlocked);
 }
 
 
@@ -697,6 +886,14 @@ if (blockModeSel) {
     const mode = e.target.value;
     chrome.storage.sync.set({ blockMode: mode });
     updateBlockModeHint(mode);
+  };
+}
+
+if (quickBlockButtonPositionSel) {
+  quickBlockButtonPositionSel.onchange = (e) => {
+    chrome.storage.sync.set({
+      quickBlockButtonPosition: normalizeQuickBlockPosition(e.target.value)
+    });
   };
 }
 
@@ -923,6 +1120,7 @@ if (refreshUserMemoListBtn) {
 /* ───────── 스토리지 외부 변경 반영 ───────── */
 chrome.storage.onChanged.addListener((c, a) => {
   if (a === "sync") {
+    if (c.blockedIds) refreshQuickGalleryState();
     if (c.galleryBlockEnabled || c.enabled) {
       chrome.storage.sync.get({ galleryBlockEnabled: undefined, enabled: true }, (conf) => {
         setChecked(toggle, getGalleryBlockEnabled(conf));
@@ -931,6 +1129,9 @@ chrome.storage.onChanged.addListener((c, a) => {
     if (c.blockMode) {
       setValue(blockModeSel, c.blockMode.newValue);
       updateBlockModeHint(c.blockMode.newValue);
+    }
+    if (c.quickBlockButtonPosition) {
+      setValue(quickBlockButtonPositionSel, normalizeQuickBlockPosition(c.quickBlockButtonPosition.newValue));
     }
     if (c.hideComment) setChecked(hideCmtToggle, c.hideComment.newValue);
     if (c.hideImgComment) setChecked(hideImgCmtToggle, c.hideImgComment.newValue);
