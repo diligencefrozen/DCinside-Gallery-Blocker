@@ -115,6 +115,50 @@
   .btn-danger:hover{background:#ff6b6b;color:#000}
   .divider{height:1px;background:#1f2630;border:0;margin-top:-6px}
 
+  .quick-gallery-panel{
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+    padding:12px;
+    border:1px solid rgba(79,124,255,.34);
+    border-radius:14px;
+    background:linear-gradient(180deg, rgba(79,124,255,.13), rgba(79,124,255,.05));
+  }
+  .quick-gallery-head{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:8px;
+    font-size:13px;
+    font-weight:700;
+  }
+  .quick-gallery-id{
+    max-width:150px;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+    padding:2px 7px;
+    border-radius:999px;
+    background:#222b36;
+    color:#dbeafe;
+    font-size:11px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  .quick-gallery-panel button{
+    width:100%;
+    font-weight:700;
+  }
+  .quick-gallery-panel button:disabled{
+    cursor:not-allowed;
+    opacity:.55;
+  }
+  .quick-gallery-status{
+    min-height:16px;
+    color:#9dd6a5;
+    font-size:12px;
+    line-height:1.35;
+  }
+
   .font-panel{
     display:flex;
     flex-direction:column;
@@ -561,6 +605,17 @@
     </label>
   </label>
 
+
+
+  <div class="quick-gallery-panel" id="quickGalleryPanel" aria-label="현재 갤러리 빠른 차단">
+    <div class="quick-gallery-head">
+      <span>현재 갤러리</span>
+      <code class="quick-gallery-id" id="currentGalleryId">감지 안 됨</code>
+    </div>
+    <button id="blockCurrentGalleryBtn" type="button" disabled>현재 갤러리 차단</button>
+    <p class="quick-gallery-status" id="blockCurrentGalleryStatus">갤러리 페이지에서 팝업을 열면 바로 차단할 수 있습니다.</p>
+  </div>
+
   <label class="row">
     <span style="min-width:110px;">차단 방식</span>
     <select id="blockMode">
@@ -570,6 +625,19 @@
     </select>
   </label>
   <p class="hint" id="blockModeHint" style="font-size:11px;opacity:0.85"></p>
+
+  <label class="row compact-select-row">
+    <span style="min-width:110px;">페이지 버튼 위치</span>
+    <select id="quickBlockButtonPosition" title="디시인사이드 페이지 내부의 현재 갤러리 차단 버튼 위치">
+      <option value="right-top">우측 상단</option>
+      <option value="right-middle">우측 중간</option>
+      <option value="right-bottom">우측 하단</option>
+      <option value="left-top">좌측 상단</option>
+      <option value="left-middle">좌측 중간</option>
+      <option value="left-bottom">좌측 하단</option>
+    </select>
+  </label>
+  <p class="hint" style="font-size:11px;opacity:0.85;margin-top:-4px">우측/좌측 상단은 갤러리 제목 줄 안에 표시되고, 중간/하단은 미니 플로팅 버튼으로 표시됩니다.</p>
 
   <label class="row">
     <span style="min-width:110px;">일반 댓글 숨기기</span>
