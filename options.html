@@ -817,6 +817,21 @@
       </select>
     </div>
 
+    <div class="setting-row">
+      <div class="setting-copy">
+        <strong>페이지 버튼 위치</strong>
+        <span>우측/좌측 상단은 갤러리 제목 줄 안에 자연스럽게 표시되고, 중간/하단은 미니 플로팅 버튼으로 표시됩니다.</span>
+      </div>
+      <select id="quickBlockButtonPosition" title="현재 갤러리 차단 버튼 위치">
+        <option value="right-top">우측 상단</option>
+        <option value="right-middle">우측 중간</option>
+        <option value="right-bottom">우측 하단</option>
+        <option value="left-top">좌측 상단</option>
+        <option value="left-middle">좌측 중간</option>
+        <option value="left-bottom">좌측 하단</option>
+      </select>
+    </div>
+
     <div id="delaySection" class="stack">
       <h3 class="section-mini-title">리다이렉트 지연 시간</h3>
       <div class="range-row">
@@ -1113,6 +1128,7 @@
   <section class="card">
     <h2>🧹 메인 페이지 영역 숨기기</h2>
     <p class="note">디시인사이드 메인에서 제거할 영역을 지정하세요.<br>
+      페이지에서 원하는 영역을 우클릭한 뒤 <b>🧹 이 영역 숨기기</b>를 누르면 자동으로 추가됩니다.<br>
       예: <code>div.time_best</code></p>
     <div class="row">
       <input id="newSel" type="text" placeholder="CSS Selector">
@@ -1125,6 +1141,7 @@
   <section class="card">
     <h2>🧹 갤러리 페이지 영역 숨기기</h2>
     <p class="note">갤러리(게시글,목록) 페이지에서 숨길 영역을 지정하세요.<br>
+      페이지에서 원하는 영역을 우클릭한 뒤 <b>🧹 이 영역 숨기기</b>를 누르면 자동으로 추가됩니다.<br>
       예: <code>div.ad_bottom_list</code></p>
     <div class="row">
       <input id="newGallSel" type="text" placeholder="CSS Selector">
@@ -1137,6 +1154,7 @@
   <section class="card">
     <h2>🧹 검색 페이지 영역 숨기기</h2>
     <p class="note">검색 페이지에서 숨길 영역을 지정하세요.<br>
+      페이지에서 원하는 영역을 우클릭한 뒤 <b>🧹 이 영역 숨기기</b>를 누르면 자동으로 추가됩니다.<br>
       예: <code>div.integrate_cont.news_result</code></p>
     <div class="row">
       <input id="newSearchSel" type="text" placeholder="CSS Selector">
