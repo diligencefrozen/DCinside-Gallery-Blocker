@@ -48,7 +48,7 @@ const BACKUP_KEYS = [
   "blockedIds", "removeSelectors", "removeSelectorsGall", "removeSelectorsSearch",
   "userBlockEnabled", "blockedUids", "hideComment", "hideImgComment", "hideDccon",
   "hideMainEnabled", "hideGallEnabled", "hideSearchEnabled",
-  "enabled", "galleryBlockEnabled", "blockMode", "autoRefreshEnabled",
+  "enabled", "galleryBlockEnabled", "blockMode", "quickBlockButtonPosition", "quickBlockButtonPositionSavedAt", "autoRefreshEnabled",
   "autoRefreshInterval", "delay", "showUidBadge", "linkWarnEnabled", "hideDCGray",
   "previewEnabled", "hideAnonymousEnabled", "gamemecaBlockEnabled", "doryBlockEnabled", "noticeBlockEnabled", "compactListEnabled",
   "keywordBlockEnabled", "blockedKeywords", "keywordBlockTargets",
@@ -72,6 +72,8 @@ const BACKUP_DEFAULTS = {
   enabled: true,
   galleryBlockEnabled: undefined,
   blockMode: "smart",
+  quickBlockButtonPosition: "right-top",
+  quickBlockButtonPositionSavedAt: 0,
   autoRefreshEnabled: false,
   autoRefreshInterval: 60,
   delay: 5,
@@ -125,6 +127,7 @@ const uidListEl = document.getElementById("uidList");
 
 const galleryBlockEnabledEl = document.getElementById("galleryBlockEnabled");
 const blockModeEl = document.getElementById("blockMode");
+const quickBlockButtonPositionEl = document.getElementById("quickBlockButtonPosition");
 const blockModeHintEl = document.getElementById("blockModeHint");
 const delayNumEl = document.getElementById("delayNum");
 const delayRangeEl = document.getElementById("delayRange");
@@ -199,6 +202,106 @@ function getGalleryBlockEnabled(conf = {}) {
   return typeof conf.galleryBlockEnabled === "boolean"
     ? conf.galleryBlockEnabled
     : !!conf.enabled;
+}
+
+const QUICK_BLOCK_POSITION_VALUES = new Set([
+  "right-top",
+  "right-middle",
+  "right-bottom",
+  "left-top",
+  "left-middle",
+  "left-bottom"
+]);
+
+const QUICK_BLOCK_POSITION_KEY = "quickBlockButtonPosition";
+const QUICK_BLOCK_POSITION_SAVED_AT_KEY = "quickBlockButtonPositionSavedAt";
+
+function normalizeQuickBlockPosition(value) {
+  const key = String(value || "").trim().toLowerCase();
+  return QUICK_BLOCK_POSITION_VALUES.has(key) ? key : "right-top";
+}
+
+function quickBlockPositionTimestamp(value) {
+  const n = Number(value || 0);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function pickQuickBlockPosition(syncConf = {}, localConf = {}) {
+  const syncPos = normalizeQuickBlockPosition(syncConf[QUICK_BLOCK_POSITION_KEY]);
+  const localRaw = String(localConf[QUICK_BLOCK_POSITION_KEY] || "").trim();
+  const localValid = QUICK_BLOCK_POSITION_VALUES.has(localRaw.toLowerCase());
+  const localPos = localValid ? normalizeQuickBlockPosition(localRaw) : "";
+  const syncAt = quickBlockPositionTimestamp(syncConf[QUICK_BLOCK_POSITION_SAVED_AT_KEY]);
+  const localAt = quickBlockPositionTimestamp(localConf[QUICK_BLOCK_POSITION_SAVED_AT_KEY]);
+
+  if (localPos && localAt > syncAt) return localPos;
+  return syncPos || localPos || "right-top";
+}
+
+function findGalleryTabs(callback) {
+  if (!chrome.tabs || !chrome.tabs.query) {
+    callback([]);
+    return;
+  }
+
+  chrome.tabs.query({ url: "*://gall.dcinside.com/*" }, (tabs) => {
+    if (chrome.runtime.lastError) {
+      callback([]);
+      return;
+    }
+    callback(Array.isArray(tabs) ? tabs : []);
+  });
+}
+
+function broadcastQuickBlockPosition(position) {
+  if (!chrome.tabs || !chrome.tabs.sendMessage) return;
+
+  findGalleryTabs((tabs) => {
+    tabs.forEach((tab) => {
+      if (!tab?.id) return;
+      chrome.tabs.sendMessage(tab.id, {
+        type: "dcb.quickBlock.setPosition",
+        position
+      }, () => void chrome.runtime.lastError);
+    });
+  });
+}
+
+function saveQuickBlockButtonPosition(value) {
+  const position = normalizeQuickBlockPosition(value);
+  const patch = {
+    [QUICK_BLOCK_POSITION_KEY]: position,
+    [QUICK_BLOCK_POSITION_SAVED_AT_KEY]: Date.now()
+  };
+
+  setValue(quickBlockButtonPositionEl, position);
+  chrome.storage.sync.set(patch);
+  if (chrome.storage.local) chrome.storage.local.set(patch);
+  broadcastQuickBlockPosition(position);
+}
+
+function refreshQuickBlockButtonPositionControl() {
+  if (!quickBlockButtonPositionEl) return;
+
+  const syncDefaults = {
+    [QUICK_BLOCK_POSITION_KEY]: "right-top",
+    [QUICK_BLOCK_POSITION_SAVED_AT_KEY]: 0
+  };
+  const localDefaults = {
+    [QUICK_BLOCK_POSITION_KEY]: "",
+    [QUICK_BLOCK_POSITION_SAVED_AT_KEY]: 0
+  };
+
+  chrome.storage.sync.get(syncDefaults, (syncConf = {}) => {
+    if (!chrome.storage.local) {
+      setValue(quickBlockButtonPositionEl, normalizeQuickBlockPosition(syncConf[QUICK_BLOCK_POSITION_KEY]));
+      return;
+    }
+
+    chrome.storage.local.get(localDefaults, (localConf = {}) => {
+      setValue(quickBlockButtonPositionEl, pickQuickBlockPosition(syncConf, localConf));
+    });
+  });
 }
 
 function lockDelay(disabled) {
@@ -395,6 +498,16 @@ function sanitizeImport(raw) {
     }
   });
 
+  if (Object.prototype.hasOwnProperty.call(patch, QUICK_BLOCK_POSITION_KEY)) {
+    patch[QUICK_BLOCK_POSITION_KEY] = normalizeQuickBlockPosition(patch[QUICK_BLOCK_POSITION_KEY]);
+
+    if (Object.prototype.hasOwnProperty.call(patch, QUICK_BLOCK_POSITION_SAVED_AT_KEY)) {
+      patch[QUICK_BLOCK_POSITION_SAVED_AT_KEY] = quickBlockPositionTimestamp(patch[QUICK_BLOCK_POSITION_SAVED_AT_KEY]);
+    } else {
+      patch[QUICK_BLOCK_POSITION_SAVED_AT_KEY] = Date.now();
+    }
+  }
+
   if (!Object.keys(patch).length) throw new Error("empty");
 
   return patch;
@@ -415,16 +528,46 @@ function downloadJson(filename, data) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+function buildBackupSnapshot(syncSnapshot = {}, localSnapshot = {}) {
+  const snapshot = { ...BACKUP_DEFAULTS, ...syncSnapshot };
+  const localPos = String(localSnapshot[QUICK_BLOCK_POSITION_KEY] || "").trim();
+  const hasLocalQuickBlockPosition = QUICK_BLOCK_POSITION_VALUES.has(localPos.toLowerCase());
+
+  if (hasLocalQuickBlockPosition || Object.prototype.hasOwnProperty.call(syncSnapshot, QUICK_BLOCK_POSITION_KEY)) {
+    const syncAt = quickBlockPositionTimestamp(syncSnapshot[QUICK_BLOCK_POSITION_SAVED_AT_KEY]);
+    const localAt = quickBlockPositionTimestamp(localSnapshot[QUICK_BLOCK_POSITION_SAVED_AT_KEY]);
+    const position = pickQuickBlockPosition(syncSnapshot, localSnapshot);
+
+    snapshot[QUICK_BLOCK_POSITION_KEY] = position;
+    snapshot[QUICK_BLOCK_POSITION_SAVED_AT_KEY] = Math.max(syncAt, localAt, 0);
+  }
+
+  return snapshot;
+}
+
 function exportSettings() {
-  chrome.storage.sync.get(BACKUP_DEFAULTS, snapshot => {
-    const payload = {
-      version: 1,
-      exportedAt: new Date().toISOString(),
-      data: snapshot
+  chrome.storage.sync.get(BACKUP_DEFAULTS, syncSnapshot => {
+    const createPayload = (localSnapshot = {}) => {
+      const snapshot = buildBackupSnapshot(syncSnapshot, localSnapshot);
+      const payload = {
+        version: 2,
+        exportedAt: new Date().toISOString(),
+        data: snapshot
+      };
+
+      const ts = new Date().toISOString().replace(/[:.]/g, "-");
+      downloadJson(`dcb-settings-${ts}.json`, payload);
     };
 
-    const ts = new Date().toISOString().replace(/[:.]/g, "-");
-    downloadJson(`dcb-settings-${ts}.json`, payload);
+    if (!chrome.storage.local) {
+      createPayload({});
+      return;
+    }
+
+    chrome.storage.local.get({
+      [QUICK_BLOCK_POSITION_KEY]: "",
+      [QUICK_BLOCK_POSITION_SAVED_AT_KEY]: 0
+    }, createPayload);
   });
 }
 
@@ -437,10 +580,31 @@ function importSettingsFromFile(file) {
     try {
       const parsed = JSON.parse(reader.result);
       const patch = sanitizeImport(parsed);
+      const quickBlockPatch = {};
 
-      chrome.storage.sync.set(patch, () => {
+      if (Object.prototype.hasOwnProperty.call(patch, QUICK_BLOCK_POSITION_KEY)) {
+        quickBlockPatch[QUICK_BLOCK_POSITION_KEY] = patch[QUICK_BLOCK_POSITION_KEY];
+        quickBlockPatch[QUICK_BLOCK_POSITION_SAVED_AT_KEY] = quickBlockPositionTimestamp(
+          patch[QUICK_BLOCK_POSITION_SAVED_AT_KEY]
+        ) || Date.now();
+      }
+
+      const finishImport = () => {
+        if (quickBlockPatch[QUICK_BLOCK_POSITION_KEY]) {
+          broadcastQuickBlockPosition(quickBlockPatch[QUICK_BLOCK_POSITION_KEY]);
+        }
+
         alert("백업을 불러왔습니다. 페이지를 새로고침합니다.");
         location.reload();
+      };
+
+      chrome.storage.sync.set(patch, () => {
+        if (chrome.storage.local && Object.keys(quickBlockPatch).length) {
+          chrome.storage.local.set(quickBlockPatch, finishImport);
+          return;
+        }
+
+        finishImport();
       });
     } catch (err) {
       console.error("[DCB] backup import failed", err);
@@ -1164,6 +1328,12 @@ if (blockModeEl) {
   });
 }
 
+if (quickBlockButtonPositionEl) {
+  const onQuickBlockPositionInput = (e) => saveQuickBlockButtonPosition(e.target.value);
+  quickBlockButtonPositionEl.addEventListener("change", onQuickBlockPositionInput);
+  quickBlockButtonPositionEl.addEventListener("input", onQuickBlockPositionInput);
+}
+
 if (delayNumEl) {
   delayNumEl.addEventListener("input", (e) => updateDelay(e.target.value));
 }
@@ -1394,6 +1564,8 @@ chrome.storage.sync.get(
     enabled: true,
     galleryBlockEnabled: undefined,
     blockMode: "smart",
+    quickBlockButtonPosition: "right-top",
+    quickBlockButtonPositionSavedAt: 0,
     autoRefreshEnabled: false,
     autoRefreshInterval: 60,
     delay: 5,
@@ -1430,6 +1602,7 @@ chrome.storage.sync.get(
     enabled,
     galleryBlockEnabled,
     blockMode,
+    quickBlockButtonPosition,
     autoRefreshEnabled,
     autoRefreshInterval,
     delay,
@@ -1473,6 +1646,8 @@ chrome.storage.sync.get(
 
     setChecked(galleryBlockEnabledEl, getGalleryBlockEnabled({ galleryBlockEnabled, enabled }));
     setValue(blockModeEl, blockMode || "smart");
+    setValue(quickBlockButtonPositionEl, normalizeQuickBlockPosition(quickBlockButtonPosition));
+    refreshQuickBlockButtonPositionControl();
     updateBlockModeHint(blockMode || "smart");
     setChecked(autoRefreshEnabledEl, autoRefreshEnabled);
     setValue(autoRefreshIntervalNumEl, autoRefreshInterval);
@@ -1549,6 +1724,10 @@ chrome.storage.onChanged.addListener((changes, area) => {
       updateBlockModeHint(changes.blockMode.newValue || "smart");
     }
 
+    if (changes.quickBlockButtonPosition || changes.quickBlockButtonPositionSavedAt) {
+      refreshQuickBlockButtonPositionControl();
+    }
+
     if (changes.delay) {
       setValue(delayNumEl, changes.delay.newValue);
       setValue(delayRangeEl, changes.delay.newValue);
@@ -1616,7 +1795,12 @@ chrome.storage.onChanged.addListener((changes, area) => {
     }
   }
 
-  if (area === "local" && changes.userMemos) {
-    renderMemoList();
+  if (area === "local") {
+    if (changes.quickBlockButtonPosition || changes.quickBlockButtonPositionSavedAt) {
+      refreshQuickBlockButtonPositionControl();
+    }
+    if (changes.userMemos) {
+      renderMemoList();
+    }
   }
 });
