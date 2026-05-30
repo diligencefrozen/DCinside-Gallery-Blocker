@@ -15,12 +15,6 @@
     </a>
   </p>
 
-  <p>
-    <a href="https://chromewebstore.google.com/detail/fnfmdbldnhadkadklplhcjcojjiaopgg">
-      <strong>Install from the Chrome Web Store →</strong>
-    </a>
-  </p>
-
 </div>
 
 ---
