@@ -266,15 +266,33 @@ function normalizeGalleryId(input) {
   }
 }
 
-function getBlockedGallerySet(blockedIds = []) {
-  const builtin = ["dcbest"];
-  const userIds = Array.isArray(blockedIds) ? blockedIds : [];
+const BUILTIN_GALLERY_IDS = ["dcbest"];
 
-  return new Set(
-    [...builtin, ...userIds]
-      .map(normalizeGalleryId)
-      .filter(Boolean)
-  );
+function getUserBlockedGallerySet(blockedIds = []) {
+  const userIds = Array.isArray(blockedIds) ? blockedIds : [];
+  return new Set(userIds.map(normalizeGalleryId).filter(Boolean));
+}
+
+function getBuiltinGallerySet() {
+  return new Set(BUILTIN_GALLERY_IDS.map(normalizeGalleryId).filter(Boolean));
+}
+
+function getBlockedGallerySet(blockedIds = []) {
+  return new Set([
+    ...getBuiltinGallerySet(),
+    ...getUserBlockedGallerySet(blockedIds)
+  ]);
+}
+
+function getGalleryBlockState(gid, blockedIds = []) {
+  const id = normalizeGalleryId(gid);
+  const userBlocked = getUserBlockedGallerySet(blockedIds).has(id);
+  const builtinBlocked = getBuiltinGallerySet().has(id);
+  return {
+    userBlocked,
+    builtinBlocked,
+    blocked: userBlocked || builtinBlocked
+  };
 }
 
 let currentGalleryIdForPopup = "";
@@ -285,7 +303,7 @@ function setQuickGalleryStatus(text, isError = false) {
   blockCurrentGalleryStatus.style.color = isError ? "#ffb4b4" : "#9dd6a5";
 }
 
-function setQuickGalleryButtonState({ gid = "", alreadyBlocked = false, isDcPage = false } = {}) {
+function setQuickGalleryButtonState({ gid = "", userBlocked = false, builtinBlocked = false, isDcPage = false } = {}) {
   currentGalleryIdForPopup = gid;
 
   if (currentGalleryIdEl) {
@@ -307,10 +325,17 @@ function setQuickGalleryButtonState({ gid = "", alreadyBlocked = false, isDcPage
     return;
   }
 
-  if (alreadyBlocked) {
+  if (userBlocked) {
+    blockCurrentGalleryBtn.disabled = false;
+    blockCurrentGalleryBtn.textContent = "차단 해제";
+    setQuickGalleryStatus(`${gid} 갤러리가 차단되어 있습니다. 한 번 더 누르면 해제됩니다.`);
+    return;
+  }
+
+  if (builtinBlocked) {
     blockCurrentGalleryBtn.disabled = true;
-    blockCurrentGalleryBtn.textContent = "이미 차단됨";
-    setQuickGalleryStatus(`${gid} 갤러리는 이미 차단 목록에 있습니다.`);
+    blockCurrentGalleryBtn.textContent = "기본 차단됨";
+    setQuickGalleryStatus(`${gid} 갤러리는 기본 보호 목록에 포함되어 있습니다.`);
     return;
   }
 
@@ -341,30 +366,50 @@ function refreshQuickGalleryState() {
     }
 
     chrome.storage.sync.get({ blockedIds: [] }, ({ blockedIds }) => {
-      const blockedSet = getBlockedGallerySet(blockedIds);
       setQuickGalleryButtonState({
         gid,
-        alreadyBlocked: blockedSet.has(gid),
+        ...getGalleryBlockState(gid, blockedIds),
         isDcPage
       });
     });
   });
 }
 
-function addCurrentGalleryToBlocked() {
+function toggleCurrentGalleryBlocked() {
   const gid = normalizeGalleryId(currentGalleryIdForPopup);
   if (!gid || !blockCurrentGalleryBtn) return;
 
   blockCurrentGalleryBtn.disabled = true;
-  setQuickGalleryStatus("차단 목록에 추가하는 중…");
+  setQuickGalleryStatus("처리 중…");
 
   chrome.storage.sync.get({ blockedIds: [] }, ({ blockedIds }) => {
     const prev = Array.isArray(blockedIds) ? blockedIds : [];
     const normalized = prev.map(normalizeGalleryId).filter(Boolean);
-    const blockedSet = getBlockedGallerySet(prev);
+    const state = getGalleryBlockState(gid, prev);
 
-    if (blockedSet.has(gid)) {
-      setQuickGalleryButtonState({ gid, alreadyBlocked: true, isDcPage: true });
+    if (state.userBlocked) {
+      const next = normalized.filter((blockedId) => blockedId !== gid);
+
+      chrome.storage.sync.set({ blockedIds: next }, () => {
+        if (chrome.runtime.lastError) {
+          blockCurrentGalleryBtn.disabled = false;
+          setQuickGalleryStatus("저장 실패: 확장 프로그램 저장소 상태를 확인해 주세요.", true);
+          return;
+        }
+
+        setQuickGalleryButtonState({
+          gid,
+          userBlocked: false,
+          builtinBlocked: state.builtinBlocked,
+          isDcPage: true
+        });
+        setQuickGalleryStatus(`${gid} 갤러리 차단을 해제했습니다.`);
+      });
+      return;
+    }
+
+    if (state.builtinBlocked) {
+      setQuickGalleryButtonState({ gid, userBlocked: false, builtinBlocked: true, isDcPage: true });
       return;
     }
 
@@ -377,7 +422,7 @@ function addCurrentGalleryToBlocked() {
         return;
       }
 
-      setQuickGalleryButtonState({ gid, alreadyBlocked: true, isDcPage: true });
+      setQuickGalleryButtonState({ gid, userBlocked: true, builtinBlocked: false, isDcPage: true });
       setQuickGalleryStatus(`${gid} 갤러리를 차단 목록에 추가했습니다.`);
     });
   });
@@ -828,7 +873,7 @@ if (toggle) {
 }
 
 if (blockCurrentGalleryBtn) {
-  blockCurrentGalleryBtn.addEventListener("click", addCurrentGalleryToBlocked);
+  blockCurrentGalleryBtn.addEventListener("click", toggleCurrentGalleryBlocked);
 }
 
 
