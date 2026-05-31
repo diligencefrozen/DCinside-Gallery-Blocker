@@ -24,7 +24,8 @@
     enabled: true,
     blockMode: "smart",
     delay: 0,
-    blockedSet: new Set(BUILTIN)
+    blockedSet: new Set(BUILTIN),
+    userBlockedSet: new Set()
   };
 
   let redirectTimer = null;
@@ -98,15 +99,17 @@
     }
   }
 
-  function getAllBlockedGalleryIds(blockedIds) {
-    const userIds = Array.isArray(blockedIds)
+  function getUserBlockedGalleryIds(blockedIds) {
+    return Array.isArray(blockedIds)
       ? blockedIds.map(extractGalleryId).filter(Boolean)
       : [];
+  }
 
+  function getAllBlockedGalleryIds(blockedIds) {
     return Array.from(
       new Set([
         ...BUILTIN.map(extractGalleryId).filter(Boolean),
-        ...userIds
+        ...getUserBlockedGalleryIds(blockedIds)
       ])
     );
   }
@@ -115,6 +118,33 @@
     gid = norm(gid);
     if (!gid) return false;
     return settings.blockedSet.has(gid);
+  }
+
+  function getUnblockButtonHtml(gid) {
+    return settings.userBlockedSet.has(norm(gid))
+      ? '<button type="button" class="dcb-access-btn" data-act="unblock">차단 해제</button>'
+      : '';
+  }
+
+  function unblockGallery(gid) {
+    const id = norm(gid);
+    if (!id) return;
+
+    clearRedirectTimer();
+
+    chrome.storage.sync.get({ blockedIds: [] }, ({ blockedIds }) => {
+      const normalized = getUserBlockedGalleryIds(blockedIds);
+      const next = Array.from(new Set(normalized.filter((blockedId) => blockedId !== id)));
+
+      chrome.storage.sync.set({ blockedIds: next }, () => {
+        if (chrome.runtime.lastError) return;
+
+        settings.userBlockedSet = new Set(next);
+        settings.blockedSet = new Set(getAllBlockedGalleryIds(next));
+        clearBlockedOverlay();
+        loadSettingsThenEnforce();
+      });
+    });
   }
 
   function clearRedirectTimer() {
@@ -322,6 +352,7 @@
         <div class="dcb-access-id" title="${escapeHtml(gid)}">ID: ${escapeHtml(gid)}</div>
         <div class="dcb-access-actions">
           <button type="button" class="dcb-access-btn primary" data-act="home">디시 메인으로 이동</button>
+          ${getUnblockButtonHtml(gid)}
         </div>
       </div>
     `;
@@ -330,8 +361,15 @@
       const btn = e.target.closest("[data-act]");
       if (!btn) return;
 
-      if (btn.getAttribute("data-act") === "home") {
+      const act = btn.getAttribute("data-act");
+
+      if (act === "home") {
         goSafePage();
+        return;
+      }
+
+      if (act === "unblock") {
+        unblockGallery(gid);
       }
     };
   }
@@ -351,6 +389,7 @@
           <div class="dcb-access-id" title="${safeGid}">ID: ${safeGid}</div>
           <div class="dcb-access-actions">
             <button type="button" class="dcb-access-btn primary" data-act="home">지금 이동</button>
+            ${getUnblockButtonHtml(gid)}
           </div>
         </div>
       `;
@@ -363,8 +402,15 @@
       const btn = e.target.closest("[data-act]");
       if (!btn) return;
 
-      if (btn.getAttribute("data-act") === "home") {
+      const act = btn.getAttribute("data-act");
+
+      if (act === "home") {
         goSafePage();
+        return;
+      }
+
+      if (act === "unblock") {
+        unblockGallery(gid);
       }
     };
 
@@ -395,6 +441,7 @@
         <div class="dcb-access-actions">
           <button type="button" class="dcb-access-btn primary" data-act="home">디시 메인으로 이동</button>
           <button type="button" class="dcb-access-btn" data-act="allow-once">이번만 보기</button>
+          ${getUnblockButtonHtml(gid)}
         </div>
       </div>
     `;
@@ -407,6 +454,11 @@
 
       if (act === "home") {
         goSafePage();
+        return;
+      }
+
+      if (act === "unblock") {
+        unblockGallery(gid);
         return;
       }
 
@@ -502,6 +554,8 @@
         settings.enabled = !!gEnabled;
         settings.blockMode = String(conf.blockMode || "smart");
         settings.delay = clampDelay(conf.delay);
+        const userBlockedIds = getUserBlockedGalleryIds(conf.blockedIds);
+        settings.userBlockedSet = new Set(userBlockedIds);
         settings.blockedSet = new Set(
           getAllBlockedGalleryIds(conf.blockedIds)
         );
@@ -510,6 +564,7 @@
       });
     } catch {
       settings.enabled = true;
+      settings.userBlockedSet = new Set();
       settings.blockedSet = new Set(BUILTIN.map(extractGalleryId));
       enforceAccess();
     }
