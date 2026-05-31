@@ -116,13 +116,31 @@
     return extractGalleryId(location.href);
   }
 
-  function getBlockedGallerySet(blockedIds = []) {
+  function getUserBlockedGallerySet(blockedIds = []) {
     const userIds = Array.isArray(blockedIds) ? blockedIds : [];
-    return new Set(
-      [...BUILTIN, ...userIds]
-        .map(extractGalleryId)
-        .filter(Boolean)
-    );
+    return new Set(userIds.map(extractGalleryId).filter(Boolean));
+  }
+
+  function getBuiltinGallerySet() {
+    return new Set(BUILTIN.map(extractGalleryId).filter(Boolean));
+  }
+
+  function getBlockedGallerySet(blockedIds = []) {
+    return new Set([
+      ...getBuiltinGallerySet(),
+      ...getUserBlockedGallerySet(blockedIds)
+    ]);
+  }
+
+  function getGalleryBlockState(gid, blockedIds = []) {
+    const id = extractGalleryId(gid);
+    const userBlocked = getUserBlockedGallerySet(blockedIds).has(id);
+    const builtinBlocked = getBuiltinGallerySet().has(id);
+    return {
+      userBlocked,
+      builtinBlocked,
+      blocked: userBlocked || builtinBlocked
+    };
   }
 
   function ensureStyle() {
@@ -285,7 +303,7 @@
     btn.className = "dcb-gqb-action";
     btn.textContent = label;
     btn.title = `현재 갤러리를 차단합니다: ${gid}`;
-    btn.addEventListener("click", () => addGalleryToBlocked(gid));
+    btn.addEventListener("click", () => toggleGalleryBlocked(gid));
     return btn;
   }
 
@@ -455,21 +473,28 @@
     renderFloatingButton(gid, normalized);
   }
 
-  function setAllQuickBlockButtonsState({ alreadyBlocked = false, busy = false } = {}) {
+  function setAllQuickBlockButtonsState({ userBlocked = false, builtinBlocked = false, busy = false } = {}) {
     const gid = getCurrentGalleryId();
     const buttons = document.querySelectorAll(`#${NATIVE_ID} .dcb-gqb-action, #${FLOAT_ID} .dcb-gqb-action`);
 
     buttons.forEach((btn) => {
       if (busy) {
         btn.disabled = true;
-        btn.textContent = "차단 중…";
+        btn.textContent = "처리 중…";
         return;
       }
 
-      if (alreadyBlocked) {
+      if (userBlocked) {
+        btn.disabled = false;
+        btn.textContent = "✅ 차단 해제";
+        btn.title = gid ? `현재 갤러리 차단을 해제합니다: ${gid}` : "현재 갤러리 차단을 해제합니다.";
+        return;
+      }
+
+      if (builtinBlocked) {
         btn.disabled = true;
-        btn.textContent = "차단됨";
-        btn.title = gid ? `이미 차단된 갤러리입니다: ${gid}` : "이미 차단된 갤러리입니다.";
+        btn.textContent = "기본 차단됨";
+        btn.title = gid ? `기본 차단 갤러리입니다: ${gid}` : "기본 차단 갤러리입니다.";
         return;
       }
 
@@ -479,28 +504,45 @@
     });
   }
 
-  function addGalleryToBlocked(gid) {
+  function toggleGalleryBlocked(gid) {
+    const id = extractGalleryId(gid);
+    if (!id) return;
+
     setAllQuickBlockButtonsState({ busy: true });
 
     chrome.storage.sync.get({ blockedIds: [] }, ({ blockedIds }) => {
       const prev = Array.isArray(blockedIds) ? blockedIds : [];
-      const blockedSet = getBlockedGallerySet(prev);
+      const normalized = prev.map(extractGalleryId).filter(Boolean);
+      const state = getGalleryBlockState(id, prev);
 
-      if (blockedSet.has(gid)) {
-        setAllQuickBlockButtonsState({ alreadyBlocked: true });
+      if (state.userBlocked) {
+        const next = normalized.filter((blockedId) => blockedId !== id);
+
+        chrome.storage.sync.set({ blockedIds: next }, () => {
+          if (chrome.runtime.lastError) {
+            setAllQuickBlockButtonsState(state);
+            return;
+          }
+
+          setAllQuickBlockButtonsState({ userBlocked: false, builtinBlocked: state.builtinBlocked });
+        });
         return;
       }
 
-      const normalized = prev.map(extractGalleryId).filter(Boolean);
-      const next = Array.from(new Set([...normalized, gid]));
+      if (state.builtinBlocked) {
+        setAllQuickBlockButtonsState({ userBlocked: false, builtinBlocked: true });
+        return;
+      }
+
+      const next = Array.from(new Set([...normalized, id]));
 
       chrome.storage.sync.set({ blockedIds: next }, () => {
         if (chrome.runtime.lastError) {
-          setAllQuickBlockButtonsState({ alreadyBlocked: false });
+          setAllQuickBlockButtonsState({ userBlocked: false, builtinBlocked: false });
           return;
         }
 
-        setAllQuickBlockButtonsState({ alreadyBlocked: true });
+        setAllQuickBlockButtonsState({ userBlocked: true, builtinBlocked: false });
       });
     });
   }
@@ -514,9 +556,7 @@
     getStoredQuickBlockPosition((position) => {
       syncQuickBlockPlacement(gid, position);
       chrome.storage.sync.get({ blockedIds: [] }, ({ blockedIds }) => {
-        setAllQuickBlockButtonsState({
-          alreadyBlocked: getBlockedGallerySet(blockedIds).has(gid)
-        });
+        setAllQuickBlockButtonsState(getGalleryBlockState(gid, blockedIds));
       });
     });
   }
@@ -563,9 +603,7 @@
     }
 
     if (area === "sync" && changes.blockedIds) {
-      setAllQuickBlockButtonsState({
-        alreadyBlocked: getBlockedGallerySet(changes.blockedIds.newValue || []).has(gid)
-      });
+      setAllQuickBlockButtonsState(getGalleryBlockState(gid, changes.blockedIds.newValue || []));
     }
   });
 })();
