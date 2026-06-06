@@ -4,7 +4,7 @@
 
 /* ───── 상수 ───── */
 const REDIRECT_URL    = "https://www.dcinside.com";
-const BUILTIN_BLOCKID = ["dcbest"];              // 항상 차단
+const BUILTIN_DCBEST_ID = "dcbest";              // 실시간베스트 차단
 const DELAY_MIN = 0, DELAY_MAX = 10;             // 0 ~ 10 s (0.5 step)
 const TEMP_ALLOW_KEY  = "dcb-temp-allow";        // sessionStorage 키
 
@@ -12,7 +12,9 @@ const TEMP_ALLOW_KEY  = "dcb-temp-allow";        // sessionStorage 키
 // 갤러리 차단 전용 마스터 (galleryBlockEnabled 우선, 없으면 enabled 사용)
 let gBlockEnabled = true;                        // 갤러리 차단 ON/OFF
 let blockMode     = "redirect";                  // "redirect" | "block" | "smart"
-let blockedSet    = new Set(BUILTIN_BLOCKID);
+let builtinDcbestBlockEnabled = true;
+let userBlockedIds = [];
+let blockedSet    = new Set([BUILTIN_DCBEST_ID]);
 let delaySeconds  = 5;
 
 // 미리보기 창 상태 (window 객체에 추가하여 다른 스크립트에서도 접근 가능)
@@ -23,6 +25,25 @@ if (!window.isPreviewOpen) {
 // 미리보기 기능 활성화 상태
 let previewEnabled = false;
 
+function normalizeUserBlockedIds(blockedIds = []) {
+  return Array.isArray(blockedIds)
+    ? blockedIds.map(x => String(x).trim().toLowerCase()).filter(Boolean)
+    : [];
+}
+
+function getBuiltinBlockedIds(enabled = true) {
+  return enabled === false ? [] : [BUILTIN_DCBEST_ID];
+}
+
+function updateBlockedSet(blockedIds = userBlockedIds, builtinEnabled = builtinDcbestBlockEnabled) {
+  userBlockedIds = normalizeUserBlockedIds(blockedIds);
+  builtinDcbestBlockEnabled = builtinEnabled !== false;
+  blockedSet = new Set([
+    ...getBuiltinBlockedIds(builtinDcbestBlockEnabled),
+    ...userBlockedIds
+  ]);
+}
+
 /* ───── storage → 메모리 ───── */
 function syncSettings(cb){
   chrome.storage.sync.get(
@@ -30,15 +51,16 @@ function syncSettings(cb){
       galleryBlockEnabled: undefined,  // 신규 키
       enabled            : true,       // 구버전 호환
       blockMode          : "redirect",
+      builtinDcbestBlockEnabled: true,
       blockedIds         : [],
       delay              : 5,
       previewEnabled     : false
     },
-    ({ galleryBlockEnabled, enabled, blockMode:bm, blockedIds, delay, previewEnabled:pe })=>{
+    ({ galleryBlockEnabled, enabled, blockMode:bm, builtinDcbestBlockEnabled, blockedIds, delay, previewEnabled:pe })=>{
       const en = (typeof galleryBlockEnabled === "boolean") ? galleryBlockEnabled : !!enabled;
       gBlockEnabled = en;
       blockMode     = bm;
-      blockedSet    = new Set([...BUILTIN_BLOCKID, ...blockedIds.map(x=>String(x).trim().toLowerCase())]);
+      updateBlockedSet(blockedIds, builtinDcbestBlockEnabled);
       delaySeconds  = clamp(delay);
       previewEnabled = !!pe;
       cb && cb();
@@ -54,7 +76,12 @@ chrome.storage.onChanged.addListener((chg,a)=>{
 
   if(chg.blockMode)    blockMode   = chg.blockMode.newValue;
   if(chg.previewEnabled) previewEnabled = !!chg.previewEnabled.newValue;
-  if(chg.blockedIds)   blockedSet  = new Set([...BUILTIN_BLOCKID, ...chg.blockedIds.newValue.map(x=>String(x).trim().toLowerCase())]);
+  if(chg.blockedIds || chg.builtinDcbestBlockEnabled) {
+    updateBlockedSet(
+      chg.blockedIds ? chg.blockedIds.newValue : userBlockedIds,
+      chg.builtinDcbestBlockEnabled ? chg.builtinDcbestBlockEnabled.newValue : builtinDcbestBlockEnabled
+    );
+  }
   if(chg.delay)        delaySeconds= clamp(chg.delay.newValue);
 });
 
