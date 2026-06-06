@@ -4,7 +4,7 @@
 
 /* ───── 상수 ───── */
 const MAIN_URL = "https://www.dcinside.com";
-const BUILTIN = ["dcbest"];             // 기본 차단: 실베
+const BUILTIN_DCBEST_ID = "dcbest";       // 기본 차단: 실시간베스트
 const RULE_NS = 40_000;                 // DNR rule id namespace
 const RULE_MAX_OFFSET = 20_000;         // 이 확장프로그램이 쓰는 동적 규칙 범위
 const AREA_PICKER_MENU_ID = "dcb-area-picker-select";
@@ -66,10 +66,16 @@ function normalizeGalleryIds(values) {
   );
 }
 
-function getAllBlockedGalleryIds(blockedIds = []) {
+function getBuiltinBlockedGalleryIds(builtinDcbestBlockEnabled = true) {
+  return builtinDcbestBlockEnabled === false ? [] : [BUILTIN_DCBEST_ID];
+}
+
+function getAllBlockedGalleryIds(blockedIds = [], builtinDcbestBlockEnabled = true) {
   return Array.from(
     new Set([
-      ...BUILTIN.map(extractGalleryId).filter(Boolean),
+      ...getBuiltinBlockedGalleryIds(builtinDcbestBlockEnabled)
+        .map(extractGalleryId)
+        .filter(Boolean),
       ...normalizeGalleryIds(blockedIds)
     ])
   );
@@ -133,6 +139,7 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
     const seed = await chrome.storage.sync.get([
       "blockMode",
       "galleryBlockEnabled",
+      "builtinDcbestBlockEnabled",
       "enabled",
       "userBlockEnabled",
       "gamemecaBlockEnabled",
@@ -154,6 +161,10 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
     if (typeof seed.galleryBlockEnabled === "undefined") {
       patch.galleryBlockEnabled =
         typeof seed.enabled === "boolean" ? !!seed.enabled : true;
+    }
+
+    if (typeof seed.builtinDcbestBlockEnabled === "undefined") {
+      patch.builtinDcbestBlockEnabled = true;
     }
 
     if (typeof seed.userBlockEnabled === "undefined") {
@@ -261,6 +272,7 @@ async function syncRules() {
     galleryBlockEnabled: undefined,
     enabled: true,
     blockMode: "smart",
+    builtinDcbestBlockEnabled: true,
     blockedIds: []
   });
 
@@ -290,7 +302,7 @@ async function syncRules() {
     return;
   }
 
-  const ids = getAllBlockedGalleryIds(conf.blockedIds);
+  const ids = getAllBlockedGalleryIds(conf.blockedIds, conf.builtinDcbestBlockEnabled);
   const rules = makeRules(ids);
 
   await chrome.declarativeNetRequest.updateDynamicRules({
@@ -311,6 +323,7 @@ chrome.storage.onChanged.addListener((c, area) => {
       c.blockedIds ||
       c.blockMode ||
       c.galleryBlockEnabled ||
+      c.builtinDcbestBlockEnabled ||
       c.enabled
     )
   ) {
