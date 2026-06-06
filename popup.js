@@ -2,6 +2,7 @@
 
 /* ───────── DOM ───────── */
 const toggle = document.getElementById("toggle");
+const builtinDcbestBlockToggle = document.getElementById("builtinDcbestBlockEnabled");
 const blockModeSel = document.getElementById("blockMode");
 const quickBlockButtonPositionSel = document.getElementById("quickBlockButtonPosition");
 const blockModeHint = document.getElementById("blockModeHint");
@@ -61,6 +62,7 @@ const refreshUserMemoListBtn = document.getElementById("refreshUserMemoListBtn")
 const DEFAULTS = {
   enabled: true,
   galleryBlockEnabled: undefined,
+  builtinDcbestBlockEnabled: true,
   blockMode: "smart",
   quickBlockButtonPosition: "right-top",
   hideComment: false,
@@ -273,21 +275,25 @@ function getUserBlockedGallerySet(blockedIds = []) {
   return new Set(userIds.map(normalizeGalleryId).filter(Boolean));
 }
 
-function getBuiltinGallerySet() {
-  return new Set(BUILTIN_GALLERY_IDS.map(normalizeGalleryId).filter(Boolean));
+function getBuiltinGallerySet(builtinDcbestBlockEnabled = true) {
+  return new Set(
+    (builtinDcbestBlockEnabled === false ? [] : BUILTIN_GALLERY_IDS)
+      .map(normalizeGalleryId)
+      .filter(Boolean)
+  );
 }
 
-function getBlockedGallerySet(blockedIds = []) {
+function getBlockedGallerySet(blockedIds = [], builtinDcbestBlockEnabled = true) {
   return new Set([
-    ...getBuiltinGallerySet(),
+    ...getBuiltinGallerySet(builtinDcbestBlockEnabled),
     ...getUserBlockedGallerySet(blockedIds)
   ]);
 }
 
-function getGalleryBlockState(gid, blockedIds = []) {
+function getGalleryBlockState(gid, blockedIds = [], builtinDcbestBlockEnabled = true) {
   const id = normalizeGalleryId(gid);
   const userBlocked = getUserBlockedGallerySet(blockedIds).has(id);
-  const builtinBlocked = getBuiltinGallerySet().has(id);
+  const builtinBlocked = getBuiltinGallerySet(builtinDcbestBlockEnabled).has(id);
   return {
     userBlocked,
     builtinBlocked,
@@ -334,8 +340,8 @@ function setQuickGalleryButtonState({ gid = "", userBlocked = false, builtinBloc
 
   if (builtinBlocked) {
     blockCurrentGalleryBtn.disabled = true;
-    blockCurrentGalleryBtn.textContent = "기본 차단됨";
-    setQuickGalleryStatus(`${gid} 갤러리는 기본 보호 목록에 포함되어 있습니다.`);
+    blockCurrentGalleryBtn.textContent = "실시간베스트 차단됨";
+    setQuickGalleryStatus(`${gid} 갤러리는 실시간베스트 차단 설정으로 막혀 있습니다.`);
     return;
   }
 
@@ -365,13 +371,16 @@ function refreshQuickGalleryState() {
       return;
     }
 
-    chrome.storage.sync.get({ blockedIds: [] }, ({ blockedIds }) => {
-      setQuickGalleryButtonState({
-        gid,
-        ...getGalleryBlockState(gid, blockedIds),
-        isDcPage
-      });
-    });
+    chrome.storage.sync.get(
+      { blockedIds: [], builtinDcbestBlockEnabled: true },
+      ({ blockedIds, builtinDcbestBlockEnabled }) => {
+        setQuickGalleryButtonState({
+          gid,
+          ...getGalleryBlockState(gid, blockedIds, builtinDcbestBlockEnabled),
+          isDcPage
+        });
+      }
+    );
   });
 }
 
@@ -382,10 +391,10 @@ function toggleCurrentGalleryBlocked() {
   blockCurrentGalleryBtn.disabled = true;
   setQuickGalleryStatus("처리 중…");
 
-  chrome.storage.sync.get({ blockedIds: [] }, ({ blockedIds }) => {
+  chrome.storage.sync.get({ blockedIds: [], builtinDcbestBlockEnabled: true }, ({ blockedIds, builtinDcbestBlockEnabled }) => {
     const prev = Array.isArray(blockedIds) ? blockedIds : [];
     const normalized = prev.map(normalizeGalleryId).filter(Boolean);
-    const state = getGalleryBlockState(gid, prev);
+    const state = getGalleryBlockState(gid, prev, builtinDcbestBlockEnabled);
 
     if (state.userBlocked) {
       const next = normalized.filter((blockedId) => blockedId !== gid);
@@ -797,6 +806,7 @@ chrome.storage.sync.get(DEFAULTS, (conf) => {
   const {
     enabled,
     galleryBlockEnabled,
+    builtinDcbestBlockEnabled,
     blockMode,
     quickBlockButtonPosition,
     hideComment,
@@ -824,6 +834,7 @@ chrome.storage.sync.get(DEFAULTS, (conf) => {
   } = conf;
 
   setChecked(toggle, getGalleryBlockEnabled({ galleryBlockEnabled, enabled }));
+  setChecked(builtinDcbestBlockToggle, builtinDcbestBlockEnabled !== false);
   setValue(blockModeSel, blockMode);
   setValue(quickBlockButtonPositionSel, normalizeQuickBlockPosition(quickBlockButtonPosition));
   updateBlockModeHint(blockMode);
@@ -869,6 +880,12 @@ if (toggle) {
   toggle.onchange = (e) => {
     const on = !!e.target.checked;
     chrome.storage.sync.set({ galleryBlockEnabled: on, enabled: on });
+  };
+}
+
+if (builtinDcbestBlockToggle) {
+  builtinDcbestBlockToggle.onchange = (e) => {
+    chrome.storage.sync.set({ builtinDcbestBlockEnabled: !!e.target.checked });
   };
 }
 
@@ -1165,7 +1182,10 @@ if (refreshUserMemoListBtn) {
 /* ───────── 스토리지 외부 변경 반영 ───────── */
 chrome.storage.onChanged.addListener((c, a) => {
   if (a === "sync") {
-    if (c.blockedIds) refreshQuickGalleryState();
+    if (c.blockedIds || c.builtinDcbestBlockEnabled) refreshQuickGalleryState();
+    if (c.builtinDcbestBlockEnabled && builtinDcbestBlockToggle) {
+      setChecked(builtinDcbestBlockToggle, c.builtinDcbestBlockEnabled.newValue !== false);
+    }
     if (c.galleryBlockEnabled || c.enabled) {
       chrome.storage.sync.get({ galleryBlockEnabled: undefined, enabled: true }, (conf) => {
         setChecked(toggle, getGalleryBlockEnabled(conf));
