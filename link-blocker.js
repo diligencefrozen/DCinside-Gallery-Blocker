@@ -10,7 +10,7 @@
 (() => {
   "use strict";
 
-  const BUILTIN = ["dcbest"];
+  const BUILTIN_DCBEST_ID = "dcbest";
   const STYLE_ID = "dcb-link-blocker-style";
   const HIDDEN_CLASS = "dcb-blocked-hidden";
   const HIDDEN_ATTR = "data-dcb-hidden";
@@ -41,7 +41,8 @@
 
   let gBlockEnabled = true;
   let linkWarnEnabled = true;
-  let blockedSet = new Set(BUILTIN);
+  let builtinDcbestBlockEnabled = true;
+  let blockedSet = new Set([BUILTIN_DCBEST_ID]);
   let observer = null;
   let scanTimer = null;
   let isApplying = false;
@@ -116,13 +117,17 @@
     }
   }
 
-  function normalizeBlockedIds(blockedIds) {
+  function getBuiltinBlockedIds(enabled = true) {
+    return enabled === false ? [] : [BUILTIN_DCBEST_ID];
+  }
+
+  function normalizeBlockedIds(blockedIds, builtinEnabled = true) {
     const userIds = Array.isArray(blockedIds)
       ? blockedIds.map(extractGalleryId).filter(Boolean)
       : [];
 
     return new Set([
-      ...BUILTIN.map(extractGalleryId).filter(Boolean),
+      ...getBuiltinBlockedIds(builtinEnabled).map(extractGalleryId).filter(Boolean),
       ...userIds
     ]);
   }
@@ -139,15 +144,17 @@
       {
         galleryBlockEnabled: undefined,
         enabled: true,
+        builtinDcbestBlockEnabled: true,
         blockedIds: [],
         linkWarnEnabled: true
       },
-      ({ galleryBlockEnabled, enabled, blockedIds, linkWarnEnabled: lwarn }) => {
+      ({ galleryBlockEnabled, enabled, builtinDcbestBlockEnabled: builtinDcbestEnabled, blockedIds, linkWarnEnabled: lwarn }) => {
         gBlockEnabled = typeof galleryBlockEnabled === "boolean"
           ? galleryBlockEnabled
           : !!enabled;
 
-        blockedSet = normalizeBlockedIds(blockedIds);
+        builtinDcbestBlockEnabled = builtinDcbestEnabled !== false;
+        blockedSet = normalizeBlockedIds(blockedIds, builtinDcbestBlockEnabled);
         linkWarnEnabled = !!lwarn;
 
         if (typeof cb === "function") cb();
@@ -164,8 +171,18 @@
       gBlockEnabled = !!chg.enabled.newValue;
     }
 
-    if (chg.blockedIds) {
-      blockedSet = normalizeBlockedIds(chg.blockedIds.newValue || []);
+    if (chg.blockedIds || chg.builtinDcbestBlockEnabled) {
+      chrome.storage.sync.get(
+        {
+          builtinDcbestBlockEnabled: true,
+          blockedIds: []
+        },
+        ({ builtinDcbestBlockEnabled: builtinDcbestEnabled, blockedIds }) => {
+          builtinDcbestBlockEnabled = builtinDcbestEnabled !== false;
+          blockedSet = normalizeBlockedIds(blockedIds, builtinDcbestBlockEnabled);
+          applyLinkWarnings({ reset: true });
+        }
+      );
     }
 
     if (chg.linkWarnEnabled) {
