@@ -14,7 +14,7 @@
   }
   *{box-sizing:border-box;margin:0;padding:0}
   body{
-    width:320px;padding:20px;
+    width:340px;padding:20px;
     background:var(--dark);color:var(--light);
     font-family:"Noto Sans KR",system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
     display:flex;flex-direction:column;gap:22px;
@@ -68,16 +68,19 @@
   }
   button:hover{background:var(--neon);color:var(--dark);box-shadow:0 0 10px var(--neon)}
   input[type="number"],select{
-    padding:6px 4px;font-size:14px;width:72px;border:1px solid #444;
+    padding:6px 10px;font-size:14px;width:128px;border:1px solid #444;
     border-radius:6px;background:#222;color:var(--light)
   }
+  input[type="number"]{width:72px;padding-left:6px;padding-right:6px}
+  #quickBlockButtonPosition{width:138px}
+  #blockMode{width:118px}
   input[type="range"]{
     display:block;
     width:100%;
     accent-color:var(--neon);
   }
-  label.row{display:flex;align-items:center;gap:10px;min-height:28px;padding-right:2px}
-  label.row > span{flex:1 1 auto;min-width:110px}
+  label.row{display:flex;align-items:center;gap:12px;min-height:28px;padding-right:2px}
+  label.row > span{flex:1 1 auto;min-width:128px !important}
   label.row > .switch,
   label.row > select,
   label.row > input[type="number"]{flex:0 0 auto}
@@ -604,8 +607,16 @@
       <span class="slider"></span>
     </label>
   </label>
+  <p class="hint" style="font-size:11px;opacity:0.85;margin-top:-16px">잠시 차단을 멈추고 싶을 때 끄세요. 다시 켜면 기존 설정이 그대로 적용됩니다.</p>
 
-
+  <label class="row">
+    <span style="min-width:110px;">실시간베스트 차단</span>
+    <label class="switch" title="실시간베스트 갤러리 차단">
+      <input type="checkbox" id="builtinDcbestBlockEnabled">
+      <span class="slider"></span>
+    </label>
+  </label>
+  <p class="hint" style="font-size:11px;opacity:0.85;margin-top:-16px">실시간베스트를 보고 싶다면 끄세요. 내가 차단한 갤러리는 그대로 차단됩니다.</p>
 
   <div class="quick-gallery-panel" id="quickGalleryPanel" aria-label="현재 갤러리 빠른 차단">
     <div class="quick-gallery-head">
