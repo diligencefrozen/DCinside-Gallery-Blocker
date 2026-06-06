@@ -7,15 +7,16 @@
   const TEMP_ALLOW_KEY = "dcb-temp-allow";
 
   /*
-    기본 차단은 실베만.
+    기본 차단은 실시간베스트만.
     무출산 갤러리/asdf12 같은 것은 사용자가 blockedIds에 추가한 값으로 처리한다.
   */
-  const BUILTIN = ["dcbest"];
+  const BUILTIN_DCBEST_ID = "dcbest";
 
   const DEFAULTS = {
     galleryBlockEnabled: undefined,
     enabled: true,
     blockMode: "smart",
+    builtinDcbestBlockEnabled: true,
     blockedIds: [],
     delay: 0
   };
@@ -24,7 +25,8 @@
     enabled: true,
     blockMode: "smart",
     delay: 0,
-    blockedSet: new Set(BUILTIN),
+    builtinDcbestBlockEnabled: true,
+    blockedSet: new Set([BUILTIN_DCBEST_ID]),
     userBlockedSet: new Set()
   };
 
@@ -105,10 +107,16 @@
       : [];
   }
 
-  function getAllBlockedGalleryIds(blockedIds) {
+  function getBuiltinBlockedGalleryIds(builtinDcbestBlockEnabled = true) {
+    return builtinDcbestBlockEnabled === false ? [] : [BUILTIN_DCBEST_ID];
+  }
+
+  function getAllBlockedGalleryIds(blockedIds, builtinDcbestBlockEnabled = true) {
     return Array.from(
       new Set([
-        ...BUILTIN.map(extractGalleryId).filter(Boolean),
+        ...getBuiltinBlockedGalleryIds(builtinDcbestBlockEnabled)
+          .map(extractGalleryId)
+          .filter(Boolean),
         ...getUserBlockedGalleryIds(blockedIds)
       ])
     );
@@ -120,10 +128,23 @@
     return settings.blockedSet.has(gid);
   }
 
+  function isBuiltinDcbestBlocked(gid) {
+    return norm(gid) === BUILTIN_DCBEST_ID && settings.builtinDcbestBlockEnabled !== false;
+  }
+
   function getUnblockButtonHtml(gid) {
-    return settings.userBlockedSet.has(norm(gid))
-      ? '<button type="button" class="dcb-access-btn" data-act="unblock">차단 해제</button>'
-      : '';
+    const id = norm(gid);
+    const buttons = [];
+
+    if (settings.userBlockedSet.has(id)) {
+      buttons.push('<button type="button" class="dcb-access-btn" data-act="unblock">차단 해제</button>');
+    }
+
+    if (isBuiltinDcbestBlocked(id)) {
+      buttons.push('<button type="button" class="dcb-access-btn" data-act="disable-dcbest">실시간베스트 차단 끄기</button>');
+    }
+
+    return buttons.join("");
   }
 
   function unblockGallery(gid) {
@@ -140,10 +161,25 @@
         if (chrome.runtime.lastError) return;
 
         settings.userBlockedSet = new Set(next);
-        settings.blockedSet = new Set(getAllBlockedGalleryIds(next));
+        settings.blockedSet = new Set(getAllBlockedGalleryIds(next, settings.builtinDcbestBlockEnabled));
         clearBlockedOverlay();
         loadSettingsThenEnforce();
       });
+    });
+  }
+
+  function disableBuiltinDcbestBlock() {
+    clearRedirectTimer();
+
+    chrome.storage.sync.set({ builtinDcbestBlockEnabled: false }, () => {
+      if (chrome.runtime.lastError) return;
+
+      settings.builtinDcbestBlockEnabled = false;
+      settings.blockedSet = new Set(
+        getAllBlockedGalleryIds(Array.from(settings.userBlockedSet), false)
+      );
+      clearBlockedOverlay();
+      loadSettingsThenEnforce();
     });
   }
 
@@ -370,6 +406,11 @@
 
       if (act === "unblock") {
         unblockGallery(gid);
+        return;
+      }
+
+      if (act === "disable-dcbest") {
+        disableBuiltinDcbestBlock();
       }
     };
   }
@@ -411,6 +452,11 @@
 
       if (act === "unblock") {
         unblockGallery(gid);
+        return;
+      }
+
+      if (act === "disable-dcbest") {
+        disableBuiltinDcbestBlock();
       }
     };
 
@@ -459,6 +505,11 @@
 
       if (act === "unblock") {
         unblockGallery(gid);
+        return;
+      }
+
+      if (act === "disable-dcbest") {
+        disableBuiltinDcbestBlock();
         return;
       }
 
@@ -554,10 +605,11 @@
         settings.enabled = !!gEnabled;
         settings.blockMode = String(conf.blockMode || "smart");
         settings.delay = clampDelay(conf.delay);
+        settings.builtinDcbestBlockEnabled = conf.builtinDcbestBlockEnabled !== false;
         const userBlockedIds = getUserBlockedGalleryIds(conf.blockedIds);
         settings.userBlockedSet = new Set(userBlockedIds);
         settings.blockedSet = new Set(
-          getAllBlockedGalleryIds(conf.blockedIds)
+          getAllBlockedGalleryIds(conf.blockedIds, settings.builtinDcbestBlockEnabled)
         );
 
         enforceAccess();
@@ -565,7 +617,8 @@
     } catch {
       settings.enabled = true;
       settings.userBlockedSet = new Set();
-      settings.blockedSet = new Set(BUILTIN.map(extractGalleryId));
+      settings.builtinDcbestBlockEnabled = true;
+      settings.blockedSet = new Set([BUILTIN_DCBEST_ID].map(extractGalleryId));
       enforceAccess();
     }
   }
@@ -577,6 +630,7 @@
 
         const important =
           changes.galleryBlockEnabled ||
+          changes.builtinDcbestBlockEnabled ||
           changes.enabled ||
           changes.blockMode ||
           changes.blockedIds ||
