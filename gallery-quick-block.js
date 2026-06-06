@@ -8,7 +8,7 @@
   const FLOAT_ID = "dcb-gallery-quick-block-floating";
   const AUTO_REFRESH_COUNTDOWN_ID = "dcb-auto-refresh-countdown";
   const RIGHT_BOTTOM_OFFSET_PROP = "--dcb-gqb-right-bottom-offset";
-  const BUILTIN = ["dcbest"];
+  const BUILTIN_DCBEST_ID = "dcbest";
   const QUICK_BLOCK_POSITION_DEFAULT = "right-top";
   const QUICK_BLOCK_POSITION_KEY = "quickBlockButtonPosition";
   const QUICK_BLOCK_POSITION_SAVED_AT_KEY = "quickBlockButtonPositionSavedAt";
@@ -121,21 +121,25 @@
     return new Set(userIds.map(extractGalleryId).filter(Boolean));
   }
 
-  function getBuiltinGallerySet() {
-    return new Set(BUILTIN.map(extractGalleryId).filter(Boolean));
+  function getBuiltinGallerySet(builtinDcbestBlockEnabled = true) {
+    return new Set(
+      (builtinDcbestBlockEnabled === false ? [] : [BUILTIN_DCBEST_ID])
+        .map(extractGalleryId)
+        .filter(Boolean)
+    );
   }
 
-  function getBlockedGallerySet(blockedIds = []) {
+  function getBlockedGallerySet(blockedIds = [], builtinDcbestBlockEnabled = true) {
     return new Set([
-      ...getBuiltinGallerySet(),
+      ...getBuiltinGallerySet(builtinDcbestBlockEnabled),
       ...getUserBlockedGallerySet(blockedIds)
     ]);
   }
 
-  function getGalleryBlockState(gid, blockedIds = []) {
+  function getGalleryBlockState(gid, blockedIds = [], builtinDcbestBlockEnabled = true) {
     const id = extractGalleryId(gid);
     const userBlocked = getUserBlockedGallerySet(blockedIds).has(id);
-    const builtinBlocked = getBuiltinGallerySet().has(id);
+    const builtinBlocked = getBuiltinGallerySet(builtinDcbestBlockEnabled).has(id);
     return {
       userBlocked,
       builtinBlocked,
@@ -493,8 +497,8 @@
 
       if (builtinBlocked) {
         btn.disabled = true;
-        btn.textContent = "기본 차단됨";
-        btn.title = gid ? `기본 차단 갤러리입니다: ${gid}` : "기본 차단 갤러리입니다.";
+        btn.textContent = "실시간베스트 차단됨";
+        btn.title = gid ? `실시간베스트 차단 설정으로 막힌 갤러리입니다: ${gid}` : "실시간베스트 차단 설정으로 막힌 갤러리입니다.";
         return;
       }
 
@@ -510,10 +514,10 @@
 
     setAllQuickBlockButtonsState({ busy: true });
 
-    chrome.storage.sync.get({ blockedIds: [] }, ({ blockedIds }) => {
+    chrome.storage.sync.get({ blockedIds: [], builtinDcbestBlockEnabled: true }, ({ blockedIds, builtinDcbestBlockEnabled }) => {
       const prev = Array.isArray(blockedIds) ? blockedIds : [];
       const normalized = prev.map(extractGalleryId).filter(Boolean);
-      const state = getGalleryBlockState(id, prev);
+      const state = getGalleryBlockState(id, prev, builtinDcbestBlockEnabled);
 
       if (state.userBlocked) {
         const next = normalized.filter((blockedId) => blockedId !== id);
@@ -555,8 +559,8 @@
 
     getStoredQuickBlockPosition((position) => {
       syncQuickBlockPlacement(gid, position);
-      chrome.storage.sync.get({ blockedIds: [] }, ({ blockedIds }) => {
-        setAllQuickBlockButtonsState(getGalleryBlockState(gid, blockedIds));
+      chrome.storage.sync.get({ blockedIds: [], builtinDcbestBlockEnabled: true }, ({ blockedIds, builtinDcbestBlockEnabled }) => {
+        setAllQuickBlockButtonsState(getGalleryBlockState(gid, blockedIds, builtinDcbestBlockEnabled));
       });
     });
   }
@@ -602,8 +606,13 @@
       getStoredQuickBlockPosition((position) => syncQuickBlockPlacement(gid, position));
     }
 
-    if (area === "sync" && changes.blockedIds) {
-      setAllQuickBlockButtonsState(getGalleryBlockState(gid, changes.blockedIds.newValue || []));
+    if (area === "sync" && (changes.blockedIds || changes.builtinDcbestBlockEnabled)) {
+      chrome.storage.sync.get(
+        { blockedIds: [], builtinDcbestBlockEnabled: true },
+        ({ blockedIds, builtinDcbestBlockEnabled }) => {
+          setAllQuickBlockButtonsState(getGalleryBlockState(gid, blockedIds, builtinDcbestBlockEnabled));
+        }
+      );
     }
   });
 })();
