@@ -48,7 +48,7 @@ const BACKUP_KEYS = [
   "blockedIds", "removeSelectors", "removeSelectorsGall", "removeSelectorsSearch",
   "userBlockEnabled", "blockedUids", "hideComment", "hideImgComment", "hideDccon",
   "hideMainEnabled", "hideGallEnabled", "hideSearchEnabled",
-  "enabled", "galleryBlockEnabled", "blockMode", "quickBlockButtonPosition", "quickBlockButtonPositionSavedAt", "autoRefreshEnabled",
+  "enabled", "galleryBlockEnabled", "builtinDcbestBlockEnabled", "blockMode", "quickBlockButtonPosition", "quickBlockButtonPositionSavedAt", "autoRefreshEnabled",
   "autoRefreshInterval", "delay", "showUidBadge", "linkWarnEnabled", "hideDCGray",
   "previewEnabled", "hideAnonymousEnabled", "gamemecaBlockEnabled", "doryBlockEnabled", "noticeBlockEnabled", "compactListEnabled",
   "keywordBlockEnabled", "blockedKeywords", "keywordBlockTargets",
@@ -71,6 +71,7 @@ const BACKUP_DEFAULTS = {
   hideSearchEnabled: true,
   enabled: true,
   galleryBlockEnabled: undefined,
+  builtinDcbestBlockEnabled: true,
   blockMode: "smart",
   quickBlockButtonPosition: "right-top",
   quickBlockButtonPositionSavedAt: 0,
@@ -126,6 +127,7 @@ const addUidBtn = document.getElementById("addUidBtn");
 const uidListEl = document.getElementById("uidList");
 
 const galleryBlockEnabledEl = document.getElementById("galleryBlockEnabled");
+const builtinDcbestBlockEnabledEl = document.getElementById("builtinDcbestBlockEnabled");
 const blockModeEl = document.getElementById("blockMode");
 const quickBlockButtonPositionEl = document.getElementById("quickBlockButtonPosition");
 const blockModeHintEl = document.getElementById("blockModeHint");
@@ -765,7 +767,7 @@ function renderUser(ids) {
 
   listEl.innerHTML = "";
 
-  const vis = ids.filter(id => !builtinBlocked.includes(id));
+  const vis = ids.map(norm).filter(Boolean);
 
   if (!vis.length) {
     listEl.innerHTML = '<p class="note">아직 추가된 갤러리가 없습니다.</p>';
@@ -1170,7 +1172,7 @@ if (importBtn && importFileEl) {
 if (addBtn && newIdInput) {
   addBtn.onclick = () => {
     const id = norm(newIdInput.value);
-    if (!id || builtinBlocked.includes(id)) return;
+    if (!id) return;
 
     chrome.storage.sync.get({ blockedIds: [] }, ({ blockedIds }) => {
       if (!blockedIds.map(norm).includes(id)) {
@@ -1317,6 +1319,12 @@ if (galleryBlockEnabledEl) {
   galleryBlockEnabledEl.addEventListener("change", (e) => {
     const on = !!e.target.checked;
     chrome.storage.sync.set({ galleryBlockEnabled: on, enabled: on });
+  });
+}
+
+if (builtinDcbestBlockEnabledEl) {
+  builtinDcbestBlockEnabledEl.addEventListener("change", (e) => {
+    chrome.storage.sync.set({ builtinDcbestBlockEnabled: !!e.target.checked });
   });
 }
 
@@ -1563,6 +1571,7 @@ chrome.storage.sync.get(
     blockedUids: [],
     enabled: true,
     galleryBlockEnabled: undefined,
+    builtinDcbestBlockEnabled: true,
     blockMode: "smart",
     quickBlockButtonPosition: "right-top",
     quickBlockButtonPositionSavedAt: 0,
@@ -1601,6 +1610,7 @@ chrome.storage.sync.get(
     blockedUids,
     enabled,
     galleryBlockEnabled,
+    builtinDcbestBlockEnabled,
     blockMode,
     quickBlockButtonPosition,
     autoRefreshEnabled,
@@ -1645,6 +1655,7 @@ chrome.storage.sync.get(
     renderUidList(blockedUids || []);
 
     setChecked(galleryBlockEnabledEl, getGalleryBlockEnabled({ galleryBlockEnabled, enabled }));
+    setChecked(builtinDcbestBlockEnabledEl, builtinDcbestBlockEnabled !== false);
     setValue(blockModeEl, blockMode || "smart");
     setValue(quickBlockButtonPositionEl, normalizeQuickBlockPosition(quickBlockButtonPosition));
     refreshQuickBlockButtonPositionControl();
@@ -1711,6 +1722,10 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
     if (changes.blockedUids) {
       renderUidList(changes.blockedUids.newValue || []);
+    }
+
+    if (changes.builtinDcbestBlockEnabled && builtinDcbestBlockEnabledEl) {
+      setChecked(builtinDcbestBlockEnabledEl, changes.builtinDcbestBlockEnabled.newValue !== false);
     }
 
     if ((changes.galleryBlockEnabled || changes.enabled) && galleryBlockEnabledEl) {
