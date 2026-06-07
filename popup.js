@@ -28,6 +28,7 @@ const keywordBlockToggle = document.getElementById("keywordBlockEnabled");
 const keywordInput = document.getElementById("keywordInput");
 const addKeywordBtn = document.getElementById("addKeywordBtn");
 const keywordListEl = document.getElementById("keywordList");
+const keywordListCountEl = document.getElementById("keywordListCount");
 const keywordTargetListTitle = document.getElementById("keywordTargetListTitle");
 const keywordTargetViewTitle = document.getElementById("keywordTargetViewTitle");
 const keywordTargetViewBody = document.getElementById("keywordTargetViewBody");
@@ -37,6 +38,8 @@ const userBlockEl = document.getElementById("userBlockEnabled") || document.getE
 const uidInput = document.getElementById("uidInput");
 const addUidBtn = document.getElementById("addUidBtn");
 const uidListEl = document.getElementById("uidList");
+const uidListCountEl = document.getElementById("uidListCount");
+const clearUidListBtn = document.getElementById("clearUidListBtn");
 
 const toggleHideMain = document.getElementById("toggleHideMain");
 const toggleHideGall = document.getElementById("toggleHideGall");
@@ -541,26 +544,48 @@ function refreshDcThemeState() {
 }
 
 /* ───────── UID 차단 목록 ───────── */
+function getUidTokenKind(token) {
+  const text = String(token || "").trim();
+  return /^\d{1,3}(?:\.\d{1,3}){1,3}$/.test(text) ? "IP" : "UID";
+}
+
 function renderUidList(list) {
   if (!uidListEl) return;
 
   uidListEl.innerHTML = "";
   const uids = Array.isArray(list) ? list : [];
 
+  if (uidListCountEl) uidListCountEl.textContent = `${uids.length}개`;
+  if (clearUidListBtn) clearUidListBtn.disabled = !uids.length;
+
   if (!uids.length) {
     const li = document.createElement("li");
-    li.className = "row";
-    li.style.justifyContent = "space-between";
-    li.innerHTML = `<span class="muted">등록된 유저 아이디와 아이피가 없습니다.</span>`;
+    li.innerHTML = `<span class="uid-empty">등록된 유저 아이디와 아이피가 없습니다.</span>`;
     uidListEl.appendChild(li);
     return;
   }
 
   uids.forEach((uid, idx) => {
     const li = document.createElement("li");
-    li.className = "row";
-    li.style.justifyContent = "space-between";
-    li.innerHTML = `<code>${uid}</code> <button class="btn btn-danger" data-idx="${idx}">삭제</button>`;
+
+    const left = document.createElement("span");
+    left.className = "uid-list-left";
+
+    const kind = document.createElement("span");
+    kind.className = "uid-kind";
+    kind.textContent = getUidTokenKind(uid);
+
+    const code = document.createElement("code");
+    code.textContent = uid;
+
+    const btn = document.createElement("button");
+    btn.className = "btn btn-danger";
+    btn.type = "button";
+    btn.dataset.idx = String(idx);
+    btn.textContent = "삭제";
+
+    left.append(kind, code);
+    li.append(left, btn);
     uidListEl.appendChild(li);
   });
 }
@@ -578,24 +603,79 @@ function saveUidList(mutator) {
 function renderKeywordList(list) {
   if (!keywordListEl) return;
 
-  keywordListEl.innerHTML = "";
-  const keywords = Array.isArray(list) ? list : [];
+  keywordListEl.replaceChildren();
+  keywordListEl.removeAttribute("hidden");
+  keywordListEl.style.display = "flex";
+
+  const keywords = normalizeKeywordList(list);
+  keywordListEl.classList.toggle("is-empty", !keywords.length);
+  keywordListEl.classList.toggle("has-keywords", keywords.length > 0);
+
+  if (keywordListCountEl) {
+    keywordListCountEl.textContent = `${keywords.length}개`;
+  }
 
   if (!keywords.length) {
     const li = document.createElement("li");
-    li.innerHTML = `<span class="muted">등록된 키워드가 없습니다.</span>`;
+    li.className = "keyword-empty";
+    li.textContent = "등록된 차단 키워드가 없습니다.";
     keywordListEl.appendChild(li);
     return;
   }
 
   keywords.forEach((keyword, idx) => {
     const li = document.createElement("li");
-    li.innerHTML = `
-      <code>${keyword}</code>
-      <button class="btn btn-danger" data-keyword-idx="${idx}">삭제</button>
-    `;
+
+    const code = document.createElement("code");
+    code.textContent = keyword;
+    code.title = keyword;
+
+    const btn = document.createElement("button");
+    btn.className = "btn btn-danger";
+    btn.type = "button";
+    btn.dataset.keywordIdx = String(idx);
+    btn.textContent = "삭제";
+
+    li.append(code, btn);
     keywordListEl.appendChild(li);
   });
+}
+
+function normalizeKeywordList(list) {
+  const seen = new Set();
+  const out = [];
+
+  (Array.isArray(list) ? list : []).forEach((raw) => {
+    const keyword = sanitizeKeyword(raw);
+    const key = keyword.toLowerCase();
+
+    if (!keyword || seen.has(key)) return;
+
+    seen.add(key);
+    out.push(keyword);
+  });
+
+  return out;
+}
+
+function refreshKeywordBlockState() {
+  if (!chrome.storage || !chrome.storage.sync) return;
+
+  chrome.storage.sync.get(
+    {
+      keywordBlockEnabled: DEFAULTS.keywordBlockEnabled,
+      blockedKeywords: DEFAULTS.blockedKeywords,
+      keywordBlockTargets: DEFAULTS.keywordBlockTargets
+    },
+    (conf) => {
+      if (chrome.runtime && chrome.runtime.lastError) return;
+
+      setChecked(keywordBlockToggle, !!conf.keywordBlockEnabled);
+      renderKeywordTargets(conf.keywordBlockTargets || DEFAULTS.keywordBlockTargets);
+      lockKeywordBlockUI(!conf.keywordBlockEnabled);
+      renderKeywordList(conf.blockedKeywords || []);
+    }
+  );
 }
 
 function saveKeywordList(mutator) {
@@ -603,16 +683,7 @@ function saveKeywordList(mutator) {
     const list = Array.isArray(conf.blockedKeywords) ? conf.blockedKeywords.slice() : [];
     mutator(list);
 
-    const seen = new Set();
-    const uniq = [];
-
-    list.forEach((item) => {
-      const keyword = sanitizeKeyword(item);
-      const key = keyword.toLowerCase();
-      if (!keyword || seen.has(key)) return;
-      seen.add(key);
-      uniq.push(keyword);
-    });
+    const uniq = normalizeKeywordList(list);
 
     chrome.storage.sync.set({ blockedKeywords: uniq }, () => renderKeywordList(uniq));
   });
@@ -848,6 +919,7 @@ chrome.storage.sync.get(DEFAULTS, (conf) => {
   renderKeywordTargets(keywordBlockTargets);
   lockKeywordBlockUI(!keywordBlockEnabled);
   renderKeywordList(blockedKeywords);
+  refreshKeywordBlockState();
 
   setChecked(autoRefreshToggle, autoRefreshEnabled);
   setValue(autoRefreshIntervalNum, autoRefreshInterval);
@@ -1096,6 +1168,12 @@ if (uidListEl) {
   });
 }
 
+if (clearUidListBtn) {
+  clearUidListBtn.addEventListener("click", () => {
+    chrome.storage.sync.set({ blockedUids: [] }, () => renderUidList([]));
+  });
+}
+
 if (toggleHideMain) {
   toggleHideMain.onchange = (e) => chrome.storage.sync.set({ hideMainEnabled: !!e.target.checked });
 }
@@ -1178,6 +1256,16 @@ if (refreshUserMemoListBtn) {
     renderPopupMemoList();
   });
 }
+
+function dcbPopupRefreshKeywordState() {
+  refreshKeywordBlockState();
+  document.dispatchEvent(new CustomEvent("dcb:keyword-hide-ui-refresh"));
+}
+
+window.addEventListener("focus", dcbPopupRefreshKeywordState);
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) dcbPopupRefreshKeywordState();
+});
 
 /* ───────── 스토리지 외부 변경 반영 ───────── */
 chrome.storage.onChanged.addListener((c, a) => {
