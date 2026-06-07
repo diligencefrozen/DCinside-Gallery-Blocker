@@ -15,8 +15,11 @@
     ".gall_writer",
     ".ub-writer",
     ".cmt_info",
+    ".cmt_nickbox",
+    ".reply_info",
     ".writer_info",
-    ".user_info"
+    ".user_info",
+    "td.gall_writer"
   ].join(",");
 
   /*
@@ -24,12 +27,23 @@
     댓글 본문(.cmt_txtbox, .usertxt, .ub-word 등)은 절대 포함하지 않는다.
   */
   const AUTHOR_HIT_SELECTOR = [
+    ".gall_writer",
+    ".ub-writer",
+    "td.gall_writer",
     ".nickname",
+    ".nickname em",
     ".nick_name",
+    ".user_nick",
     ".writer_nikcon",
+    ".refresherUserData",
+    ".ip",
     ".dcb-writer-tools",
     ".dcb-user-memo-trigger",
     ".dcb-uid-badge",
+    "[data-uid]",
+    "[data-ip]",
+    "[data-memo-uid]",
+    "[data-memo-ip]",
     '[onclick*="gallog.dcinside.com"]',
     '[href*="gallog.dcinside.com"]',
     '[title*="갤로그"]'
@@ -73,51 +87,139 @@
       .trim();
   }
 
+  function isIpLike(v) {
+    return /^\d{1,3}(?:\.\d{1,3}){1,3}$/.test(String(v || "").trim());
+  }
+
+  function normalizeUidCandidate(v) {
+    const s = normalizeToken(v)
+      .replace(/^@+/, "")
+      .replace(/[\s\)\]>'";]+$/g, "")
+      .trim();
+
+    if (!s || isIpLike(s)) return "";
+    if (!/^[A-Za-z0-9._-]{2,64}$/.test(s)) return "";
+    return s;
+  }
+
+  function normalizeIpPrefix(v) {
+    const s = normalizeToken(v);
+    const m = s.match(/\b(\d{1,3}\.\d{1,3})(?:\.\d{1,3}){0,2}\b/);
+    return m ? m[1] : "";
+  }
+
   function extractUidFromGallogText(text) {
     const s = String(text || "");
-    const m = s.match(/gallog\.dcinside\.com\/?([A-Za-z0-9_\-]+)/i);
-    return m ? m[1] : "";
+
+    const direct = s.match(/gallog\.dcinside\.com\/?([A-Za-z0-9._-]+)/i);
+    if (direct) return normalizeUidCandidate(direct[1]);
+
+    const encoded = s.match(/gallog\.dcinside\.com[^A-Za-z0-9._-]+([A-Za-z0-9._-]{2,64})/i);
+    if (encoded) return normalizeUidCandidate(encoded[1]);
+
+    const fnArg = s.match(/(?:go_?gallog|gallog|user_id|userid|uid)\s*(?:\(|=|:)\s*['"]?([A-Za-z0-9._-]{2,64})/i);
+    if (fnArg) return normalizeUidCandidate(fnArg[1]);
+
+    return "";
+  }
+
+  function textFromAttrs(el) {
+    if (!el) return "";
+
+    const attrs = [
+      "data-full-uid",
+      "data-uid",
+      "data-user-id",
+      "data-userid",
+      "data-user_id",
+      "data-memo-uid",
+      "onclick",
+      "href",
+      "title",
+      "alt",
+      "aria-label"
+    ];
+
+    return attrs
+      .map((name) => el.getAttribute?.(name) || "")
+      .filter(Boolean)
+      .join(" ");
+  }
+
+  function uidFromRefresherData(scope) {
+    if (!scope) return "";
+
+    const ref =
+      scope.matches?.(".refresherUserData")
+        ? scope
+        : scope.querySelector?.(".refresherUserData");
+
+    if (!ref) return "";
+
+    const fromTitle = normalizeUidCandidate(ref.getAttribute?.("title") || "");
+    if (fromTitle) return fromTitle;
+
+    const fromData = normalizeUidCandidate(textFromAttrs(ref));
+    if (fromData) return fromData;
+
+    const text = ref.textContent || "";
+    const m = text.match(/\(([A-Za-z0-9._-]{2,64})\)/);
+    return m ? normalizeUidCandidate(m[1]) : normalizeUidCandidate(text);
+  }
+
+  function uidFromBadge(scope) {
+    if (!scope) return "";
+
+    const badge =
+      scope.matches?.(".dcb-uid-badge")
+        ? scope
+        : scope.querySelector?.(".dcb-uid-badge");
+
+    if (!badge) return "";
+
+    return (
+      normalizeUidCandidate(badge.dataset?.fullUid) ||
+      normalizeUidCandidate(badge.getAttribute?.("data-full-uid")) ||
+      normalizeUidCandidate(badge.getAttribute?.("title")) ||
+      normalizeUidCandidate((badge.textContent || "").replace(/[()]/g, ""))
+    );
   }
 
   function uidFromGallogReference(scope) {
     if (!scope) return "";
 
-    const selfText = [
-      scope.getAttribute?.("onclick"),
-      scope.getAttribute?.("href"),
-      scope.getAttribute?.("title")
-    ].filter(Boolean).join(" ");
-
+    const selfText = textFromAttrs(scope);
     let uid = extractUidFromGallogText(selfText);
     if (uid) return uid;
 
     const ref = scope.querySelector?.(
-      '[onclick*="gallog.dcinside.com"], [href*="gallog.dcinside.com"], [title*="갤로그"]'
+      '[onclick*="gallog.dcinside.com"], [href*="gallog.dcinside.com"], [title*="갤로그"], [alt*="갤로그"]'
     );
 
     if (!ref) return "";
 
-    const refText = [
-      ref.getAttribute?.("onclick"),
-      ref.getAttribute?.("href"),
-      ref.getAttribute?.("title")
-    ].filter(Boolean).join(" ");
-
-    return extractUidFromGallogText(refText);
+    const refText = textFromAttrs(ref);
+    uid = extractUidFromGallogText(refText);
+    return uid || "";
   }
 
   function ipPrefixFromText(scope) {
     if (!scope) return "";
 
     const ipEl =
-      scope.querySelector?.(".ip") ||
-      scope.querySelector?.(".refresherUserData.ip") ||
-      null;
+      scope.matches?.(".ip, .refresherUserData.ip")
+        ? scope
+        : (scope.querySelector?.(".ip") ||
+           scope.querySelector?.(".refresherUserData.ip") ||
+           scope.querySelector?.('[data-ip]') ||
+           null);
+
+    const attrText = [textFromAttrs(scope), textFromAttrs(ipEl)].filter(Boolean).join(" ");
+    const fromAttr = normalizeIpPrefix(attrText);
+    if (fromAttr) return fromAttr;
 
     const text = (ipEl?.textContent || scope.textContent || "").trim();
-    const m = text.match(/\(?\b(\d{1,3}\.\d{1,3})\b\)?/);
-
-    return m ? m[1] : "";
+    return normalizeIpPrefix(text);
   }
 
   function readDataToken(scope, name) {
@@ -167,17 +269,21 @@
     if (!author) return "";
 
     let uid =
-      readDataToken(author, "data-uid") ||
-      readDataToken(author, "data-memo-uid") ||
+      normalizeUidCandidate(readDataToken(author, "data-uid")) ||
+      normalizeUidCandidate(readDataToken(author, "data-memo-uid")) ||
+      normalizeUidCandidate(readDataToken(author, "data-user-id")) ||
+      normalizeUidCandidate(readDataToken(author, "data-userid")) ||
+      normalizeUidCandidate(readDataToken(author, "data-user_id")) ||
+      uidFromBadge(author) ||
+      uidFromRefresherData(author) ||
+      uidFromGallogReference(author) ||
       "";
 
     let ip =
-      readDataToken(author, "data-ip") ||
-      readDataToken(author, "data-memo-ip") ||
+      normalizeIpPrefix(readDataToken(author, "data-ip")) ||
+      normalizeIpPrefix(readDataToken(author, "data-memo-ip")) ||
+      ipPrefixFromText(author) ||
       "";
-
-    if (!uid) uid = uidFromGallogReference(author);
-    if (!ip) ip = ipPrefixFromText(author);
 
     return normalizeToken(uid || ip);
   }
@@ -628,16 +734,24 @@
   document.addEventListener(
     "contextmenu",
     (e) => {
-      const token = pickBlockToken(e.target);
+      const author = findActionableAuthorEl(e.target);
+      if (!author) return;
 
-      if (!token) {
-        return;
-      }
+      const token = extractBlockToken(author);
 
       // 작성자 영역 우클릭은 확장 기능으로 사용하고, 브라우저 기본 메뉴는 열지 않는다.
       e.preventDefault();
       e.stopPropagation();
       e.stopImmediatePropagation?.();
+
+      if (!token) {
+        showToast({
+          title: "차단할 수 없음",
+          desc: "이 작성자 영역에서 UID/IP를 찾지 못했습니다.",
+          variant: "error"
+        });
+        return;
+      }
 
       sendInstantBlock(token);
     },
