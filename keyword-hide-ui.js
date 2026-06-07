@@ -25,6 +25,7 @@
       input: "hideKeywordInput",
       add: "addHideKeywordBtn",
       list: "hideKeywordList",
+      count: "hideKeywordListCount",
       status: null,
       targets: {
         listTitle: "keywordHideTargetListTitle",
@@ -39,6 +40,7 @@
       input: "optionHideKeywordInput",
       add: "optionAddHideKeywordBtn",
       list: "optionHideKeywordList",
+      count: null,
       status: "optionHideKeywordStatus",
       targets: {
         listTitle: "optionKeywordHideTargetListTitle",
@@ -78,6 +80,23 @@
 
   function keywordCompareKey(value) {
     return normalizeKeyword(value).toLowerCase();
+  }
+
+  function normalizeKeywordList(list) {
+    const seen = new Set();
+    const out = [];
+
+    (Array.isArray(list) ? list : []).forEach((raw) => {
+      const keyword = normalizeKeyword(raw).replace(/\s+/g, " ");
+      const key = keyword.toLowerCase();
+
+      if (!keyword || seen.has(key)) return;
+
+      seen.add(key);
+      out.push(keyword);
+    });
+
+    return out;
   }
 
   function escapeHtml(value) {
@@ -127,14 +146,18 @@
     if (!hasChromeStorage()) return;
 
     chrome.storage.sync.get(DEFAULTS, (config) => {
+      const srcTargets = config.keywordHideTargets && typeof config.keywordHideTargets === "object"
+        ? config.keywordHideTargets
+        : {};
+
       state = {
         keywordHideEnabled: Boolean(config.keywordHideEnabled),
-        hiddenKeywords: Array.isArray(config.hiddenKeywords)
-          ? config.hiddenKeywords
-          : [],
+        hiddenKeywords: normalizeKeywordList(config.hiddenKeywords),
         keywordHideTargets: {
-          ...DEFAULTS.keywordHideTargets,
-          ...(config.keywordHideTargets || {})
+          listTitle: typeof srcTargets.listTitle === "boolean" ? srcTargets.listTitle : DEFAULTS.keywordHideTargets.listTitle,
+          viewTitle: typeof srcTargets.viewTitle === "boolean" ? srcTargets.viewTitle : DEFAULTS.keywordHideTargets.viewTitle,
+          viewBody: typeof srcTargets.viewBody === "boolean" ? srcTargets.viewBody : DEFAULTS.keywordHideTargets.viewBody,
+          comments: typeof srcTargets.comments === "boolean" ? srcTargets.comments : DEFAULTS.keywordHideTargets.comments
         }
       };
 
@@ -145,16 +168,22 @@
   function saveState(partial, message) {
     if (!hasChromeStorage()) return;
 
+    const nextPartial = { ...partial };
+
+    if (Object.prototype.hasOwnProperty.call(nextPartial, "hiddenKeywords")) {
+      nextPartial.hiddenKeywords = normalizeKeywordList(nextPartial.hiddenKeywords);
+    }
+
     state = {
       ...state,
-      ...partial,
+      ...nextPartial,
       keywordHideTargets: {
         ...state.keywordHideTargets,
-        ...(partial.keywordHideTargets || {})
+        ...(nextPartial.keywordHideTargets || {})
       }
     };
 
-    chrome.storage.sync.set(partial, () => {
+    chrome.storage.sync.set(nextPartial, () => {
       render();
       setStatus(message || "저장되었습니다.");
     });
@@ -184,25 +213,44 @@
     const list = $(activeContext.list);
     if (!list) return;
 
-    const keywords = Array.isArray(state.hiddenKeywords)
-      ? state.hiddenKeywords
-      : [];
+    const keywords = normalizeKeywordList(state.hiddenKeywords);
+    state.hiddenKeywords = keywords;
+
+    if (activeContext.count) {
+      const count = $(activeContext.count);
+      if (count) count.textContent = `${keywords.length}개`;
+    }
+
+    list.replaceChildren();
+    list.classList.toggle("is-empty", !keywords.length);
+    list.classList.toggle("has-keywords", keywords.length > 0);
+    list.removeAttribute("hidden");
+    list.style.display = "flex";
 
     if (!keywords.length) {
-      list.innerHTML = `<li class="keyword-empty">등록된 차단 키워드가 없습니다.</li>`;
+      const li = document.createElement("li");
+      li.className = "keyword-empty";
+      li.textContent = "등록된 숨김 키워드가 없습니다.";
+      list.appendChild(li);
       return;
     }
 
-    list.innerHTML = keywords
-      .map((keyword, index) => {
-        return `
-          <li>
-            <code title="${escapeHtml(keyword)}">${escapeHtml(keyword)}</code>
-            <button type="button" data-hide-keyword-remove="${index}">삭제</button>
-          </li>
-        `;
-      })
-      .join("");
+    keywords.forEach((keyword, index) => {
+      const li = document.createElement("li");
+
+      const code = document.createElement("code");
+      code.textContent = keyword;
+      code.title = keyword;
+
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "btn btn-danger";
+      button.setAttribute("data-hide-keyword-remove", String(index));
+      button.textContent = "삭제";
+
+      li.append(code, button);
+      list.appendChild(li);
+    });
   }
 
   function parseKeywordInput(rawValue) {
@@ -245,7 +293,7 @@
     if (!filtered.length) {
       input.value = "";
       input.focus();
-      setStatus("이미 등록된 차단 키워드입니다.");
+      setStatus("이미 등록된 숨김 키워드입니다.");
       return;
     }
 
@@ -253,7 +301,7 @@
       {
         hiddenKeywords: [...current, ...filtered]
       },
-      "차단 키워드가 추가되었습니다."
+      "숨김 키워드가 추가되었습니다."
     );
 
     input.value = "";
@@ -273,7 +321,7 @@
       {
         hiddenKeywords: current
       },
-      "차단 키워드가 삭제되었습니다."
+      "숨김 키워드가 삭제되었습니다."
     );
   }
 
@@ -390,6 +438,20 @@
     }
   }
 
+  function forceRefreshFromStorage() {
+    loadState(render);
+  }
+
+  function bindRefreshHooks() {
+    window.addEventListener("focus", forceRefreshFromStorage);
+
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) forceRefreshFromStorage();
+    });
+
+    document.addEventListener("dcb:keyword-hide-ui-refresh", forceRefreshFromStorage);
+  }
+
   function bindStorageChanges() {
     if (
       typeof chrome === "undefined" ||
@@ -418,6 +480,7 @@
     bindTargets();
     bindKeywordInput();
     bindStorageChanges();
+    bindRefreshHooks();
   }
 
   function init() {
