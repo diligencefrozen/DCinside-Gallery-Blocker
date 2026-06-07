@@ -120,9 +120,63 @@
   .muted{font-size:12px;opacity:.8}
   .hint{font-size:12px;opacity:.9;color:#c9d1d9;margin-top:6px}
   .status{font-size:12px;opacity:.95;color:#9dd6a5;min-height:16px}
-  ul#uidList{list-style:none;display:flex;flex-direction:column;gap:6px;max-height:120px;overflow:auto}
-  ul#uidList li{display:flex;justify-content:space-between;align-items:center;border:1px solid #333;border-radius:8px;padding:6px 8px;background:#151a22}
-  ul#uidList code{opacity:.9}
+  .user-block-card{
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+    padding:12px;
+    border:1px solid rgba(79,124,255,.34);
+    border-radius:14px;
+    background:linear-gradient(180deg, rgba(79,124,255,.12), rgba(15,23,42,.72));
+  }
+  .user-block-head{
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-start;
+    gap:10px;
+  }
+  .user-block-title{
+    display:flex;
+    flex-direction:column;
+    gap:3px;
+    min-width:0;
+  }
+  .user-block-title strong{font-size:13px;font-weight:900;letter-spacing:-.02em;color:#f8fbff}
+  .user-block-title span{font-size:11px;line-height:1.35;color:#9fb3d9}
+  .user-block-count{
+    flex:0 0 auto;
+    padding:3px 7px;
+    border-radius:999px;
+    background:#222b36;
+    color:#dbeafe;
+    font-size:11px;
+    font-weight:800;
+    font-variant-numeric:tabular-nums;
+  }
+  .user-block-actions{display:flex;gap:8px}
+  .user-block-actions .row-input{flex:1 1 auto;min-width:0}
+  .user-block-actions .mini-btn{
+    flex:0 0 auto;
+    min-width:58px;
+    padding:8px 9px;
+    font-size:12px;
+  }
+  ul#uidList{list-style:none;display:flex;flex-direction:column;gap:6px;max-height:150px;overflow:auto}
+  ul#uidList li{display:flex;justify-content:space-between;align-items:center;gap:8px;border:1px solid #333;border-radius:8px;padding:6px 8px;background:#151a22}
+  ul#uidList code{opacity:.96;word-break:break-all}
+  .uid-list-left{display:flex;align-items:center;gap:6px;min-width:0}
+  .uid-kind{
+    flex:0 0 auto;
+    min-width:30px;
+    text-align:center;
+    padding:2px 5px;
+    border-radius:999px;
+    background:#1e293b;
+    color:#bfdbfe;
+    font-size:10px;
+    font-weight:900;
+  }
+  .uid-empty{font-size:12px;opacity:.78}
   .btn-danger{border-color:#ff6b6b}
   .btn-danger:hover{background:#ff6b6b;color:#000}
   .divider{height:1px;background:#1f2630;border:0;margin-top:-6px}
@@ -345,13 +399,41 @@
   }
 
 
-  ul#keywordList,
-  ul#hideKeywordList{
-    list-style:none;
+  .keyword-list-panel{
     display:flex;
     flex-direction:column;
     gap:6px;
+    margin-top:8px;
+    padding:8px;
+    border:1px solid rgba(148,163,184,.22);
+    border-radius:10px;
+    background:rgba(15,23,42,.58);
+  }
+  .keyword-list-panel-title{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:8px;
+    color:#dbeafe;
+    font-size:11.5px;
+    font-weight:800;
+    line-height:1.25;
+  }
+  .keyword-list-panel-title small{
+    color:#94a3b8;
+    font-size:10.5px;
+    font-weight:700;
+  }
+  ul#keywordList,
+  ul#hideKeywordList{
+    list-style:none;
+    display:flex !important;
+    flex-direction:column;
+    gap:6px;
+    min-height:32px;
     max-height:120px;
+    margin:0;
+    padding:0;
     overflow:auto;
   }
   ul#keywordList li,
@@ -359,19 +441,30 @@
     display:flex;
     justify-content:space-between;
     align-items:center;
+    gap:8px;
     border:1px solid #333;
     border-radius:8px;
     padding:6px 8px;
     background:#151a22;
   }
+  ul#keywordList li.keyword-empty,
+  ul#hideKeywordList li.keyword-empty{
+    justify-content:flex-start;
+    border-style:dashed;
+    background:rgba(15,23,42,.35);
+    color:#94a3b8;
+  }
   ul#keywordList code,
   ul#hideKeywordList code{
-    opacity:.9;
+    min-width:0;
+    max-width:188px;
+    opacity:.96;
     word-break:break-all;
+    color:#e5eefb;
   }
   .keyword-empty{
     font-size:12px;
-    opacity:.75;
+    opacity:.85;
     padding:6px 0;
   }
   .keyword-targets{
@@ -583,7 +676,9 @@
   }
   .quick-toggle-panel .quick-guide p{font-size:11.5px;line-height:1.42}
   .quick-toggle-panel .quick-guide .mini-note{font-size:10.5px}
-  .section-title{margin:0;color:#dbeafe;font-size:12px;font-weight:900;letter-spacing:-.02em}
+   .section-title{margin:0;color:#dbeafe;font-size:12px;font-weight:900;letter-spacing:-.02em}
+  .section-title.keyword-title-row{display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .keyword-sync-count{display:inline-flex;align-items:center;justify-content:center;min-width:34px;padding:2px 7px;border-radius:999px;background:rgba(96,165,250,.13);border:1px solid rgba(147,197,253,.26);color:#bfdbfe;font-size:10.5px;font-weight:900;line-height:1.35}
   .soft-section-note{margin-top:-10px}
   @media (max-height:620px){
     body{max-height:560px}
@@ -635,7 +730,26 @@
       </div>
   </div>
 
+  <div class="user-block-card" aria-label="사용자 차단 목록 관리">
+    <div class="user-block-head">
+      <div class="user-block-title">
+        <strong>사용자 차단 목록</strong>
+        <span>우클릭으로 추가된 UID/IP를 여기서 바로 확인하고 삭제할 수 있습니다.</span>
+      </div>
+      <span class="user-block-count" id="uidListCount">0개</span>
+    </div>
 
+    <div class="user-block-actions">
+      <div class="row-input">
+        <input id="uidInput" type="text" placeholder="예: userid, 39.7">
+        <button id="addUidBtn" type="button">추가</button>
+      </div>
+      <button id="clearUidListBtn" class="mini-btn btn-danger" type="button" title="사용자 차단 목록 전체 삭제">전체삭제</button>
+    </div>
+
+    <ul id="uidList"></ul>
+    <div class="muted">* UID는 갤로그 사용자 ID, 비회원은 IP 앞부분(예: <code>39.7</code>)으로 관리됩니다.</div>
+  </div>
 
   <div class="theme-panel" aria-label="다크모드 설정">
     <span class="theme-mark" aria-hidden="true">◐</span>
@@ -734,8 +848,11 @@
 
   <hr class="divider">
 
-  <p class="section-title">키워드 차단 세부 설정</p>
-  <p class="hint soft-section-note">게시물 목록 제목, 게시물 제목, 본문, 댓글에 포함된 키워드를 감지해 완전히 차단합니다.</p>
+  <p class="section-title keyword-title-row">
+    <span>키워드 차단 세부 설정</span>
+    <span class="keyword-sync-count" id="keywordListCount">0개</span>
+  </p>
+  <p class="hint soft-section-note">게시물 목록 제목, 게시물 제목, 본문, 댓글에 포함된 키워드를 감지해 완전히 차단합니다. 옵션 메뉴와 같은 목록을 사용합니다.</p>
 
   <div class="keyword-targets" aria-label="키워드 차단 대상">
     <label class="keyword-target-item">
@@ -760,12 +877,21 @@
     <input id="keywordInput" type="text" placeholder="예: 완전히 차단할 단어">
     <button id="addKeywordBtn" type="button">추가</button>
   </div>
-  <ul id="keywordList"></ul>
+  <div class="keyword-list-panel" aria-label="등록된 키워드 차단 목록">
+    <div class="keyword-list-panel-title">
+      <span>등록된 차단 키워드</span>
+      <small>옵션과 동기화</small>
+    </div>
+    <ul id="keywordList"></ul>
+  </div>
 
   <hr class="divider">
 
-  <p class="section-title">키워드 숨기기 세부 설정</p>
-  <p class="hint soft-section-note">완전히 막지 않고 접어둔 뒤, 필요하면 “계속 보기”로 열 수 있습니다.</p>
+  <p class="section-title keyword-title-row">
+    <span>키워드 숨기기 세부 설정</span>
+    <span class="keyword-sync-count" id="hideKeywordListCount">0개</span>
+  </p>
+  <p class="hint soft-section-note">완전히 막지 않고 접어둔 뒤, 필요하면 “계속 보기”로 열 수 있습니다. 옵션 메뉴와 같은 목록을 사용합니다.</p>
 
   <div class="keyword-targets" aria-label="키워드 숨기기 대상">
     <label class="keyword-target-item">
@@ -790,7 +916,13 @@
     <input id="hideKeywordInput" type="text" placeholder="예: 숨길 단어">
     <button id="addHideKeywordBtn" type="button">추가</button>
   </div>
-  <ul id="hideKeywordList"></ul>
+  <div class="keyword-list-panel" aria-label="등록된 키워드 숨기기 목록">
+    <div class="keyword-list-panel-title">
+      <span>등록된 숨김 키워드</span>
+      <small>옵션과 동기화</small>
+    </div>
+    <ul id="hideKeywordList"></ul>
+  </div>
   <p class="hint">기존 키워드 차단과 달리, 차단된 항목을 “계속 보기”로 다시 열 수 있습니다.</p>
 
   <hr class="divider">
@@ -905,16 +1037,7 @@
   </label>
   <p class="hint">게시물 목록을 더 촘촘하게 표시합니다. UID와 메모 버튼은 목록에서 작게 정리됩니다.</p>
 
-  <label class="row">
-    <span style="min-width:110px;">차단할 유저 아이디와 아이피</span>
-  </label>
-  <div class="row-input">
-    <input id="uidInput" type="text" placeholder="예: userid, 39.7">
-    <button id="addUidBtn">추가</button>
-  </div>
-  <ul id="uidList"></ul>
-  <div class="muted">* UID는 작성자 요소의 <code>data-uid</code> 값 또는 갤로그 주소의 사용자 ID입니다.</div>
-  <div class="muted">* 비회원은 IP 앞부분(예: <code>39.7</code>)을 등록하면 일괄 차단됩니다.</div>
+  <p class="hint">사용자 차단 목록은 팝업 상단에서 바로 확인·삭제할 수 있습니다.</p>
 
   <hr class="divider">
 
