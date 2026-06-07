@@ -88,12 +88,68 @@ function getOurRuleIds(rules) {
 }
 
 function normalizeUserBlockToken(token) {
-  return String(token || "")
+  const clean = String(token || "")
     .trim()
+    .replace(/^uid\s*[:=]\s*/i, "")
+    .replace(/^ip\s*[:=]\s*/i, "")
     .replace(/^\(|\)$/g, "")
     .trim();
+
+  if (!clean) return "";
+
+  const ip = normalizeUserBlockIpPrefix(clean);
+  if (ip && isUserBlockIpLike(clean)) return ip;
+
+  return clean;
 }
 
+function normalizeUserBlockIpPrefix(token) {
+  const m = String(token || "")
+    .trim()
+    .match(/\b(\d{1,3}\.\d{1,3})(?:\.\d{1,3}){0,2}\b/);
+  return m ? m[1] : "";
+}
+
+function isUserBlockIpLike(token) {
+  return /^\d{1,3}(?:\.\d{1,3}){1,3}$/.test(String(token || "").trim());
+}
+
+function userBlockTokenKey(token) {
+  return normalizeUserBlockToken(token).toLowerCase();
+}
+
+function normalizeUserBlockList(values) {
+  const out = [];
+  const seen = new Set();
+
+  (Array.isArray(values) ? values : []).forEach((value) => {
+    const clean = normalizeUserBlockToken(value);
+    const key = userBlockTokenKey(clean);
+    if (!clean || seen.has(key)) return;
+    seen.add(key);
+    out.push(clean);
+  });
+
+  return out;
+}
+
+async function normalizeStoredUserBlockList() {
+  try {
+    const { blockedUids = [] } = await chrome.storage.sync.get({ blockedUids: [] });
+    if (!Array.isArray(blockedUids)) return;
+
+    const normalized = normalizeUserBlockList(blockedUids);
+    const changed =
+      normalized.length !== blockedUids.length ||
+      normalized.some((value, idx) => value !== blockedUids[idx]);
+
+    if (changed) {
+      await chrome.storage.sync.set({ blockedUids: normalized });
+    }
+  } catch (_) {
+    // storage 정리는 보조 기능이므로 실패해도 핵심 차단 흐름은 유지한다.
+  }
+}
 function showActionBadge(tabId, text) {
   if (!tabId) return;
 
@@ -213,6 +269,7 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
 
 /* 서비스워커가 재시작될 때도 우클릭 메뉴를 안정적으로 재구성 */
 resetContextMenus();
+normalizeStoredUserBlockList();
 
 /* ───── DNR 규칙 생성 ───── */
 function makeRules(ids) {
@@ -348,11 +405,18 @@ async function addBlockedUserToken(token) {
       userBlockEnabled: true
     });
 
-  const prev = Array.isArray(blockedUids) ? blockedUids : [];
-  const alreadyBlocked = prev.includes(cleanToken);
+  const prev = normalizeUserBlockList(blockedUids);
+  const cleanKey = userBlockTokenKey(cleanToken);
+  const alreadyBlocked = prev.some((value) => userBlockTokenKey(value) === cleanKey);
   const next = alreadyBlocked ? prev : [...prev, cleanToken];
 
-  if (!alreadyBlocked) {
+  const shouldPersist =
+    !alreadyBlocked ||
+    !Array.isArray(blockedUids) ||
+    prev.length !== blockedUids.length ||
+    prev.some((value, idx) => value !== blockedUids[idx]);
+
+  if (shouldPersist) {
     await chrome.storage.sync.set({
       blockedUids: next
     });
@@ -382,6 +446,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       }
 
       showActionBadge(tabId, res.userBlockEnabled ? "✔" : "OFF");
+
+      if (tabId) {
+        const applyMessage = { type: "dcb.userBlockApply", token: res.token };
+        const options = typeof sender.frameId === "number" ? { frameId: sender.frameId } : undefined;
+        chrome.tabs.sendMessage(tabId, applyMessage, options, () => void chrome.runtime.lastError);
+      }
+
       sendResponse(res);
     })
     .catch((error) => {
