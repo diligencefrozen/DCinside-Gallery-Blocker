@@ -13,11 +13,20 @@
     --light:#ffffff;
   }
   *{box-sizing:border-box;margin:0;padding:0}
+  html{
+    width:340px;
+    background:var(--dark);
+    overflow:hidden;
+  }
   body{
-    width:340px;padding:20px;
+    width:340px;
+    max-height:600px;
+    padding:18px;
+    overflow-y:auto;
+    overflow-x:hidden;
     background:var(--dark);color:var(--light);
     font-family:"Noto Sans KR",system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-    display:flex;flex-direction:column;gap:22px;
+    display:flex;flex-direction:column;gap:18px;
   }
   h1{font-size:18px;letter-spacing:.5px;text-shadow:0 0 6px var(--neon)}
   .switch{
@@ -544,6 +553,42 @@
   }
   .theme-panel > .switch{margin-left:auto}
 
+  .quick-toggle-panel{
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+    padding:10px 11px;
+    border:1px solid rgba(79,124,255,.32);
+    border-radius:14px;
+    background:rgba(15,23,42,.72);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.04);
+  }
+  .quick-toggle-head{display:flex;justify-content:space-between;align-items:center;gap:8px}
+  .quick-toggle-head strong{font-size:13px;font-weight:900;letter-spacing:-.02em}
+  .quick-toggle-head span{font-size:10.5px;color:#9fb3d9;font-weight:750;white-space:nowrap}
+  .quick-toggle-grid{display:grid;grid-template-columns:1fr;gap:6px}
+  .quick-toggle-panel label.row{
+    min-height:32px;
+    padding:5px 0;
+    border:0;
+    border-radius:0;
+    background:transparent;
+  }
+  .quick-toggle-panel label.row > span{min-width:128px !important;font-size:13px;font-weight:750;letter-spacing:-.02em}
+  .quick-toggle-panel .quick-guide{
+    margin-top:2px;
+    padding:8px 9px;
+    border-radius:10px;
+    box-shadow:none;
+  }
+  .quick-toggle-panel .quick-guide p{font-size:11.5px;line-height:1.42}
+  .quick-toggle-panel .quick-guide .mini-note{font-size:10.5px}
+  .section-title{margin:0;color:#dbeafe;font-size:12px;font-weight:900;letter-spacing:-.02em}
+  .soft-section-note{margin-top:-10px}
+  @media (max-height:620px){
+    body{max-height:560px}
+  }
+
   .switch.is-busy{opacity:.72;pointer-events:none}
   .switch input:disabled + .slider{cursor:wait}
 </style>
@@ -551,42 +596,46 @@
 <body>
   <h1>디시갤 차단기</h1>
 
+  <div class="quick-toggle-panel" aria-label="자주 쓰는 차단 스위치">
+    <div class="quick-toggle-head">
+      <strong>빠른 차단 스위치</strong>
+      <span>자주 켜고 끄는 기능</span>
+    </div>
+    <div class="quick-toggle-grid">
+      <label class="row">
+          <span>사용자 차단</span>
+          <label class="switch">
+            <input type="checkbox" id="userBlockEnabled">
+            <span class="slider"></span>
+          </label>
+        </label>
+      <label class="row">
+          <span>키워드 차단 모드</span>
+          <label class="switch">
+            <input type="checkbox" id="keywordBlockEnabled">
+            <span class="slider"></span>
+          </label>
+        </label>
+      <label class="row">
+          <span>키워드 숨기기 모드</span>
+          <label class="switch">
+            <input type="checkbox" id="keywordHideEnabled">
+            <span class="slider"></span>
+          </label>
+        </label>
+    </div>
 
-  <div class="font-panel" aria-label="글꼴 설정">
-    <div class="font-panel-head">
-      <div class="font-brand">
-        <span class="font-mark">Aa</span>
-        <div class="font-title-stack">
-          <strong>Typography</strong>
-          <span>UI &amp; DC font</span>
+    <div class="quick-guide" role="note" aria-label="빠른 이용자 차단 안내">
+        <div class="quick-guide-title">
+          <span class="pill">TIP</span>
+          <span>빠른 이용자 차단</span>
         </div>
+        <p><strong>작성자 닉네임, 갤로그 아이콘, 메모 버튼</strong> 위에서 우클릭하면 바로 차단됩니다.</p>
+        <p class="mini-note">글 제목이나 본문을 우클릭하면 기존 브라우저 메뉴가 열립니다.</p>
       </div>
-      <a id="dcbGoogleFontsLink" class="font-link" href="https://fonts.google.com/?query=korean&amp;preview.script=Kore&amp;preview.lang=ko_Kore" target="_blank" rel="noopener noreferrer">Fonts ↗</a>
-    </div>
-
-    <div class="font-field">
-      <label for="dcbFontFamily">Family</label>
-      <select id="dcbFontFamily" class="font-select" title="사용할 글꼴 선택"></select>
-    </div>
-    <input id="dcbFontCustomFamily" class="font-custom" type="text" placeholder="Google Fonts family name">
-
-    <div class="font-size-row" title="선택한 글꼴이 작거나 크게 보일 때 보정합니다">
-      <label for="dcbFontScale">Size</label>
-      <input type="range" id="dcbFontScale" min="90" max="140" step="5" value="100">
-      <output id="dcbFontScaleValue" class="font-scale-value">100%</output>
-    </div>
-
-    <label class="font-toggle-row">
-      <span class="font-toggle-copy">
-        <span>Apply to DC</span>
-        <small id="dcbFontHint">Default · 100% · ON</small>
-      </span>
-      <span class="switch">
-        <input type="checkbox" id="dcbApplyFontToDc">
-        <span class="slider"></span>
-      </span>
-    </label>
   </div>
+
+
 
   <div class="theme-panel" aria-label="다크모드 설정">
     <span class="theme-mark" aria-hidden="true">◐</span>
@@ -685,14 +734,8 @@
 
   <hr class="divider">
 
-  <label class="row">
-    <span style="min-width:110px;">키워드 차단 모드</span>
-    <label class="switch">
-      <input type="checkbox" id="keywordBlockEnabled">
-      <span class="slider"></span>
-    </label>
-  </label>
-  <p class="hint">게시물 목록 제목, 게시물 제목, 본문, 댓글에 포함된 키워드를 감지해 완전히 차단합니다.</p>
+  <p class="section-title">키워드 차단 세부 설정</p>
+  <p class="hint soft-section-note">게시물 목록 제목, 게시물 제목, 본문, 댓글에 포함된 키워드를 감지해 완전히 차단합니다.</p>
 
   <div class="keyword-targets" aria-label="키워드 차단 대상">
     <label class="keyword-target-item">
@@ -721,14 +764,8 @@
 
   <hr class="divider">
 
-  <label class="row">
-    <span style="min-width:110px;">키워드 숨기기 모드</span>
-    <label class="switch">
-      <input type="checkbox" id="keywordHideEnabled">
-      <span class="slider"></span>
-    </label>
-  </label>
-  <p class="hint">완전히 막지 않고 접어둔 뒤, 필요하면 “계속 보기”로 열 수 있습니다.</p>
+  <p class="section-title">키워드 숨기기 세부 설정</p>
+  <p class="hint soft-section-note">완전히 막지 않고 접어둔 뒤, 필요하면 “계속 보기”로 열 수 있습니다.</p>
 
   <div class="keyword-targets" aria-label="키워드 숨기기 대상">
     <label class="keyword-target-item">
@@ -815,23 +852,7 @@
 
   <hr class="divider">
 
-  <label class="row">
-    <span style="min-width:110px;">사용자 차단</span>
-    <label class="switch">
-      <input type="checkbox" id="userBlockEnabled">
-      <span class="slider"></span>
-    </label>
-  </label>
-
-  <div class="quick-guide" role="note" aria-label="빠른 이용자 차단 안내">
-    <div class="quick-guide-title">
-      <span class="pill">TIP</span>
-      <span>빠른 이용자 차단</span>
-    </div>
-    <p><strong>작성자 닉네임, 갤로그 아이콘, 메모 버튼</strong> 위에서 우클릭하면 바로 차단됩니다.</p>
-    <p class="mini-note">글 제목이나 본문을 우클릭하면 기존 브라우저 메뉴가 열립니다.</p>
-  </div>
-
+  <p class="section-title">사용자 차단 관리</p>
   <label class="row">
     <span style="min-width:110px;">닉네임 옆 회원 아이디 표시</span>
     <label class="switch">
@@ -920,6 +941,42 @@
       <button id="refreshUserMemoListBtn" type="button">새로고침</button>
     </div>
     <ul id="userMemoList"></ul>
+  </div>
+
+  <div class="font-panel" aria-label="글꼴 설정">
+    <div class="font-panel-head">
+      <div class="font-brand">
+        <span class="font-mark">Aa</span>
+        <div class="font-title-stack">
+          <strong>Typography</strong>
+          <span>UI &amp; DC font</span>
+        </div>
+      </div>
+      <a id="dcbGoogleFontsLink" class="font-link" href="https://fonts.google.com/?query=korean&amp;preview.script=Kore&amp;preview.lang=ko_Kore" target="_blank" rel="noopener noreferrer">Fonts ↗</a>
+    </div>
+
+    <div class="font-field">
+      <label for="dcbFontFamily">Family</label>
+      <select id="dcbFontFamily" class="font-select" title="사용할 글꼴 선택"></select>
+    </div>
+    <input id="dcbFontCustomFamily" class="font-custom" type="text" placeholder="Google Fonts family name">
+
+    <div class="font-size-row" title="선택한 글꼴이 작거나 크게 보일 때 보정합니다">
+      <label for="dcbFontScale">Size</label>
+      <input type="range" id="dcbFontScale" min="90" max="140" step="5" value="100">
+      <output id="dcbFontScaleValue" class="font-scale-value">100%</output>
+    </div>
+
+    <label class="font-toggle-row">
+      <span class="font-toggle-copy">
+        <span>Apply to DC</span>
+        <small id="dcbFontHint">Default · 100% · ON</small>
+      </span>
+      <span class="switch">
+        <input type="checkbox" id="dcbApplyFontToDc">
+        <span class="slider"></span>
+      </span>
+    </label>
   </div>
 
   <button id="openOptions">설정 메뉴 열기</button>
