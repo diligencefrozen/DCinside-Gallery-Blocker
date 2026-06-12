@@ -8,6 +8,7 @@ const BUILTIN_DCBEST_ID = "dcbest";       // 기본 차단: 실시간베스트
 const RULE_NS = 40_000;                 // DNR rule id namespace
 const RULE_MAX_OFFSET = 20_000;         // 이 확장프로그램이 쓰는 동적 규칙 범위
 const AREA_PICKER_MENU_ID = "dcb-area-picker-select";
+const USER_BLOCK_CONTEXT_MENU_ID = "dcb-user-block-context";
 
 /* ───── 유틸 ───── */
 function norm(v) {
@@ -178,6 +179,15 @@ function resetContextMenus() {
             "*://search.dcinside.com/*"
           ]
         }, () => void chrome.runtime.lastError);
+
+        chrome.contextMenus.create({
+          id: USER_BLOCK_CONTEXT_MENU_ID,
+          title: "🚫 이 사용자 차단하기",
+          contexts: ["all"],
+          documentUrlPatterns: [
+            "*://gall.dcinside.com/*"
+          ]
+        }, () => void chrome.runtime.lastError);
       } catch (_) {
         // contextMenus 초기화 타이밍 문제는 핵심 차단 기능과 무관하므로 무시한다.
       }
@@ -198,6 +208,8 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
       "builtinDcbestBlockEnabled",
       "enabled",
       "userBlockEnabled",
+      "userBlockTriggerMode",
+      "userBlockHoverHintEnabled",
       "gamemecaBlockEnabled",
       "doryBlockEnabled",
       "noticeBlockEnabled",
@@ -225,6 +237,14 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
 
     if (typeof seed.userBlockEnabled === "undefined") {
       patch.userBlockEnabled = true;
+    }
+
+    if (typeof seed.userBlockTriggerMode === "undefined") {
+      patch.userBlockTriggerMode = "instant";
+    }
+
+    if (typeof seed.userBlockHoverHintEnabled === "undefined") {
+      patch.userBlockHoverHintEnabled = true;
     }
 
     if (typeof seed.gamemecaBlockEnabled === "undefined") {
@@ -467,9 +487,26 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   return true;
 });
 
-/* ───── 우클릭 메뉴: 영역 숨기기 선택 ───── */
+/* ───── 우클릭 메뉴: 사용자 차단 / 영역 숨기기 선택 ───── */
 chrome.contextMenus?.onClicked?.addListener((info, tab) => {
-  if (info.menuItemId !== AREA_PICKER_MENU_ID || !tab?.id) return;
+  if (!tab?.id) return;
+
+  if (info.menuItemId === USER_BLOCK_CONTEXT_MENU_ID) {
+    const message = { type: "dcb.legacyContextUserBlock" };
+    const done = () => {
+      if (chrome.runtime.lastError) showActionBadge(tab.id, "?");
+    };
+
+    if (typeof info.frameId === "number") {
+      chrome.tabs.sendMessage(tab.id, message, { frameId: info.frameId }, done);
+    } else {
+      chrome.tabs.sendMessage(tab.id, message, done);
+    }
+
+    return;
+  }
+
+  if (info.menuItemId !== AREA_PICKER_MENU_ID) return;
 
   const done = (res) => {
     if (chrome.runtime.lastError) {
