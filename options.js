@@ -46,7 +46,7 @@ const KEYWORD_DEFAULT_TARGETS = {
 
 const BACKUP_KEYS = [
   "blockedIds", "removeSelectors", "removeSelectorsGall", "removeSelectorsSearch",
-  "userBlockEnabled", "blockedUids", "hideComment", "hideImgComment", "hideDccon",
+  "userBlockEnabled", "userBlockTriggerMode", "userBlockHoverHintEnabled", "blockedUids", "hideComment", "hideImgComment", "hideDccon",
   "hideMainEnabled", "hideGallEnabled", "hideSearchEnabled",
   "enabled", "galleryBlockEnabled", "builtinDcbestBlockEnabled", "blockMode", "quickBlockButtonPosition", "quickBlockButtonPositionSavedAt", "autoRefreshEnabled",
   "autoRefreshInterval", "delay", "showUidBadge", "linkWarnEnabled", "hideDCGray",
@@ -62,6 +62,8 @@ const BACKUP_DEFAULTS = {
   removeSelectorsGall: [],
   removeSelectorsSearch: [],
   userBlockEnabled: true,
+  userBlockTriggerMode: "instant",
+  userBlockHoverHintEnabled: true,
   blockedUids: [],
   hideComment: false,
   hideImgComment: false,
@@ -122,6 +124,12 @@ const addRecSearchSel = document.getElementById("addRecSearchSel");
 const searchSelList = document.getElementById("searchSelList");
 
 const userBlockEl = document.getElementById("userBlockEnabled");
+const userBlockTriggerModeEl = document.getElementById("userBlockTriggerMode");
+const userBlockHoverHintEl = document.getElementById("userBlockHoverHintEnabled");
+const userBlockHoverHintRow = document.getElementById("userBlockHoverHintRow") || userBlockHoverHintEl?.closest?.(".row");
+const optionUserBlockModeTitle = document.getElementById("optionUserBlockModeTitle");
+const optionUserBlockModeText = document.getElementById("optionUserBlockModeText");
+const optionUserBlockModeSub = document.getElementById("optionUserBlockModeSub");
 const uidInput = document.getElementById("uidInput");
 const addUidBtn = document.getElementById("addUidBtn");
 const uidListEl = document.getElementById("uidList");
@@ -185,6 +193,10 @@ const keywordTargetComments = document.getElementById("keywordTargetComments");
 /* ───── 공통 유틸 ───── */
 const norm = s => String(s || "").trim().toLowerCase();
 const sanitizeUid = s => String(s || "").trim().replace(/\s+/g, "");
+
+let userBlockEnabledState = true;
+let userBlockTriggerModeState = "instant";
+let userBlockHoverHintEnabledState = true;
 
 function setChecked(el, value) {
   if (el) el.checked = !!value;
@@ -856,15 +868,62 @@ function updateSel(list, key, targetUl) {
 }
 
 /* ───── 사용자 차단(UID) ───── */
+function normalizeUserBlockTriggerMode(v) {
+  return v === "contextMenu" ? "contextMenu" : "instant";
+}
+
+function applyOptionUserBlockHoverHintControl() {
+  if (!userBlockHoverHintEl) return;
+
+  const mode = normalizeUserBlockTriggerMode(userBlockTriggerModeState);
+  const isInstantMode = mode === "instant";
+  const disabled = !userBlockEnabledState;
+
+  if (userBlockHoverHintRow) {
+    userBlockHoverHintRow.style.display = isInstantMode ? "" : "none";
+  }
+
+  userBlockHoverHintEl.checked = isInstantMode && userBlockHoverHintEnabledState !== false;
+  userBlockHoverHintEl.disabled = disabled || !isInstantMode;
+  userBlockHoverHintEl.style.opacity = disabled ? 0.5 : 1;
+  userBlockHoverHintEl.title = "우클릭 즉시 차단 모드에서만 표시됩니다.";
+}
+
+function updateOptionUserBlockModeGuide(mode) {
+  const normalized = normalizeUserBlockTriggerMode(mode);
+
+  if (optionUserBlockModeTitle) {
+    optionUserBlockModeTitle.textContent = normalized === "contextMenu"
+      ? "구 방식: 우클릭 메뉴에서 한 번 더 선택해 차단합니다."
+      : "즉시 차단: 우클릭 한 번으로 UID/IP를 차단합니다.";
+  }
+
+  if (optionUserBlockModeText) {
+    optionUserBlockModeText.innerHTML = normalized === "contextMenu"
+      ? "<strong>닉네임, 갤로그 아이콘, 메모 버튼</strong> 위에서 우클릭한 뒤 브라우저 메뉴의 “이 사용자 차단하기”를 누르세요."
+      : "<strong>닉네임, 갤로그 아이콘, 메모 버튼</strong> 위에서 우클릭하세요. UID가 있으면 UID로, UID가 없는 유동닉은 IP 앞자리로 저장됩니다.";
+  }
+
+  if (optionUserBlockModeSub) {
+    optionUserBlockModeSub.textContent = normalized === "contextMenu"
+      ? "이 모드에서는 닉네임 안내 팝업 옵션을 숨기고, 실제 팝업도 표시하지 않습니다."
+      : "글 제목, 본문, 댓글 내용 영역에서는 사용자 차단이 실행되지 않습니다. 즉시 차단 안내 팝업은 아래 옵션으로 켜거나 끌 수 있습니다.";
+  }
+}
+
 function lockUserBlockUI(disabled) {
-  if (!uidInput || !addUidBtn) return;
+  userBlockEnabledState = !disabled;
 
-  uidInput.disabled = !!disabled;
-  addUidBtn.disabled = !!disabled;
-
+  const nodes = [uidInput, addUidBtn, userBlockTriggerModeEl];
   const op = disabled ? 0.5 : 1;
-  uidInput.style.opacity = op;
-  addUidBtn.style.opacity = op;
+
+  nodes.forEach((el) => {
+    if (!el) return;
+    el.disabled = !!disabled;
+    el.style.opacity = op;
+  });
+
+  applyOptionUserBlockHoverHintControl();
 }
 
 function renderUidList(uids) {
@@ -1281,6 +1340,23 @@ if (userBlockEl) {
   });
 }
 
+if (userBlockTriggerModeEl) {
+  userBlockTriggerModeEl.addEventListener("change", e => {
+    const mode = normalizeUserBlockTriggerMode(e.target.value);
+    userBlockTriggerModeState = mode;
+    updateOptionUserBlockModeGuide(mode);
+    applyOptionUserBlockHoverHintControl();
+    chrome.storage.sync.set({ userBlockTriggerMode: mode });
+  });
+}
+
+if (userBlockHoverHintEl) {
+  userBlockHoverHintEl.addEventListener("change", e => {
+    userBlockHoverHintEnabledState = !!e.target.checked;
+    chrome.storage.sync.set({ userBlockHoverHintEnabled: userBlockHoverHintEnabledState });
+  });
+}
+
 if (addUidBtn && uidInput) {
   addUidBtn.addEventListener("click", () => {
     const v = sanitizeUid(uidInput.value);
@@ -1568,6 +1644,8 @@ chrome.storage.sync.get(
     removeSelectorsGall: [],
     removeSelectorsSearch: [],
     userBlockEnabled: true,
+    userBlockTriggerMode: "instant",
+    userBlockHoverHintEnabled: true,
     blockedUids: [],
     enabled: true,
     galleryBlockEnabled: undefined,
@@ -1607,6 +1685,8 @@ chrome.storage.sync.get(
     removeSelectorsGall,
     removeSelectorsSearch,
     userBlockEnabled,
+    userBlockTriggerMode,
+    userBlockHoverHintEnabled,
     blockedUids,
     enabled,
     galleryBlockEnabled,
@@ -1647,10 +1727,20 @@ chrome.storage.sync.get(
     renderSel(removeSelectorsGall || [], gallSelList, "removeSelectorsGall");
     renderSel(removeSelectorsSearch || [], searchSelList, "removeSelectorsSearch");
 
+    userBlockEnabledState = userBlockEnabled !== false;
+    userBlockTriggerModeState = normalizeUserBlockTriggerMode(userBlockTriggerMode);
+    userBlockHoverHintEnabledState = userBlockHoverHintEnabled !== false;
+
     if (userBlockEl) {
-      userBlockEl.checked = !!userBlockEnabled;
-      lockUserBlockUI(!userBlockEnabled);
+      userBlockEl.checked = userBlockEnabledState;
     }
+
+    if (userBlockTriggerModeEl) {
+      userBlockTriggerModeEl.value = userBlockTriggerModeState;
+    }
+
+    updateOptionUserBlockModeGuide(userBlockTriggerModeState);
+    lockUserBlockUI(!userBlockEnabledState);
 
     renderUidList(blockedUids || []);
 
@@ -1716,8 +1806,22 @@ chrome.storage.onChanged.addListener((changes, area) => {
     }
 
     if (changes.userBlockEnabled && userBlockEl) {
-      userBlockEl.checked = !!changes.userBlockEnabled.newValue;
-      lockUserBlockUI(!changes.userBlockEnabled.newValue);
+      userBlockEnabledState = changes.userBlockEnabled.newValue !== false;
+      userBlockEl.checked = userBlockEnabledState;
+      lockUserBlockUI(!userBlockEnabledState);
+    }
+
+    if (changes.userBlockTriggerMode) {
+      const mode = normalizeUserBlockTriggerMode(changes.userBlockTriggerMode.newValue);
+      userBlockTriggerModeState = mode;
+      if (userBlockTriggerModeEl) userBlockTriggerModeEl.value = mode;
+      updateOptionUserBlockModeGuide(mode);
+      applyOptionUserBlockHoverHintControl();
+    }
+
+    if (changes.userBlockHoverHintEnabled && userBlockHoverHintEl) {
+      userBlockHoverHintEnabledState = changes.userBlockHoverHintEnabled.newValue !== false;
+      applyOptionUserBlockHoverHintControl();
     }
 
     if (changes.blockedUids) {
