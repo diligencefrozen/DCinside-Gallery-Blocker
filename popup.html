@@ -705,6 +705,20 @@
           </label>
         </label>
       <label class="row">
+          <span>사용자 차단 방식</span>
+          <select id="userBlockTriggerMode" title="사용자 차단 방식">
+            <option value="instant">우클릭 즉시 차단</option>
+            <option value="contextMenu">우클릭 메뉴에서 차단</option>
+          </select>
+        </label>
+      <label class="row" id="userBlockHoverHintRow">
+          <span>즉시 차단 안내 팝업</span>
+          <label class="switch" title="즉시 차단 모드에서만 표시됩니다">
+            <input type="checkbox" id="userBlockHoverHintEnabled">
+            <span class="slider"></span>
+          </label>
+        </label>
+      <label class="row">
           <span>키워드 차단 모드</span>
           <label class="switch">
             <input type="checkbox" id="keywordBlockEnabled">
@@ -725,8 +739,9 @@
           <span class="pill">TIP</span>
           <span>빠른 이용자 차단</span>
         </div>
-        <p><strong>작성자 닉네임, 갤로그 아이콘, 메모 버튼</strong> 위에서 우클릭하면 바로 차단됩니다.</p>
-        <p class="mini-note">글 제목이나 본문을 우클릭하면 기존 브라우저 메뉴가 열립니다.</p>
+        <p id="userBlockModeGuide"><strong>작성자 닉네임, 갤로그 아이콘, 메모 버튼</strong> 위에서 우클릭하면 UID/IP가 바로 차단 목록에 저장됩니다.</p>
+        <p class="mini-note" id="userBlockModeSubGuide">글 제목, 본문, 댓글 내용 영역에서는 사용자 차단이 실행되지 않습니다.</p>
+
       </div>
   </div>
 
@@ -734,7 +749,7 @@
     <div class="user-block-head">
       <div class="user-block-title">
         <strong>사용자 차단 목록</strong>
-        <span>우클릭으로 추가된 UID/IP를 여기서 바로 확인하고 삭제할 수 있습니다.</span>
+        <span>우클릭으로 추가된 UID/IP를 확인하고, 잘못 차단한 대상은 바로 삭제할 수 있습니다.</span>
       </div>
       <span class="user-block-count" id="uidListCount">0개</span>
     </div>
