@@ -64,20 +64,63 @@
 
   const closest = (el, sel) => (el && el.closest ? el.closest(sel) : null);
 
+  const USER_BLOCK_TRIGGER_MODES = new Set(["instant", "contextMenu"]);
+  const LEGACY_CONTEXT_TOKEN_TTL = 8000;
+
   let userBlockEnabledCache = true;
+  let userBlockTriggerModeCache = "instant";
+  let userBlockHoverHintEnabledCache = true;
+  let lastContextBlockToken = "";
+  let lastContextBlockAt = 0;
+
+  function normalizeUserBlockTriggerMode(v) {
+    return USER_BLOCK_TRIGGER_MODES.has(v) ? v : "instant";
+  }
+
+  function isHoverHintEffective() {
+    return (
+      userBlockEnabledCache &&
+      userBlockTriggerModeCache === "instant" &&
+      userBlockHoverHintEnabledCache
+    );
+  }
 
   try {
-    chrome.storage.sync.get({ userBlockEnabled: true }, (res) => {
-      userBlockEnabledCache = res?.userBlockEnabled !== false;
-    });
+    chrome.storage.sync.get(
+      {
+        userBlockEnabled: true,
+        userBlockTriggerMode: "instant",
+        userBlockHoverHintEnabled: true
+      },
+      (res) => {
+        userBlockEnabledCache = res?.userBlockEnabled !== false;
+        userBlockTriggerModeCache = normalizeUserBlockTriggerMode(res?.userBlockTriggerMode);
+        userBlockHoverHintEnabledCache = res?.userBlockHoverHintEnabled !== false;
+      }
+    );
 
     chrome.storage.onChanged.addListener((changes, area) => {
-      if (area === "sync" && changes.userBlockEnabled) {
+      if (area !== "sync") return;
+
+      if (changes.userBlockEnabled) {
         userBlockEnabledCache = changes.userBlockEnabled.newValue !== false;
+        if (!isHoverHintEffective()) hideHoverHint();
+      }
+
+      if (changes.userBlockTriggerMode) {
+        userBlockTriggerModeCache = normalizeUserBlockTriggerMode(changes.userBlockTriggerMode.newValue);
+        hideHoverHint();
+      }
+
+      if (changes.userBlockHoverHintEnabled) {
+        userBlockHoverHintEnabledCache = changes.userBlockHoverHintEnabled.newValue !== false;
+        if (!isHoverHintEffective()) hideHoverHint();
       }
     });
   } catch (_) {
     userBlockEnabledCache = true;
+    userBlockTriggerModeCache = "instant";
+    userBlockHoverHintEnabledCache = true;
   }
 
   function normalizeToken(v) {
@@ -598,7 +641,14 @@
   }
 
   function showHoverHint({ author, hit, token }) {
-    if (!userBlockEnabledCache || !author || !hit || activeHoverAuthor === author) return;
+    if (
+      !isHoverHintEffective() ||
+      !author ||
+      !hit ||
+      activeHoverAuthor === author
+    ) {
+      return;
+    }
 
     ensureToastStyle();
     activeHoverAuthor = author;
@@ -606,22 +656,27 @@
     const prev = document.getElementById(HINT_ID);
     if (prev) prev.remove();
 
+    const title = "작성자 즉시 차단";
+    const subtitle = "이 작성자를 바로 차단할 수 있습니다";
+    const body = "이 영역을 <b>우클릭</b>하면 해당 사용자를 차단 목록에 추가합니다.";
+    const action = "차단 목록에 추가";
+
     const hint = document.createElement("div");
     hint.id = HINT_ID;
     hint.innerHTML = `
       <div class="dcb-hover-head">
         <span class="dcb-hover-icon">🚫</span>
         <div class="dcb-hover-title-wrap">
-          <p class="dcb-hover-title">작성자 즉시 차단</p>
-          <p class="dcb-hover-subtitle">이 작성자를 바로 차단할 수 있습니다</p>
+          <p class="dcb-hover-title">${escapeHtml(title)}</p>
+          <p class="dcb-hover-subtitle">${escapeHtml(subtitle)}</p>
         </div>
       </div>
       <p class="dcb-hover-body">
-        이 영역을 <b>우클릭</b>하면 해당 사용자를 차단 목록에 추가합니다.
+        ${body}
       </p>
       <span class="dcb-hover-action">
         <span class="dcb-hover-key">우클릭</span>
-        차단 목록에 추가
+        ${escapeHtml(action)}
       </span>
       ${token ? `<span class="dcb-hover-token">대상: ${escapeHtml(token)}</span>` : ""}
     `;
@@ -632,6 +687,13 @@
   }
 
   function scheduleHoverHint(target) {
+    if (!isHoverHintEffective()) {
+      activeHoverAuthor = null;
+      if (hoverHintTimer) clearTimeout(hoverHintTimer);
+      hideHoverHint();
+      return;
+    }
+
     const hit = getAuthorHitElement(target);
     const author = findActionableAuthorEl(target);
     const token = extractBlockToken(author);
@@ -731,6 +793,26 @@
     { passive: true }
   );
 
+  function rememberLegacyContextToken(token) {
+    lastContextBlockToken = token || "";
+    lastContextBlockAt = lastContextBlockToken ? Date.now() : 0;
+  }
+
+  function runLegacyContextBlock() {
+    const fresh = lastContextBlockToken && Date.now() - lastContextBlockAt <= LEGACY_CONTEXT_TOKEN_TTL;
+
+    if (!fresh) {
+      showToast({
+        title: "차단할 수 없음",
+        desc: "닉네임 위에서 다시 우클릭한 뒤 메뉴를 눌러주세요.",
+        variant: "error"
+      });
+      return;
+    }
+
+    sendInstantBlock(lastContextBlockToken);
+  }
+
   document.addEventListener(
     "contextmenu",
     (e) => {
@@ -739,22 +821,41 @@
 
       const token = extractBlockToken(author);
 
-      // 작성자 영역 우클릭은 확장 기능으로 사용하고, 브라우저 기본 메뉴는 열지 않는다.
+      if (!token) {
+        rememberLegacyContextToken("");
+
+        if (userBlockTriggerModeCache === "instant") {
+          e.preventDefault();
+          e.stopPropagation();
+          e.stopImmediatePropagation?.();
+
+          showToast({
+            title: "차단할 수 없음",
+            desc: "이 작성자 영역에서 UID/IP를 찾지 못했습니다.",
+            variant: "error"
+          });
+        }
+
+        return;
+      }
+
+      if (userBlockTriggerModeCache === "contextMenu") {
+        rememberLegacyContextToken(token);
+        return;
+      }
+
+      // 즉시 차단 모드에서는 작성자 영역 우클릭을 확장 기능으로 사용한다.
       e.preventDefault();
       e.stopPropagation();
       e.stopImmediatePropagation?.();
-
-      if (!token) {
-        showToast({
-          title: "차단할 수 없음",
-          desc: "이 작성자 영역에서 UID/IP를 찾지 못했습니다.",
-          variant: "error"
-        });
-        return;
-      }
 
       sendInstantBlock(token);
     },
     { capture: true }
   );
+
+  chrome.runtime.onMessage.addListener((msg) => {
+    if (msg?.type !== "dcb.legacyContextUserBlock") return;
+    runLegacyContextBlock();
+  });
 })();
