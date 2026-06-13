@@ -699,6 +699,50 @@
 }
 
 
+
+  .membership-card{
+    position:relative;
+    display:flex;
+    flex-direction:column;
+    gap:14px;
+    overflow:hidden;
+    border-color:rgba(148,163,184,.18);
+    background:rgba(12,18,32,.78);
+    box-shadow:0 14px 34px rgba(0,0,0,.16), inset 0 1px 0 rgba(255,255,255,.035);
+  }
+  .membership-card::before{
+    content:"";
+    position:absolute;
+    inset:0 auto 0 0;
+    width:4px;
+    background:rgba(96,165,250,.72);
+  }
+  .membership-card.is-paid{
+    border-color:rgba(125,211,252,.3);
+    background:rgba(8,20,34,.84);
+    box-shadow:0 16px 38px rgba(0,0,0,.18), 0 0 0 1px rgba(125,211,252,.06);
+  }
+  .membership-card.is-paid::before{background:rgba(45,212,191,.8)}
+  .membership-card.is-error{border-color:rgba(248,113,113,.3)}
+  .membership-card.is-error::before{background:rgba(248,113,113,.74)}
+  .membership-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px}
+  .membership-copy{display:flex;flex-direction:column;gap:5px;min-width:0;padding-left:2px}
+  .membership-copy strong{font-size:18px;font-weight:850;color:#f8fafc;letter-spacing:-.035em}
+  .membership-copy span{font-size:13px;line-height:1.45;color:#8fa3bf}
+  .membership-badge{flex:0 0 auto;padding:5px 12px;border-radius:999px;background:rgba(15,23,42,.68);border:1px solid rgba(148,163,184,.18);color:#cbd5e1;font-size:12px;font-weight:800;letter-spacing:-.01em;white-space:nowrap}
+  .membership-card.is-paid .membership-badge{background:rgba(20,184,166,.12);border-color:rgba(45,212,191,.24);color:#99f6e4}
+  .membership-card.is-error .membership-badge{background:rgba(248,113,113,.1);border-color:rgba(248,113,113,.24);color:#fecaca}
+  .membership-message{margin:0;color:#d7e3f4;font-size:13px;line-height:1.58}
+  .membership-meta{display:none;margin:0;padding:10px 12px;border-radius:14px;background:rgba(15,23,42,.44);color:#8ea0b8;font-size:12px;line-height:1.48;white-space:pre-line;word-break:break-word}
+  .membership-meta.is-visible{display:block}
+  .membership-actions{display:flex;flex-wrap:wrap;gap:9px;align-items:center}
+  .membership-actions button{height:36px;padding:0 14px;border-radius:12px;border:1px solid rgba(148,163,184,.18);background:rgba(30,41,59,.7);color:#dbeafe;font-size:13px;font-weight:800;box-shadow:none}
+  .membership-actions button:hover{border-color:rgba(203,213,225,.32);background:rgba(51,65,85,.72)}
+  .membership-actions button:first-child{background:#e5edf8;border-color:transparent;color:#0f172a}
+  .membership-actions button:first-child:hover{background:#f3f7fc}
+  .membership-actions button:last-child{background:transparent;color:#9fb0c8}
+  .membership-actions button.is-hidden{display:none}
+
 </style>
 </head>
 <body>
@@ -706,6 +750,24 @@
   <section class="card" style="align-items:center;text-align:center">
     <h1>디시갤 차단기 설정</h1>
     <p class="note">차단할 갤러리와 숨길 영역을 손쉽게 관리하세요.</p>
+  </section>
+
+
+  <section id="dcbMembershipCard" class="card membership-card" aria-label="멤버십 상태">
+    <div class="membership-head">
+      <div class="membership-copy">
+        <strong id="dcbMembershipTitle">🧩 멤버십 확인 중</strong>
+        <span id="dcbMembershipSubtitle">ExtensionPay 연동 상태를 확인합니다.</span>
+      </div>
+      <span id="dcbMembershipBadge" class="membership-badge">확인 중</span>
+    </div>
+    <p id="dcbMembershipMessage" class="membership-message">현재는 모든 기능을 무료로 사용할 수 있습니다.</p>
+    <p id="dcbMembershipMeta" class="membership-meta"></p>
+    <div class="membership-actions">
+      <button id="dcbMembershipLoginBtn" type="button">유저 등록(무료체험 시작)</button>
+      <button id="dcbMembershipManageBtn" type="button" class="is-hidden" aria-hidden="true">멤버십 관리</button>
+      <button id="dcbMembershipRefreshBtn" type="button">상태 새로고침</button>
+    </div>
   </section>
 
 
@@ -1290,6 +1352,7 @@
 
 <script src="font-config.js"></script>
 <script src="font-ui.js"></script>
+<script src="membership-ui.js"></script>
 <script src="options.js"></script>
 <script src="keyword-hide-ui.js"></script>
 </body>
