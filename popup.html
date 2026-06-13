@@ -680,6 +680,144 @@
   .section-title.keyword-title-row{display:flex;align-items:center;justify-content:space-between;gap:8px}
   .keyword-sync-count{display:inline-flex;align-items:center;justify-content:center;min-width:34px;padding:2px 7px;border-radius:999px;background:rgba(96,165,250,.13);border:1px solid rgba(147,197,253,.26);color:#bfdbfe;font-size:10.5px;font-weight:900;line-height:1.35}
   .soft-section-note{margin-top:-10px}
+
+  .membership-card{
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+    padding:13px;
+    border:1px solid rgba(148,163,184,.22);
+    border-left:3px solid rgba(96,165,250,.72);
+    border-radius:16px;
+    background:#101722;
+    box-shadow:0 10px 22px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.035);
+  }
+  .membership-card.is-paid{
+    border-color:rgba(45,212,191,.24);
+    border-left-color:rgba(45,212,191,.82);
+    background:#0f1b22;
+  }
+  .membership-card.is-error{
+    border-color:rgba(248,113,113,.28);
+    border-left-color:rgba(248,113,113,.82);
+    background:#1b151a;
+  }
+  .membership-head{
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-start;
+    gap:10px;
+    min-width:0;
+  }
+  .membership-copy{
+    display:flex;
+    flex-direction:column;
+    gap:3px;
+    min-width:0;
+  }
+  .membership-copy strong{
+    color:#f8fafc;
+    font-size:13px;
+    font-weight:850;
+    line-height:1.25;
+    letter-spacing:-.02em;
+  }
+  .membership-copy span{
+    color:#94a3b8;
+    font-size:11px;
+    line-height:1.38;
+  }
+  .membership-badge{
+    flex:0 0 auto;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    min-height:22px;
+    padding:0 8px;
+    border:1px solid rgba(148,163,184,.2);
+    border-radius:999px;
+    background:rgba(15,23,42,.72);
+    color:#cbd5e1;
+    font-size:10.5px;
+    font-weight:800;
+    line-height:1;
+    white-space:nowrap;
+  }
+  .membership-card.is-paid .membership-badge{
+    border-color:rgba(45,212,191,.24);
+    background:rgba(20,184,166,.12);
+    color:#99f6e4;
+  }
+  .membership-card.is-error .membership-badge{
+    border-color:rgba(248,113,113,.24);
+    background:rgba(248,113,113,.1);
+    color:#fecaca;
+  }
+  .membership-message{
+    margin:0;
+    color:#dbe7f5;
+    font-size:12px;
+    line-height:1.48;
+  }
+  .membership-meta{
+    display:none;
+    margin:0;
+    padding:8px 9px;
+    border:1px solid rgba(148,163,184,.14);
+    border-radius:12px;
+    background:rgba(15,23,42,.54);
+    color:#8fa1b8;
+    font-size:10.5px;
+    line-height:1.42;
+    white-space:pre-line;
+    word-break:break-word;
+  }
+  .membership-meta.is-visible{display:block}
+  .membership-actions{
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px;
+    align-items:center;
+  }
+  .membership-actions button{
+    min-width:0;
+    height:32px;
+    padding:0 10px;
+    border:1px solid rgba(148,163,184,.2);
+    border-radius:10px;
+    background:rgba(30,41,59,.72);
+    color:#dbeafe;
+    font-size:12px;
+    font-weight:800;
+    line-height:1;
+    box-shadow:none;
+    transition:background .18s ease,border-color .18s ease,color .18s ease;
+  }
+  .membership-actions button:hover{
+    border-color:rgba(203,213,225,.34);
+    background:rgba(51,65,85,.78);
+    color:#f8fafc;
+    box-shadow:none;
+  }
+  #dcbMembershipLoginBtn{
+    flex:1 1 178px;
+    min-height:36px;
+    background:#f8fafc;
+    border-color:transparent;
+    color:#0f172a;
+    font-size:12.5px;
+    letter-spacing:-.01em;
+    box-shadow:0 8px 18px rgba(79,124,255,.18);
+  }
+  #dcbMembershipLoginBtn:hover{background:#ffffff;color:#0f172a;box-shadow:0 10px 22px rgba(79,124,255,.24)}
+  #dcbMembershipManageBtn{flex:1 1 100%}
+  #dcbMembershipRefreshBtn{
+    flex:0 0 78px;
+    color:#9fb0c8;
+    background:transparent;
+  }
+  .membership-actions button.is-hidden{display:none !important}
+
   @media (max-height:620px){
     body{max-height:560px}
   }
@@ -690,6 +828,23 @@
 </head>
 <body>
   <h1>디시갤 차단기</h1>
+
+  <section id="dcbMembershipCard" class="membership-card" aria-label="멤버십 상태">
+    <div class="membership-head">
+      <div class="membership-copy">
+        <strong id="dcbMembershipTitle">🎁 Pro 기능 사전 체험 등록</strong>
+        <span id="dcbMembershipSubtitle">결제 없이 이메일만 등록합니다.</span>
+      </div>
+      <span id="dcbMembershipBadge" class="membership-badge">확인 중</span>
+    </div>
+    <p id="dcbMembershipMessage" class="membership-message">무료체험을 시작하면 향후 Pro 기능 출시 시 같은 이메일로 멤버십 상태를 연결할 수 있습니다.</p>
+    <p id="dcbMembershipMeta" class="membership-meta"></p>
+    <div class="membership-actions">
+      <button id="dcbMembershipLoginBtn" type="button">무료체험 시작하기</button>
+      <button id="dcbMembershipManageBtn" type="button" class="is-hidden" aria-hidden="true">멤버십 관리</button>
+      <button id="dcbMembershipRefreshBtn" type="button">새로고침</button>
+    </div>
+  </section>
 
   <div class="quick-toggle-panel" aria-label="자주 쓰는 차단 스위치">
     <div class="quick-toggle-head">
@@ -708,7 +863,7 @@
           <span>사용자 차단 방식</span>
           <select id="userBlockTriggerMode" title="사용자 차단 방식">
             <option value="instant">우클릭 즉시 차단</option>
-            <option value="contextMenu">우클릭 메뉴에서 차단</option>
+            <option value="contextMenu">우클릭 후 메뉴에서 차단</option>
           </select>
         </label>
       <label class="row" id="userBlockHoverHintRow">
@@ -1121,6 +1276,7 @@
 
   <script src="font-config.js"></script>
   <script src="font-ui.js"></script>
+<script src="membership-ui.js"></script>
   <script src="popup.js"></script>
   <script src="keyword-hide-ui.js"></script>
 </body>
