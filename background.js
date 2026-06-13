@@ -1,4 +1,17 @@
 /*****************************************************************
+ * ExtensionPay membership bridge bootstrap
+ *****************************************************************/
+try {
+  importScripts(
+    "membership-config.js",
+    "ExtPay.js",
+    "membership-manager.js"
+  );
+} catch (error) {
+  console.warn("[DCB] Membership bridge bootstrap failed:", error);
+}
+
+/*****************************************************************
  * background.js
  *****************************************************************/
 
