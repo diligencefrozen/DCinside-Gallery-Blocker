@@ -731,9 +731,25 @@
         }
 
         if (!res?.ok) {
+          const desc = (() => {
+            if (res?.reason === "EMPTY_TOKEN") {
+              return "이 작성자 영역에서 UID/IP를 찾지 못했습니다.";
+            }
+
+            if (res?.reason === "LOCAL_QUOTA_EXCEEDED") {
+              return "차단 목록 저장 공간에 문제가 있습니다. 확장 프로그램을 최신 버전으로 다시 로드한 뒤 시도해 주세요.";
+            }
+
+            if (res?.reason === "STORAGE_ERROR" || res?.reason === "ERROR") {
+              return res?.message || "차단 목록 저장 중 문제가 발생했습니다.";
+            }
+
+            return res?.message || "차단 처리 중 문제가 발생했습니다.";
+          })();
+
           showToast({
-            title: "차단할 수 없음",
-            desc: "작성자 정보를 찾지 못했습니다.",
+            title: "차단 실패",
+            desc,
             token,
             variant: "error"
           });
