@@ -644,13 +644,52 @@ function renderUidList(list) {
   });
 }
 
-function saveUidList(mutator) {
-  chrome.storage.sync.get(DEFAULTS, (conf) => {
-    const list = Array.isArray(conf.blockedUids) ? conf.blockedUids.slice() : [];
+let uidListRefreshTimer = null;
+
+async function getStoredUidList() {
+  if (globalThis.DCBUserBlockStore?.getAllTokens) {
+    return DCBUserBlockStore.getAllTokens();
+  }
+
+  const data = await chrome.storage.local.get({ blockedUids: [] });
+  return Array.isArray(data.blockedUids) ? data.blockedUids : [];
+}
+
+async function setStoredUidList(list) {
+  if (globalThis.DCBUserBlockStore?.setAllTokens) {
+    return DCBUserBlockStore.setAllTokens(list);
+  }
+
+  const uniq = Array.from(new Set((Array.isArray(list) ? list : []).map(sanitizeUid).filter(Boolean)));
+  await chrome.storage.local.set({ blockedUids: uniq });
+  return uniq;
+}
+
+function refreshUidList(delay = 0) {
+  if (uidListRefreshTimer) clearTimeout(uidListRefreshTimer);
+
+  uidListRefreshTimer = setTimeout(async () => {
+    uidListRefreshTimer = null;
+
+    try {
+      renderUidList(await getStoredUidList());
+    } catch (err) {
+      console.warn("[DCB] uid list refresh failed", err);
+    }
+  }, delay);
+}
+
+async function saveUidList(mutator) {
+  try {
+    const list = await getStoredUidList();
     mutator(list);
     const uniq = Array.from(new Set(list.map(sanitizeUid).filter(Boolean)));
-    chrome.storage.sync.set({ blockedUids: uniq }, () => renderUidList(uniq));
-  });
+    const saved = await setStoredUidList(uniq);
+    renderUidList(saved);
+  } catch (err) {
+    console.warn("[DCB] uid list save failed", err);
+    alert("사용자 차단 목록을 저장하지 못했습니다. 확장 프로그램을 다시 로드한 뒤 시도해 주세요.");
+  }
 }
 
 /* ───────── 키워드 차단 목록 ───────── */
@@ -991,7 +1030,7 @@ chrome.storage.sync.get(DEFAULTS, (conf) => {
   setValue(userBlockTriggerModeEl, userBlockTriggerModeState);
   updateUserBlockModeGuide(userBlockTriggerModeState);
   lockUserBlockUI(!userBlockEnabledState);
-  renderUidList(blockedUids);
+  refreshUidList();
 
   setChecked(toggleHideMain, hideMainEnabled);
   setChecked(toggleHideGall, hideGallEnabled);
@@ -1248,8 +1287,18 @@ if (uidListEl) {
 }
 
 if (clearUidListBtn) {
-  clearUidListBtn.addEventListener("click", () => {
-    chrome.storage.sync.set({ blockedUids: [] }, () => renderUidList([]));
+  clearUidListBtn.addEventListener("click", async () => {
+    try {
+      if (globalThis.DCBUserBlockStore?.clearAllTokens) {
+        await DCBUserBlockStore.clearAllTokens();
+      } else {
+        await chrome.storage.local.set({ blockedUids: [] });
+      }
+      renderUidList([]);
+    } catch (err) {
+      console.warn("[DCB] uid list clear failed", err);
+      alert("사용자 차단 목록을 초기화하지 못했습니다. 확장 프로그램을 다시 로드한 뒤 시도해 주세요.");
+    }
   });
 }
 
@@ -1402,7 +1451,7 @@ chrome.storage.onChanged.addListener((c, a) => {
       userBlockHoverHintEnabledState = c.userBlockHoverHintEnabled.newValue !== false;
       applyUserBlockHoverHintControl();
     }
-    if (c.blockedUids) renderUidList(c.blockedUids.newValue || []);
+    if (c.blockedUids) refreshUidList();
     if (c.hideMainEnabled) setChecked(toggleHideMain, c.hideMainEnabled.newValue);
     if (c.hideGallEnabled) setChecked(toggleHideGall, c.hideGallEnabled.newValue);
     if (c.hideSearchEnabled) setChecked(toggleHideSearch, c.hideSearchEnabled.newValue);
@@ -1413,6 +1462,10 @@ chrome.storage.onChanged.addListener((c, a) => {
     if (c.noticeBlockEnabled) setChecked(noticeBlockToggle, c.noticeBlockEnabled.newValue);
     if (c.userMemoEnabled) setChecked(userMemoEnabledToggle, c.userMemoEnabled.newValue);
     if (c.compactListEnabled) setChecked(compactListToggle, c.compactListEnabled.newValue);
+  }
+
+  if (a === "local" && globalThis.DCBUserBlockStore?.isRelevantChange?.(c)) {
+    refreshUidList(80);
   }
 
   if (a === "local" && c.userMemos) {
