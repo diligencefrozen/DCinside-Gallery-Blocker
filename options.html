@@ -1196,6 +1196,7 @@
     <ul id="uidList"></ul>
     <p class="note">* UID는 작성자 요소의 <code>data-uid</code> 값 또는 갤로그 주소의 사용자 ID입니다. UID가 없는 유동닉은 IP 앞자리로 차단됩니다.</p>
     <p class="note">* 비회원은 IP 앞부분(예: <code>39.7</code>)을 등록하면 일괄 차단됩니다.</p>
+    <p class="note">* 사용자 차단 목록은 대량 차단 사용자를 위해 Chrome 로컬 저장소에만 저장되며, 외부 서버로 전송되지 않습니다.</p>
   </section>
 
   <section class="card">
@@ -1353,6 +1354,7 @@
 <script src="font-config.js"></script>
 <script src="font-ui.js"></script>
 <script src="membership-ui.js"></script>
+<script src="user-block-store.js"></script>
 <script src="options.js"></script>
 <script src="keyword-hide-ui.js"></script>
 </body>
