@@ -1,4 +1,13 @@
 /*****************************************************************
+ * Bootstrap shared modules
+ *****************************************************************/
+try {
+  importScripts("user-block-store.js");
+} catch (error) {
+  console.warn("[DCB] User block store bootstrap failed:", error);
+}
+
+/*****************************************************************
  * ExtensionPay membership bridge bootstrap
  *****************************************************************/
 try {
@@ -149,17 +158,12 @@ function normalizeUserBlockList(values) {
 
 async function normalizeStoredUserBlockList() {
   try {
-    const { blockedUids = [] } = await chrome.storage.sync.get({ blockedUids: [] });
-    if (!Array.isArray(blockedUids)) return;
-
-    const normalized = normalizeUserBlockList(blockedUids);
-    const changed =
-      normalized.length !== blockedUids.length ||
-      normalized.some((value, idx) => value !== blockedUids[idx]);
-
-    if (changed) {
-      await chrome.storage.sync.set({ blockedUids: normalized });
-    }
+    if (!globalThis.DCBUserBlockStore) return;
+    await DCBUserBlockStore.migrateLegacyToBuckets();
+    const normalized = DCBUserBlockStore.normalizeList(
+      await DCBUserBlockStore.getAllTokens()
+    );
+    await DCBUserBlockStore.setAllTokens(normalized);
   } catch (_) {
     // storage 정리는 보조 기능이므로 실패해도 핵심 차단 흐름은 유지한다.
   }
@@ -423,44 +427,26 @@ chrome.storage.onChanged.addListener((c, area) => {
 
 /* ───── 사용자 즉시 차단 ───── */
 async function addBlockedUserToken(token) {
-  const cleanToken = normalizeUserBlockToken(token);
-
-  if (!cleanToken) {
+  if (!globalThis.DCBUserBlockStore) {
     return {
       ok: false,
-      reason: "EMPTY_TOKEN"
+      reason: "STORAGE_ERROR",
+      message: "사용자 차단 저장 모듈을 불러오지 못했습니다."
     };
   }
 
-  const { blockedUids = [], userBlockEnabled = true } =
-    await chrome.storage.sync.get({
-      blockedUids: [],
-      userBlockEnabled: true
-    });
+  const { userBlockEnabled = true } = await chrome.storage.sync.get({
+    userBlockEnabled: true
+  });
 
-  const prev = normalizeUserBlockList(blockedUids);
-  const cleanKey = userBlockTokenKey(cleanToken);
-  const alreadyBlocked = prev.some((value) => userBlockTokenKey(value) === cleanKey);
-  const next = alreadyBlocked ? prev : [...prev, cleanToken];
+  const res = await DCBUserBlockStore.addToken(token);
 
-  const shouldPersist =
-    !alreadyBlocked ||
-    !Array.isArray(blockedUids) ||
-    prev.length !== blockedUids.length ||
-    prev.some((value, idx) => value !== blockedUids[idx]);
-
-  if (shouldPersist) {
-    await chrome.storage.sync.set({
-      blockedUids: next
-    });
+  if (!res?.ok) {
+    return res;
   }
 
   return {
-    ok: true,
-    token: cleanToken,
-    added: !alreadyBlocked,
-    alreadyBlocked,
-    count: next.length,
+    ...res,
     userBlockEnabled
   };
 }
