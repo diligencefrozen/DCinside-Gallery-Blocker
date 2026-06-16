@@ -5,6 +5,9 @@
   const STYLE_ID = "dcb-userblock-style";
   const BLOCKED_CLASS = "dcb-userblock-hidden";
   const OLD_MASKED_CLASS = "dcb-masked";
+  const CSS_RULE_TOKEN_LIMIT = 500;
+
+  let blockedUidsCache = null;
 
   const DEFAULTS = {
     userBlockEnabled: true,
@@ -273,6 +276,23 @@
     return conf;
   }
 
+  async function readBlockedUids() {
+    if (Array.isArray(blockedUidsCache)) return blockedUidsCache;
+
+    if (globalThis.DCBUserBlockStore?.getAllTokens) {
+      blockedUidsCache = await DCBUserBlockStore.getAllTokens();
+      return blockedUidsCache;
+    }
+
+    const local = await chrome.storage.local.get({ blockedUids: [] });
+    blockedUidsCache = Array.isArray(local.blockedUids) ? local.blockedUids : [];
+    return blockedUidsCache;
+  }
+
+  function invalidateBlockedUidsCache() {
+    blockedUidsCache = null;
+  }
+
   function buildCss(conf) {
     const { userBlockEnabled, includeGray, blockedUids } = conf;
     if (!userBlockEnabled) return "";
@@ -305,19 +325,25 @@
       );
     };
 
-    (Array.isArray(blockedUids) ? blockedUids : []).forEach((raw) => {
-      const clean = normalizeToken(raw);
-      if (!clean) return;
+    const cssTokens = Array.isArray(blockedUids) ? blockedUids : [];
 
-      const ip = normalizeIpPrefix(clean);
-      if (ip && isIpLike(clean)) {
-        addRulesForAttr(`[data-ip^="${cssEscape(ip)}"]`);
-        return;
-      }
+    // 대량 차단 사용자에게 수천~수만 개 :has() CSS를 생성하면 페이지 렌더링이 무거워진다.
+    // 작은 목록은 CSS로 빠르게 숨기고, 큰 목록은 아래 DOM 스캐너(Set 매칭)에 맡긴다.
+    if (cssTokens.length <= CSS_RULE_TOKEN_LIMIT) {
+      cssTokens.forEach((raw) => {
+        const clean = normalizeToken(raw);
+        if (!clean) return;
 
-      const uid = normalizeUidCandidate(clean);
-      if (uid) addRulesForAttr(`[data-uid="${cssEscape(uid)}"]`);
-    });
+        const ip = normalizeIpPrefix(clean);
+        if (ip && isIpLike(clean)) {
+          addRulesForAttr(`[data-ip^="${cssEscape(ip)}"]`);
+          return;
+        }
+
+        const uid = normalizeUidCandidate(clean);
+        if (uid) addRulesForAttr(`[data-uid="${cssEscape(uid)}"]`);
+      });
+    }
 
     return lines.join("\n");
   }
@@ -454,8 +480,15 @@
   }
 
   function apply() {
-    chrome.storage.sync.get(DEFAULTS, (raw) => {
+    chrome.storage.sync.get(DEFAULTS, async (raw) => {
       const conf = migrate(raw);
+
+      try {
+        conf.blockedUids = await readBlockedUids();
+      } catch (_) {
+        conf.blockedUids = [];
+      }
+
       ensureStyle().textContent = buildCss(conf);
 
       if (!conf.userBlockEnabled) {
@@ -491,9 +524,17 @@
   startMO();
 
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area !== "sync") return;
-    if (changes.userBlockEnabled || changes.blockedUids || changes.includeGray || changes.hideDCGray) {
+    if (area === "local" && globalThis.DCBUserBlockStore?.isRelevantChange?.(changes)) {
+      invalidateBlockedUidsCache();
       scheduleApply(0);
+      return;
+    }
+
+    if (area === "sync") {
+      if (changes.userBlockEnabled || changes.includeGray || changes.hideDCGray || changes.blockedUids) {
+        if (changes.blockedUids) invalidateBlockedUidsCache();
+        scheduleApply(0);
+      }
     }
   });
 
