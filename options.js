@@ -51,6 +51,7 @@ const BACKUP_KEYS = [
   "enabled", "galleryBlockEnabled", "builtinDcbestBlockEnabled", "blockMode", "quickBlockButtonPosition", "quickBlockButtonPositionSavedAt", "autoRefreshEnabled",
   "autoRefreshInterval", "delay", "showUidBadge", "linkWarnEnabled", "hideDCGray",
   "previewEnabled", "hideAnonymousEnabled", "gamemecaBlockEnabled", "doryBlockEnabled", "noticeBlockEnabled", "compactListEnabled",
+  "userMemoEnabled", "userMemos",
   "keywordBlockEnabled", "blockedKeywords", "keywordBlockTargets",
   "keywordHideEnabled", "hiddenKeywords", "keywordHideTargets",
   "dcbFontFamily", "dcbFontCustomFamily", "dcbFontScale", "dcbApplyFontToDc"
@@ -89,6 +90,8 @@ const BACKUP_DEFAULTS = {
   doryBlockEnabled: true,
   noticeBlockEnabled: true,
   compactListEnabled: false,
+  userMemoEnabled: true,
+  userMemos: {},
   keywordBlockEnabled: false,
   blockedKeywords: [],
   keywordBlockTargets: KEYWORD_DEFAULT_TARGETS,
@@ -559,30 +562,37 @@ function buildBackupSnapshot(syncSnapshot = {}, localSnapshot = {}) {
   return snapshot;
 }
 
-function exportSettings() {
-  chrome.storage.sync.get(BACKUP_DEFAULTS, syncSnapshot => {
-    const createPayload = (localSnapshot = {}) => {
-      const snapshot = buildBackupSnapshot(syncSnapshot, localSnapshot);
-      const payload = {
-        version: 2,
-        exportedAt: new Date().toISOString(),
-        data: snapshot
-      };
+async function exportSettings() {
+  try {
+    const syncSnapshot = await chrome.storage.sync.get(BACKUP_DEFAULTS);
+    const localSnapshot = chrome.storage.local
+      ? await chrome.storage.local.get({
+          [QUICK_BLOCK_POSITION_KEY]: "",
+          [QUICK_BLOCK_POSITION_SAVED_AT_KEY]: 0,
+          userMemos: {}
+        })
+      : {};
 
-      const ts = new Date().toISOString().replace(/[:.]/g, "-");
-      downloadJson(`dcb-settings-${ts}.json`, payload);
+    const blockedUids = globalThis.DCBUserBlockStore?.getAllTokens
+      ? await DCBUserBlockStore.getAllTokens()
+      : [];
+
+    const snapshot = buildBackupSnapshot(syncSnapshot, localSnapshot);
+    snapshot.blockedUids = blockedUids;
+    snapshot.userMemos = normalizeImportedMemoObject(localSnapshot.userMemos || {});
+
+    const payload = {
+      version: 4,
+      exportedAt: new Date().toISOString(),
+      data: snapshot
     };
 
-    if (!chrome.storage.local) {
-      createPayload({});
-      return;
-    }
-
-    chrome.storage.local.get({
-      [QUICK_BLOCK_POSITION_KEY]: "",
-      [QUICK_BLOCK_POSITION_SAVED_AT_KEY]: 0
-    }, createPayload);
-  });
+    const ts = new Date().toISOString().replace(/[:.]/g, "-");
+    downloadJson(`dcb-settings-${ts}.json`, payload);
+  } catch (err) {
+    console.error("[DCB] backup export failed", err);
+    alert("백업 파일을 만들지 못했습니다. 확장 프로그램을 다시 로드한 뒤 시도하세요.");
+  }
 }
 
 function importSettingsFromFile(file) {
@@ -590,11 +600,22 @@ function importSettingsFromFile(file) {
 
   const reader = new FileReader();
 
-  reader.onload = () => {
+  reader.onload = async () => {
     try {
       const parsed = JSON.parse(reader.result);
       const patch = sanitizeImport(parsed);
       const quickBlockPatch = {};
+      const hasBlockedUids = Object.prototype.hasOwnProperty.call(patch, "blockedUids");
+      const blockedUidsPatch = hasBlockedUids && Array.isArray(patch.blockedUids)
+        ? patch.blockedUids
+        : null;
+      const hasUserMemos = Object.prototype.hasOwnProperty.call(patch, "userMemos");
+      const userMemosPatch = hasUserMemos
+        ? normalizeImportedMemoObject(patch.userMemos || {})
+        : null;
+
+      delete patch.blockedUids;
+      delete patch.userMemos;
 
       if (Object.prototype.hasOwnProperty.call(patch, QUICK_BLOCK_POSITION_KEY)) {
         quickBlockPatch[QUICK_BLOCK_POSITION_KEY] = patch[QUICK_BLOCK_POSITION_KEY];
@@ -603,23 +624,29 @@ function importSettingsFromFile(file) {
         ) || Date.now();
       }
 
-      const finishImport = () => {
-        if (quickBlockPatch[QUICK_BLOCK_POSITION_KEY]) {
-          broadcastQuickBlockPosition(quickBlockPatch[QUICK_BLOCK_POSITION_KEY]);
-        }
+      const syncKeys = Object.keys(patch);
+      if (syncKeys.length) {
+        await chrome.storage.sync.set(patch);
+      }
 
-        alert("백업을 불러왔습니다. 페이지를 새로고침합니다.");
-        location.reload();
-      };
+      if (chrome.storage.local && Object.keys(quickBlockPatch).length) {
+        await chrome.storage.local.set(quickBlockPatch);
+      }
 
-      chrome.storage.sync.set(patch, () => {
-        if (chrome.storage.local && Object.keys(quickBlockPatch).length) {
-          chrome.storage.local.set(quickBlockPatch, finishImport);
-          return;
-        }
+      if (hasUserMemos && chrome.storage.local) {
+        await chrome.storage.local.set({ userMemos: userMemosPatch || {} });
+      }
 
-        finishImport();
-      });
+      if (hasBlockedUids && globalThis.DCBUserBlockStore?.setAllTokens) {
+        await DCBUserBlockStore.setAllTokens(blockedUidsPatch || []);
+      }
+
+      if (quickBlockPatch[QUICK_BLOCK_POSITION_KEY]) {
+        broadcastQuickBlockPosition(quickBlockPatch[QUICK_BLOCK_POSITION_KEY]);
+      }
+
+      alert("백업을 불러왔습니다. 페이지를 새로고침합니다.");
+      location.reload();
     } catch (err) {
       console.error("[DCB] backup import failed", err);
       alert("백업 파일을 불러오지 못했습니다. JSON 형식을 확인하세요.");
@@ -952,18 +979,55 @@ function renderUidList(uids) {
   });
 }
 
-function saveUidList(mutator) {
-  chrome.storage.sync.get({ blockedUids: [] }, ({ blockedUids }) => {
-    const list = Array.isArray(blockedUids) ? blockedUids.slice() : [];
+let uidListRefreshTimer = null;
+
+async function getStoredUidList() {
+  if (globalThis.DCBUserBlockStore?.getAllTokens) {
+    return DCBUserBlockStore.getAllTokens();
+  }
+
+  const data = await chrome.storage.local.get({ blockedUids: [] });
+  return Array.isArray(data.blockedUids) ? data.blockedUids : [];
+}
+
+async function setStoredUidList(list) {
+  if (globalThis.DCBUserBlockStore?.setAllTokens) {
+    return DCBUserBlockStore.setAllTokens(list);
+  }
+
+  const uniq = Array.from(new Set((Array.isArray(list) ? list : []).map(sanitizeUid).filter(Boolean)));
+  await chrome.storage.local.set({ blockedUids: uniq });
+  return uniq;
+}
+
+function refreshUidList(delay = 0) {
+  if (uidListRefreshTimer) clearTimeout(uidListRefreshTimer);
+
+  uidListRefreshTimer = setTimeout(async () => {
+    uidListRefreshTimer = null;
+
+    try {
+      renderUidList(await getStoredUidList());
+    } catch (err) {
+      console.warn("[DCB] uid list refresh failed", err);
+    }
+  }, delay);
+}
+
+async function saveUidList(mutator) {
+  try {
+    const list = await getStoredUidList();
 
     mutator(list);
 
     const uniq = Array.from(new Set(list.map(sanitizeUid).filter(Boolean)));
+    const saved = await setStoredUidList(uniq);
 
-    chrome.storage.sync.set({ blockedUids: uniq }, () => {
-      renderUidList(uniq);
-    });
-  });
+    renderUidList(saved);
+  } catch (err) {
+    console.warn("[DCB] uid list save failed", err);
+    alert("사용자 차단 목록을 저장하지 못했습니다. 확장 프로그램을 다시 로드한 뒤 시도해 주세요.");
+  }
 }
 
 /* ───── 이용자 메모 관리 ───── */
@@ -1742,7 +1806,7 @@ chrome.storage.sync.get(
     updateOptionUserBlockModeGuide(userBlockTriggerModeState);
     lockUserBlockUI(!userBlockEnabledState);
 
-    renderUidList(blockedUids || []);
+    refreshUidList();
 
     setChecked(galleryBlockEnabledEl, getGalleryBlockEnabled({ galleryBlockEnabled, enabled }));
     setChecked(builtinDcbestBlockEnabledEl, builtinDcbestBlockEnabled !== false);
@@ -1786,6 +1850,11 @@ renderMemoList();
 
 /* 다른 탭/팝업 변경 반영 */
 chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && globalThis.DCBUserBlockStore?.isRelevantChange?.(changes)) {
+    refreshUidList(80);
+    return;
+  }
+
   if (area === "sync") {
     if (changes.blockedIds) {
       const ids = (changes.blockedIds.newValue || []).map(norm);
@@ -1825,7 +1894,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
     }
 
     if (changes.blockedUids) {
-      renderUidList(changes.blockedUids.newValue || []);
+      refreshUidList();
     }
 
     if (changes.builtinDcbestBlockEnabled && builtinDcbestBlockEnabledEl) {
