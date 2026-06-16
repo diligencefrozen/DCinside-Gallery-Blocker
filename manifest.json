@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "디시갤 차단기",
   "short_name": "디시갤 차단기",
-  "version": "7.3.24.2026",
+  "version": "7.3.25.2026",
   "description": "갤러리, 글, 댓글, 유저까지, 보고 싶지 않은 콘텐츠를 차단합니다",
   "icons": {
     "16": "icons/16.png",
@@ -17,7 +17,8 @@
     "storage",
     "activeTab",
     "declarativeNetRequest",
-    "contextMenus"
+    "contextMenus",
+    "unlimitedStorage"
   ],
   "host_permissions": [
     "*://gall.dcinside.com/*",
@@ -227,6 +228,7 @@
         "*://gall.dcinside.com/*"
       ],
       "js": [
+        "user-block-store.js",
         "cleaner-userblock.js"
       ],
       "run_at": "document_start",
