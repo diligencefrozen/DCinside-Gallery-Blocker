@@ -616,8 +616,40 @@ chrome.contextMenus?.onClicked?.addListener((info, tab) => {
   }
 });
 
-/* 아이콘(툴바) 클릭 → 옵션 페이지
-   default_popup이 설정된 상태에서는 보통 팝업이 우선 열린다. */
 chrome.action.onClicked.addListener(() => {
   chrome.runtime.openOptionsPage();
+});
+
+
+function encodeImageBlockPayload(buffer) {
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type !== "dcb.imageBytes") return;
+
+  fetch(message.url, { credentials: "include", cache: "force-cache" })
+    .then(async (response) => {
+      if (!response.ok) {
+        sendResponse({ success: false, error: `HTTP ${response.status}` });
+        return;
+      }
+      const buffer = await response.arrayBuffer();
+      sendResponse({
+        success: true,
+        data: encodeImageBlockPayload(buffer),
+        contentType: response.headers.get("content-type") || "application/octet-stream"
+      });
+    })
+    .catch((error) => {
+      sendResponse({ success: false, error: error?.message || String(error) });
+    });
+
+  return true;
 });
