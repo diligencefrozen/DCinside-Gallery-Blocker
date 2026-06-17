@@ -1,29 +1,65 @@
 /*****************************************************************
-auto-refresh.js - 자동 새로고침 기능 (현대화 버전)
+ * auto-refresh.js - 자동 새로고침 기능
+ * 기본값은 OFF. 사용자가 ON으로 바꾸면 지정한 주기마다 목록을 갱신한다.
+ * UI는 기존 자동 새로고침 카운트다운 박스 디자인을 유지한다.
  *****************************************************************/
 (() => {
-  let autoRefreshEnabled = false;
-  let baseInterval = 60; // 기본 60초
-  let currentInterval = 60; // 현재 간격 (동적 조정)
-  let timerId = null;
-  let countdownInterval = null;
-  let remainingSeconds = 0;
-  let pausedByReading = false;
-  let pausedByPreview = false;
-  const listOnlyMode = true; // 자동 새로고침은 항상 목록 페이지 전용
-  let pageVisible = true;
-  let lastPostCount = 0;
-  let noNewPostCount = 0; // 연속으로 새 게시물 없음 카운트
-  
-  // 카운트다운 표시 요소
-  let countdownElement = null;
+  "use strict";
 
-  /* ───── 카운트다운 UI 생성 ───── */
-  const createCountdownUI = () => {
-    if (countdownElement) return;
-    
-    countdownElement = document.createElement('div');
-    countdownElement.id = 'dcb-auto-refresh-countdown';
+  let autoRefreshEnabled = false;
+  let refreshInterval = 60;
+  let remainingSeconds = 60;
+  let countdownInterval = null;
+  let refreshing = false;
+  let pausedByPreview = false;
+  let countdownElement = null;
+  let lastHref = location.href;
+  let lastStatus = "대기 중";
+
+  const MIN_INTERVAL = 10;
+  const MAX_INTERVAL = 600;
+  const MAX_IMPORT_ROWS = 50;
+  const COUNTDOWN_ID = "dcb-auto-refresh-countdown";
+  const ANIMATION_ID = "dcb-countdown-animation";
+
+  const $ = (selector, root = document) => root.querySelector(selector);
+  const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
+
+  const clampInterval = (value) => {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return 60;
+    return Math.max(MIN_INTERVAL, Math.min(MAX_INTERVAL, Math.round(parsed)));
+  };
+
+  const isListView = () => /\/board\/lists(?:\/|$)/.test(location.pathname) && !!new URLSearchParams(location.search).get("id");
+  const isPreviewActive = () => pausedByPreview || !!window.isPreviewOpen;
+  const shouldPause = () => !document.visibilityState || document.hidden || isPreviewActive() || !isListView();
+
+  function ensureAnimation(){
+    if (document.getElementById(ANIMATION_ID)) return;
+    const style = document.createElement("style");
+    style.id = ANIMATION_ID;
+    style.textContent = `
+      @keyframes pulse {
+        0%, 100% { opacity: 1; transform: scale(1); }
+        50% { opacity: 0.5; transform: scale(0.8); }
+      }
+      @keyframes dcbAutoRowAdded {
+        0% { background: #fff3bd; }
+        45% { background: #fffbe6; }
+        100% { background: transparent; }
+      }
+      tr.dcb-auto-refresh-added { animation: dcbAutoRowAdded 7s ease-out; }
+    `;
+    document.head.appendChild(style);
+  }
+
+  function createCountdownUI(){
+    if (countdownElement) return countdownElement;
+
+    ensureAnimation();
+    countdownElement = document.createElement("div");
+    countdownElement.id = COUNTDOWN_ID;
     countdownElement.style.cssText = `
       position: fixed;
       bottom: 20px;
@@ -40,53 +76,27 @@ auto-refresh.js - 자동 새로고침 기능 (현대화 버전)
       display: none;
       min-width: 200px;
     `;
-    
     document.body.appendChild(countdownElement);
-  };
+    return countdownElement;
+  }
 
-  /* ───── 게시물 수 감지 ───── */
-  const getPostCount = () => {
-    const list = document.querySelector('.gall_list tbody');
-    return list ? list.querySelectorAll('tr').length : 0;
-  };
+  function timeLabel(seconds){
+    const safe = Math.max(0, Number(seconds) || 0);
+    const min = Math.floor(safe / 60);
+    const sec = safe % 60;
+    return min > 0 ? `${min}분 ${sec}초` : `${sec}초`;
+  }
 
-  /* ───── 스마트 간격 조정 ───── */
-  const adjustInterval = () => {
-    const currentCount = getPostCount();
-    
-    if (currentCount > lastPostCount) {
-      // 새 게시물 감지: 간격 단축 (기본값의 50%)
-      currentInterval = Math.max(20, Math.floor(baseInterval * 0.5));
-      noNewPostCount = 0;
-      console.log(`[DCB] 새 게시물 감지 - 간격 단축: ${currentInterval}초`);
-    } else {
-      // 새 게시물 없음: 점진적 간격 연장
-      noNewPostCount++;
-      if (noNewPostCount >= 3) {
-        currentInterval = Math.min(baseInterval * 1.5, 180); // 최대 180초
-        noNewPostCount = 0;
-        console.log(`[DCB] 새 게시물 없음 - 간격 연장: ${currentInterval}초`);
-      }
-    }
-    
-    lastPostCount = currentCount;
-  };
+  function statusText(){
+    if (!isListView()) return "목록 페이지에서만 작동";
+    if (isPreviewActive()) return "미리보기 사용 중 일시중지";
+    if (document.hidden) return "백그라운드 일시중지";
+    return lastStatus;
+  }
 
-  /* ───── 카운트다운 업데이트 ───── */
-  const updateCountdown = () => {
+  function updateCountdown(){
     if (!countdownElement) return;
-    
-    const minutes = Math.floor(remainingSeconds / 60);
-    const seconds = remainingSeconds % 60;
-    const timeText = minutes > 0 
-      ? `${minutes}분 ${seconds}초`
-      : `${seconds}초`;
-    
-    // 다음 간격 표시 (간격이 변할 예정이면)
-    const nextText = currentInterval !== baseInterval 
-      ? ` (기본: ${Math.floor(baseInterval)}초)`
-      : '';
-    
+    const small = statusText();
     countdownElement.innerHTML = `
       <div style="display: flex; align-items: center; gap: 8px;">
         <div style="
@@ -96,219 +106,214 @@ auto-refresh.js - 자동 새로고침 기능 (현대화 버전)
           border-radius: 50%;
           animation: pulse 2s infinite;
         "></div>
-        <span>자동 새로고침: <strong>${timeText}</strong>${nextText}</span>
+        <span>자동 새로고침: <strong>${refreshing ? "갱신 중" : timeLabel(remainingSeconds)}</strong></span>
       </div>
+      <div style="margin-top:6px;color:#9ca3af;font-size:11px;line-height:1.35;">${small} · ${refreshInterval}초 주기</div>
     `;
-    
-    // CSS 애니메이션 추가
-    if (!document.getElementById('dcb-countdown-animation')) {
-      const style = document.createElement('style');
-      style.id = 'dcb-countdown-animation';
-      style.textContent = `
-        @keyframes pulse {
-          0%, 100% { opacity: 1; transform: scale(1); }
-          50% { opacity: 0.5; transform: scale(0.8); }
-        }
-      `;
-      document.head.appendChild(style);
-    }
-  };
+  }
 
-  /* ───── 카운트다운 시작 ───── */
-  const startCountdown = () => {
-    if (pausedByReading || !pageVisible) return;
-    if (countdownInterval) {
-      clearInterval(countdownInterval);
-    }
-    
+  function showCountdown(){
     createCountdownUI();
-    remainingSeconds = currentInterval;
-    
     if (countdownElement) {
-      countdownElement.style.display = 'block';
+      countdownElement.style.display = autoRefreshEnabled ? "block" : "none";
       updateCountdown();
     }
-    
+  }
+
+  function hideCountdown(){
+    if (countdownElement) countdownElement.style.display = "none";
+  }
+
+  function stopCountdown(){
+    if (countdownInterval) clearInterval(countdownInterval);
+    countdownInterval = null;
+    hideCountdown();
+  }
+
+  function resetCountdown(){
+    remainingSeconds = refreshInterval;
+    updateCountdown();
+  }
+
+  function postNo(row){
+    const raw = row?.querySelector?.("td.gall_num")?.textContent?.trim() || "";
+    return /^\d+$/.test(raw) ? raw : "";
+  }
+
+  function isNoticeRow(row){
+    const num = row?.querySelector?.("td.gall_num")?.textContent?.trim() || "";
+    const subject = row?.querySelector?.("td.gall_subject, .gall_subject")?.textContent?.trim() || "";
+    const title = row?.querySelector?.("td.gall_tit, .gall_tit")?.textContent?.trim() || "";
+    return num === "공지" || subject === "공지" || row?.classList?.contains("notice") || !!row?.querySelector?.(".icon_notice,.sp-notice") || /^공지/.test(title);
+  }
+
+  function isNormalPost(row){
+    return !!postNo(row) && !isNoticeRow(row);
+  }
+
+  function currentNumbers(){
+    return new Set($$("tr.ub-content").map(postNo).filter(Boolean));
+  }
+
+  function insertAnchor(tbody){
+    const rows = $$("tr.ub-content", tbody);
+    const notices = rows.filter(isNoticeRow);
+    if (notices.length) {
+      const lastNotice = notices[notices.length - 1];
+      const afterNotice = rows.slice(rows.indexOf(lastNotice) + 1).find(isNormalPost);
+      return afterNotice || lastNotice.nextSibling;
+    }
+    return rows.find(isNormalPost) || null;
+  }
+
+  function cloneRow(row){
+    const cloned = document.importNode(row, true);
+    cloned.classList.add("dcb-auto-refresh-added");
+    cloned.querySelectorAll("[id]").forEach((node) => {
+      node.id = `${node.id}-dcb-refresh-${Date.now().toString(36)}`;
+    });
+    return cloned;
+  }
+
+  function mergeFreshRows(fetchedDoc){
+    const liveBody = $(".gall_list tbody");
+    const fetchedBody = $(".gall_list tbody", fetchedDoc);
+    if (!liveBody || !fetchedBody) return { added: 0, message: "목록 테이블 없음" };
+
+    const exists = currentNumbers();
+    const freshRows = $$("tr.ub-content", fetchedBody)
+      .filter((row) => isNormalPost(row) && !exists.has(postNo(row)))
+      .slice(0, MAX_IMPORT_ROWS);
+
+    if (!freshRows.length) return { added: 0, message: "새 글 없음" };
+
+    const fragment = document.createDocumentFragment();
+    const importedRows = freshRows.map(cloneRow);
+    importedRows.forEach((row) => fragment.appendChild(row));
+    liveBody.insertBefore(fragment, insertAnchor(liveBody));
+
+    document.dispatchEvent(new CustomEvent("dcb-soft-refresh", {
+      detail: { added: importedRows.length, rows: importedRows }
+    }));
+
+    return { added: importedRows.length, message: `새 글 ${importedRows.length}개 반영` };
+  }
+
+  function listUrl(){
+    const url = new URL(location.href);
+    url.searchParams.set("_dcb_auto_refresh", Date.now().toString(36));
+    return url.href;
+  }
+
+  async function performAutoRefresh(){
+    if (refreshing || !autoRefreshEnabled) return;
+    if (shouldPause()) {
+      resetCountdown();
+      return;
+    }
+
+    refreshing = true;
+    lastStatus = "자동 실행 중";
+    updateCountdown();
+
+    try {
+      const response = await fetch(listUrl(), { credentials: "include", cache: "no-store" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const html = await response.text();
+      const fetchedDoc = new DOMParser().parseFromString(html, "text/html");
+      const result = mergeFreshRows(fetchedDoc);
+      lastStatus = result.message;
+    } catch (error) {
+      lastStatus = `갱신 실패: ${error?.message || error}`;
+    } finally {
+      refreshing = false;
+      resetCountdown();
+    }
+  }
+
+  function startAutoRefresh(){
+    stopCountdown();
+    if (!autoRefreshEnabled) return;
+
+    resetCountdown();
+    showCountdown();
+
     countdownInterval = setInterval(() => {
-      remainingSeconds--;
-      updateCountdown();
-      
+      if (!autoRefreshEnabled) return;
+
+      if (shouldPause()) {
+        resetCountdown();
+        showCountdown();
+        return;
+      }
+
+      remainingSeconds -= 1;
       if (remainingSeconds <= 0) {
-        clearInterval(countdownInterval);
-        countdownInterval = null;
+        performAutoRefresh();
+      } else {
+        updateCountdown();
       }
     }, 1000);
-  };
+  }
 
-  /* ───── 카운트다운 정지 ───── */
-  const stopCountdown = () => {
-    if (countdownInterval) {
-      clearInterval(countdownInterval);
-      countdownInterval = null;
-    }
-    
-    if (countdownElement) {
-      countdownElement.style.display = 'none';
-    }
-  };
+  function applySettings(enabled, interval){
+    autoRefreshEnabled = !!enabled;
+    refreshInterval = clampInterval(interval);
+    remainingSeconds = refreshInterval;
+    lastStatus = autoRefreshEnabled ? "대기 중" : "OFF";
 
-  /* ───── 자동 새로고침 시작 ───── */
-  const startAutoRefresh = () => {
-    if (timerId) return;
-    if (!pageVisible) return;
-    if (listOnlyMode && !isListView()) {
-      console.log('[DCB] 목록 페이지 전용 모드: 이 페이지에서 자동 새로고침 비활성화됨');
-      return;
-    }
-    if (shouldPauseForReading()) {
-      console.log('[DCB] 미리보기/본문 읽기 중: 자동 새로고침 시작 불가');
-      return;
-    }
+    if (autoRefreshEnabled) startAutoRefresh();
+    else stopCountdown();
+  }
 
-    console.log(`[DCB] 자동 새로고침 시작: ${currentInterval}초 간격`);
-    lastPostCount = getPostCount();
-    
-    startCountdown();
-    
-    timerId = setInterval(() => {
-      if (!pageVisible) {
-        console.log('[DCB] 페이지 백그라운드 상태 - 새로고침 건너뜀');
-        return;
-      }
-      
-      if (shouldPauseForReading()) {
-        console.log('[DCB] 미리보기/본문 읽기 중 - 새로고침 건너뜀');
-        return;
-      }
-
-      adjustInterval(); // 간격 조정
-      
-      console.log('[DCB] 페이지 자동 새로고침 실행');
-      window.location.reload();
-    }, currentInterval * 1000);
-  };
-
-  /* ───── 자동 새로고침 정지 ───── */
-  const stopAutoRefresh = () => {
-    if (timerId) {
-      clearInterval(timerId);
-      timerId = null;
-      console.log('[DCB] 자동 새로고침 정지');
-    }
-    
-    stopCountdown();
-  };
-
-  /* ───── 글 본문/댓글 감지: 읽는 중이면 새로고침 금지 ───── */
-  const isArticleView = () => /\/board\/view(?:\/|$)/.test(location.pathname);
-  const isListView = () => /\/board\/lists(?:\/|$)/.test(location.pathname);
-  const hasCommentSection = () => !!document.querySelector('.comment_wrap');
-  const isPreviewActive = () => pausedByPreview || !!window.isPreviewOpen;
-  const shouldPauseForReading = () => isPreviewActive() || (isArticleView() && hasCommentSection()) || (listOnlyMode && !isListView());
-
-  /* ───── 설정 적용 ───── */
-  const apply = (enabled, interval) => {
-    autoRefreshEnabled = enabled;
-    baseInterval = interval;
-    currentInterval = interval; // 기본값으로 리셋
-    noNewPostCount = 0;
-    
-    pausedByReading = shouldPauseForReading();
-
-    if (enabled && !pausedByReading && pageVisible) {
-      stopAutoRefresh();
-      startAutoRefresh();
-    } else {
-      stopAutoRefresh();
-    }
-
-    if (enabled && pausedByReading) {
-      console.log('[DCB] 본문/댓글 감지됨: 자동 새로고침 일시중지');
-    }
-  };
-
-  /* ───── 초기 설정 로드 ───── */
-  chrome.storage.sync.get({ 
-    autoRefreshEnabled: false, 
-    autoRefreshInterval: 60
-  }, ({ autoRefreshEnabled, autoRefreshInterval }) => {
-    apply(autoRefreshEnabled, autoRefreshInterval);
+  chrome.storage.sync.get({ autoRefreshEnabled: false, autoRefreshInterval: 60 }, ({ autoRefreshEnabled, autoRefreshInterval }) => {
+    applySettings(autoRefreshEnabled, autoRefreshInterval);
   });
 
-  /* ───── 설정 변경 감지 ───── */
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area !== 'sync') return;
-    
-    let needUpdate = false;
-    let newEnabled = autoRefreshEnabled;
-    let newInterval = baseInterval;
-    
-    if (changes.autoRefreshEnabled) {
-      newEnabled = changes.autoRefreshEnabled.newValue;
-      needUpdate = true;
-    }
-    
-    if (changes.autoRefreshInterval) {
-      newInterval = changes.autoRefreshInterval.newValue;
-      needUpdate = true;
-    }
-    
-    if (needUpdate) {
-      apply(newEnabled, newInterval);
+    if (area !== "sync") return;
+    if (!changes.autoRefreshEnabled && !changes.autoRefreshInterval) return;
+    applySettings(
+      changes.autoRefreshEnabled ? changes.autoRefreshEnabled.newValue : autoRefreshEnabled,
+      changes.autoRefreshInterval ? changes.autoRefreshInterval.newValue : refreshInterval
+    );
+  });
+
+  document.addEventListener("dcb-preview-state", (event) => {
+    pausedByPreview = !!event.detail?.open;
+    if (autoRefreshEnabled) {
+      resetCountdown();
+      showCountdown();
     }
   });
 
-  /* ───── DOM 변화 감지: 댓글 영역이 늦게 로드돼도 중지 ───── */
-  const mo = new MutationObserver(() => {
-    if (!autoRefreshEnabled) return;
-    if (timerId && shouldPauseForReading()) {
-      pausedByReading = true;
-      stopAutoRefresh();
-      console.log('[DCB] 댓글 영역 감지됨: 자동 새로고침 중단');
-    }
-  });
-  try {
-    mo.observe(document.documentElement || document.body, { childList: true, subtree: true });
-  } catch {}
-
-  /* ───── Page Visibility API: 탭이 백그라운드면 새로고침 중지 ───── */
-  document.addEventListener('visibilitychange', () => {
-    pageVisible = document.visibilityState === 'visible';
-    
-    if (pageVisible && autoRefreshEnabled && !pausedByReading) {
-      console.log('[DCB] 페이지 다시 활성화됨: 자동 새로고침 재개');
-      stopAutoRefresh();
-      startAutoRefresh();
-    } else if (!pageVisible && timerId) {
-      console.log('[DCB] 페이지 백그라운드 전환: 카운트다운 일시정지');
-      stopCountdown();
+  document.addEventListener("visibilitychange", () => {
+    if (autoRefreshEnabled) {
+      resetCountdown();
+      showCountdown();
     }
   });
 
-  /* ───── 페이지 언로드 시 정리 ───── */
-  window.addEventListener('beforeunload', () => {
-    stopAutoRefresh();
-  });
-
-  /* ───── 미리보기 오버레이 상태 연동 ───── */
-  const handlePreviewState = (open) => {
-    pausedByPreview = !!open;
-    window.isPreviewOpen = !!open; // 전역 상태 동기화
-    pausedByReading = shouldPauseForReading();
-
-    if (timerId && pausedByReading) {
-      stopAutoRefresh();
-    }
-
-    if (autoRefreshEnabled && !shouldPauseForReading() && !timerId && pageVisible) {
+  function handleUrlChange(){
+    if (lastHref === location.href) return;
+    lastHref = location.href;
+    if (autoRefreshEnabled) {
+      lastStatus = "주소 변경 감지";
       startAutoRefresh();
     }
-  };
+  }
 
-  document.addEventListener('dcb-preview-state', (e) => {
-    handlePreviewState(e.detail?.open);
+  ["pushState", "replaceState"].forEach((name) => {
+    const original = history[name];
+    if (typeof original !== "function" || original.__dcbAutoRefreshPatched) return;
+    history[name] = function(...args){
+      const result = original.apply(this, args);
+      setTimeout(handleUrlChange, 0);
+      return result;
+    };
+    history[name].__dcbAutoRefreshPatched = true;
   });
 
-  // 초기 상태 반영 (미리보기는 기본적으로 닫혀있음)
-  handlePreviewState(false);
+  window.addEventListener("popstate", () => setTimeout(handleUrlChange, 0));
+  window.addEventListener("beforeunload", stopCountdown);
 })();
