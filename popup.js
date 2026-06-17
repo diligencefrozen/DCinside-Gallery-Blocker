@@ -1480,3 +1480,116 @@ renderPopupMemoList();
 if (openOptionsBtn) {
   openOptionsBtn.onclick = () => chrome.runtime.openOptionsPage();
 }
+
+(() => {
+  const CONFIG_KEY = "dcbImageBlockConfig";
+  const DEFAULTS = Object.freeze({
+    enabled: false,
+    toolbar: false,
+    blurAnonymous: false,
+    blurSemi: false,
+    blurNew: false,
+    blurFixed: false,
+    blurManager: false,
+    normalPost: false,
+    recommendedPost: false,
+    skipSmall: false,
+    minWidth: 160,
+    minHeight: 160,
+    tallImage: false,
+    maxHeight: 1200,
+    shortcuts: false,
+    hideBlockedNotice: false
+  });
+
+  const ui = {
+    enabled: document.getElementById("imageBlockEnabled"),
+    status: document.getElementById("imageBlockStatus"),
+    list: document.getElementById("openImageBlockList")
+  };
+
+  if (!ui.enabled && !ui.list) return;
+
+  const applyOneClick = (value = {}) => {
+    const on = value?.enabled === true;
+    return {
+      ...DEFAULTS,
+      ...(value && typeof value === "object" ? value : {}),
+      enabled: on,
+      toolbar: on,
+      blurAnonymous: on,
+      blurSemi: on,
+      blurNew: on,
+      blurFixed: on,
+      blurManager: on,
+      normalPost: on,
+      recommendedPost: on,
+      skipSmall: false,
+      tallImage: false,
+      shortcuts: false,
+      hideBlockedNotice: false,
+      minWidth: DEFAULTS.minWidth,
+      minHeight: DEFAULTS.minHeight,
+      maxHeight: DEFAULTS.maxHeight
+    };
+  };
+
+  const notice = (message, error = false) => {
+    if (!ui.status) return;
+    ui.status.textContent = message || "";
+    ui.status.style.color = error ? "#ff9b9b" : "#9dd6a5";
+  };
+
+  const render = (state) => {
+    if (ui.enabled) ui.enabled.checked = state.enabled === true;
+  };
+
+  const current = () => applyOneClick({ enabled: ui.enabled?.checked === true });
+
+  const save = () => {
+    const next = current();
+    chrome.storage.sync.set({ [CONFIG_KEY]: next }, () => {
+      if (chrome.runtime.lastError) {
+        notice("저장하지 못했어요. 확장 프로그램을 새로고침한 뒤 다시 시도해 주세요.", true);
+        return;
+      }
+      chrome.storage.local.set({ [CONFIG_KEY]: next });
+      render(next);
+      notice(next.enabled ? "이미지 차단을 켰어요. 모든 작성자 이미지에 바로 적용됩니다." : "이미지 차단을 껐어요. 필요할 때 다시 켜면 됩니다.");
+    });
+  };
+
+  const load = () => {
+    chrome.storage.sync.get({ [CONFIG_KEY]: DEFAULTS }, (data) => {
+      const state = applyOneClick(data[CONFIG_KEY]);
+      render(state);
+      notice(state.enabled ? "이미지 차단 사용 중입니다. 모든 작성자 이미지에 적용됩니다." : "이미지 차단은 꺼져 있어요.");
+    });
+  };
+
+  const sendToActivePage = (action) => {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      const tab = tabs && tabs[0];
+      if (!tab || !/^https?:\/\/gall\.dcinside\.com\//.test(tab.url || "")) {
+        notice("DCInside 게시글 탭을 연 뒤 다시 눌러주세요.", true);
+        return;
+      }
+      chrome.tabs.sendMessage(tab.id, { action }, (response) => {
+        if (chrome.runtime.lastError || !response?.ok) {
+          notice("현재 게시글에서 이미지 차단을 불러오지 못했어요. 페이지를 새로고침해 주세요.", true);
+          return;
+        }
+        notice("차단 목록을 열었어요.");
+      });
+    });
+  };
+
+  ui.enabled?.addEventListener("change", save);
+  ui.list?.addEventListener("click", () => sendToActivePage("dcb.imageBlock.openList"));
+
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if ((area === "sync" || area === "local") && changes[CONFIG_KEY]) render(applyOneClick(changes[CONFIG_KEY].newValue));
+  });
+
+  load();
+})();
