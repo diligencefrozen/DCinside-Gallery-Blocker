@@ -783,6 +783,79 @@
 
   .switch.is-busy{opacity:.72;pointer-events:none}
   .switch input:disabled + .slider{cursor:wait}
+
+  .quick-toggle-panel {
+    box-sizing: border-box;
+    width: 100%;
+    overflow: hidden;
+  }
+
+  .quick-toggle-grid {
+    display: grid;
+    gap: 10px;
+  }
+
+  .quick-toggle-grid .row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 12px;
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .quick-toggle-grid .row > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .quick-toggle-grid select {
+    box-sizing: border-box;
+    width: 180px;
+    max-width: 100%;
+    min-width: 0;
+    height: 34px;
+    padding: 0 32px 0 10px;
+    border-radius: 10px;
+  }
+
+
+  .quick-toggle-panel{overflow:visible}
+  .quick-toggle-panel .row{border:0;background:transparent}
+  .quick-toggle-grid select{width:148px}
+
+  .media-essentials-card{
+    display:flex;
+    flex-direction:column;
+    gap:12px;
+    padding:13px;
+    border:1px solid rgba(148,163,184,.22);
+    border-radius:18px;
+    background:linear-gradient(180deg,rgba(15,23,42,.98),rgba(12,18,31,.94));
+    box-shadow:0 12px 28px rgba(0,0,0,.22),inset 0 1px 0 rgba(255,255,255,.035);
+  }
+  .media-essentials-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;min-width:0}
+  .media-essentials-copy{display:flex;flex-direction:column;gap:3px;min-width:0}
+  .media-essentials-copy strong{color:#f8fafc;font-size:13px;font-weight:900;letter-spacing:-.025em;line-height:1.2}
+  .media-essentials-copy span{color:#93a4bd;font-size:11px;font-weight:700;line-height:1.35}
+  .media-pill{display:inline-flex;align-items:center;justify-content:center;min-height:22px;padding:0 8px;border:1px solid rgba(96,165,250,.22);border-radius:999px;background:rgba(37,99,235,.12);color:#bfdbfe;font-size:10px;font-weight:900;line-height:1;white-space:nowrap}
+  .media-subtitle{margin:2px 0 -3px;color:#dbeafe;font-size:11px;font-weight:900;letter-spacing:-.01em}
+  .media-toggle-grid{display:grid;grid-template-columns:1fr;gap:7px}
+  .media-toggle-grid.compact{grid-template-columns:1fr 1fr;gap:6px 8px}
+  .media-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:10px;min-height:32px;padding:6px 0;border-top:1px solid rgba(148,163,184,.08)}
+  .media-row:first-child{border-top:0}
+  .media-row > span{min-width:0;color:#e5edf8;font-size:12.5px;font-weight:760;letter-spacing:-.02em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .media-row small{display:block;color:#8491a5;font-size:10px;font-weight:700;line-height:1.25;white-space:normal}
+  .media-mini-field{display:flex;align-items:center;gap:6px;justify-self:end}
+  .media-mini-field input[type="number"]{width:64px;height:30px;padding:0 7px;border-radius:9px;background:#111827;border:1px solid rgba(148,163,184,.22);font-size:12px}
+  .media-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .media-actions button{min-height:32px;border-radius:10px;border:1px solid rgba(148,163,184,.28);background:#101827;color:#dbeafe;font-size:12px;font-weight:850;box-shadow:none}
+  .media-actions button:hover{background:#17233a;color:#f8fafc;border-color:rgba(147,197,253,.44);box-shadow:none}
+  .media-status{min-height:15px;color:#9dd6a5;font-size:11px;line-height:1.35}
+
 </style>
 </head>
 <body>
@@ -798,7 +871,7 @@
     </div>
     <p class="donation-message">디시갤 차단기 유지보수와 개선 작업이 계속 이어질 수 있도록 응원해주세요.</p>
     <div class="donation-actions">
-      <a class="donation-button" href="https://toon.at/donate/dcb0617" target="_blank" rel="noopener noreferrer">투네이션으로 후원하기 ↗</a>
+      <a class="donation-button" href="https://toon.at/donate/dcb0617" target="_blank" rel="noopener noreferrer">커피 한 잔으로 응원하기 ↗</a>
     </div>
   </section>
 
@@ -808,53 +881,76 @@
       <span>자주 켜고 끄는 기능</span>
     </div>
     <div class="quick-toggle-grid">
-      <label class="row">
-          <span>사용자 차단</span>
-          <label class="switch">
-            <input type="checkbox" id="userBlockEnabled">
-            <span class="slider"></span>
-          </label>
+      <div class="row">
+        <span>사용자 차단</span>
+        <label class="switch">
+          <input type="checkbox" id="userBlockEnabled">
+          <span class="slider"></span>
         </label>
-      <label class="row">
-          <span>사용자 차단 방식</span>
-          <select id="userBlockTriggerMode" title="사용자 차단 방식">
-            <option value="instant">우클릭 즉시 차단</option>
-            <option value="contextMenu">우클릭 후 메뉴에서 차단</option>
-          </select>
+      </div>
+      <label class="row" for="userBlockTriggerMode">
+        <span>사용자 차단 방식</span>
+        <select id="userBlockTriggerMode" title="사용자 차단 방식">
+          <option value="instant">우클릭 즉시 차단</option>
+          <option value="contextMenu">우클릭 후 메뉴에서 차단</option>
+        </select>
+      </label>
+      <div class="row" id="userBlockHoverHintRow">
+        <span>즉시 차단 안내 팝업</span>
+        <label class="switch" title="즉시 차단 모드에서만 표시됩니다">
+          <input type="checkbox" id="userBlockHoverHintEnabled">
+          <span class="slider"></span>
         </label>
-      <label class="row" id="userBlockHoverHintRow">
-          <span>즉시 차단 안내 팝업</span>
-          <label class="switch" title="즉시 차단 모드에서만 표시됩니다">
-            <input type="checkbox" id="userBlockHoverHintEnabled">
-            <span class="slider"></span>
-          </label>
+      </div>
+      <div class="row">
+        <span>키워드 차단 모드</span>
+        <label class="switch">
+          <input type="checkbox" id="keywordBlockEnabled">
+          <span class="slider"></span>
         </label>
-      <label class="row">
-          <span>키워드 차단 모드</span>
-          <label class="switch">
-            <input type="checkbox" id="keywordBlockEnabled">
-            <span class="slider"></span>
-          </label>
+      </div>
+      <div class="row">
+        <span>키워드 숨기기 모드</span>
+        <label class="switch">
+          <input type="checkbox" id="keywordHideEnabled">
+          <span class="slider"></span>
         </label>
-      <label class="row">
-          <span>키워드 숨기기 모드</span>
-          <label class="switch">
-            <input type="checkbox" id="keywordHideEnabled">
-            <span class="slider"></span>
-          </label>
-        </label>
+      </div>
     </div>
 
     <div class="quick-guide" role="note" aria-label="빠른 이용자 차단 안내">
-        <div class="quick-guide-title">
-          <span class="pill">TIP</span>
-          <span>빠른 이용자 차단</span>
-        </div>
-        <p id="userBlockModeGuide"><strong>작성자 닉네임, 갤로그 아이콘, 메모 버튼</strong> 위에서 우클릭하면 UID/IP가 바로 차단 목록에 저장됩니다.</p>
-        <p class="mini-note" id="userBlockModeSubGuide">글 제목, 본문, 댓글 내용 영역에서는 사용자 차단이 실행되지 않습니다.</p>
-
+      <div class="quick-guide-title">
+        <span class="pill">TIP</span>
+        <span>빠른 이용자 차단</span>
       </div>
+      <p id="userBlockModeGuide"><strong>작성자 닉네임, 갤로그 아이콘, 메모 버튼</strong> 위에서 우클릭하면 UID/IP가 바로 차단 목록에 저장됩니다.</p>
+      <p class="mini-note" id="userBlockModeSubGuide">글 제목, 본문, 댓글 내용 영역에서는 사용자 차단이 실행되지 않습니다.</p>
+    </div>
   </div>
+
+  <section class="media-essentials-card" aria-label="이미지 차단 옵션">
+    <div class="media-essentials-head">
+      <div class="media-essentials-copy">
+        <strong>이미지 차단</strong>
+        <span>켜면 게시글 이미지를 빠르게 흐림 처리하고, 이미지 위 차단 버튼으로 바로 가릴 수 있어요.</span>
+      </div>
+      <span class="media-pill">Simple</span>
+    </div>
+
+    <div class="media-toggle-grid">
+      <div class="media-row">
+        <span>이미지 차단 켜기<small>차단 버튼, 일반글,개념글 적용을 한 번에 켭니다</small></span>
+        <label class="switch"><input type="checkbox" id="imageBlockEnabled"><span class="slider"></span></label>
+      </div>
+    </div>
+
+    <p class="mini-note">켜는 순간 유동,고닉,반고닉,신규회원,주딱/파딱 이미지까지 한 번에 흐림 처리합니다.</p>
+
+    <div class="media-actions">
+      <button type="button" id="openImageBlockList">차단 목록</button>
+    </div>
+    <div class="media-status" id="imageBlockStatus"></div>
+  </section>
 
   <div class="user-block-card" aria-label="사용자 차단 목록 관리">
     <div class="user-block-head">
