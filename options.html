@@ -729,6 +729,103 @@
   .donation-note{color:#9fb0c8;font-size:12px;line-height:1.5}
 
 
+
+
+.image-block-card{
+  gap:16px;
+  border:1px solid rgba(79,124,255,.24);
+  background:linear-gradient(180deg,rgba(22,27,34,.98),rgba(13,17,23,.98));
+}
+.image-block-head{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:16px;
+}
+.image-block-copy{
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+}
+.image-block-copy h2{margin:0}
+.image-block-copy p{margin:0}
+.image-block-pill{
+  display:inline-flex;
+  align-items:center;
+  min-height:26px;
+  padding:0 10px;
+  border:1px solid rgba(96,165,250,.24);
+  border-radius:999px;
+  background:rgba(37,99,235,.12);
+  color:#bfdbfe;
+  font-size:12px;
+  font-weight:700;
+  white-space:nowrap;
+}
+.image-block-grid{
+  display:grid;
+  grid-template-columns:1fr;
+  gap:10px;
+}
+.image-block-grid.compact{
+  grid-template-columns:repeat(2,minmax(0,1fr));
+}
+.image-block-row{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  align-items:center;
+  gap:14px;
+  min-height:42px;
+  padding:10px 0;
+  border-top:1px solid rgba(148,163,184,.12);
+}
+.image-block-row:first-child{border-top:0}
+.image-block-row > span{
+  min-width:0;
+  color:#e6edf3;
+  font-size:14px;
+  font-weight:600;
+  line-height:1.35;
+}
+.image-block-row small{
+  display:block;
+  margin-top:3px;
+  color:#8b949e;
+  font-size:12px;
+  font-weight:400;
+}
+.image-block-mini-field{
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:8px;
+  color:#8b949e;
+}
+.image-block-mini-field input[type="number"]{
+  width:78px;
+  height:34px;
+  padding:0 9px;
+  border:1px solid #30363d;
+  border-radius:8px;
+  background:#010409;
+  color:var(--fg);
+}
+.image-block-actions{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:10px;
+}
+.image-block-status{
+  min-height:18px;
+  color:#9dd6a5;
+  font-size:13px;
+}
+@media(max-width:520px){
+  .image-block-grid.compact{grid-template-columns:1fr}
+  .image-block-row{grid-template-columns:1fr;align-items:start}
+  .image-block-mini-field{justify-content:flex-start}
+}
+
 </style>
 </head>
 <body>
@@ -739,18 +836,25 @@
   </section>
 
 
-  <section class="card donation-card" aria-label="개발자 후원">
+  <section class="card donation-card" aria-label="후원하기">
     <div class="donation-head">
       <div class="donation-copy">
-        <strong>💝 개발자 후원하기</strong>
-        <span>선택 후원입니다. 디시갤 차단기의 모든 기능은 계속 무료로 사용할 수 있습니다.</span>
+        <strong>💝 디시갤 차단기가 도움이 됐다면</strong>
+        <span>앞으로도 모든 기능은 무료로 계속 사용할 수 있어요.</span>
       </div>
       <span class="donation-badge">Toonation</span>
     </div>
-    <p class="donation-message">후원은 유지보수, 버그 수정, 새 기능 개선에 큰 힘이 됩니다. 아래 버튼을 누르면 투네이션 후원 페이지가 새 탭으로 열립니다.</p>
+
+    <p class="donation-message">
+      보기싫은 사용자, 보기 싫은 갤러리 차단 등에 도움이 되셨다면 커피 한 잔으로 응원해주세요.
+      사용자님의 작은 응원이 더 안정적인 차단 기능과 꾸준한 업데이트로 이어집니다.
+    </p>
+
     <div class="donation-actions">
-      <a class="donation-button" href="https://toon.at/donate/dcb0617" target="_blank" rel="noopener noreferrer">투네이션으로 후원하기 ↗</a>
-      <span class="donation-note">후원 여부와 관계없이 차단 기능은 제한하지 않습니다.</span>
+      <a class="donation-button" href="https://toon.at/donate/dcb0617" target="_blank" rel="noopener noreferrer">
+        커피 한 잔으로 응원하기 ↗
+      </a>
+      <span class="donation-note">후원하지 않아도 모든 차단 기능은 그대로 사용할 수 있어요.</span>
     </div>
   </section>
 
@@ -1160,7 +1264,7 @@
       <span class="note">사용자 차단 방식</span>
       <select id="userBlockTriggerMode" title="사용자 차단 방식">
         <option value="instant">우클릭 즉시 차단</option>
-        <option value="contextMenu">우클릭 메뉴에서 차단</option>
+        <option value="contextMenu">우클릭 후 메뉴에서 차단</option>
       </select>
     </div>
 
@@ -1309,6 +1413,32 @@
     <p class="note" style="margin-top:12px">* 일반 댓글: 게시글 하단의 댓글 영역<br>
     * 이미지 댓글: 이미지에 달린 댓글 영역만 숨김<br>
     * 디시콘: 본문과 댓글의 디시콘 숨김</p>
+  </section>
+
+
+
+  <section class="card image-block-card" aria-label="이미지 차단 옵션">
+    <div class="image-block-head">
+      <div class="image-block-copy">
+        <h2>🖼️ 이미지 차단</h2>
+        <p class="note">켜면 게시글 이미지를 빠르게 흐림 처리하고, 이미지 위 차단 버튼으로 바로 가릴 수 있어요.</p>
+      </div>
+      <span class="image-block-pill">간단 모드</span>
+    </div>
+
+    <div class="image-block-grid">
+      <div class="image-block-row">
+        <span>이미지 차단 켜기<small>차단 버튼, 일반글,개념글 적용을 한 번에 켭니다</small></span>
+        <label class="switch"><input type="checkbox" id="mediaShieldEnabled"><span class="slider"></span></label>
+      </div>
+    </div>
+
+    <p class="note">켜는 순간 유동,고닉,반고닉,신규회원,주딱/파딱 이미지까지 한 번에 흐림 처리합니다.</p>
+
+    <div class="image-block-actions">
+      <button type="button" id="openMediaShieldBlocked">차단 목록</button>
+    </div>
+    <div class="image-block-status" id="mediaShieldStatus"></div>
   </section>
 
   <section class="card">
