@@ -313,695 +313,1686 @@ function clamp(v){
 /* ───── 초기 실행 ───── */
 syncSettings(handleUrl);
 
-/* ───── 뷰 페이지 프리뷰 (우클릭) ───── */
-(function previewOverlay(){
+/* ───── 게시글 미리보기 ───── */
+(function dcBlockPostPreview(){
+  "use strict";
+
   const STYLE_ID = "dcb-preview-style";
   const OVERLAY_ID = "dcb-preview-overlay";
+  const SHARE_ID = "dcbpv-share-popup";
+  const CACHE_TTL = 2 * 60 * 1000;
 
-  const createStyle = () => {
+  const cache = new Map();
+  let activeAbort = null;
+  let currentPreviewData = null;
+
+  const escapeText = (value) => String(value ?? "").replace(/[&<>'"]/g, (ch) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    "'": "&#39;",
+    '"': "&quot;"
+  }[ch]));
+
+  const asText = (root, selector) => root?.querySelector?.(selector)?.textContent?.trim() || "";
+
+  const makeAbsolute = (value, baseUrl) => {
+    try { return new URL(value || "", baseUrl || location.href).href; }
+    catch (_) { return value || ""; }
+  };
+
+  function emitPreviewState(open){
+    window.isPreviewOpen = !!open;
+    document.dispatchEvent(new CustomEvent("dcb-preview-state", { detail: { open: !!open } }));
+  }
+
+  function articleNumberFrom(url, doc){
+    try {
+      const no = new URL(url, location.href).searchParams.get("no");
+      if (no) return no;
+    } catch (_) {}
+    return doc?.querySelector?.("#no")?.value || doc?.querySelector?.("input[name='no']")?.value || "";
+  }
+
+  function galleryIdFrom(url){
+    try { return new URL(url, location.href).searchParams.get("id") || ""; }
+    catch (_) { return ""; }
+  }
+
+  function toMobileUrl(viewUrl){
+    try {
+      const parsed = new URL(viewUrl, location.href);
+      const id = parsed.searchParams.get("id");
+      const no = parsed.searchParams.get("no");
+      if (!id || !no) return "";
+      if (/\/mini\//i.test(parsed.pathname)) {
+        return `https://m.dcinside.com/mini/${encodeURIComponent(id)}/${encodeURIComponent(no)}`;
+      }
+      return `https://m.dcinside.com/board/${encodeURIComponent(id)}/${encodeURIComponent(no)}`;
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function installPreviewCss(){
     if (document.getElementById(STYLE_ID)) return;
     const style = document.createElement("style");
     style.id = STYLE_ID;
     style.textContent = `
-      #${OVERLAY_ID}{position:fixed;inset:0;z-index:2147483600;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(0,0,0,.6);backdrop-filter:blur(8px);animation:dcbpv-fade .2s ease-out;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
-      #${OVERLAY_ID} .dcbpv-panel{width:min(680px,90vw);max-height:min(85vh,700px);background:#fff;box-shadow:0 20px 60px rgba(0,0,0,.25),0 0 0 1px rgba(0,0,0,.05);border-radius:16px;display:flex;flex-direction:column;overflow:hidden;animation:dcbpv-pop .25s cubic-bezier(0.34,1.56,0.64,1)}
-      #${OVERLAY_ID} .dcbpv-header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:20px 24px;border-bottom:1px solid #f0f0f0;background:#fff}
-      #${OVERLAY_ID} .dcbpv-meta{flex:1;min-width:0}
-      #${OVERLAY_ID} .dcbpv-title{font-size:18px;font-weight:600;color:#1a1a1a;line-height:1.4;margin-bottom:10px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-      #${OVERLAY_ID} .dcbpv-sub{display:flex;flex-wrap:wrap;gap:6px;font-size:12px;color:#6b7280}
-      #${OVERLAY_ID} .dcbpv-chip{display:inline-flex;align-items:center;gap:4px;color:#6b7280;font-size:12px;line-height:1.5}
-      #${OVERLAY_ID} .dcbpv-chip::before{content:'';width:4px;height:4px;background:#d1d5db;border-radius:50%}
-      #${OVERLAY_ID} .dcbpv-chip:first-child::before{display:none}
-      #${OVERLAY_ID} .dcbpv-close{border:none;background:transparent;color:#9ca3af;font-size:20px;cursor:pointer;padding:4px;transition:.15s;display:flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:8px;flex-shrink:0}
-      #${OVERLAY_ID} .dcbpv-close:hover{background:#f3f4f6;color:#374151}
-      #${OVERLAY_ID} .dcbpv-body{flex:1;overflow-y:auto;background:#fff;padding:20px 24px}
-      #${OVERLAY_ID} .dcbpv-body::-webkit-scrollbar{width:6px}
-      #${OVERLAY_ID} .dcbpv-body::-webkit-scrollbar-track{background:transparent}
-      #${OVERLAY_ID} .dcbpv-body::-webkit-scrollbar-thumb{background:#d1d5db;border-radius:3px}
-      #${OVERLAY_ID} .dcbpv-body::-webkit-scrollbar-thumb:hover{background:#9ca3af}
-      #${OVERLAY_ID} .dcbpv-content{font-size:14px;line-height:1.7;color:#374151;max-height:400px;overflow-y:auto;padding-right:8px}
-      #${OVERLAY_ID} .dcbpv-content::-webkit-scrollbar{width:4px}
-      #${OVERLAY_ID} .dcbpv-content::-webkit-scrollbar-track{background:transparent}
-      #${OVERLAY_ID} .dcbpv-content::-webkit-scrollbar-thumb{background:#d1d5db;border-radius:2px}
-      #${OVERLAY_ID} .dcbpv-content img{max-width:100%;border-radius:8px;margin:12px 0;box-shadow:0 2px 8px rgba(0,0,0,.1)}
-      #${OVERLAY_ID} .dcbpv-content video{max-width:100%;border-radius:8px;margin:12px 0}
-      #${OVERLAY_ID} .dcbpv-content pre{white-space:pre-wrap;background:#f9fafb;padding:12px;border-radius:8px;border:1px solid #e5e7eb;font-size:13px;color:#374151;overflow-x:auto;margin:8px 0}
-      #${OVERLAY_ID} .dcbpv-content p{margin:8px 0}
-      #${OVERLAY_ID} .dcbpv-imggrid{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 12px 0}
-      #${OVERLAY_ID} .dcbpv-thumb{width:calc(50% - 4px);border-radius:10px;overflow:hidden;border:1px solid #e5e7eb;background:#f9fafb;text-decoration:none;color:inherit}
-      #${OVERLAY_ID} .dcbpv-thumb img{width:100%;height:140px;object-fit:cover;display:block;margin:0;border-radius:0;box-shadow:none}
-      #${OVERLAY_ID} .dcbpv-thumb.more{display:flex;align-items:center;justify-content:center;height:140px;font-size:13px;color:#6b7280;font-weight:600}
-      @media (max-width: 520px){ #${OVERLAY_ID} .dcbpv-thumb{width:100%} }
-      #${OVERLAY_ID} .dcbpv-attachments{margin-top:16px;padding-top:16px;border-top:1px solid #f0f0f0}
-      #${OVERLAY_ID} .dcbpv-attachments-title{font-size:12px;font-weight:600;color:#6b7280;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.5px}
-      #${OVERLAY_ID} .dcbpv-attachment{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;color:#374151;text-decoration:none;transition:.15s;margin-right:6px;margin-bottom:6px}
-      #${OVERLAY_ID} .dcbpv-attachment:hover{background:#f3f4f6;border-color:#d1d5db;color:#111827}
-      #${OVERLAY_ID} .dcbpv-actions{display:flex;gap:8px;padding-top:16px;margin-top:16px;border-top:1px solid #f0f0f0}
-      #${OVERLAY_ID} .dcbpv-btn{display:flex;align-items:center;justify-content:center;gap:6px;padding:8px 14px;border-radius:8px;border:1px solid #e5e7eb;background:#fff;color:#374151;font-weight:500;font-size:13px;cursor:pointer;transition:.15s;flex:1}
-      #${OVERLAY_ID} .dcbpv-btn:hover{background:#f9fafb;border-color:#d1d5db;transform:translateY(-1px);box-shadow:0 2px 4px rgba(0,0,0,.05)}
-      #${OVERLAY_ID} .dcbpv-btn:active{transform:translateY(0)}
-      #${OVERLAY_ID} .dcbpv-btn-icon{font-size:16px;line-height:1}
-      #${OVERLAY_ID} .dcbpv-btn-text{font-size:13px;color:inherit}
-      #${OVERLAY_ID} .dcbpv-btn.primary{background:#3b82f6;border-color:#3b82f6;color:#fff}
-      #${OVERLAY_ID} .dcbpv-btn.primary:hover{background:#2563eb;border-color:#2563eb}
-      #${OVERLAY_ID} .dcbpv-btn.warn{background:#fee2e2;border-color:#fecaca;color:#dc2626}
-      #${OVERLAY_ID} .dcbpv-btn.warn:hover{background:#fecaca;border-color:#fca5a5}
-      #${OVERLAY_ID} .dcbpv-empty{padding:32px 16px;text-align:center;color:#9ca3af;font-size:14px}
-      #${OVERLAY_ID} .dcbpv-share-popup{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:24px;box-shadow:0 20px 60px rgba(0,0,0,.2);z-index:2147483650;min-width:320px;max-width:90vw}
-      #${OVERLAY_ID} .dcbpv-share-popup h3{margin:0 0 16px 0;font-size:18px;color:#1a1a1a;font-weight:600}
-      #${OVERLAY_ID} .dcbpv-share-popup .share-btns{display:flex;gap:8px;margin-bottom:16px}
-      #${OVERLAY_ID} .dcbpv-share-popup .share-btn{flex:1;padding:10px;border:1px solid #e5e7eb;border-radius:8px;background:#f9fafb;color:#374151;text-align:center;cursor:pointer;transition:.15s;font-size:13px;font-weight:500}
-      #${OVERLAY_ID} .dcbpv-share-popup .share-btn:hover{background:#f3f4f6;border-color:#d1d5db}
-      #${OVERLAY_ID} .dcbpv-share-popup .url-copy{display:flex;gap:8px;align-items:center}
-      #${OVERLAY_ID} .dcbpv-share-popup .url-copy input{flex:1;padding:10px 12px;border:1px solid #e5e7eb;border-radius:8px;background:#f9fafb;color:#374151;font-size:12px;outline:none}
-      #${OVERLAY_ID} .dcbpv-share-popup .url-copy input:focus{border-color:#3b82f6;background:#fff}
-      #${OVERLAY_ID} .dcbpv-share-popup .url-copy button{padding:10px 16px;border:1px solid #3b82f6;border-radius:8px;background:#3b82f6;color:#fff;cursor:pointer;font-weight:500;font-size:13px;transition:.15s}
-      #${OVERLAY_ID} .dcbpv-share-popup .url-copy button:hover{background:#2563eb;border-color:#2563eb}
-      #${OVERLAY_ID} .dcbpv-share-close{position:absolute;top:12px;right:12px;border:none;background:transparent;color:#9ca3af;font-size:20px;cursor:pointer;padding:4px;transition:.15s;display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:6px}
-      #${OVERLAY_ID} .dcbpv-share-close:hover{color:#374151;background:#f3f4f6}
-      @keyframes dcbpv-fade{from{opacity:0} to{opacity:1}}
-      @keyframes dcbpv-pop{from{transform:translateY(10px) scale(.98);opacity:0} to{transform:translateY(0) scale(1);opacity:1}}
+      #${OVERLAY_ID}{position:fixed;inset:0;z-index:2147483600;display:flex;align-items:center;justify-content:center;padding:22px;background:rgba(2,6,23,.58);backdrop-filter:blur(9px);font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;animation:dcbpv-fade .16s ease-out}
+      #${OVERLAY_ID} *{box-sizing:border-box}
+      #${OVERLAY_ID} .dcbpv-panel{width:min(840px,94vw);max-height:min(90vh,860px);display:flex;flex-direction:column;overflow:hidden;border-radius:18px;background:#fff;color:#111827;box-shadow:0 24px 80px rgba(0,0,0,.34),0 0 0 1px rgba(255,255,255,.25);animation:dcbpv-pop .18s ease-out}
+      #${OVERLAY_ID} .dcbpv-header{display:flex;gap:14px;align-items:flex-start;justify-content:space-between;padding:17px 20px;border-bottom:1px solid #eef2f7;background:linear-gradient(180deg,#fff,#fbfcff)}
+      #${OVERLAY_ID} .dcbpv-title{font-size:18px;font-weight:800;line-height:1.38;color:#0f172a;word-break:break-word}
+      #${OVERLAY_ID} .dcbpv-title a{color:inherit;text-decoration:underline;text-underline-offset:3px}
+      #${OVERLAY_ID} .dcbpv-writer{margin-top:8px;color:#64748b;font-size:12px;line-height:1.55;word-break:break-word}
+      #${OVERLAY_ID} .dcbpv-writer a{color:#2563eb;text-decoration:none}
+      #${OVERLAY_ID} .dcbpv-icons{display:flex;gap:6px;flex:0 0 auto}
+      #${OVERLAY_ID} .dcbpv-icon{width:34px;height:34px;border:1px solid #e5e7eb;border-radius:10px;background:#fff;color:#64748b;cursor:pointer;font-size:16px;line-height:1;transition:.12s}
+      #${OVERLAY_ID} .dcbpv-icon:hover{background:#f8fafc;border-color:#cbd5e1;color:#0f172a;transform:translateY(-1px)}
+      #${OVERLAY_ID} .dcbpv-scroll{overflow:auto;padding:18px 20px 20px;background:#fff;overscroll-behavior:contain}
+      #${OVERLAY_ID} .dcbpv-scroll::-webkit-scrollbar{width:8px}#${OVERLAY_ID} .dcbpv-scroll::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:999px}
+      #${OVERLAY_ID} .dcbpv-section{margin:0 0 18px}
+      #${OVERLAY_ID} .dcbpv-section-title{display:flex;align-items:center;gap:8px;margin:0 0 10px;color:#0f172a;font-size:13px;font-weight:800;letter-spacing:.01em}
+      #${OVERLAY_ID} .dcbpv-section-title:before{content:"";width:5px;height:15px;border-radius:999px;background:#2563eb;display:inline-block}
+      #${OVERLAY_ID} .dcbpv-html{font-size:14px;line-height:1.72;color:#334155;word-break:break-word;overflow-wrap:anywhere;max-width:100%}
+      #${OVERLAY_ID} .dcbpv-html img,#${OVERLAY_ID} .dcbpv-html video,#${OVERLAY_ID} .dcbpv-html iframe{max-width:100%!important;width:auto!important;height:auto!important;border:0;vertical-align:top;object-fit:contain}
+      #${OVERLAY_ID} .dcbpv-html img,#${OVERLAY_ID} .dcbpv-html video{display:block;margin:10px auto;border-radius:10px}
+      #${OVERLAY_ID} .dcbpv-html img.dcbpv-img-broken{min-height:80px;background:repeating-linear-gradient(45deg,#f8fafc,#f8fafc 8px,#eef2f7 8px,#eef2f7 16px);border:1px dashed #cbd5e1}
+      #${OVERLAY_ID} .dcbpv-html iframe{display:block;width:min(100%,640px)!important;min-height:320px;margin:10px auto;border-radius:10px;background:#000}
+      #${OVERLAY_ID} .dcbpv-movie-wrap{width:min(100%,560px);margin:10px auto;overflow:hidden;border-radius:10px;background:#000}
+      #${OVERLAY_ID} .dcbpv-movie-wrap iframe{width:100%!important;height:700px!important;margin:0;border-radius:0;transform:scale(.875);transform-origin:top left;min-height:0}
+      #${OVERLAY_ID} .dcbpv-dccon,#${OVERLAY_ID} img.dcbpv-dccon,#${OVERLAY_ID} video.dcbpv-dccon,#${OVERLAY_ID} img[src*="dccon.php"]{display:inline-block!important;max-width:min(120px,32vw)!important;height:auto!important;margin:4px!important;border-radius:6px;box-shadow:none}
+      #${OVERLAY_ID} .dcbpv-comment-scope,#${OVERLAY_ID} .dcbpv-comments{border-top:1px solid #eef2f7;padding-top:16px}
+      #${OVERLAY_ID} .dcbpv-comments .dcbpv-html{font-size:13px;line-height:1.62}
+      #${OVERLAY_ID} .dcbpv-comment-list{display:flex;flex-direction:column;gap:10px}
+      #${OVERLAY_ID} .dcbpv-comment-item{padding:11px 12px;border:1px solid #e5e7eb;border-radius:12px;background:#fff}
+      #${OVERLAY_ID} .dcbpv-comment-item.reply{margin-left:22px;background:#fbfdff}
+      #${OVERLAY_ID} .dcbpv-comment-item.deleted{color:#94a3b8;background:#f8fafc}
+      #${OVERLAY_ID} .dcbpv-comment-meta{display:flex;gap:8px;align-items:center;margin-bottom:5px;font-size:12px;color:#64748b}
+      #${OVERLAY_ID} .dcbpv-comment-meta strong{color:#0f172a;font-size:13px}
+      #${OVERLAY_ID} .dcbpv-comment-body{font-size:13px;line-height:1.62;color:#334155;word-break:break-word}
+      #${OVERLAY_ID} .dcbpv-comment-body p{margin:0}
+      #${OVERLAY_ID} .dcbpv-legacy-vote,#${OVERLAY_ID} .dcbpv-vote{margin:14px 0;padding:10px 12px;border:1px solid #e5e7eb;border-radius:12px;background:#f8fafc;color:#334155;font-size:13px;font-weight:700}
+      #${OVERLAY_ID} .dcbpv-empty{padding:22px;text-align:center;border:1px dashed #cbd5e1;border-radius:12px;color:#64748b;background:#f8fafc}
+      #${OVERLAY_ID} .dcbpv-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px;padding-top:16px;border-top:1px solid #eef2f7}
+      #${OVERLAY_ID} .dcbpv-btn{flex:1 1 92px;min-width:88px;border:1px solid #e5e7eb;border-radius:11px;background:#fff;color:#334155;padding:9px 10px;cursor:pointer;font-weight:700;font-size:13px;transition:.12s}
+      #${OVERLAY_ID} .dcbpv-btn:hover{background:#f8fafc;border-color:#cbd5e1;transform:translateY(-1px)}
+      #${OVERLAY_ID} .dcbpv-btn.primary{background:#2563eb;border-color:#2563eb;color:#fff}#${OVERLAY_ID} .dcbpv-btn.primary:hover{background:#1d4ed8}
+      #${OVERLAY_ID} .dcbpv-btn.warn{color:#b91c1c;border-color:#fecaca;background:#fff7f7}
+      #${OVERLAY_ID} .dcbpv-center{min-height:240px;display:grid;place-items:center;text-align:center;color:#64748b;padding:28px}
+      #${OVERLAY_ID} .dcbpv-spinner{width:34px;height:34px;border-radius:50%;border:3px solid #dbeafe;border-top-color:#2563eb;margin:0 auto 14px;animation:dcbpv-spin .8s linear infinite}
+      #${OVERLAY_ID} .dcbpv-share-popup{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(420px,88vw);padding:20px;border-radius:16px;background:#fff;box-shadow:0 18px 70px rgba(0,0,0,.28);border:1px solid #e5e7eb;z-index:2}
+      #${OVERLAY_ID} .dcbpv-share-popup h3{margin:0 0 14px;font-size:17px;color:#0f172a}
+      #${OVERLAY_ID} .dcbpv-share-close{position:absolute;right:12px;top:10px;width:30px;height:30px;border:0;border-radius:8px;background:transparent;color:#64748b;font-size:20px;cursor:pointer}
+      #${OVERLAY_ID} .dcbpv-share-close:hover{background:#f1f5f9;color:#0f172a}
+      #${OVERLAY_ID} .dcbpv-share-row{display:flex;gap:8px;margin:10px 0}.dcbpv-share-row button{flex:1;padding:10px;border:1px solid #e5e7eb;border-radius:10px;background:#f8fafc;cursor:pointer;font-weight:700;color:#334155}
+      #${OVERLAY_ID} .dcbpv-copy{display:flex;gap:8px;margin-top:12px}.dcbpv-copy input{min-width:0;flex:1;border:1px solid #e5e7eb;border-radius:10px;padding:10px;background:#f8fafc}.dcbpv-copy button{border:1px solid #2563eb;border-radius:10px;padding:0 14px;background:#2563eb;color:#fff;cursor:pointer;font-weight:800}
+      @keyframes dcbpv-fade{from{opacity:0}to{opacity:1}}@keyframes dcbpv-pop{from{transform:translateY(8px) scale(.985);opacity:.6}to{transform:none;opacity:1}}@keyframes dcbpv-spin{to{transform:rotate(360deg)}}
+      @media(max-width:540px){#${OVERLAY_ID}{padding:10px}#${OVERLAY_ID} .dcbpv-panel{max-height:92vh;border-radius:14px}#${OVERLAY_ID} .dcbpv-header{padding:15px}#${OVERLAY_ID} .dcbpv-scroll{padding:15px}#${OVERLAY_ID} .dcbpv-movie-wrap iframe{height:620px!important}}
     `;
     document.head.appendChild(style);
-  };
+  }
 
-  function sanitizeContent(node){
-    if (!node) return null;
-    const cloned = node.cloneNode(true);
+  function closePreview(){
+    const overlay = document.getElementById(OVERLAY_ID);
+    if (overlay) overlay.remove();
+    currentPreviewData = null;
+    emitPreviewState(false);
+  }
 
-    // 실행/스타일/버튼류 제거 (원본 페이지 JS 의존도를 낮춤)
-    cloned.querySelectorAll("script, style, button").forEach(el => el.remove());
+  function renderLoading(){
+    installPreviewCss();
+    closePreview();
+    const overlay = document.createElement("div");
+    overlay.id = OVERLAY_ID;
+    overlay.innerHTML = `
+      <section class="dcbpv-panel">
+        <div class="dcbpv-center">
+          <div>
+            <div class="dcbpv-spinner"></div>
+            <strong>게시글과 댓글을 불러오는 중...</strong>
+            <div style="font-size:12px;margin-top:6px;color:#94a3b8">본문·댓글·이미지를 정리하고 있습니다.</div>
+          </div>
+        </div>
+      </section>`;
+    document.documentElement.appendChild(overlay);
+    emitPreviewState(true);
+  }
 
-    // lazy 이미지가 data-original/data-src에 실제 URL을 들고 있는 경우가 많아서 src로 강제 반영
-    const imgs = Array.from(cloned.querySelectorAll("img"));
-    const normalized = [];
-    imgs.forEach(img => {
-      const dataOriginal = img.getAttribute("data-original");
-      const dataSrc = img.getAttribute("data-src");
-      const dataLazy = img.getAttribute("data-lazy");
-      const dataUrl = img.getAttribute("data-url");
-      const srcAttr = img.getAttribute("src");
-      const currentSrc = img.currentSrc || img.src;
+  function renderError(message, url){
+    installPreviewCss();
+    closePreview();
+    const overlay = document.createElement("div");
+    overlay.id = OVERLAY_ID;
+    overlay.innerHTML = `
+      <section class="dcbpv-panel">
+        <div class="dcbpv-center">
+          <div>
+            <div style="font-size:34px;margin-bottom:10px">⚠️</div>
+            <strong>미리보기를 열 수 없습니다</strong>
+            <div style="font-size:12px;margin-top:8px;color:#94a3b8">${escapeText(message)}</div>
+            <div style="display:flex;gap:8px;justify-content:center;margin-top:16px">
+              <button class="dcbpv-btn primary" data-act="retry">다시 시도</button>
+              <button class="dcbpv-btn" data-act="close">닫기</button>
+            </div>
+          </div>
+        </div>
+      </section>`;
+    overlay.addEventListener("click", (event) => {
+      const act = event.target.closest("[data-act]")?.dataset.act;
+      if (act === "close") closePreview();
+      if (act === "retry") openPreview(url, { force: true });
+    });
+    document.documentElement.appendChild(overlay);
+    emitPreviewState(true);
+  }
 
-      const realSrc = dataOriginal || dataSrc || dataLazy || dataUrl || currentSrc || srcAttr;
-      if (realSrc) {
-        // src가 비었거나 lazy 클래스가 있으면 실 URL로 강제 치환
-        if (!srcAttr || img.classList.contains("lazy") || srcAttr === "about:blank") {
-          img.setAttribute("src", realSrc);
-        }
-        img.classList.remove("lazy");
-        img.setAttribute("loading", "eager");
-        img.setAttribute("decoding", "async");
-        normalized.push({ src: img.getAttribute("src") || realSrc, alt: img.getAttribute("alt") || "" });
+  function stripUnsafe(container, baseUrl){
+    if (!container) return null;
+    container.querySelectorAll("script,style,noscript,template").forEach((node) => node.remove());
+    container.querySelectorAll("*").forEach((node) => {
+      [...node.attributes].forEach((attr) => {
+        const name = attr.name.toLowerCase();
+        if (name.startsWith("on")) node.removeAttribute(attr.name);
+        if (name === "src" || name === "href") node.setAttribute(attr.name, makeAbsolute(attr.value, baseUrl));
+        if (name === "srcset" || name === "style" || name === "id") node.removeAttribute(attr.name);
+      });
+    });
+    return container;
+  }
+
+  const IMAGE_SOURCE_ATTRS = [
+    "data-original", "data-original-url", "data-original-src", "data-src", "data-lazy", "data-lazy-src",
+    "data-url", "data-file", "data-file-url", "data-img", "data-image", "data-full", "data-full-src",
+    "data-thumb", "data-thumbnail", "data-view-src", "data-viewimage", "data-org", "data-org-src",
+    "data-gif", "data-webp", "data-mp4", "srcset", "src"
+  ];
+
+  const decodeMediaUrl = (value) => String(value || "")
+    .trim()
+    .replace(/&amp;/g, "&")
+    .replace(/\\\//g, "/")
+    .replace(/^['\"]+|['\"]+$/g, "");
+
+  function isPlaceholderImageUrl(value){
+    const url = String(value || "").toLowerCase();
+    return !url || /(?:dccon_loading|loading|loader|blank|spacer|transparent|noimg|empty|default_img|placeholder)/.test(url);
+  }
+
+  function isLikelyMediaUrl(value){
+    const url = decodeMediaUrl(value);
+    if (!url || /^(?:javascript|data):/i.test(url)) return false;
+    return /(?:\.(?:jpe?g|png|gif|webp|bmp|avif)(?:[?#]|$)|\.(?:mp4|webm)(?:[?#]|$)|viewimage\.php|dccon\.php|dcimg|dcinside|image\.dcinside|wstatic|nstatic)/i.test(url);
+  }
+
+  function firstUrlFromSrcset(value){
+    return String(value || "")
+      .split(",")
+      .map((chunk) => chunk.trim().split(/\s+/)[0])
+      .find(Boolean) || "";
+  }
+
+  function mediaUrlsFromText(value){
+    const raw = decodeMediaUrl(value);
+    if (!raw) return [];
+
+    const srcsetUrl = firstUrlFromSrcset(raw);
+    const candidates = [];
+    if (srcsetUrl) candidates.push(srcsetUrl);
+
+    const absoluteMatches = raw.match(/(?:https?:)?\/\/[^\s'\"<>),]+/gi) || [];
+    candidates.push(...absoluteMatches);
+
+    const relativeMatches = raw.match(/\/(?:viewimage\.php|dccon\.php|dcimg[^\s'\"<>),]*|dcn[^\s'\"<>),]*|images?\/[^\s'\"<>),]+)/gi) || [];
+    candidates.push(...relativeMatches);
+
+    if (isLikelyMediaUrl(raw)) candidates.push(raw);
+    return candidates.map(decodeMediaUrl).filter(Boolean);
+  }
+
+  function collectImageCandidates(img, baseUrl){
+    const found = [];
+    const push = (value) => {
+      mediaUrlsFromText(value).forEach((url) => {
+        const absolute = makeAbsolute(url, baseUrl);
+        if (isLikelyMediaUrl(absolute) && !found.includes(absolute)) found.push(absolute);
+      });
+    };
+
+    IMAGE_SOURCE_ATTRS.forEach((name) => push(img.getAttribute(name)));
+    Array.from(img.attributes || []).forEach((attr) => {
+      const name = attr.name.toLowerCase();
+      if (name.startsWith("data-") || name === "src" || name === "srcset") push(attr.value);
+    });
+
+    const parentHref = img.closest?.("a[href]")?.getAttribute("href");
+    push(parentHref);
+
+    return found.sort((a, b) => {
+      const aMp4 = /\.(?:mp4|webm)(?:[?#]|$)/i.test(a) ? 1 : 0;
+      const bMp4 = /\.(?:mp4|webm)(?:[?#]|$)/i.test(b) ? 1 : 0;
+      const aBad = isPlaceholderImageUrl(a) ? 1 : 0;
+      const bBad = isPlaceholderImageUrl(b) ? 1 : 0;
+      return aBad - bBad || aMp4 - bMp4;
+    });
+  }
+
+  function pickImageCandidate(img, baseUrl, options = {}){
+    const urls = collectImageCandidates(img, baseUrl);
+    const allowVideo = options.allowVideo !== false;
+    return urls.find((url) => {
+      if (isPlaceholderImageUrl(url)) return false;
+      if (!allowVideo && /\.(?:mp4|webm)(?:[?#]|$)/i.test(url)) return false;
+      return true;
+    }) || "";
+  }
+
+  function bindImageFallbacks(img, baseUrl){
+    const candidates = collectImageCandidates(img, baseUrl).filter((url) => !isPlaceholderImageUrl(url));
+    if (!candidates.length) return;
+
+    img.dataset.dcbpvFallbackQueue = candidates.join("\n");
+    if (img.dataset.dcbpvFallbackBound === "true") return;
+    img.dataset.dcbpvFallbackBound = "true";
+    img.addEventListener("error", () => {
+      const current = img.currentSrc || img.src || "";
+      const queue = String(img.dataset.dcbpvFallbackQueue || "")
+        .split("\n")
+        .map((url) => url.trim())
+        .filter(Boolean)
+        .filter((url) => url !== current);
+      const next = queue.shift();
+      img.dataset.dcbpvFallbackQueue = queue.join("\n");
+      if (next) {
+        img.src = next;
+      } else {
+        img.classList.add("dcbpv-img-broken");
+      }
+    });
+  }
+
+  function normalizeDcMedia(root, baseUrl){
+    root.querySelectorAll('iframe[id^="movie_iframe"], iframe[src*="movie_view"]').forEach((iframe) => {
+      let movieNo = (iframe.id || "").replace(/^movie_iframe_/, "").trim();
+      if (!movieNo) {
+        try { movieNo = new URL(iframe.getAttribute("src") || "", baseUrl).searchParams.get("no") || ""; }
+        catch (_) {}
+      }
+      if (!movieNo) return;
+      const factory = root.ownerDocument || (root.createElement ? root : document);
+      const wrapper = factory.createElement("div");
+      const fresh = factory.createElement("iframe");
+      wrapper.className = "dcbpv-movie-wrap";
+      fresh.src = `https://gall.dcinside.com/board/movie/movie_view?no=${encodeURIComponent(movieNo)}`;
+      fresh.frameBorder = "0";
+      fresh.scrolling = "no";
+      fresh.referrerPolicy = "unsafe-url";
+      fresh.loading = "lazy";
+      wrapper.appendChild(fresh);
+      iframe.replaceWith(wrapper);
+    });
+
+    root.querySelectorAll("img").forEach((img) => {
+      const currentSrc = img.getAttribute("src") || "";
+      const gifUrl = pickImageCandidate(img, baseUrl, { allowVideo: false });
+      const mp4Url = collectImageCandidates(img, baseUrl).find((url) => /\.(?:mp4|webm)(?:[?#]|$)/i.test(url)) || "";
+      const isLoadingImage = isPlaceholderImageUrl(currentSrc) || img.classList.contains("lazy") || img.classList.contains("img_loading");
+      const isInComment = !!img.closest(".all-comment,.dcbpv-comment-scope,.comment_wrap,#comment_wrap,.cmt_list,.reply_box,.comment_dccon");
+      const wasDccon = img.classList.contains("written_dccon") || /dccon\.php/i.test(currentSrc) || /dccon\.php/i.test(gifUrl);
+
+      if (mp4Url && isLoadingImage && !gifUrl) {
+        const video = (img.ownerDocument || document).createElement("video");
+        video.src = makeAbsolute(mp4Url, baseUrl);
+        video.autoplay = true;
+        video.loop = true;
+        video.muted = true;
+        video.playsInline = true;
+        video.className = img.className;
+        if (isInComment || wasDccon) video.classList.add("dcbpv-dccon");
+        video.title = img.getAttribute("title") || "";
+        video.setAttribute("aria-label", img.getAttribute("alt") || "");
+        video.removeAttribute("width");
+        video.removeAttribute("height");
+        img.replaceWith(video);
+        return;
+      }
+
+      if (gifUrl && (isLoadingImage || !currentSrc || isPlaceholderImageUrl(currentSrc))) {
+        img.src = gifUrl;
+      } else if (currentSrc) {
+        img.src = makeAbsolute(currentSrc, baseUrl);
+      } else if (gifUrl) {
+        img.src = gifUrl;
+      }
+
+      bindImageFallbacks(img, baseUrl);
+      img.classList.remove("lazy", "img_loading", "gif-mp4", "webp-mp4", "written_dccon");
+      if (wasDccon || (isInComment && (/dccon\.php/i.test(gifUrl) || mp4Url))) {
+        img.classList.add("dcbpv-dccon");
+      }
+      img.loading = "eager";
+      img.decoding = "async";
+      img.referrerPolicy = "unsafe-url";
+      img.removeAttribute("width");
+      img.removeAttribute("height");
+      img.removeAttribute("srcset");
+      img.removeAttribute("sizes");
+    });
+
+    root.querySelectorAll("video").forEach((video) => {
+      const src = video.getAttribute("src");
+      if (src) video.src = makeAbsolute(src, baseUrl);
+      video.autoplay = video.autoplay || true;
+      video.loop = video.loop || true;
+      video.muted = true;
+      video.playsInline = true;
+      video.removeAttribute("width");
+      video.removeAttribute("height");
+    });
+
+    root.querySelectorAll(".written_dccon").forEach((node) => {
+      node.classList.remove("written_dccon");
+      node.classList.add("dcbpv-dccon");
+    });
+  }
+
+  function htmlFromElement(source, baseUrl){
+    if (!source) return "";
+    const clone = source.cloneNode(true);
+    stripUnsafe(clone, baseUrl);
+    return clone.innerHTML.trim();
+  }
+
+  function cleanWriter(writer, baseUrl){
+    if (!writer) return "";
+    const clone = writer.cloneNode(true);
+    clone.querySelectorAll(".btn.btn-line-gray,.rt,button,input,script,style").forEach((node) => node.remove());
+
+    const walker = document.createTreeWalker(clone, NodeFilter.SHOW_TEXT);
+    const trash = [];
+    while (walker.nextNode()) {
+      const raw = walker.currentNode.nodeValue.trim();
+      if (raw === "|" || raw === "ㅣ") trash.push(walker.currentNode);
+    }
+    trash.forEach((node) => node.remove());
+
+    clone.querySelectorAll("li").forEach((li) => {
+      const hasVisualChild = li.querySelector("a,img,span,em,i");
+      if (!hasVisualChild && li.textContent.trim() === "") li.remove();
+    });
+
+    stripUnsafe(clone, baseUrl);
+    return clone.innerHTML.trim() || escapeText(clone.textContent.trim());
+  }
+
+  function getMetaTitle(doc){
+    const fromMeta = doc.querySelector('meta[property="og:title"],meta[name="twitter:title"]')?.content?.trim() || "";
+    if (!fromMeta) return "";
+    return fromMeta.replace(/\s*-\s*[^-]*갤러리\s*$/, "").trim();
+  }
+
+  function isLayerLikeText(value){
+    return /^(최근 방문|즐겨찾기|자동 짤방 이미지|자동 짤방 이미지 개선|연관 갤러리|개념글 리스트|차단하기|댓글 영역|하단 갤러리 리스트 영역|왼쪽 컨텐츠 영역|오른쪽 컨텐츠 영역)$/i.test(String(value || "").trim());
+  }
+
+  function isUtilityContainer(node){
+    if (!node?.closest) return false;
+    return Boolean(node.closest([
+      ".issuebox", ".right_content", ".left_content .issuebox",
+      ".recently", ".visit_history", "#visit_history", "#recently_gallery",
+      ".favorite", ".relation", ".related", ".concept_list",
+      ".autoimg", ".auto_img", "[id*=auto]", "[class*=auto]",
+      ".pop_wrap", ".layer", ".modal", ".ly_wrap", "[id*=layer]",
+      "aside", "nav", "header", "footer"
+    ].join(",")));
+  }
+
+  function htmlToPlain(html){
+    const box = document.createElement("div");
+    box.innerHTML = String(html || "");
+    return box.textContent.replace(/\s+/g, " ").trim();
+  }
+
+  function isHashOnlyText(value){
+    return /^[a-f0-9]{32,80}$/i.test(String(value || "").replace(/\s+/g, ""));
+  }
+
+  function plainBlockToHtml(text){
+    const lines = String(text || "")
+      .split(/\n+/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+    if (!lines.length) return "";
+    return `<div class="dcbpv-text-comments">${lines.map((line) => `<p>${escapeText(line)}</p>`).join("")}</div>`;
+  }
+
+  function textBetweenMarkers(doc, startPattern, endPattern){
+    const raw = doc.body?.innerText || doc.body?.textContent || "";
+    const start = raw.search(startPattern);
+    if (start < 0) return "";
+    const rest = raw.slice(start);
+    const end = rest.search(endPattern);
+    return (end > 0 ? rest.slice(0, end) : rest).trim();
+  }
+
+  function findBestContent(doc, mode){
+    const exactSelectors = mode === "desktop"
+      ? ["#write_div", ".write_div", ".writing_view_box .write_div", ".gallview_contents .write_div", ".view_content .write_div", ".thum-txtin", ".view_txt"]
+      : [".thum-txtin", ".view_txt", "#write_div", ".write_div", ".writing_view_box .write_div"];
+    const broadSelectors = mode === "desktop"
+      ? [".writing_view_box", ".gallview_contents", ".view_content", ".view_txt"]
+      : [".gallview_contents", ".view_content", ".writing_view_box", "article", "section"];
+
+    const unique = new Set();
+    const collect = (selectors) => selectors.flatMap((selector) => Array.from(doc.querySelectorAll(selector)))
+      .filter((node) => {
+        if (unique.has(node)) return false;
+        unique.add(node);
+        return true;
+      });
+
+    const hasPayload = (node) => {
+      const text = node.textContent.replace(/\s+/g, " ").trim();
+      return Boolean(text || node.querySelector("img,video,iframe"));
+    };
+
+    let candidates = collect(exactSelectors).filter(hasPayload);
+    if (!candidates.length) candidates = collect(broadSelectors).filter(hasPayload);
+
+    let best = null;
+    let bestScore = -Infinity;
+
+    candidates.forEach((node, index) => {
+      const text = node.textContent.replace(/\s+/g, " ").trim();
+      let score = 0;
+      score += Math.min(text.length, 1400) / 20;
+      if (node.matches("#write_div,.write_div,.thum-txtin,.view_txt")) score += 90;
+      if (node.matches(".writing_view_box,.gallview_contents")) score += 28;
+      if (node.closest(".gallview,.gallview_wrap,.view_wrap,.view_content_wrap,.writing_view_box,article")) score += 24;
+      if (node.querySelector("img,video,iframe")) score += 16;
+      if (node.querySelector("#comment_wrap,.comment_wrap,.all-comment,.cmt_write_box,textarea,input[name=captcha],#recomm_btn,#nonrecomm_btn,.btn_recommend_box")) score -= 85;
+      if (isUtilityContainer(node)) score -= 180;
+      if (/자동\s*짤방|최근\s*방문|즐겨찾기|레이어\s*닫기|설정\s*저장|댓글돌이|댓글\s*입력/.test(text)) score -= 140;
+      if (isHashOnlyText(text)) score -= 120;
+      score -= index * 0.2;
+      if (score > bestScore) {
+        bestScore = score;
+        best = node;
       }
     });
 
-    // 텍스트 요약 (최대 500자)
-    const text = (cloned.innerText || cloned.textContent || "").replace(/\s+/g, " ").trim();
-    const maxLength = 500;
-    const summary = text.length > maxLength ? (text.slice(0, maxLength).trim() + "...") : text;
+    if (best?.querySelector) {
+      const inner = best.querySelector("#write_div,.write_div,.thum-txtin,.view_txt");
+      if (inner && hasPayload(inner) && !isUtilityContainer(inner)) return inner;
+    }
 
-    // “요약 버전” 컨테이너: 썸네일(최대 4장) + 요약 텍스트
-    const out = document.createElement("div");
+    return best;
+  }
 
-    const MAX_THUMBS = 4;
-    if (normalized.length) {
-      const grid = document.createElement("div");
-      grid.className = "dcbpv-imggrid";
+  function findArticleRoot(content, doc){
+    return content?.closest?.(".view_content_wrap,.gallview_wrap,.gallview,.view_wrap,.writing_view_box,article,.view_box,.view_area,#container") || doc;
+  }
 
-      const toShow = normalized.slice(0, MAX_THUMBS);
-      toShow.forEach(({ src, alt }) => {
-        const a = document.createElement("a");
-        a.className = "dcbpv-thumb";
-        a.href = src;
-        a.target = "_blank";
-        a.rel = "noreferrer noopener";
+  function pickTitle(doc, root, content){
+    const metaTitle = getMetaTitle(doc);
+    if (metaTitle && !isLayerLikeText(metaTitle)) return metaTitle;
 
-        const im = document.createElement("img");
-        im.src = src;
-        im.alt = alt;
-        im.loading = "eager";
-        im.decoding = "async";
-        a.appendChild(im);
-        grid.appendChild(a);
-      });
+    const titleSelectors = [
+      ".gallview_head .tit", ".gallview_head .title", ".view_head .tit", ".view_head .title_subject",
+      ".title_subject", ".tit_subject", "h1", "h2", "h3.tit", ".tit"
+    ];
 
-      if (normalized.length > MAX_THUMBS) {
-        const more = document.createElement("div");
-        more.className = "dcbpv-thumb more";
-        more.textContent = `+${normalized.length - MAX_THUMBS} more`;
-        grid.appendChild(more);
+    const pools = [root, doc];
+    for (const pool of pools) {
+      for (const selector of titleSelectors) {
+        const found = Array.from(pool.querySelectorAll?.(selector) || [])
+          .map((el) => el.textContent.replace(/\s+/g, " ").trim())
+          .find((text) => text && !isLayerLikeText(text));
+        if (found) return found;
       }
-
-      out.appendChild(grid);
     }
 
-    if (summary) {
-      const div = document.createElement("div");
-      div.textContent = summary;
-      out.appendChild(div);
-    } else if (!normalized.length) {
-      out.innerHTML = '<div class="dcbpv-empty">본문을 불러오지 못했습니다.</div>';
+    if (content) {
+      const before = Array.from(doc.querySelectorAll(".tit,.title_subject,h1,h2,h3"))
+        .filter((el) => !isLayerLikeText(el.textContent))
+        .filter((el) => Boolean(el.compareDocumentPosition(content) & Node.DOCUMENT_POSITION_FOLLOWING))
+        .at(-1);
+      const text = before?.textContent?.replace(/\s+/g, " ").trim();
+      if (text) return text;
     }
 
+    return "제목 없음";
+  }
+
+  function isCommentArea(node){
+    return Boolean(node?.closest?.("#comment_wrap,.comment_wrap,.all-comment,.cmt_list,.reply_list,[id^='comment_li_'],.cmt_info,.cmt_write_box"));
+  }
+
+  function normalizePreviewNick(value){
+    return String(value || "").normalize("NFKC").replace(/\s+/g, "").trim();
+  }
+
+  function cleanPreviewToken(value){
+    return String(value || "")
+      .trim()
+      .replace(/^uid\s*[:=]\s*/i, "")
+      .replace(/^ip\s*[:=]\s*/i, "")
+      .replace(/^\(|\)$/g, "")
+      .trim();
+  }
+
+  function previewIpPrefix(value){
+    const found = cleanPreviewToken(value).match(/\b(\d{1,3}\.\d{1,3})(?:\.\d{1,3}){0,2}\b/);
+    return found ? found[1] : "";
+  }
+
+  function previewUidToken(value){
+    const uid = cleanPreviewToken(value).replace(/^@+/, "").replace(/[\s\)\]>'";]+$/g, "");
+    if (!uid || /^\d{1,3}(?:\.\d{1,3}){1,3}$/.test(uid)) return "";
+    return /^[A-Za-z0-9._-]{2,64}$/.test(uid) ? uid : "";
+  }
+
+  function gallogUidFromText(value){
+    const text = String(value || "");
+    const direct = text.match(/gallog\.dcinside\.com\/?([A-Za-z0-9._-]{2,64})/i);
+    if (direct) return previewUidToken(direct[1]);
+    const query = text.match(/[?&](?:id|user_id|userid|uid)=([A-Za-z0-9._-]{2,64})/i);
+    if (query) return previewUidToken(query[1]);
+    const call = text.match(/(?:gallog|go_?gallog|uid|userid|user_id)\s*(?:\(|=|:)\s*['"]?([A-Za-z0-9._-]{2,64})/i);
+    return call ? previewUidToken(call[1]) : "";
+  }
+
+  function textFromPreviewAttrs(node){
+    if (!node) return "";
+    return ["data-full-uid", "data-uid", "data-user-id", "data-userid", "data-user_id", "data-memo-uid", "data-ip", "data-memo-ip", "onclick", "href", "title", "alt", "aria-label"]
+      .map((name) => node.getAttribute?.(name) || "")
+      .filter(Boolean)
+      .join(" ");
+  }
+
+  function previewWriterMeta(node){
+    if (!node) return { nick: "", uid: "", ip: "" };
+    const writer = node.matches?.(".gall_writer,.ub-writer,.writer_info,.user_info,.cmt_nickbox") ? node : node.querySelector?.(".gall_writer,.ub-writer,.writer_info,.user_info,.cmt_nickbox");
+    const refText = [textFromPreviewAttrs(node), textFromPreviewAttrs(writer), textFromPreviewAttrs(writer?.querySelector?.('.writer_nikcon,[onclick*="gallog"],a[href*="gallog"],.dcb-uid-badge'))].join(" ");
+    const nick = writer?.getAttribute?.("data-nick")
+      || node.getAttribute?.("data-nick")
+      || writer?.querySelector?.(".nickname em,.nickname,.nick_name,em")?.textContent?.trim()
+      || writer?.textContent?.replace(/메모\s*추가|삭제|수정|답글/g, "").replace(/\s+/g, " ").trim()
+      || "";
+    const uid = previewUidToken(writer?.getAttribute?.("data-uid"))
+      || previewUidToken(node.getAttribute?.("data-uid"))
+      || previewUidToken(writer?.getAttribute?.("data-memo-uid"))
+      || gallogUidFromText(refText)
+      || "";
+    const ip = previewIpPrefix(writer?.getAttribute?.("data-ip"))
+      || previewIpPrefix(node.getAttribute?.("data-ip"))
+      || previewIpPrefix(writer?.getAttribute?.("data-memo-ip"))
+      || previewIpPrefix(writer?.querySelector?.(".ip,.writer_ip")?.textContent || "")
+      || "";
+    return { nick, uid, ip };
+  }
+
+  function previewWriterBadge(meta = {}){
+    const nick = meta.nick || "익명";
+    const uid = previewUidToken(meta.uid);
+    const ip = previewIpPrefix(meta.ip);
+    const loc = meta.loc || "preview";
+    const nickHtml = `<span class="nickname in" title="${escapeText(nick)}"><em>${escapeText(nick)}</em></span>`;
+    const mark = uid ? `<span class="writer_nikcon" aria-hidden="true"></span>` : "";
+    const ipHtml = ip ? ` <span class="ip">(${escapeText(ip)})</span>` : "";
+    return `<span class="gall_writer ub-writer dcbpv-writer-ref" data-loc="${escapeText(loc)}" data-nick="${escapeText(nick)}" data-uid="${escapeText(uid)}" data-ip="${escapeText(ip)}">${nickHtml}${mark}${ipHtml}</span>`;
+  }
+
+  function commentMetaFromElement(item){
+    const writer = item?.querySelector?.(".gall_writer,.ub-writer,.cmt_nickbox,.nickname,.nick_name");
+    return previewWriterMeta(writer || item);
+  }
+
+  function commentMetaFromRecord(record){
+    const nick = recordText(record, ["name", "nick", "nickname", "user_name", "user_id", "ip"]) || "익명";
+    const uid = previewUidToken(recordText(record, ["user_id", "userId", "uid", "member_id", "memberId", "gallog_id", "gallogId"]));
+    const ip = previewIpPrefix(recordText(record, ["ip", "ip_addr", "ipaddr", "user_ip"]));
+    return { nick, uid, ip };
+  }
+
+  function commentLooksAutomated(item, nick){
+    return normalizePreviewNick(nick) === "댓글돌이" || !!item?.querySelector?.(".nickname.cmtboy,.comment_dory,.dory_txt") || item?.classList?.contains("dory");
+  }
+
+  function buildWriterHTML(doc, root, baseUrl){
+    const writerSelectors = [
+      ".gallview_head .gall_writer", ".view_head .gall_writer", ".gallview_head .ub-writer", ".view_head .ub-writer",
+      ".gallview_head .btm", ".view_head .btm", ".btm", ".writer_info", ".user_info", ".gall_writer", ".ub-writer"
+    ];
+    const direct = writerSelectors
+      .flatMap((selector) => Array.from((root || doc).querySelectorAll?.(selector) || []).concat(Array.from(doc.querySelectorAll(selector))))
+      .find((node, index, arr) => arr.indexOf(node) === index && !isCommentArea(node));
+
+    const date = asText(doc, ".gallview_head .gall_date,.view_head .gall_date,.gallview_head .date,.view_head .date,.gall_date")
+      || asText(root, ".gall_date,.date,.regdate,.time");
+    const views = numberNear(asText(doc, ".gallview_head,.view_head") || "", /조회\s*([-+]?\d[\d,]*)/, "");
+
+    const writerMeta = previewWriterMeta(direct);
+    const nick = writerMeta.nick || "";
+    const uid = writerMeta.uid || "";
+    const ip = writerMeta.ip || "";
+
+    const compact = [
+      nick && `<span class="dcbpv-chip dcbpv-author-name">${previewWriterBadge({ nick, uid, ip, loc: "preview-author" })}</span>`,
+      date && `<span class="dcbpv-chip">${escapeText(date)}</span>`,
+      views && `<span class="dcbpv-chip">조회 ${views}</span>`
+    ].filter(Boolean).join(" ");
+
+    if (compact) return compact;
+
+    const directHTML = cleanWriter(direct, baseUrl);
+    if (directHTML) return directHTML;
+    return "";
+  }
+
+  function articleHTMLFromElement(source, baseUrl){
+    if (!source) return "";
+    const clone = source.cloneNode(true);
+    clone.querySelectorAll([
+      "#comment_wrap", ".comment_wrap", ".all-comment", ".cmt_list", ".reply_list", ".cmt_write_box", ".comment_write",
+      "#recomm_btn", "#recomm_btn_member", "#nonrecomm_btn", ".btn_recommend_box", ".recom_bottom_box", ".recommend_box",
+      ".cmt_txt_cont", ".comment_box", ".reply_box", ".bottom_paging_box", ".array_tab", ".btn_sns", ".view_bottom_btnbox",
+      "input", "textarea", "select", "button", "form", ".captcha", ".kcaptcha", ".code_input", ".appending_file_box"
+    ].join(",")).forEach((node) => node.remove());
+    normalizeDcMedia(clone, baseUrl);
+    stripUnsafe(clone, baseUrl);
+    return clone.innerHTML.trim();
+  }
+
+  function commentNick(item){
+    const writer = item.querySelector(".gall_writer,.ub-writer,.cmt_nickbox,.nickname,.nick_name");
+    return writer?.getAttribute?.("data-nick")
+      || writer?.querySelector?.(".nickname em,.nickname,.nick_name,em")?.textContent?.trim()
+      || writer?.textContent?.replace(/메모\s*추가|삭제|수정|답글/g, "").replace(/\s+/g, " ").trim()
+      || "익명";
+  }
+
+  function commentDate(item){
+    return item.querySelector(".date_time,.gall_date,.date,.regdate,.time")?.textContent?.replace(/\s+/g, " ").trim() || "";
+  }
+
+  function commentBodyHTML(item, baseUrl){
+    const body = item.querySelector(".usertxt.ub-word,.usertxt,.cmt_txtbox,.comment_txt,.reply_txt,.comment_dccon,.txt") || item;
+    const clone = body.cloneNode(true);
+    clone.querySelectorAll([
+      ".dcb-writer-tools", ".cmt_mdf_del", ".btn_cmt_delete", ".btn_cmt_modify", ".btn_reply", ".reply", ".comment_write",
+      ".cmt_write_box", "input", "textarea", "select", "button", "form", ".captcha", ".kcaptcha", ".code_input"
+    ].join(",")).forEach((node) => node.remove());
+    normalizeDcMedia(clone, baseUrl);
+    stripUnsafe(clone, baseUrl);
+    const html = clone.innerHTML.trim();
+    if (html) return html;
+    return escapeText(body.textContent.replace(/\s+/g, " ").trim());
+  }
+
+  function collectCommentItems(doc, root){
+    const sources = [root, doc].filter(Boolean);
+    const found = [];
+    const seen = new Set();
+    const add = (node) => {
+      if (!node || seen.has(node)) return;
+      seen.add(node);
+      const text = node.textContent.replace(/\s+/g, " ").trim();
+      if (!text && !node.querySelector("img,video")) return;
+      if (node.closest(".cmt_write_box,.comment_write,form")) return;
+      if (!node.querySelector(".cmt_info,.usertxt,.cmt_txtbox,.comment_txt,.reply_txt,.date_time,.gall_writer,.ub-writer")) return;
+      found.push(node);
+    };
+
+    sources.forEach((scope) => {
+      scope.querySelectorAll?.("li[id^='comment_li_'],li.ub-content").forEach((node) => {
+        if (node.id?.startsWith("comment_li_") || node.querySelector(".cmt_info,.usertxt,.cmt_txtbox")) add(node);
+      });
+      scope.querySelectorAll?.(".cmt_info,.comment_info,.reply_info").forEach((node) => add(node.closest("li") || node));
+    });
+
+    return found;
+  }
+
+  function buildCommentsHTML(doc, root, baseUrl){
+    const items = collectCommentItems(doc, root);
+    if (items.length) {
+      const rows = items.map((item) => {
+        const meta = commentMetaFromElement(item);
+        const nick = meta.nick || commentNick(item);
+        const date = commentDate(item);
+        const body = commentBodyHTML(item, baseUrl);
+        const plain = htmlToPlain(body);
+        if (!plain && !/<(?:img|video)\b/i.test(body)) return "";
+        if (/^(등록순|최신순|답글순|댓글닫기|새로고침|본문 보기|전체 댓글)/.test(plain)) return "";
+        const depthClass = item.classList?.contains("reply") || item.classList?.contains("reply_line") || item.querySelector?.(".reply_info") ? " reply" : "";
+        const deletedClass = /삭제된 댓글|운영자에 의해/.test(plain) ? " deleted" : "";
+        const doryClass = commentLooksAutomated(item, nick) ? " dory" : "";
+        return `<div class="dcbpv-comment-item${depthClass}${deletedClass}${doryClass}" data-dcbpv-comment="1" data-nick="${escapeText(nick)}" data-uid="${escapeText(meta.uid)}" data-ip="${escapeText(meta.ip)}"><div class="dcbpv-comment-meta">${previewWriterBadge({ nick, uid: meta.uid, ip: meta.ip, loc: "preview-comment" })}${date ? `<span>${escapeText(date)}</span>` : ""}</div><div class="dcbpv-comment-body">${body}</div></div>`;
+      }).filter(Boolean);
+      if (rows.length) return `<div class="dcbpv-comment-list">${rows.join("")}</div>`;
+    }
+
+    const box = pickCommentElement(doc, root);
+    if (!box) return "";
+    const clone = box.cloneNode(true);
+    clone.querySelectorAll([
+      ".cmt_write_box", ".comment_write", ".reply_write", ".dccon_insertbox", ".comment_paging", ".bottom_paging_box",
+      ".array_tab", ".cmt_mdf_del", ".btn_cmt_delete", ".btn_cmt_modify", "input", "textarea", "select", "button", "form", ".captcha", ".kcaptcha", ".code_input"
+    ].join(",")).forEach((node) => node.remove());
+    normalizeDcMedia(clone, baseUrl);
+    stripUnsafe(clone, baseUrl);
+    return clone.innerHTML.trim();
+  }
+
+  function pickCommentElement(doc, root){
+    const selectors = [
+      ".all-comment", "#all-comment", "#comment_wrap", ".comment_wrap",
+      ".cmt_list", "#cmt_list", ".comment_box", ".reply_box", ".view_comment", "#comments"
+    ].join(",");
+    const candidates = Array.from(root.querySelectorAll?.(selectors) || []).concat(Array.from(doc.querySelectorAll(selectors)));
+    let best = null;
+    let bestScore = -Infinity;
+
+    candidates.forEach((node, index) => {
+      const text = node.textContent.replace(/\s+/g, " ").trim();
+      let score = Math.min(text.length, 1400) / 24;
+      if (node.querySelector("li[id^='comment_li_'],li.ub-content .cmt_info,.usertxt")) score += 80;
+      if (/전체\s*댓글|등록순|최신순|답글순|댓글/.test(text)) score += 24;
+      if (node.matches(".all-comment,#all-comment,#comment_wrap,.comment_wrap")) score += 26;
+      if (node.querySelector("textarea,input[name=captcha],.cmt_write_box,.comment_write")) score -= 35;
+      if (isUtilityContainer(node)) score -= 120;
+      score -= index * 0.1;
+      if (score > bestScore) {
+        bestScore = score;
+        best = node;
+      }
+    });
+
+    return best;
+  }
+
+  function voteInner(doc, root, selectors, fallback = "0"){
+    const candidates = [];
+    for (const selector of selectors) {
+      const node = root.querySelector?.(selector) || doc.querySelector(selector);
+      if (!node) continue;
+      candidates.push(node);
+      node.querySelectorAll?.(".num,.up_num,.down_num,.recom_num,.recommend_num,em,strong,span").forEach((child) => candidates.push(child));
+    }
+
+    for (const node of candidates) {
+      const text = node.textContent?.replace(/\s+/g, " ").trim() || "";
+      if (!text) continue;
+      const exact = text.match(/^[-+]?\d[\d,]*$/);
+      if (exact) return escapeText(exact[0]);
+    }
+
+    for (const node of candidates) {
+      const text = node.textContent?.replace(/\s+/g, " ").trim() || "";
+      const found = text.match(/[-+]?\d[\d,]*/);
+      if (found) return escapeText(found[0]);
+    }
+
+    return fallback;
+  }
+
+  function numberNear(text, pattern, fallback = "0"){
+    const compact = String(text || "").replace(/\s+/g, " ");
+    const found = compact.match(pattern);
+    return found?.[1] ? escapeText(found[1]) : fallback;
+  }
+
+  function extractCounts(doc, root, title){
+    const headText = [
+      asText(doc, ".gallview_head"),
+      asText(doc, ".view_head"),
+      asText(root, ".gallview_head,.view_head")
+    ].join(" ");
+    const full = doc.body?.innerText || doc.body?.textContent || "";
+    const titleIndex = title && title !== "제목 없음" ? full.indexOf(title) : -1;
+    const slice = titleIndex >= 0 ? full.slice(titleIndex, titleIndex + 3200) : (root.textContent || full).slice(0, 3200);
+
+    let up = voteInner(doc, root, [
+      "#recomm_btn .up_num", "#recomm_btn .num", "#recomm_btn em", "#recomm_btn strong", "#recomm_btn",
+      "#recommend_view_up .up_num", "#recommend_view_up .num", ".btn_recommend_box .up_num", ".up_num", ".recommend_num"
+    ], "");
+    let upMember = voteInner(doc, root, ["#recomm_btn_member .num", "#recomm_btn_member", ".recomm_btn_member", ".member_recommend", ".gall_recom_member"], "");
+    let down = voteInner(doc, root, [
+      "#nonrecomm_btn .down_num", "#nonrecomm_btn .num", "#nonrecomm_btn em", "#nonrecomm_btn strong", "#nonrecomm_btn",
+      "#recommend_view_down .down_num", "#recommend_view_down .num", ".btn_recommend_box .down_num", ".down_num", ".nonrecommend_num"
+    ], "");
+
+    if (!up || up === "0") up = numberNear(headText, /추천\s*([-+]?\d[\d,]*)/, up || "0");
+    if (!down) down = numberNear(slice, /비추\s*([-+]?\d[\d,]*)/, "0");
+
+    return { up: up || "0", upMember: upMember || "", down: down || "0" };
+  }
+
+  function buildReportUrl(originalUrl, gallId, articleNo, title){
+    return articleNo && gallId
+      ? `https://gall.dcinside.com/singo/?id=singo&singo_id=${encodeURIComponent(gallId)}&singo_no=${encodeURIComponent(articleNo)}&ko_name=${encodeURIComponent(title)}&s_url=${encodeURIComponent(originalUrl)}&gall_type=G`
+      : "";
+  }
+
+  function parsePreviewDocument(html, originalUrl, fetchedUrl, mode){
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    const baseUrl = fetchedUrl || originalUrl;
+    normalizeDcMedia(doc, baseUrl);
+
+    const content = findBestContent(doc, mode);
+    const root = content ? findArticleRoot(content, doc) : doc;
+    const title = pickTitle(doc, root, content);
+    const writerHTML = buildWriterHTML(doc, root, baseUrl);
+    const articleNo = articleNumberFrom(originalUrl, doc);
+    const gallId = galleryIdFrom(originalUrl);
+    let commentsHTML = buildCommentsHTML(doc, root, baseUrl);
+
+    if (!commentsHTML) {
+      const plainComments = textBetweenMarkers(doc, /댓글\s*영역|전체\s*댓글/, /하단\s*갤러리\s*리스트\s*영역|전체글\s*개념글|글쓰기\s*\n|갤러리\s*리스트\s*번호/);
+      commentsHTML = plainBlockToHtml(plainComments);
+    }
+
+    const commentCount = collectCommentItems(doc, root).length;
+    const expectedComments = commentCountFromText(doc, root);
+
+    return {
+      url: originalUrl,
+      fetchedUrl: baseUrl,
+      title,
+      writerHTML,
+      articleHTML: content ? articleHTMLFromElement(content, baseUrl) : "",
+      commentsHTML,
+      commentTitle: commentsHTML ? `댓글${commentCount ? ` ${commentCount}개` : expectedComments ? ` ${expectedComments}개` : ""}` : (expectedComments ? `댓글 ${expectedComments}개` : "댓글 없음"),
+      counts: extractCounts(doc, root, title),
+      gallId,
+      articleNo,
+      rawHtml: html,
+      reportUrl: buildReportUrl(originalUrl, gallId, articleNo, title)
+    };
+  }
+
+  function parseMobilePreview(html, originalUrl, fetchedUrl){
+    return parsePreviewDocument(html, originalUrl, fetchedUrl, "mobile");
+  }
+
+  function parseDesktopFallback(html, originalUrl, fetchedUrl = originalUrl){
+    return parsePreviewDocument(html, originalUrl, fetchedUrl, "desktop");
+  }
+
+  function isWeakPreviewData(data){
+    if (!data) return true;
+    const title = String(data.title || "").trim();
+    const articleText = htmlToPlain(data.articleHTML);
+    if (!data.articleHTML || !articleText) return true;
+    if (isLayerLikeText(title)) return true;
+    if (isHashOnlyText(articleText)) return true;
+    if (/자동\s*짤방|최근\s*방문|즐겨찾기|레이어\s*닫기/.test(articleText) && articleText.length < 160) return true;
+    return false;
+  }
+
+  function mergePreviewData(primary, backup){
+    if (!backup) return primary;
+    const articleText = htmlToPlain(primary?.articleHTML);
+    const backupArticleText = htmlToPlain(backup.articleHTML);
+    const result = { ...primary };
+
+    if (!result.title || isLayerLikeText(result.title)) result.title = backup.title;
+    if (!result.writerHTML && backup.writerHTML) result.writerHTML = backup.writerHTML;
+    if ((!result.articleHTML || isHashOnlyText(articleText)) && backup.articleHTML) result.articleHTML = backup.articleHTML;
+    if (!result.commentsHTML && backup.commentsHTML) {
+      result.commentsHTML = backup.commentsHTML;
+      result.commentTitle = backup.commentTitle;
+    }
+
+    const currentCounts = result.counts || {};
+    const backupCounts = backup.counts || {};
+    result.counts = {
+      up: currentCounts.up && currentCounts.up !== "0" ? currentCounts.up : (backupCounts.up || currentCounts.up || "0"),
+      upMember: currentCounts.upMember || backupCounts.upMember || "",
+      down: currentCounts.down && currentCounts.down !== "0" ? currentCounts.down : (backupCounts.down || currentCounts.down || "0")
+    };
+
+    if (!result.reportUrl && backup.reportUrl) result.reportUrl = backup.reportUrl;
+    if (!result.rawHtml && backup.rawHtml) result.rawHtml = backup.rawHtml;
+    if (backupArticleText.length > articleText.length * 1.8 && isWeakPreviewData(result)) return backup;
+    return result;
+  }
+
+  function sendRuntimeFetchMessage(payload){
+    return new Promise((resolve, reject) => {
+      try {
+        chrome.runtime.sendMessage(payload, (response) => {
+          const runtimeError = chrome.runtime.lastError;
+          if (runtimeError) {
+            reject(new Error(runtimeError.message || "백그라운드 fetch 브릿지가 응답하지 않았습니다."));
+            return;
+          }
+          resolve(response);
+        });
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+
+  async function fetchText(url, signal, request = {}){
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+
+    const options = typeof request === "string" ? { cache: request } : (request || {});
+    const response = await sendRuntimeFetchMessage({
+      type: "dcb.fetchText",
+      url,
+      cache: options.cache || "default",
+      method: options.method || "GET",
+      body: options.body || "",
+      headers: options.headers || undefined,
+      accept: options.accept || undefined,
+      referrer: options.referrer || undefined
+    });
+
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+    if (response?.ok) {
+      return {
+        text: response.text || "",
+        finalUrl: response.finalUrl || response.url || url,
+        status: response.status || 200
+      };
+    }
+
+    const errorMessage = response?.error || "백그라운드 fetch 브릿지에서 빈 응답을 받았습니다.";
+    throw new Error(errorMessage);
+  }
+
+  function textValueBySelector(doc, selectors){
+    for (const selector of selectors) {
+      const node = doc.querySelector(selector);
+      const value = node?.value || node?.getAttribute?.("value") || node?.textContent;
+      if (String(value || "").trim()) return String(value).trim();
+    }
+    return "";
+  }
+
+  function previewRequestInfo(originalUrl, doc){
+    let parsed = null;
+    try { parsed = new URL(originalUrl, location.href); } catch (_) {}
+
+    const id = parsed?.searchParams.get("id")
+      || textValueBySelector(doc, ["input[name='id']", "#id", "input[name='gallery_id']"]);
+    const no = parsed?.searchParams.get("no")
+      || textValueBySelector(doc, ["#no", "input[name='no']", "input[name='article_no']"]);
+    const securityToken = textValueBySelector(doc, ["#e_s_n_o", "input[name='e_s_n_o']"]);
+    const cmtId = textValueBySelector(doc, ["#cmt_id", "input[name='cmt_id']"]) || id;
+    const cmtNo = textValueBySelector(doc, ["#cmt_no", "input[name='cmt_no']"]) || no;
+
+    return { id, no, cmtId, cmtNo, securityToken };
+  }
+
+  function commentCountFromText(doc, root){
+    const sample = [
+      asText(doc, ".gallview_head,.view_head"),
+      asText(root, ".gallview_head,.view_head"),
+      doc.body?.innerText || doc.body?.textContent || ""
+    ].join(" ").replace(/\s+/g, " ");
+    const found = sample.match(/댓글\s*([-+]?\d[\d,]*)/);
+    return found?.[1] ? Number(found[1].replace(/,/g, "")) : 0;
+  }
+
+  function parseLooseJson(text){
+    const raw = String(text || "").trim();
+    if (!raw) return null;
+    const direct = (() => { try { return JSON.parse(raw); } catch (_) { return null; } })();
+    if (direct) return direct;
+    const start = raw.indexOf("{");
+    const end = raw.lastIndexOf("}");
+    if (start < 0 || end <= start) return null;
+    try { return JSON.parse(raw.slice(start, end + 1)); } catch (_) { return null; }
+  }
+
+  function looksLikeHtml(value){
+    return /<\s*(li|div|span|p|img|video|em|strong|a)\b/i.test(String(value || ""));
+  }
+
+  function commentHtmlFragments(value, depth = 0){
+    if (depth > 5 || value == null) return [];
+    if (typeof value === "string") return looksLikeHtml(value) ? [value] : [];
+    if (Array.isArray(value)) return value.flatMap((item) => commentHtmlFragments(item, depth + 1));
+    if (typeof value !== "object") return [];
+
+    const priority = ["comments", "comment", "list", "comment_list", "html", "content", "data", "result"];
+    const out = [];
+    priority.forEach((key) => {
+      if (Object.prototype.hasOwnProperty.call(value, key)) out.push(...commentHtmlFragments(value[key], depth + 1));
+    });
+    Object.keys(value).forEach((key) => {
+      if (!priority.includes(key)) out.push(...commentHtmlFragments(value[key], depth + 1));
+    });
     return out;
   }
 
-  function openOverlay(){
-    if (document.getElementById(OVERLAY_ID)) return;
-    const wrap = document.querySelector(".view_content_wrap");
-    if (!wrap) return;
-    createStyle();
-
-    const title = wrap.querySelector(".title_subject")?.textContent?.trim() || "";
-    const head  = wrap.querySelector(".title_headtext")?.textContent?.trim() || "";
-    const writer = wrap.querySelector(".gall_writer, .ub-writer");
-    const nick = writer?.querySelector(".nickname em, .nickname")?.textContent?.trim() || "";
-    const ip   = writer?.getAttribute("data-ip") || writer?.querySelector(".ip")?.textContent?.trim() || "";
-    const uid  = writer?.getAttribute("data-uid") || "";
-    const date = writer?.querySelector(".gall_date")?.textContent?.trim() || "";
-    const views = wrap.querySelector(".gall_count")?.textContent?.trim() || "";
-
-    const article = sanitizeContent(wrap.querySelector(".write_div"));
-    const overlay = document.createElement("div");
-    overlay.id = OVERLAY_ID;
-
-    const rec = {
-      up: wrap.querySelector(".up_num")?.textContent?.trim() || "0",
-      down: wrap.querySelector(".down_num")?.textContent?.trim() || "0"
-    };
-
-    const recomBtns = {
-      up: document.querySelector(".btn_recom_up"),
-      down: document.querySelector(".btn_recom_down"),
-      share: document.querySelector(".btn_snsmore"),
-      report: document.querySelector(".btn_report")
-    };
-
-    const articleNo = wrap.querySelector(".btn_recom_up, .btn_recom_down")?.dataset?.no || "";
-    const currentUrl = location.href;
-    const urlObj = new URL(currentUrl);
-    const gallId = urlObj.searchParams.get("id") || "";
-    const reportUrl = articleNo && gallId ? `https://gall.dcinside.com/singo/?id=singo&singo_id=${gallId}&singo_no=${articleNo}&ko_name=${encodeURIComponent(document.title)}&s_url=${encodeURIComponent(currentUrl)}&gall_type=G` : "";
-
-    function renderActions(){
-      const actionsBox = overlay.querySelector("#dcbpv-actions");
-      if (!actionsBox) return;
-      actionsBox.innerHTML = `
-        <button class="dcbpv-btn primary" data-act="open">
-          <span class="dcbpv-btn-icon">🔗</span>
-          <span class="dcbpv-btn-text">원문 보기</span>
-        </button>
-        <button class="dcbpv-btn" data-act="up">
-          <span class="dcbpv-btn-icon">👍</span>
-          <span class="dcbpv-btn-text">${rec.up}</span>
-        </button>
-        <button class="dcbpv-btn" data-act="down">
-          <span class="dcbpv-btn-icon">👎</span>
-          <span class="dcbpv-btn-text">${rec.down}</span>
-        </button>
-        <button class="dcbpv-btn" data-act="share">
-          <span class="dcbpv-btn-icon">📤</span>
-          <span class="dcbpv-btn-text">공유</span>
-        </button>
-        ${reportUrl ? `<button class="dcbpv-btn warn" data-act="report">
-          <span class="dcbpv-btn-icon">🚨</span>
-          <span class="dcbpv-btn-text">신고</span>
-        </button>` : ''}
-      `;
+  function recordText(record, keys){
+    for (const key of keys) {
+      const value = record?.[key];
+      if (value == null) continue;
+      const text = String(value).trim();
+      if (text) return text;
     }
+    return "";
+  }
 
-    const handleAction = (act) => {
-      if (act === "report" && reportUrl) {
-        window.open(reportUrl, "_blank");
-        return;
+  function collectCommentRecords(value, depth = 0){
+    if (depth > 6 || value == null) return [];
+    if (Array.isArray(value)) return value.flatMap((item) => collectCommentRecords(item, depth + 1));
+    if (typeof value !== "object") return [];
+
+    const body = recordText(value, ["memo", "contents", "content", "comment", "comment_memo", "text", "body"]);
+    const hasIdentity = recordText(value, ["name", "nick", "nickname", "user_name", "user_id", "ip", "reg_date", "date_time"]);
+    if (body && hasIdentity) return [value];
+
+    const priority = ["comments", "comment", "list", "comment_list", "data", "result"];
+    const out = [];
+    priority.forEach((key) => {
+      if (Object.prototype.hasOwnProperty.call(value, key)) out.push(...collectCommentRecords(value[key], depth + 1));
+    });
+    Object.keys(value).forEach((key) => {
+      if (!priority.includes(key)) out.push(...collectCommentRecords(value[key], depth + 1));
+    });
+    return out;
+  }
+
+  function commentRecordBody(record, baseUrl){
+    const raw = recordText(record, ["memo", "contents", "content", "comment", "comment_memo", "text", "body"]);
+    if (!raw) return "";
+    if (!looksLikeHtml(raw)) return escapeText(raw).replace(/\n/g, "<br>");
+
+    const doc = new DOMParser().parseFromString(`<div>${raw}</div>`, "text/html");
+    normalizeDcMedia(doc, baseUrl);
+    return htmlFromElement(doc.body.firstElementChild || doc.body, baseUrl);
+  }
+
+  function commentRecordsToHtml(records, baseUrl){
+    const rows = records.map((record) => {
+      const body = commentRecordBody(record, baseUrl);
+      const plain = htmlToPlain(body);
+      if (!plain && !/<(?:img|video)\b/i.test(body)) return "";
+      const meta = commentMetaFromRecord(record);
+      const nick = meta.nick || "익명";
+      const date = recordText(record, ["reg_date", "date_time", "date", "time"]);
+      const replyClass = String(record.depth || record.c_depth || record.reply || "") !== "0" && String(record.depth || record.c_depth || record.reply || "") !== "" ? " reply" : "";
+      const deletedClass = /삭제|차단|운영자/.test(plain) || /Y/i.test(String(record.del_yn || record.is_delete || "")) ? " deleted" : "";
+      const doryClass = normalizePreviewNick(nick) === "댓글돌이" ? " dory" : "";
+      return `<div class="dcbpv-comment-item${replyClass}${deletedClass}${doryClass}" data-dcbpv-comment="1" data-nick="${escapeText(nick)}" data-uid="${escapeText(meta.uid)}" data-ip="${escapeText(meta.ip)}"><div class="dcbpv-comment-meta">${previewWriterBadge({ nick, uid: meta.uid, ip: meta.ip, loc: "preview-comment" })}${date ? `<span>${escapeText(date)}</span>` : ""}</div><div class="dcbpv-comment-body">${body}</div></div>`;
+    }).filter(Boolean);
+    return rows.length ? `<div class="dcbpv-comment-list">${rows.join("")}</div>` : "";
+  }
+
+  function commentDataToHtml(payload, baseUrl){
+    if (!payload) return "";
+
+    const records = collectCommentRecords(payload);
+    if (records.length) return commentRecordsToHtml(records, baseUrl);
+
+    const fragments = commentHtmlFragments(payload);
+    if (!fragments.length) return "";
+    const doc = new DOMParser().parseFromString(`<div id="dcbpv-comment-source">${fragments.join("\n")}</div>`, "text/html");
+    normalizeDcMedia(doc, baseUrl);
+    return buildCommentsHTML(doc, doc, baseUrl);
+  }
+
+  function toDesktopCommentUrl(articleUrl){
+    try {
+      const u = new URL(articleUrl, location.href);
+      const path = /\/mini\//i.test(u.pathname) ? "/mini/board/comment/" : "/board/comment/";
+      return `${u.protocol}//gall.dcinside.com${path}`;
+    } catch (_) {
+      return "https://gall.dcinside.com/board/comment/";
+    }
+  }
+
+  async function fetchCommentsFromEndpoint(articleUrl, articleDoc, signal, cacheMode){
+    const info = previewRequestInfo(articleUrl, articleDoc);
+    if (!info.id || !info.no || !info.securityToken) return "";
+
+    const body = new URLSearchParams({
+      comment_page: "1",
+      id: info.id,
+      no: info.no,
+      cmt_id: info.cmtId || info.id,
+      cmt_no: info.cmtNo || info.no,
+      e_s_n_o: info.securityToken,
+      sort: "D"
+    }).toString();
+
+    const endpoint = toDesktopCommentUrl(articleUrl);
+    const response = await fetchText(endpoint, signal, {
+      cache: cacheMode,
+      method: "POST",
+      body,
+      referrer: articleUrl,
+      accept: "application/json,text/javascript,text/html,*/*;q=0.8",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+        "X-Requested-With": "XMLHttpRequest"
       }
-      if (act === "share") {
-        showSharePopup();
-        return;
-      }
-      if (act === "open") {
-        window.open(currentUrl, "_blank");
-        return;
-      }
-      const btn = recomBtns[act];
-      if (!btn) {
-        console.warn("[DCB] 버튼을 찾을 수 없습니다:", act);
-        return;
-      }
+    });
+
+    return commentDataToHtml(parseLooseJson(response.text), response.finalUrl || endpoint);
+  }
+
+  async function loadPreview(url, { force = false } = {}){
+    const cached = cache.get(url);
+    if (!force && cached && Date.now() - cached.time < CACHE_TTL) return cached.data;
+
+    if (activeAbort) activeAbort.abort();
+    activeAbort = new AbortController();
+
+    const mobileUrl = toMobileUrl(url);
+    const cacheMode = force ? "reload" : "default";
+    let data = null;
+    let desktopCandidate = null;
+    let mobileError = null;
+
+    if (mobileUrl) {
       try {
-        btn.click();
-        setTimeout(() => {
-          rec.up = wrap.querySelector(".up_num")?.textContent?.trim() || rec.up;
-          rec.down = wrap.querySelector(".down_num")?.textContent?.trim() || rec.down;
-          renderActions();
-        }, 600);
+        const mobileResponse = await fetchText(mobileUrl, activeAbort.signal, cacheMode);
+        const finalMobileUrl = mobileResponse.finalUrl || mobileUrl;
+        const finalHost = (() => {
+          try { return new URL(finalMobileUrl).hostname; }
+          catch (_) { return ""; }
+        })();
+
+        if (finalHost && finalHost !== "m.dcinside.com") {
+          desktopCandidate = parseDesktopFallback(mobileResponse.text, url, finalMobileUrl);
+          data = desktopCandidate;
+        } else {
+          data = parseMobilePreview(mobileResponse.text, url, finalMobileUrl);
+        }
       } catch (error) {
-        console.error("[DCB] 버튼 클릭 오류:", error);
+        mobileError = error;
       }
-    };
-
-    function showSharePopup(){
-      if (document.getElementById("dcbpv-share-popup")) return;
-      const popup = document.createElement("div");
-      popup.id = "dcbpv-share-popup";
-      popup.className = "dcbpv-share-popup";
-      popup.innerHTML = `
-        <button class="dcbpv-share-close" aria-label="닫기">×</button>
-        <h3>공유하기</h3>
-        <div class="share-btns">
-          <div class="share-btn" data-share="x">트위터</div>
-          <div class="share-btn" data-share="facebook">페이스북</div>
-        </div>
-        <div style="margin-top:16px;padding-top:16px;border-top:1px solid #e5e7eb">
-          <div class="url-copy">
-            <input type="text" readonly value="${currentUrl}" id="dcbpv-url-input">
-            <button id="dcbpv-copy-btn">복사</button>
-          </div>
-        </div>
-      `;
-      overlay.appendChild(popup);
-      
-      popup.querySelector(".dcbpv-share-close").onclick = () => popup.remove();
-      popup.querySelector("#dcbpv-copy-btn").onclick = () => {
-        const inp = popup.querySelector("#dcbpv-url-input");
-        inp.select();
-        document.execCommand("copy");
-        const btn = popup.querySelector("#dcbpv-copy-btn");
-        const orig = btn.textContent;
-        btn.textContent = "복사됨";
-        setTimeout(() => btn.textContent = orig, 1500);
-      };
-      
-      popup.querySelectorAll(".share-btn[data-share]").forEach(btn => {
-        btn.onclick = () => {
-          const type = btn.dataset.share;
-          if (type === "x") {
-            window.open(`https://twitter.com/intent/tweet?url=${encodeURIComponent(currentUrl)}&text=${encodeURIComponent(title)}`, "_blank");
-          } else if (type === "facebook") {
-            window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(currentUrl)}`, "_blank");
-          }
-        };
-      });
     }
 
-    // 첨부파일 수집
-    const fileBox = wrap.querySelector(".appending_file_box");
-    const attachments = [];
-    if (fileBox) {
-      const fileLinks = fileBox.querySelectorAll(".appending_file a");
-      fileLinks.forEach(link => {
-        const fileName = link.textContent.trim();
-        const fileUrl = link.href;
-        if (fileName && fileUrl) attachments.push({ name: fileName, url: fileUrl });
-      });
+    if (!data || isWeakPreviewData(data) || !data.writerHTML || !data.commentsHTML) {
+      try {
+        const desktopResponse = await fetchText(url, activeAbort.signal, cacheMode);
+        const desktopData = parseDesktopFallback(desktopResponse.text, url, desktopResponse.finalUrl || url);
+        data = data ? mergePreviewData(data, desktopData) : desktopData;
+      } catch (desktopError) {
+        if (!data) throw desktopError;
+        if (mobileError) data.mobileError = mobileError.message || String(mobileError);
+      }
     }
 
-    overlay.innerHTML = `
-      <div class="dcbpv-panel">
-        <div class="dcbpv-header">
-          <div class="dcbpv-meta">
-            <div class="dcbpv-title">${title || "제목 없음"}</div>
-            <div class="dcbpv-sub">
-              ${head ? `<span class="dcbpv-chip">${head}</span>` : ""}
-              ${nick ? `<span class="dcbpv-chip">${nick}${ip ? ` (${ip})` : ""}</span>` : ""}
-              ${date ? `<span class="dcbpv-chip">${date}</span>` : ""}
-              ${views ? `<span class="dcbpv-chip">${views}</span>` : ""}
-            </div>
-          </div>
-          <button class="dcbpv-close" aria-label="닫기">×</button>
-        </div>
-        <div class="dcbpv-body">
-          <div class="dcbpv-content" id="dcbpv-article"></div>
-          ${attachments.length > 0 ? `
-            <div class="dcbpv-attachments">
-              <div class="dcbpv-attachments-title">첨부파일</div>
-              ${attachments.map(f => `<a href="${f.url}" target="_blank" class="dcbpv-attachment">📎 ${f.name}</a>`).join('')}
-            </div>
-          ` : ''}
-          <div class="dcbpv-actions" id="dcbpv-actions"></div>
-        </div>
-      </div>
+    try {
+      const articleDoc = new DOMParser().parseFromString(data?.rawHtml || "", "text/html");
+      const endpointComments = await fetchCommentsFromEndpoint(url, articleDoc, activeAbort.signal, cacheMode);
+      if (endpointComments) {
+        data.commentsHTML = endpointComments;
+        const countDoc = new DOMParser().parseFromString(`<div>${endpointComments}</div>`, "text/html");
+        const count = countDoc.querySelectorAll(".dcbpv-comment-item").length;
+        data.commentTitle = `댓글${count ? ` ${count}개` : ""}`;
+      }
+    } catch (commentError) {
+      data.commentError = commentError?.message || String(commentError);
+    }
+
+    if (isWeakPreviewData(data) && !data.commentsHTML) {
+      throw new Error("본문/댓글 영역을 정확히 찾지 못했습니다. 디시 페이지 구조가 바뀌었거나 접근이 제한된 글일 수 있습니다.");
+    }
+
+    if (isWeakPreviewData(data) && data.commentsHTML) {
+      data.articleHTML = data.articleHTML || `<div class="dcbpv-empty">본문 영역을 표시할 수 없습니다.</div>`;
+    }
+
+    cache.set(url, { time: Date.now(), data });
+    return data;
+  }
+
+  function settlePreviewMedia(root, baseUrl){
+    const run = () => normalizeDcMedia(root, baseUrl);
+    run();
+    requestAnimationFrame(run);
+    [80, 260, 760, 1500].forEach((delay) => setTimeout(run, delay));
+  }
+
+  const PREVIEW_FILTER_DEFAULTS = {
+    userBlockEnabled: true,
+    includeGray: true,
+    hideDCGray: undefined,
+    hideComment: false,
+    hideImgComment: false,
+    hideDccon: false,
+    showUidBadge: false,
+    hideAnonymousEnabled: false,
+    doryBlockEnabled: true,
+    keywordBlockEnabled: false,
+    blockedKeywords: [],
+    keywordBlockTargets: { listTitle: true, viewTitle: true, viewBody: true, comments: true },
+    keywordHideEnabled: false,
+    hiddenKeywords: [],
+    keywordHideTargets: { listTitle: true, viewTitle: true, viewBody: true, comments: true }
+  };
+
+  function storageGet(area, defaults){
+    return new Promise((resolve) => {
+      try {
+        chrome.storage[area].get(defaults, (value) => resolve(value || defaults));
+      } catch (_) {
+        resolve(defaults);
+      }
+    });
+  }
+
+  async function previewSettings(){
+    const [sync, local] = await Promise.all([
+      storageGet("sync", PREVIEW_FILTER_DEFAULTS),
+      storageGet("local", { blockedUids: [] })
+    ]);
+
+    let storeTokens = [];
+    try {
+      if (globalThis.DCBUserBlockStore?.getAllTokens) {
+        storeTokens = await globalThis.DCBUserBlockStore.getAllTokens();
+      }
+    } catch (_) {}
+
+    const mergedBlocked = [
+      ...(Array.isArray(sync.blockedUids) ? sync.blockedUids : []),
+      ...(Array.isArray(local.blockedUids) ? local.blockedUids : []),
+      ...(Array.isArray(storeTokens) ? storeTokens : [])
+    ];
+
+    return { ...PREVIEW_FILTER_DEFAULTS, ...sync, blockedUids: Array.from(new Set(mergedBlocked.map((v) => String(v || "").trim()).filter(Boolean))) };
+  }
+
+  function ensurePreviewFilterStyle(){
+    const styleId = `${STYLE_ID}-filters`;
+    let style = document.getElementById(styleId);
+    if (!style) {
+      style = document.createElement("style");
+      style.id = styleId;
+      (document.head || document.documentElement).appendChild(style);
+    }
+    style.textContent = `
+      #${OVERLAY_ID} .dcbpv-filter-hidden{display:none!important}
+      #${OVERLAY_ID} .dcbpv-filter-note{margin:10px 0;padding:10px 12px;border:1px dashed rgba(37,99,235,.35);border-radius:12px;background:rgba(37,99,235,.06);color:#475569;font-size:12px;font-weight:700;line-height:1.5}
+      #${OVERLAY_ID} .dcbpv-filter-note.danger{border-color:rgba(239,68,68,.35);background:rgba(239,68,68,.06);color:#b91c1c}
+      #${OVERLAY_ID} .dcbpv-filter-chip{display:inline-flex;max-width:220px;vertical-align:middle;margin-left:4px;padding:2px 7px;border-radius:999px;background:rgba(37,99,235,.1);border:1px solid rgba(37,99,235,.18);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      #${OVERLAY_ID} .dcbpv-filter-reveal{margin-left:8px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;color:#334155;font-size:12px;font-weight:800;padding:3px 8px;cursor:pointer}
+      #${OVERLAY_ID} .dcbpv-writer-ref{display:inline-flex!important;align-items:center!important;gap:4px!important;max-width:100%;vertical-align:middle;white-space:normal}
+      #${OVERLAY_ID} .dcbpv-writer-ref .writer_nikcon{width:12px;height:11px;display:inline-block;background:linear-gradient(135deg,#93c5fd,#2563eb);border-radius:3px;opacity:.85;flex:0 0 auto}
+      #${OVERLAY_ID} .dcbpv-writer-ref .ip{color:#64748b;font-size:12px}
+      #${OVERLAY_ID} .dcb-uid-badge,#${OVERLAY_ID} .dcbpv-uid-badge{display:inline-flex;align-items:center;flex:0 0 auto;font-size:11px;color:#64748b;background:rgba(100,116,139,.12);padding:1px 6px;border-radius:10px;line-height:1.2;white-space:nowrap}
+      #${OVERLAY_ID} .dcbpv-article .dcb-dccon-content-hidden,#${OVERLAY_ID} .dcbpv-article .dcbpv-dccon-hidden{display:none!important}
     `;
+  }
 
-    document.documentElement.appendChild(overlay);
+  function previewKeywords(list){
+    const seen = new Set();
+    return (Array.isArray(list) ? list : []).map((raw) => {
+      const label = String(raw || "").normalize("NFKC").trim();
+      const needle = label.toLowerCase().replace(/\s+/g, " ").trim();
+      if (!label || !needle || seen.has(needle)) return null;
+      seen.add(needle);
+      return { label, needle };
+    }).filter(Boolean);
+  }
 
-    renderActions();
-    overlay.addEventListener("click", (e) => {
-      const actBtn = e.target.closest(".dcbpv-btn[data-act]");
-      if (actBtn) {
-        handleAction(actBtn.dataset.act);
+  function findPreviewKeyword(text, prepared){
+    const haystack = String(text || "").normalize("NFKC").toLowerCase().replace(/\s+/g, " ").trim();
+    if (!haystack) return null;
+    return prepared.find((keyword) => haystack.includes(keyword.needle)) || null;
+  }
+
+  function previewWriterFromNode(node){
+    const writer = node?.matches?.(".gall_writer,.ub-writer") ? node : node?.querySelector?.(".gall_writer,.ub-writer");
+    return {
+      nick: writer?.getAttribute?.("data-nick") || node?.getAttribute?.("data-nick") || writer?.textContent?.replace(/\([^)]*\)/g, "").trim() || "",
+      uid: previewUidToken(writer?.getAttribute?.("data-uid") || node?.getAttribute?.("data-uid") || writer?.querySelector?.(".dcb-uid-badge")?.dataset?.fullUid || ""),
+      ip: previewIpPrefix(writer?.getAttribute?.("data-ip") || node?.getAttribute?.("data-ip") || writer?.querySelector?.(".ip")?.textContent || "")
+    };
+  }
+
+  function previewBlockMatcher(tokens){
+    const uids = new Set();
+    const ips = new Set();
+    (Array.isArray(tokens) ? tokens : []).forEach((raw) => {
+      const clean = cleanPreviewToken(raw);
+      if (!clean) return;
+      const ip = previewIpPrefix(clean);
+      if (ip && /^\d{1,3}(?:\.\d{1,3}){1,3}$/.test(clean)) {
+        ips.add(ip);
         return;
       }
-      if (e.target.classList.contains("dcbpv-close") || e.target.closest(".dcbpv-close")) {
-        overlay.remove();
+      const uid = previewUidToken(clean);
+      if (uid) uids.add(uid.toLowerCase());
+    });
+    return { uids, ips, empty: !uids.size && !ips.size };
+  }
+
+  function previewWriterBlocked(meta, matcher){
+    if (!meta || matcher.empty) return false;
+    const uid = previewUidToken(meta.uid);
+    const ip = previewIpPrefix(meta.ip);
+    return !!(uid && matcher.uids.has(uid.toLowerCase())) || !!(ip && matcher.ips.has(ip));
+  }
+
+  function previewIsAnonymous(meta, node){
+    if (!meta) return false;
+    if (previewUidToken(meta.uid)) return false;
+    const writer = node?.matches?.(".gall_writer,.ub-writer") ? node : node?.querySelector?.(".gall_writer,.ub-writer");
+    if (writer?.querySelector?.(".writer_nikcon,[onclick*=gallog],[href*=gallog]")) return false;
+    return !!previewIpPrefix(meta.ip);
+  }
+
+  function filterNote(kind, label, revealKey = ""){
+    const isDanger = kind === "user" || kind === "keyword-block";
+    const title = kind === "user" ? "차단한 사용자 콘텐츠" : kind === "anonymous" ? "비회원 콘텐츠 숨김" : kind === "dccon" ? "디시콘 댓글 숨김" : kind === "dory" ? "댓글돌이 댓글 숨김" : kind === "keyword-hide" ? "숨김 키워드가 포함된 콘텐츠" : "차단 키워드가 포함된 콘텐츠";
+    const chip = label ? `<span class="dcbpv-filter-chip" title="${escapeText(label)}">${escapeText(label)}</span>` : "";
+    const reveal = revealKey ? `<button type="button" class="dcbpv-filter-reveal" data-dcbpv-reveal="${escapeText(revealKey)}">이번만 보기</button>` : "";
+    return `<div class="dcbpv-filter-note${isDanger ? " danger" : ""}"><span>${title}</span>${chip}${reveal}</div>`;
+  }
+
+  function replaceSectionWithNote(section, noteHtml){
+    const body = section?.querySelector?.(".dcbpv-html");
+    if (!body || body.dataset.dcbpvFiltered === "1") return;
+    body.dataset.dcbpvOriginalHtml = body.innerHTML;
+    body.dataset.dcbpvFiltered = "1";
+    body.innerHTML = noteHtml;
+  }
+
+  function addUidBadges(root){
+    root.querySelectorAll(".gall_writer,.ub-writer").forEach((writer) => {
+      const meta = previewWriterFromNode(writer);
+      if (!meta.uid || writer.querySelector(":scope .dcb-uid-badge,.dcbpv-uid-badge")) return;
+      const badge = document.createElement("span");
+      badge.className = "dcbpv-uid-badge dcb-uid-badge";
+      badge.dataset.fullUid = meta.uid;
+      badge.title = meta.uid;
+      badge.textContent = `(${meta.uid})`;
+      writer.appendChild(badge);
+    });
+  }
+
+  function applyDcconFilter(overlay){
+    overlay.querySelectorAll(".dcbpv-article .dcbpv-dccon,.dcbpv-article .written_dccon,.dcbpv-article .comment_dccon,.dcbpv-article img[src*='dccon.php'],.dcbpv-article video[src*='dccon']").forEach((node) => {
+      node.classList.add("dcbpv-dccon-hidden", "dcb-dccon-content-hidden");
+      node.setAttribute("data-dcb-dccon-hidden", "true");
+    });
+
+    overlay.querySelectorAll(".dcbpv-comment-item").forEach((row) => {
+      if (!row.querySelector(".dcbpv-dccon,.written_dccon,.comment_dccon,img[src*='dccon.php'],video[src*='dccon']")) return;
+      row.classList.add("dcbpv-filter-hidden");
+      row.dataset.dcbpvBlockedReason = "dccon";
+    });
+  }
+
+  function applyCommentUiFilter(overlay){
+    overlay.querySelectorAll("a.reply_numbox,span.reply_num,button.btn_cmt_delete,.btn_cmt_delete,input.article_chkbox,.cmt_mdf_del,.btn_cmt_modify,.btn_reply").forEach((node) => {
+      node.classList.add("dcbpv-filter-hidden");
+    });
+  }
+
+  function applyImageCommentFilter(overlay){
+    overlay.querySelectorAll(".img_comment,.img_comment.fold,.img_comment.getMoreComment,.btn_imgcmtopen").forEach((node) => {
+      node.classList.add("dcbpv-filter-hidden");
+    });
+  }
+
+  function commentText(row){
+    return row.querySelector(".dcbpv-comment-body")?.innerText || row.textContent || "";
+  }
+
+  function summarizeHiddenComments(overlay){
+    const list = overlay.querySelector(".dcbpv-comment-list");
+    if (!list) return;
+    list.querySelectorAll(".dcbpv-filter-summary").forEach((node) => node.remove());
+    const hidden = list.querySelectorAll(":scope > .dcbpv-comment-item.dcbpv-filter-hidden").length;
+    if (!hidden) return;
+    const note = document.createElement("div");
+    note.className = "dcbpv-filter-note dcbpv-filter-summary";
+    note.textContent = `차단 설정에 따라 댓글 ${hidden}개를 숨겼습니다.`;
+    list.prepend(note);
+  }
+
+  async function applyPreviewFeatureBridge(overlay, data){
+    if (!overlay || !data) return;
+    ensurePreviewFilterStyle();
+    const conf = await previewSettings();
+    if (!document.documentElement.contains(overlay)) return;
+
+    const articleSection = overlay.querySelector(".dcbpv-article")?.closest(".dcbpv-section");
+    const commentsSection = overlay.querySelector(".dcbpv-comments");
+    const authorMeta = previewWriterFromNode(overlay.querySelector(".dcbpv-author-name .gall_writer,.dcbpv-writer .gall_writer"));
+    const matcher = previewBlockMatcher(conf.blockedUids || []);
+
+    if (conf.showUidBadge) addUidBadges(overlay);
+    if (conf.hideComment) applyCommentUiFilter(overlay);
+    if (conf.hideImgComment) applyImageCommentFilter(overlay);
+    if (conf.hideDccon) applyDcconFilter(overlay);
+
+    if (conf.userBlockEnabled !== false && previewWriterBlocked(authorMeta, matcher)) {
+      replaceSectionWithNote(articleSection, filterNote("user", authorMeta.uid || authorMeta.ip || authorMeta.nick));
+      replaceSectionWithNote(commentsSection, filterNote("user", authorMeta.uid || authorMeta.ip || authorMeta.nick));
+    }
+
+    if (conf.hideAnonymousEnabled && previewIsAnonymous(authorMeta, overlay.querySelector(".dcbpv-author-name .gall_writer,.dcbpv-writer .gall_writer"))) {
+      replaceSectionWithNote(articleSection, filterNote("anonymous", authorMeta.ip || authorMeta.nick));
+      replaceSectionWithNote(commentsSection, filterNote("anonymous", authorMeta.ip || authorMeta.nick));
+    }
+
+    const blockKeywords = previewKeywords(conf.blockedKeywords);
+    const hideKeywords = previewKeywords(conf.hiddenKeywords);
+    const blockTargets = conf.keywordBlockTargets || PREVIEW_FILTER_DEFAULTS.keywordBlockTargets;
+    const hideTargets = conf.keywordHideTargets || PREVIEW_FILTER_DEFAULTS.keywordHideTargets;
+    const titleText = data.title || "";
+    const articleText = overlay.querySelector(".dcbpv-article")?.innerText || "";
+
+    if (conf.keywordBlockEnabled) {
+      const titleKw = blockTargets.viewTitle ? findPreviewKeyword(titleText, blockKeywords) : null;
+      const bodyKw = blockTargets.viewBody ? findPreviewKeyword(articleText, blockKeywords) : null;
+      if (titleKw || bodyKw) replaceSectionWithNote(articleSection, filterNote("keyword-block", (titleKw || bodyKw).label));
+    }
+
+    if (conf.keywordHideEnabled) {
+      const titleKw = hideTargets.viewTitle ? findPreviewKeyword(titleText, hideKeywords) : null;
+      const bodyKw = hideTargets.viewBody ? findPreviewKeyword(articleText, hideKeywords) : null;
+      if (titleKw || bodyKw) replaceSectionWithNote(articleSection, filterNote("keyword-hide", (titleKw || bodyKw).label, "article"));
+    }
+
+    overlay.querySelectorAll(".dcbpv-comment-item").forEach((row, index) => {
+      const meta = previewWriterFromNode(row);
+      if (conf.doryBlockEnabled !== false && (row.classList.contains("dory") || normalizePreviewNick(meta.nick || row.dataset.nick) === "댓글돌이")) {
+        row.classList.add("dcbpv-filter-hidden");
+        row.dataset.dcbpvBlockedReason = "dory";
+      }
+      if (conf.userBlockEnabled !== false && previewWriterBlocked(meta, matcher)) {
+        row.classList.add("dcbpv-filter-hidden");
+        row.dataset.dcbpvBlockedReason = "user";
+      }
+      if (conf.hideAnonymousEnabled && previewIsAnonymous(meta, row)) {
+        row.classList.add("dcbpv-filter-hidden");
+        row.dataset.dcbpvBlockedReason = "anonymous";
+      }
+      const text = commentText(row);
+      if (conf.keywordBlockEnabled && blockTargets.comments) {
+        const kw = findPreviewKeyword(text, blockKeywords);
+        if (kw) {
+          row.classList.add("dcbpv-filter-hidden");
+          row.dataset.dcbpvBlockedReason = "keyword";
+          row.dataset.dcbpvBlockedLabel = kw.label;
+        }
+      }
+      if (conf.keywordHideEnabled && hideTargets.comments) {
+        const kw = findPreviewKeyword(text, hideKeywords);
+        if (kw) {
+          row.dataset.dcbpvSoftKey = `comment-${index}`;
+          row.classList.add("dcbpv-filter-hidden");
+          row.insertAdjacentHTML("afterend", filterNote("keyword-hide", kw.label, row.dataset.dcbpvSoftKey));
+        }
       }
     });
 
-    overlay.addEventListener("click", (e)=>{
-      if (e.target.id === OVERLAY_ID) overlay.remove();
-    });
-
-    const artHost = overlay.querySelector("#dcbpv-article");
-    if (article) artHost.appendChild(article);
-    else artHost.innerHTML = '<div class="dcbpv-empty">본문을 불러오지 못했습니다.</div>';
+    summarizeHiddenComments(overlay);
   }
 
-  function shouldOpen(target){
-    // 게시글 목록(.gall_tit)만 지원 (뷰 페이지 우클릭 미리보기 제거)
-    return !!(target.closest && target.closest(".gall_tit"));
-  }
+  function renderPreview(data){
+    currentPreviewData = data;
+    installPreviewCss();
+    closePreview();
+    currentPreviewData = data;
 
-  document.addEventListener("contextmenu", (e) => {
-    if (!shouldOpen(e.target)) return;
-    
-    // 미리보기 기능이 활성화되지 않았으면 기본 컨텍스트 메뉴 사용
-    if (!previewEnabled) return;
-    
-    e.preventDefault();
-    
-    // 목록에서 우클릭 시: 해당 게시글 정보를 불러와 현재 창에서 오버레이
-    const listItem = e.target.closest(".gall_tit");
-    if (listItem) {
-      //const link = listItem.querySelector("a[href*='/board/view/']");
-      const link = listItem.querySelector("a[href*='board/view']");
-      if (link && link.href) {
-        // 새 탭에서 컨텐츠를 가져와 현재 창 오버레이에 표시
-        fetchAndShowPreview(link.href);
-      }
-      return;
-    }
-  }, true);
-  
-  // 외부 URL의 게시글을 가져와 미리보기
-  async function fetchAndShowPreview(url){
-    if (document.getElementById(OVERLAY_ID)) return;
-    
-    // 로딩 오버레이 표시
-    const loadingOverlay = document.createElement("div");
-    loadingOverlay.id = OVERLAY_ID;
-    loadingOverlay.innerHTML = `
-      <div class="dcbpv-panel" style="justify-content:center;align-items:center;min-height:200px;">
-        <div style="text-align:center;color:#6b7280;">
-          <div style="font-size:32px;margin-bottom:12px;">⏳</div>
-          <div style="font-size:14px;font-weight:500;">불러오는 중...</div>
-        </div>
-      </div>
-    `;
-    createStyle();
-    document.documentElement.appendChild(loadingOverlay);
-    window.isPreviewOpen = true;
-    document.dispatchEvent(new CustomEvent('dcb-preview-state', { detail: { open: true } }));
-    
-    try {
-      const response = await fetch(url);
-      const html = await response.text();
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(html, "text/html");
-      
-      // 임시로 DOM에 마운트해서 데이터 추출
-      const tempWrap = doc.querySelector(".view_content_wrap");
-      if (!tempWrap) {
-        throw new Error("게시글을 찾을 수 없습니다.");
-      }
-      
-      // 기존 로딩 제거 후 실제 컨텐츠 표시
-      loadingOverlay.remove();
-      // 로딩 완료 상태 > 본문 오버레이에서 다시 true 상태로 전환
-      window.isPreviewOpen = false;
-      document.dispatchEvent(new CustomEvent('dcb-preview-state', { detail: { open: false } }));
-      showPreviewFromDOM(tempWrap, doc, url);
-    } catch (err) {
-      loadingOverlay.innerHTML = `
-        <div class="dcbpv-panel" style="justify-content:center;align-items:center;min-height:200px;">
-          <div style="text-align:center;color:#6b7280;">
-            <div style="font-size:32px;margin-bottom:12px;">❌</div>
-            <div style="font-size:14px;font-weight:500;margin-bottom:8px;">게시글을 불러올 수 없습니다</div>
-            <div style="font-size:12px;color:#9ca3af;margin-bottom:16px;">${err.message}</div>
-            <button style="padding:8px 16px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;color:#374151;cursor:pointer;font-size:13px;font-weight:500;transition:.15s;" onmouseover="this.style.background='#f9fafb'" onmouseout="this.style.background='#fff'" onclick="this.closest('#${OVERLAY_ID}').remove()">닫기</button>
-          </div>
-        </div>
-      `;
-    }
-  }
-  
-  // DOM에서 추출한 데이터로 미리보기 표시
-  function showPreviewFromDOM(wrap, doc, sourceUrl){
     const overlay = document.createElement("div");
     overlay.id = OVERLAY_ID;
-    
-    const title = wrap.querySelector(".title_subject")?.textContent?.trim() || "";
-    const head  = wrap.querySelector(".title_headtext")?.textContent?.trim() || "";
-    const writer = wrap.querySelector(".gall_writer, .ub-writer");
-    const nick = writer?.querySelector(".nickname em, .nickname")?.textContent?.trim() || "";
-    const ip   = writer?.getAttribute("data-ip") || writer?.querySelector(".ip")?.textContent?.trim() || "";
-    const date = writer?.querySelector(".gall_date")?.textContent?.trim() || "";
-    const views = wrap.querySelector(".gall_count")?.textContent?.trim() || "";
-    
-    const article = sanitizeContent(wrap.querySelector(".write_div"));
-    
-    const rec = {
-      up: wrap.querySelector(".up_num")?.textContent?.trim() || "0",
-      down: wrap.querySelector(".down_num")?.textContent?.trim() || "0"
-    };
-    
-    // 첨부파일 수집
-    const fileBox = wrap.querySelector(".appending_file_box");
-    const attachments = [];
-    if (fileBox) {
-      const fileLinks = fileBox.querySelectorAll(".appending_file a");
-      fileLinks.forEach(link => {
-        const fileName = link.textContent.trim();
-        const fileUrl = link.href;
-        if (fileName && fileUrl) attachments.push({ name: fileName, url: fileUrl });
-      });
-    }
-    
-    const urlObj = new URL(sourceUrl);
-    const gallId = urlObj.searchParams.get("id") || "";
-    const articleNo = sourceUrl.match(/no=(\d+)/)?.[1] || "";
-    const reportUrl = articleNo && gallId ? `https://gall.dcinside.com/singo/?id=singo&singo_id=${gallId}&singo_no=${articleNo}&ko_name=${encodeURIComponent(title)}&s_url=${encodeURIComponent(sourceUrl)}&gall_type=G` : "";
-    
-    function renderActions(){
-      const actionsBox = overlay.querySelector("#dcbpv-actions");
-      if (!actionsBox) return;
-      actionsBox.innerHTML = `
-        <button class="dcbpv-btn primary" data-act="open">
-          <span class="dcbpv-btn-icon">🔗</span>
-          <span class="dcbpv-btn-text">원문 보기</span>
-        </button>
-        <button class="dcbpv-btn" data-act="up-preview">
-          <span class="dcbpv-btn-icon">👍</span>
-          <span class="dcbpv-btn-text">${rec.up}</span>
-        </button>
-        <button class="dcbpv-btn" data-act="down-preview">
-          <span class="dcbpv-btn-icon">👎</span>
-          <span class="dcbpv-btn-text">${rec.down}</span>
-        </button>
-        <button class="dcbpv-btn" data-act="share-preview">
-          <span class="dcbpv-btn-icon">📤</span>
-          <span class="dcbpv-btn-text">공유</span>
-        </button>
-        ${reportUrl ? `<button class="dcbpv-btn warn" data-act="report-preview">
-          <span class="dcbpv-btn-icon">🚨</span>
-          <span class="dcbpv-btn-text">신고</span>
-        </button>` : ''}
-      `;
-    }
-    
     overlay.innerHTML = `
-      <div class="dcbpv-panel">
-        <div class="dcbpv-header">
-          <div class="dcbpv-meta">
-            <div class="dcbpv-title">${title || "제목 없음"}</div>
-            <div class="dcbpv-sub">
-              ${head ? `<span class="dcbpv-chip">${head}</span>` : ""}
-              ${nick ? `<span class="dcbpv-chip">${nick}${ip ? ` (${ip})` : ""}</span>` : ""}
-              ${date ? `<span class="dcbpv-chip">${date}</span>` : ""}
-              ${views ? `<span class="dcbpv-chip">${views}</span>` : ""}
-            </div>
+      <section class="dcbpv-panel" role="dialog" aria-modal="true" aria-label="디시 게시글 미리보기">
+        <header class="dcbpv-header">
+          <div style="min-width:0;flex:1">
+            <div class="dcbpv-title"><a href="${escapeText(data.url)}" target="_blank" rel="noreferrer noopener">${escapeText(data.title)}</a></div>
+            <div class="dcbpv-writer">${data.writerHTML || "작성자 정보 없음"}</div>
           </div>
-          <button class="dcbpv-close" aria-label="닫기">×</button>
-        </div>
-        <div class="dcbpv-body">
-          <div class="dcbpv-content" id="dcbpv-article"></div>
-          ${attachments.length > 0 ? `
-            <div class="dcbpv-attachments">
-              <div class="dcbpv-attachments-title">첨부파일</div>
-              ${attachments.map(f => `<a href="${f.url}" target="_blank" class="dcbpv-attachment">📎 ${f.name}</a>`).join('')}
-            </div>
-          ` : ''}
-          <div class="dcbpv-actions" id="dcbpv-actions"></div>
-        </div>
-      </div>
-    `;
-    
-    document.documentElement.appendChild(overlay);
-    window.isPreviewOpen = true;
-    document.dispatchEvent(new CustomEvent('dcb-preview-state', { detail: { open: true } }));
-    
-    renderActions();
-    
-    function closePreviewOverlay() {
-      overlay.remove();
-      window.isPreviewOpen = false;
-      document.dispatchEvent(new CustomEvent('dcb-preview-state', { detail: { open: false } }));
-    }
+          <div class="dcbpv-icons">
+            <button class="dcbpv-icon" type="button" data-act="reload" title="새로 불러오기">↻</button>
+            <button class="dcbpv-icon" type="button" data-act="close" title="닫기">×</button>
+          </div>
+        </header>
+        <main class="dcbpv-scroll">
+          <section class="dcbpv-section">
+            <h3 class="dcbpv-section-title">본문</h3>
+            <article class="dcbpv-html dcbpv-article">${data.articleHTML || `<div class="dcbpv-empty">본문을 표시할 수 없습니다.</div>`}</article>
+          </section>
+          <div class="dcbpv-vote">
+            개추 : <span class="dcbpv-vote-up">${data.counts.up || "0"}</span>
+            ${data.counts.upMember ? `<span class="dcbpv-vote-member">${data.counts.upMember}</span>` : ""}
+            &nbsp; 비추 : <span class="dcbpv-vote-down">${data.counts.down || "0"}</span>
+          </div>
+          <section class="dcbpv-section dcbpv-comments">
+            <h3 class="dcbpv-section-title">${escapeText(data.commentTitle || "댓글")}</h3>
+            <article class="dcbpv-html dcbpv-comment-html">${data.commentsHTML || `<div class="dcbpv-empty">댓글이 없거나 댓글 영역을 찾지 못했습니다.</div>`}</article>
+          </section>
+          <nav class="dcbpv-actions">
+            <button class="dcbpv-btn primary" type="button" data-act="open">원문 보기</button>
+            <button class="dcbpv-btn" type="button" data-act="share">공유</button>
+            ${data.reportUrl ? `<button class="dcbpv-btn warn" type="button" data-act="report">신고</button>` : ""}
+          </nav>
+        </main>
+      </section>`;
 
-    overlay.querySelector(".dcbpv-close").onclick = closePreviewOverlay;
-    overlay.addEventListener("click", (e)=>{
-      if (e.target.id === OVERLAY_ID) {
-        closePreviewOverlay();
-      }
-      if (e.target.classList.contains("dcbpv-close") || e.target.closest(".dcbpv-close")) {
-        closePreviewOverlay();
-      }
-    });
-    
-    // 본문 표시
-    const artHost = overlay.querySelector("#dcbpv-article");
-    if (article) artHost.appendChild(article);
-    else artHost.innerHTML = '<div class="dcbpv-empty">본문을 불러오지 못했습니다.</div>';
-    
-    // 버튼 클릭 이벤트
-    const actionsBox = overlay.querySelector("#dcbpv-actions");
-    if (actionsBox) {
-      actionsBox.addEventListener("click", (e) => {
-        const btn = e.target.closest("[data-act]");
-        if (!btn) return;
-        const act = btn.dataset.act;
-        
-        if (act === "open") {
-          window.open(sourceUrl, "_blank");
-        } else if (act === "up-preview") {
-          handleRecommendPreview(sourceUrl, "up", btn);
-        } else if (act === "down-preview") {
-          handleRecommendPreview(sourceUrl, "down", btn);
-        } else if (act === "share-preview") {
-          showSharePopupForPreview(sourceUrl, title);
-        } else if (act === "report-preview" && reportUrl) {
-          window.open(reportUrl, "_blank");
+    overlay.addEventListener("click", (event) => {
+      const revealButton = event.target.closest("[data-dcbpv-reveal]");
+      if (revealButton) {
+        const key = revealButton.dataset.dcbpvReveal;
+        if (key === "article") {
+          const body = overlay.querySelector(".dcbpv-article");
+          if (body?.dataset.dcbpvOriginalHtml) body.innerHTML = body.dataset.dcbpvOriginalHtml;
+          revealButton.closest(".dcbpv-filter-note")?.remove();
+          settlePreviewMedia(overlay, data.fetchedUrl || data.url);
+          return;
         }
-      });
-    }
-  }
-  
-  async function handleRecommendPreview(url, type, btn) {
-    try {
-      // URL에서 갤러리 ID와 게시글 번호 추출
-      const urlObj = new URL(url);
-      const gallId = urlObj.searchParams.get("id") || "";
-      const articleNo = url.match(/no=(\d+)/)?.[1] || "";
-      
-      if (!gallId || !articleNo) {
-        console.error("[DCB] 갤러리 ID 또는 게시글 번호를 찾을 수 없습니다.");
-        alert("❌ 게시글 정보를 찾을 수 없습니다.");
+        const row = overlay.querySelector(`.dcbpv-comment-item[data-dcbpv-soft-key="${CSS.escape ? CSS.escape(key) : key}"]`);
+        row?.classList.remove("dcbpv-filter-hidden");
+        revealButton.closest(".dcbpv-filter-note")?.remove();
+        summarizeHiddenComments(overlay);
         return;
       }
-      
-      console.log("[DCB] 추천/비추천 요청:", { gallId, articleNo, type });
-      
-      const isUp = type === "up";
-      const mode = isUp ? "U" : "D";
-      
-      // Background service worker에 API 호출 위임
-      const result = await chrome.runtime.sendMessage({
-        type: "DCB_RECOMMEND_VOTE",
-        gallId,
-        articleNo,
-        mode
-      });
-      
-      console.log("[DCB] API 응답:", result);
-      
-      if (result.success) {
-        // 원본 페이지에서 최신 수치 가져오기
-        try {
-          const pageResponse = await fetch(url);
-          const pageHtml = await pageResponse.text();
-          const parser = new DOMParser();
-          const doc = parser.parseFromString(pageHtml, "text/html");
-          
-          const countSelector = isUp ? ".up_num" : ".down_num";
-          const countEl = doc.querySelector(countSelector);
-          let newCount = "0";
-          
-          if (countEl) {
-            newCount = countEl.textContent.trim();
-          }
-          
-          // 버튼 UI 업데이트
-          const btnIcon = isUp ? "👍" : "👎";
-          btn.innerHTML = `<span class="dcbpv-btn-icon">${btnIcon}</span><span class="dcbpv-btn-text">${newCount}</span>`;
-        } catch (e) {
-          console.log("[DCB] 최신 수치 가져오기 실패");
-          const btnIcon = isUp ? "👍" : "👎";
-          btn.innerHTML = `<span class="dcbpv-btn-icon">${btnIcon}</span><span class="dcbpv-btn-text">+1</span>`;
+      if (event.target === overlay) return closePreview();
+      const act = event.target.closest("[data-act]")?.dataset.act;
+      if (!act) return;
+      if (act === "close") return closePreview();
+      if (act === "open") return window.open(data.url, "_blank", "noopener");
+      if (act === "report" && data.reportUrl) return window.open(data.reportUrl, "_blank", "noopener");
+      if (act === "reload") return openPreview(data.url, { force: true });
+      if (act === "share") return showShare(data);
+    });
+
+    document.documentElement.appendChild(overlay);
+    settlePreviewMedia(overlay, data.fetchedUrl || data.url);
+    applyPreviewFeatureBridge(overlay, data);
+    emitPreviewState(true);
+  }
+
+  function showShare(data){
+    if (document.getElementById(SHARE_ID)) return;
+    const overlay = document.getElementById(OVERLAY_ID);
+    if (!overlay) return;
+    const box = document.createElement("div");
+    box.id = SHARE_ID;
+    box.className = "dcbpv-share-popup";
+    box.innerHTML = `
+      <button class="dcbpv-share-close" type="button" aria-label="닫기">×</button>
+      <h3>공유하기</h3>
+      <div class="dcbpv-share-row">
+        <button type="button" data-share="x">X</button>
+        <button type="button" data-share="facebook">Facebook</button>
+      </div>
+      <div class="dcbpv-copy">
+        <input type="text" readonly value="${escapeText(data.url)}">
+        <button type="button" data-share="copy">복사</button>
+      </div>`;
+    box.addEventListener("click", async (event) => {
+      if (event.target.closest(".dcbpv-share-close")) return box.remove();
+      const share = event.target.closest("[data-share]")?.dataset.share;
+      if (!share) return;
+      if (share === "x") window.open(`https://twitter.com/intent/tweet?url=${encodeURIComponent(data.url)}&text=${encodeURIComponent(data.title)}`, "_blank", "noopener");
+      if (share === "facebook") window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(data.url)}`, "_blank", "noopener");
+      if (share === "copy") {
+        try { await navigator.clipboard.writeText(data.url); }
+        catch (_) {
+          const input = box.querySelector("input");
+          input.select();
+          document.execCommand("copy");
         }
-        
-        alert(isUp ? "✅ 추천이 완료되었습니다!" : "✅ 비추천이 완료되었습니다!");
-        
-      } else {
-        const errorMsg = result.error || "알 수 없는 오류";
-        console.error("[DCB] 추천/비추천 실패:", result);
-        
-        if (result.code === "ALREADY_VOTED") {
-          alert("⚠️ 이미 투표하셨습니다.");
-        } else if (result.code === "INVALID_ACCESS") {
-          alert("❌ 잘못된 접근입니다.\n원본 페이지에서 직접 추천해주세요.");
-        } else {
-          alert("❌ 추천/비추천 처리에 실패했습니다.\n" + errorMsg);
-        }
+        event.target.textContent = "복사됨";
+        setTimeout(() => { event.target.textContent = "복사"; }, 1300);
       }
-      
+    });
+    overlay.appendChild(box);
+  }
+
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (!currentPreviewData || area !== "sync" && area !== "local") return;
+    const keys = new Set([
+      "userBlockEnabled", "includeGray", "hideDCGray", "blockedUids", "hideComment", "hideImgComment", "hideDccon",
+      "showUidBadge", "hideAnonymousEnabled", "doryBlockEnabled", "keywordBlockEnabled", "blockedKeywords", "keywordBlockTargets",
+      "keywordHideEnabled", "hiddenKeywords", "keywordHideTargets"
+    ]);
+    if (!Object.keys(changes || {}).some((key) => keys.has(key))) return;
+    const data = currentPreviewData;
+    setTimeout(() => {
+      if (currentPreviewData === data && document.getElementById(OVERLAY_ID)) renderPreview(data);
+    }, 40);
+  });
+
+  async function openPreview(url, options = {}){
+    if (!url) return;
+    renderLoading();
+    try {
+      const data = await loadPreview(url, options);
+      renderPreview(data);
     } catch (error) {
-      console.error("[DCB] 추천/비추천 요청 오류:", error);
-      alert("❌ 요청 중 오류가 발생했습니다:\n" + error.message);
+      if (error?.name === "AbortError") return;
+      renderError(error?.message || "알 수 없는 오류", url);
     }
   }
-  
-  function showSharePopupForPreview(url, title){
-    if (document.getElementById("dcbpv-share-popup")) return;
-    const popup = document.createElement("div");
-    popup.id = "dcbpv-share-popup";
-    popup.className = "dcbpv-share-popup";
-    popup.innerHTML = `
-      <button class="dcbpv-share-close" aria-label="닫기">×</button>
-      <h3>공유하기</h3>
-      <div class="share-btns">
-        <div class="share-btn" data-share="x">트위터</div>
-        <div class="share-btn" data-share="facebook">페이스북</div>
-      </div>
-      <div style="margin-top:16px;padding-top:16px;border-top:1px solid #e5e7eb">
-        <div class="url-copy">
-          <input type="text" readonly value="${url}" id="dcbpv-url-input-preview">
-          <button id="dcbpv-copy-btn-preview">복사</button>
-        </div>
-      </div>
-    `;
-    const overlay = document.getElementById(OVERLAY_ID);
-    if (overlay) overlay.appendChild(popup);
-    
-    popup.querySelector(".dcbpv-share-close").onclick = () => popup.remove();
-    popup.querySelector("#dcbpv-copy-btn-preview").onclick = () => {
-      const inp = popup.querySelector("#dcbpv-url-input-preview");
-      inp.select();
-      document.execCommand("copy");
-      const btn = popup.querySelector("#dcbpv-copy-btn-preview");
-      const orig = btn.textContent;
-      btn.textContent = "복사됨";
-      setTimeout(() => btn.textContent = orig, 1500);
-    };
-    
-    popup.querySelectorAll(".share-btn[data-share]").forEach(btn => {
-      btn.onclick = () => {
-        const type = btn.dataset.share;
-        if (type === "x") {
-          window.open(`https://twitter.com/intent/tweet?url=${encodeURIComponent(url)}&text=${encodeURIComponent(title)}`, "_blank");
-        } else if (type === "facebook") {
-          window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`, "_blank");
-        }
-      };
-    });
+
+  function previewUrlFromTarget(target){
+    const cell = target.closest?.(".gall_tit");
+    const link = target.closest?.("a[href*='board/view']") || cell?.querySelector?.("a[href*='board/view']");
+    return link?.href || "";
   }
+
+  document.addEventListener("contextmenu", (event) => {
+    if (!previewEnabled) return;
+    const url = previewUrlFromTarget(event.target);
+    if (!url) return;
+    event.preventDefault();
+    event.stopPropagation();
+    openPreview(url);
+  }, true);
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && document.getElementById(OVERLAY_ID)) closePreview();
+  });
 })();
+
