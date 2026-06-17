@@ -44,6 +44,27 @@ const KEYWORD_DEFAULT_TARGETS = {
   comments: true
 };
 
+const IMAGE_BLOCK_CONFIG_KEY = "dcbImageBlockConfig";
+const IMAGE_BLOCK_RECORD_KEY = "dcbImageBlockRecords";
+const IMAGE_BLOCK_CONFIG_DEFAULT = {
+  enabled: false,
+  toolbar: false,
+  blurAnonymous: false,
+  blurSemi: false,
+  blurNew: false,
+  blurFixed: false,
+  blurManager: false,
+  normalPost: false,
+  recommendedPost: false,
+  skipSmall: false,
+  minWidth: 160,
+  minHeight: 160,
+  tallImage: false,
+  maxHeight: 1200,
+  shortcuts: false,
+  hideBlockedNotice: false
+};
+
 const BACKUP_KEYS = [
   "blockedIds", "removeSelectors", "removeSelectorsGall", "removeSelectorsSearch",
   "userBlockEnabled", "userBlockTriggerMode", "userBlockHoverHintEnabled", "blockedUids", "hideComment", "hideImgComment", "hideDccon",
@@ -52,6 +73,7 @@ const BACKUP_KEYS = [
   "autoRefreshInterval", "delay", "showUidBadge", "linkWarnEnabled", "hideDCGray",
   "previewEnabled", "hideAnonymousEnabled", "gamemecaBlockEnabled", "doryBlockEnabled", "noticeBlockEnabled", "compactListEnabled",
   "userMemoEnabled", "userMemos",
+  IMAGE_BLOCK_CONFIG_KEY, IMAGE_BLOCK_RECORD_KEY,
   "keywordBlockEnabled", "blockedKeywords", "keywordBlockTargets",
   "keywordHideEnabled", "hiddenKeywords", "keywordHideTargets",
   "dcbFontFamily", "dcbFontCustomFamily", "dcbFontScale", "dcbApplyFontToDc"
@@ -92,6 +114,8 @@ const BACKUP_DEFAULTS = {
   compactListEnabled: false,
   userMemoEnabled: true,
   userMemos: {},
+  [IMAGE_BLOCK_CONFIG_KEY]: IMAGE_BLOCK_CONFIG_DEFAULT,
+  [IMAGE_BLOCK_RECORD_KEY]: {},
   keywordBlockEnabled: false,
   blockedKeywords: [],
   keywordBlockTargets: KEYWORD_DEFAULT_TARGETS,
@@ -500,6 +524,43 @@ function formatDate(ts) {
   return `${y}-${m}-${day} ${hh}:${mm}`;
 }
 
+function normalizeImageBlockConfig(value) {
+  const source = value && typeof value === "object" ? value : {};
+  const enabled = source.enabled === true;
+  return {
+    ...IMAGE_BLOCK_CONFIG_DEFAULT,
+    ...source,
+    enabled,
+    toolbar: enabled,
+    blurAnonymous: enabled,
+    blurSemi: enabled,
+    blurNew: enabled,
+    blurFixed: enabled,
+    blurManager: enabled,
+    normalPost: enabled,
+    recommendedPost: enabled,
+    skipSmall: false,
+    tallImage: false,
+    shortcuts: false,
+    hideBlockedNotice: false,
+    minWidth: IMAGE_BLOCK_CONFIG_DEFAULT.minWidth,
+    minHeight: IMAGE_BLOCK_CONFIG_DEFAULT.minHeight,
+    maxHeight: IMAGE_BLOCK_CONFIG_DEFAULT.maxHeight
+  };
+}
+
+function normalizeImageBlockRecords(value) {
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+    } catch (_) {
+      return {};
+    }
+  }
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
 function sanitizeImport(raw) {
   const body = raw && typeof raw === "object"
     ? (raw.data && typeof raw.data === "object" ? raw.data : raw)
@@ -569,7 +630,9 @@ async function exportSettings() {
       ? await chrome.storage.local.get({
           [QUICK_BLOCK_POSITION_KEY]: "",
           [QUICK_BLOCK_POSITION_SAVED_AT_KEY]: 0,
-          userMemos: {}
+          userMemos: {},
+          [IMAGE_BLOCK_CONFIG_KEY]: null,
+          [IMAGE_BLOCK_RECORD_KEY]: {}
         })
       : {};
 
@@ -580,6 +643,10 @@ async function exportSettings() {
     const snapshot = buildBackupSnapshot(syncSnapshot, localSnapshot);
     snapshot.blockedUids = blockedUids;
     snapshot.userMemos = normalizeImportedMemoObject(localSnapshot.userMemos || {});
+    snapshot[IMAGE_BLOCK_CONFIG_KEY] = normalizeImageBlockConfig(
+      localSnapshot[IMAGE_BLOCK_CONFIG_KEY] || syncSnapshot[IMAGE_BLOCK_CONFIG_KEY]
+    );
+    snapshot[IMAGE_BLOCK_RECORD_KEY] = normalizeImageBlockRecords(localSnapshot[IMAGE_BLOCK_RECORD_KEY]);
 
     const payload = {
       version: 4,
@@ -613,9 +680,19 @@ function importSettingsFromFile(file) {
       const userMemosPatch = hasUserMemos
         ? normalizeImportedMemoObject(patch.userMemos || {})
         : null;
+      const hasImageBlockConfig = Object.prototype.hasOwnProperty.call(patch, IMAGE_BLOCK_CONFIG_KEY);
+      const imageBlockConfigPatch = hasImageBlockConfig
+        ? normalizeImageBlockConfig(patch[IMAGE_BLOCK_CONFIG_KEY])
+        : null;
+      const hasImageBlockRecords = Object.prototype.hasOwnProperty.call(patch, IMAGE_BLOCK_RECORD_KEY);
+      const imageBlockRecordsPatch = hasImageBlockRecords
+        ? normalizeImageBlockRecords(patch[IMAGE_BLOCK_RECORD_KEY])
+        : null;
 
       delete patch.blockedUids;
       delete patch.userMemos;
+      delete patch[IMAGE_BLOCK_RECORD_KEY];
+      if (hasImageBlockConfig) patch[IMAGE_BLOCK_CONFIG_KEY] = imageBlockConfigPatch;
 
       if (Object.prototype.hasOwnProperty.call(patch, QUICK_BLOCK_POSITION_KEY)) {
         quickBlockPatch[QUICK_BLOCK_POSITION_KEY] = patch[QUICK_BLOCK_POSITION_KEY];
@@ -635,6 +712,14 @@ function importSettingsFromFile(file) {
 
       if (hasUserMemos && chrome.storage.local) {
         await chrome.storage.local.set({ userMemos: userMemosPatch || {} });
+      }
+
+      if (hasImageBlockConfig && chrome.storage.local) {
+        await chrome.storage.local.set({ [IMAGE_BLOCK_CONFIG_KEY]: imageBlockConfigPatch || IMAGE_BLOCK_CONFIG_DEFAULT });
+      }
+
+      if (hasImageBlockRecords && chrome.storage.local) {
+        await chrome.storage.local.set({ [IMAGE_BLOCK_RECORD_KEY]: imageBlockRecordsPatch || {} });
       }
 
       if (hasBlockedUids && globalThis.DCBUserBlockStore?.setAllTokens) {
@@ -1992,3 +2077,124 @@ chrome.storage.onChanged.addListener((changes, area) => {
     }
   }
 });
+
+(() => {
+  const CONFIG_KEY = "dcbImageBlockConfig";
+  const DEFAULTS = Object.freeze({
+    enabled: false,
+    toolbar: false,
+    blurAnonymous: false,
+    blurSemi: false,
+    blurNew: false,
+    blurFixed: false,
+    blurManager: false,
+    normalPost: false,
+    recommendedPost: false,
+    skipSmall: false,
+    minWidth: 160,
+    minHeight: 160,
+    tallImage: false,
+    maxHeight: 1200,
+    shortcuts: false,
+    hideBlockedNotice: false
+  });
+
+  const ui = {
+    enabled: document.getElementById("imageBlockEnabled"),
+    status: document.getElementById("imageBlockStatus"),
+    list: document.getElementById("openImageBlockList")
+  };
+
+  if (!ui.enabled && !ui.list) return;
+
+  const applyOneClick = (value = {}) => {
+    const on = value?.enabled === true;
+    return {
+      ...DEFAULTS,
+      ...(value && typeof value === "object" ? value : {}),
+      enabled: on,
+      toolbar: on,
+      blurAnonymous: on,
+      blurSemi: on,
+      blurNew: on,
+      blurFixed: on,
+      blurManager: on,
+      normalPost: on,
+      recommendedPost: on,
+      skipSmall: false,
+      tallImage: false,
+      shortcuts: false,
+      hideBlockedNotice: false,
+      minWidth: DEFAULTS.minWidth,
+      minHeight: DEFAULTS.minHeight,
+      maxHeight: DEFAULTS.maxHeight
+    };
+  };
+
+  const notice = (message, error = false) => {
+    if (!ui.status) return;
+    ui.status.textContent = message || "";
+    ui.status.style.color = error ? "#ff9b9b" : "#9dd6a5";
+  };
+
+  const render = (state) => {
+    if (ui.enabled) ui.enabled.checked = state.enabled === true;
+  };
+
+  const current = () => applyOneClick({ enabled: ui.enabled?.checked === true });
+
+  const save = () => {
+    const next = current();
+    chrome.storage.sync.set({ [CONFIG_KEY]: next }, () => {
+      if (chrome.runtime.lastError) {
+        notice("저장하지 못했어요. 확장 프로그램을 새로고침한 뒤 다시 시도해 주세요.", true);
+        return;
+      }
+      chrome.storage.local.set({ [CONFIG_KEY]: next });
+      render(next);
+      notice(next.enabled ? "이미지 차단을 켰어요. 모든 작성자 이미지에 바로 적용됩니다." : "이미지 차단을 껐어요. 필요할 때 다시 켜면 됩니다.");
+    });
+  };
+
+  const load = () => {
+    chrome.storage.sync.get({ [CONFIG_KEY]: DEFAULTS }, (data) => {
+      const state = applyOneClick(data[CONFIG_KEY]);
+      render(state);
+      notice(state.enabled ? "이미지 차단 사용 중입니다. 모든 작성자 이미지에 적용됩니다." : "이미지 차단은 꺼져 있어요.");
+    });
+  };
+
+  const findPage = (done) => {
+    chrome.tabs.query({ currentWindow: true }, (tabs) => {
+      const list = tabs || [];
+      const active = list.find((tab) => tab.active && /^https?:\/\/gall\.dcinside\.com\//.test(tab.url || ""));
+      const fallback = list.find((tab) => /^https?:\/\/gall\.dcinside\.com\//.test(tab.url || ""));
+      done(active || fallback || null);
+    });
+  };
+
+  const sendToPage = (action) => {
+    findPage((tab) => {
+      if (!tab?.id) {
+        notice("DCInside 게시글 탭을 연 뒤 다시 눌러주세요.", true);
+        return;
+      }
+      chrome.tabs.sendMessage(tab.id, { action }, (response) => {
+        if (chrome.runtime.lastError || !response?.ok) {
+          notice("현재 게시글에서 이미지 차단을 불러오지 못했어요. 페이지를 새로고침해 주세요.", true);
+          return;
+        }
+        notice("차단 목록을 열었어요.");
+      });
+    });
+  };
+
+  ui.enabled?.addEventListener("change", save);
+  ui.list?.addEventListener("click", () => sendToPage("dcb.imageBlock.openList"));
+
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if ((area === "sync" || area === "local") && changes[CONFIG_KEY]) render(applyOneClick(changes[CONFIG_KEY].newValue));
+  });
+
+  load();
+})();
