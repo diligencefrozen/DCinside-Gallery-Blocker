@@ -8,19 +8,6 @@ try {
 }
 
 /*****************************************************************
- * ExtensionPay membership bridge bootstrap
- *****************************************************************/
-try {
-  importScripts(
-    "membership-config.js",
-    "ExtPay.js",
-    "membership-manager.js"
-  );
-} catch (error) {
-  console.warn("[DCB] Membership bridge bootstrap failed:", error);
-}
-
-/*****************************************************************
  * background.js
  *****************************************************************/
 
@@ -423,6 +410,106 @@ chrome.storage.onChanged.addListener((c, area) => {
   ) {
     syncRules();
   }
+});
+
+
+
+/* ───── 공통 HTML fetch 브릿지: 미리보기에서 모바일 글/댓글 HTML을 가져오기 위함 ───── */
+const DCB_FETCH_ALLOWED_HOSTS = new Set([
+  "gall.dcinside.com",
+  "m.dcinside.com",
+  "www.dcinside.com",
+  "search.dcinside.com"
+]);
+
+async function dcbFetchDcinsideHtml(rawUrl, options = {}) {
+  let target;
+  try {
+    target = new URL(String(rawUrl || ""));
+  } catch (_) {
+    return { ok: false, status: 0, error: "잘못된 URL입니다.", text: "" };
+  }
+
+  if (!DCB_FETCH_ALLOWED_HOSTS.has(target.hostname)) {
+    return { ok: false, status: 0, error: "허용되지 않은 호스트입니다.", text: "" };
+  }
+
+  if (!/^https?:$/.test(target.protocol)) {
+    return { ok: false, status: 0, error: "지원하지 않는 프로토콜입니다.", text: "" };
+  }
+
+  const method = String(options.method || "GET").toUpperCase();
+  if (!/^(GET|POST)$/.test(method)) {
+    return { ok: false, status: 0, error: "지원하지 않는 요청 방식입니다.", text: "" };
+  }
+
+  const headers = new Headers();
+  headers.set("Accept", options.accept || "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
+
+  const extraHeaders = options.headers && typeof options.headers === "object" ? options.headers : {};
+  Object.entries(extraHeaders).forEach(([name, value]) => {
+    const key = String(name || "").toLowerCase();
+    if (!["content-type", "x-requested-with", "accept"].includes(key)) return;
+    headers.set(name, String(value));
+  });
+
+  const requestInit = {
+    method,
+    credentials: "include",
+    cache: options.cache === "reload" ? "reload" : "default",
+    redirect: "follow",
+    headers
+  };
+
+  if (method === "POST") requestInit.body = String(options.body || "");
+  if (options.referrer) {
+    try {
+      const ref = new URL(String(options.referrer));
+      if (DCB_FETCH_ALLOWED_HOSTS.has(ref.hostname)) requestInit.referrer = ref.href;
+    } catch (_) {}
+  }
+
+  try {
+    const response = await fetch(target.href, requestInit);
+    const text = await response.text();
+    return {
+      ok: response.ok,
+      status: response.status,
+      finalUrl: response.url,
+      text,
+      error: response.ok ? "" : `HTTP ${response.status}`
+    };
+  } catch (error) {
+    const message = error?.message || String(error);
+    return {
+      ok: false,
+      status: 0,
+      error: message === "Failed to fetch"
+        ? "DCinside HTML fetch가 차단되었습니다. manifest의 connect-src/host_permissions를 확인하세요."
+        : message,
+      text: ""
+    };
+  }
+}
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg?.type !== "dcb.fetchText") return;
+
+  dcbFetchDcinsideHtml(msg.url, {
+    cache: msg.cache,
+    method: msg.method,
+    body: msg.body,
+    headers: msg.headers,
+    accept: msg.accept,
+    referrer: msg.referrer
+  })
+    .then((result) => sendResponse(result))
+    .catch((error) => {
+      const message = error?.message || String(error);
+      sendResponse({ ok: false, status: 0, error: message, text: "" });
+    });
+
+  return true;
 });
 
 /* ───── 사용자 즉시 차단 ───── */
