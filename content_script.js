@@ -25,6 +25,11 @@ if (!window.isPreviewOpen) {
 // 미리보기 기능 활성화 상태
 let previewEnabled = false;
 
+// 미니/인물 갤러리 댓글 로딩 진단 로그
+// - 미니/인물에서만 기본 출력
+// - 다른 갤러리도 보고 싶으면 콘솔에서 localStorage.setItem("dcbPreviewCommentDebug", "1")
+const PREVIEW_COMMENT_DEBUG = true;
+
 function normalizeUserBlockedIds(blockedIds = []) {
   return Array.isArray(blockedIds)
     ? blockedIds.map(x => String(x).trim().toLowerCase()).filter(Boolean)
@@ -359,6 +364,52 @@ syncSettings(handleUrl);
     catch (_) { return ""; }
   }
 
+  function previewGalleryTypeFromUrl(url){
+    try {
+      const path = new URL(url, location.href).pathname || "";
+      if (/\/mini\//i.test(path)) return "mini";
+      if (/\/person\//i.test(path)) return "person";
+      if (/\/mgallery\//i.test(path)) return "minor";
+    } catch (_) {}
+    return "main";
+  }
+
+  function previewCommentDebugEnabled(articleUrl){
+    const type = previewGalleryTypeFromUrl(articleUrl);
+    if (type === "mini" || type === "person") return true;
+    try { return localStorage.getItem("dcbPreviewCommentDebug") === "1"; } catch (_) { return PREVIEW_COMMENT_DEBUG === true; }
+  }
+
+  function previewCommentLog(articleUrl, phase, detail){
+    if (!previewCommentDebugEnabled(articleUrl)) return;
+    try {
+      console.info("[DCB Preview Comment]", phase, detail);
+      // Edge/Chrome 콘솔에서 객체가 접혀서 body/snippet이 안 보이는 경우를 대비한 문자열 로그
+      try { console.info("[DCB Preview Comment JSON]", phase, JSON.stringify(detail)); } catch (_) {}
+    } catch (_) {}
+  }
+
+  function responseSnippet(text, max = 320){
+    return String(text || "")
+      .replace(/<script[\s\S]*?<\/script>/gi, "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, max);
+  }
+
+  function safeCommentBodyForLog(body){
+    try {
+      const params = new URLSearchParams(String(body || ""));
+      if (params.has("e_s_n_o")) {
+        const token = params.get("e_s_n_o") || "";
+        params.set("e_s_n_o", token ? `[masked:${token.length}]` : "");
+      }
+      return Object.fromEntries(params.entries());
+    } catch (_) {
+      return {};
+    }
+  }
+
   function toMobileUrl(viewUrl){
     try {
       const parsed = new URL(viewUrl, location.href);
@@ -367,6 +418,9 @@ syncSettings(handleUrl);
       if (!id || !no) return "";
       if (/\/mini\//i.test(parsed.pathname)) {
         return `https://m.dcinside.com/mini/${encodeURIComponent(id)}/${encodeURIComponent(no)}`;
+      }
+      if (/\/person\//i.test(parsed.pathname)) {
+        return `https://m.dcinside.com/person/${encodeURIComponent(id)}/${encodeURIComponent(no)}`;
       }
       return `https://m.dcinside.com/board/${encodeURIComponent(id)}/${encodeURIComponent(no)}`;
     } catch (_) {
@@ -1209,6 +1263,7 @@ syncSettings(handleUrl);
       gallId,
       articleNo,
       rawHtml: html,
+      desktopRawHtml: mode === "desktop" ? html : "",
       reportUrl: buildReportUrl(originalUrl, gallId, articleNo, title)
     };
   }
@@ -1256,6 +1311,7 @@ syncSettings(handleUrl);
 
     if (!result.reportUrl && backup.reportUrl) result.reportUrl = backup.reportUrl;
     if (!result.rawHtml && backup.rawHtml) result.rawHtml = backup.rawHtml;
+    if (!result.desktopRawHtml && backup.desktopRawHtml) result.desktopRawHtml = backup.desktopRawHtml;
     if (backupArticleText.length > articleText.length * 1.8 && isWeakPreviewData(result)) return backup;
     return result;
   }
@@ -1305,6 +1361,51 @@ syncSettings(handleUrl);
     throw new Error(errorMessage);
   }
 
+  async function fetchTextDirect(url, signal, request = {}){
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+
+    const options = typeof request === "string" ? { cache: request } : (request || {});
+    const method = String(options.method || "GET").toUpperCase();
+    const headers = new Headers();
+    if (options.accept) headers.set("Accept", String(options.accept));
+    const extraHeaders = options.headers && typeof options.headers === "object" ? options.headers : {};
+    Object.entries(extraHeaders).forEach(([name, value]) => {
+      const key = String(name || "").toLowerCase();
+      // 브라우저가 허용하는 AJAX 핵심 헤더만 사용한다.
+      if (!["content-type", "x-requested-with", "accept", "accept-language"].includes(key)) return;
+      headers.set(name, String(value));
+    });
+
+    const init = {
+      method,
+      credentials: "include",
+      cache: options.cache === "reload" ? "reload" : "default",
+      redirect: "follow",
+      headers
+    };
+
+    if (method === "POST") init.body = String(options.body || "");
+    if (options.referrer) {
+      try {
+        const ref = new URL(String(options.referrer), location.href);
+        // 같은 origin으로 referrer를 맞춰야 디시 댓글 AJAX가 실제 페이지 요청처럼 처리된다.
+        if (ref.origin === location.origin) init.referrer = ref.href;
+      } catch (_) {}
+    }
+
+    const response = await fetch(url, init);
+    const text = await response.text();
+
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+    return {
+      text,
+      finalUrl: response.url || url,
+      status: response.status || 200
+    };
+  }
+
   function textValueBySelector(doc, selectors){
     for (const selector of selectors) {
       const node = doc.querySelector(selector);
@@ -1314,19 +1415,46 @@ syncSettings(handleUrl);
     return "";
   }
 
+  function securityTokenFromHtml(doc){
+    const direct = textValueBySelector(doc, ["#e_s_n_o", "input[name='e_s_n_o']"]);
+    if (direct) return direct;
+
+    const html = doc?.documentElement?.innerHTML || doc?.body?.innerHTML || "";
+    const patterns = [
+      /["']e_s_n_o["']\s*[:=]\s*["']([^"']+)["']/i,
+      /e_s_n_o\s*[:=]\s*["']([^"']+)["']/i,
+      /name=["']e_s_n_o["'][^>]*value=["']([^"']+)["']/i,
+      /id=["']e_s_n_o["'][^>]*value=["']([^"']+)["']/i,
+      /value=["']([^"']+)["'][^>]*(?:name|id)=["']e_s_n_o["']/i
+    ];
+
+    for (const pattern of patterns) {
+      const found = html.match(pattern);
+      if (found?.[1]) return found[1].trim();
+    }
+
+    return "";
+  }
+
   function previewRequestInfo(originalUrl, doc){
     let parsed = null;
     try { parsed = new URL(originalUrl, location.href); } catch (_) {}
 
     const id = parsed?.searchParams.get("id")
-      || textValueBySelector(doc, ["input[name='id']", "#id", "input[name='gallery_id']"]);
+      || textValueBySelector(doc, ["input[name='id']", "#id", "input[name='gallery_id']"])
+      || textValueBySelector(document, ["input[name='id']", "#id", "input[name='gallery_id']"]);
     const no = parsed?.searchParams.get("no")
       || textValueBySelector(doc, ["#no", "input[name='no']", "input[name='article_no']"]);
-    const securityToken = textValueBySelector(doc, ["#e_s_n_o", "input[name='e_s_n_o']"]);
-    const cmtId = textValueBySelector(doc, ["#cmt_id", "input[name='cmt_id']"]) || id;
-    const cmtNo = textValueBySelector(doc, ["#cmt_no", "input[name='cmt_no']"]) || no;
+    const securityToken = securityTokenFromHtml(doc) || securityTokenFromHtml(document);
+    const cmtId = textValueBySelector(doc, ["#cmt_id", "input[name='cmt_id']"])
+      || textValueBySelector(document, ["#cmt_id", "input[name='cmt_id']"])
+      || id;
+    const cmtNo = textValueBySelector(doc, ["#cmt_no", "input[name='cmt_no']"])
+      || textValueBySelector(document, ["#cmt_no", "input[name='cmt_no']"])
+      || no;
+    const galleryType = previewGalleryTypeFromUrl(originalUrl);
 
-    return { id, no, cmtId, cmtNo, securityToken };
+    return { id, no, cmtId, cmtNo, securityToken, galleryType };
   }
 
   function commentCountFromText(doc, root){
@@ -1440,44 +1568,344 @@ syncSettings(handleUrl);
     return buildCommentsHTML(doc, doc, baseUrl);
   }
 
-  function toDesktopCommentUrl(articleUrl){
-    try {
-      const u = new URL(articleUrl, location.href);
-      const path = /\/mini\//i.test(u.pathname) ? "/mini/board/comment/" : "/board/comment/";
-      return `${u.protocol}//gall.dcinside.com${path}`;
-    } catch (_) {
-      return "https://gall.dcinside.com/board/comment/";
-    }
+  function commentResponseToHtml(text, baseUrl){
+    const payload = parseLooseJson(text);
+    const fromJson = commentDataToHtml(payload, baseUrl);
+    if (fromJson) return fromJson;
+
+    const raw = String(text || "").trim();
+    if (!looksLikeHtml(raw)) return "";
+
+    const doc = new DOMParser().parseFromString(`<div id="dcbpv-comment-raw">${raw}</div>`, "text/html");
+    normalizeDcMedia(doc, baseUrl);
+    return buildCommentsHTML(doc, doc, baseUrl);
   }
 
-  async function fetchCommentsFromEndpoint(articleUrl, articleDoc, signal, cacheMode){
-    const info = previewRequestInfo(articleUrl, articleDoc);
-    if (!info.id || !info.no || !info.securityToken) return "";
+  function commentEndpointCandidates(articleUrl){
+    let protocol = "https:";
+    let path = "";
+    try {
+      const u = new URL(articleUrl, location.href);
+      protocol = /^https?:$/.test(u.protocol) ? u.protocol : "https:";
+      path = u.pathname || "";
+    } catch (_) {}
 
-    const body = new URLSearchParams({
+    const endpoints = [
+      `${protocol}//gall.dcinside.com/board/comment`,
+      `${protocol}//gall.dcinside.com/board/comment/`
+    ];
+
+    // 메인/마이너에서 성공하던 기본 endpoint를 먼저 쓰고,
+    // 미니/인물 전용 endpoint는 실패 시 fallback으로만 시도한다.
+    if (/\/mini\//i.test(path)) {
+      endpoints.push(`${protocol}//gall.dcinside.com/mini/board/comment`);
+      endpoints.push(`${protocol}//gall.dcinside.com/mini/board/comment/`);
+    }
+    if (/\/person\//i.test(path)) {
+      endpoints.push(`${protocol}//gall.dcinside.com/person/board/comment`);
+      endpoints.push(`${protocol}//gall.dcinside.com/person/board/comment/`);
+    }
+
+    return Array.from(new Set(endpoints));
+  }
+
+  function commentRequestBodies(info){
+    const base = {
       comment_page: "1",
       id: info.id,
       no: info.no,
       cmt_id: info.cmtId || info.id,
       cmt_no: info.cmtNo || info.no,
-      e_s_n_o: info.securityToken,
       sort: "D"
-    }).toString();
+    };
 
-    const endpoint = toDesktopCommentUrl(articleUrl);
-    const response = await fetchText(endpoint, signal, {
-      cache: cacheMode,
-      method: "POST",
-      body,
-      referrer: articleUrl,
-      accept: "application/json,text/javascript,text/html,*/*;q=0.8",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-        "X-Requested-With": "XMLHttpRequest"
+    const baseVariants = [base, { ...base, sort: "N" }];
+
+    if (info.galleryType === "mini") {
+      baseVariants.push(
+        { ...base, board_type: "MI" },
+        { ...base, gall_type: "MI" },
+        { ...base, gallery_type: "MI" },
+        { ...base, mini: "Y" }
+      );
+    }
+
+    if (info.galleryType === "person") {
+      baseVariants.push(
+        { ...base, board_type: "P" },
+        { ...base, gall_type: "P" },
+        { ...base, gallery_type: "P" },
+        { ...base, person: "Y" }
+      );
+    }
+
+    const bodies = [];
+    const seen = new Set();
+    const add = (params) => {
+      const body = new URLSearchParams(params).toString();
+      if (!seen.has(body)) {
+        seen.add(body);
+        bodies.push(body);
+      }
+    };
+
+    for (const item of baseVariants) {
+      if (info.securityToken) add({ ...item, e_s_n_o: info.securityToken });
+      add(item);
+      add({ ...item, e_s_n_o: "" });
+    }
+
+    return bodies;
+  }
+
+  function commentDebugSummaryItem(entry){
+    if (!entry) return "";
+    const status = entry.status ? `HTTP ${entry.status}` : (entry.error ? "ERR" : "OK");
+    const endpoint = String(entry.endpoint || "").replace(/^https?:\/\/gall\.dcinside\.com/i, "");
+    return `${entry.method || "POST"} ${endpoint} → ${status}${entry.length != null ? ` / ${entry.length}자` : ""}${entry.snippet ? ` / ${entry.snippet}` : ""}`;
+  }
+
+  function actualCommentItemCountFromHtml(html){
+    if (!html) return 0;
+    try {
+      const doc = new DOMParser().parseFromString(`<div>${html}</div>`, "text/html");
+      return doc.querySelectorAll(".dcbpv-comment-item,[data-dcbpv-comment='1']").length;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  function expectedCommentCountFromData(data){
+    const sample = [data?.commentTitle || "", htmlToPlain(data?.articleHTML || "")].join(" ");
+    const found = sample.match(/댓글\s*([-+]?\d[\d,]*)/);
+    return found?.[1] ? Number(found[1].replace(/,/g, "")) : 0;
+  }
+
+  function waitMs(ms, signal){
+    return new Promise((resolve, reject) => {
+      if (signal?.aborted) {
+        reject(new DOMException("Aborted", "AbortError"));
+        return;
+      }
+      const timer = setTimeout(resolve, ms);
+      if (signal) {
+        signal.addEventListener("abort", () => {
+          clearTimeout(timer);
+          reject(new DOMException("Aborted", "AbortError"));
+        }, { once: true });
       }
     });
+  }
 
-    return commentDataToHtml(parseLooseJson(response.text), response.finalUrl || endpoint);
+  async function fetchCommentsViaRenderedFrame(articleUrl, signal){
+    const type = previewGalleryTypeFromUrl(articleUrl);
+    if (type !== "mini" && type !== "person") return { html: "", debug: [{ method: "IFRAME", endpoint: articleUrl, error: "iframe 대상 아님" }] };
+
+    const debug = [];
+    let frame = null;
+    const started = Date.now();
+
+    try {
+      const parsed = new URL(articleUrl, location.href);
+      if (parsed.origin !== location.origin) {
+        return { html: "", debug: [{ method: "IFRAME", endpoint: articleUrl, error: "origin 다름" }] };
+      }
+
+      frame = document.createElement("iframe");
+      frame.src = parsed.href;
+      frame.loading = "eager";
+      frame.referrerPolicy = "strict-origin-when-cross-origin";
+      frame.setAttribute("aria-hidden", "true");
+      frame.setAttribute("data-dcbpv-comment-frame", "1");
+      Object.assign(frame.style, {
+        position: "fixed",
+        left: "-12000px",
+        top: "-12000px",
+        width: "980px",
+        height: "1200px",
+        opacity: "0.001",
+        pointerEvents: "none",
+        zIndex: "-1"
+      });
+
+      const loadPromise = new Promise((resolve) => {
+        frame.addEventListener("load", resolve, { once: true });
+      });
+
+      (document.documentElement || document.body).appendChild(frame);
+
+      await Promise.race([loadPromise, waitMs(2600, signal)]).catch((error) => {
+        if (error?.name === "AbortError") throw error;
+      });
+
+      const deadlines = [0, 350, 800, 1400, 2300, 3400, 4800];
+      let lastText = "";
+
+      for (const delay of deadlines) {
+        if (delay) await waitMs(delay, signal);
+        if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+
+        let doc = null;
+        try {
+          doc = frame.contentDocument || frame.contentWindow?.document;
+        } catch (accessError) {
+          debug.push({ method: "IFRAME", endpoint: articleUrl, error: accessError?.message || String(accessError) });
+          break;
+        }
+        if (!doc?.body) continue;
+
+        normalizeDcMedia(doc, articleUrl);
+        const content = findBestContent(doc, "desktop");
+        const root = content ? findArticleRoot(content, doc) : doc;
+        const html = buildCommentsHTML(doc, root, articleUrl) || buildCommentsHTML(doc, doc, articleUrl);
+        const count = actualCommentItemCountFromHtml(html);
+        lastText = (doc.body.innerText || doc.body.textContent || "").replace(/\s+/g, " ").slice(0, 240);
+
+        if (count) {
+          const item = {
+            method: "IFRAME",
+            endpoint: parsed.href,
+            via: "rendered-frame",
+            status: 200,
+            length: html.length,
+            tookMs: Date.now() - started,
+            snippet: `렌더링 iframe 댓글 ${count}개 추출 성공`
+          };
+          debug.push(item);
+          previewCommentLog(articleUrl, "success", item);
+          return { html, debug };
+        }
+      }
+
+      const item = {
+        method: "IFRAME",
+        endpoint: parsed.href,
+        via: "rendered-frame",
+        status: 200,
+        length: 0,
+        tookMs: Date.now() - started,
+        snippet: lastText ? `iframe 댓글 DOM 없음 / ${lastText}` : "iframe 댓글 DOM 없음"
+      };
+      debug.push(item);
+      previewCommentLog(articleUrl, "miss", item);
+      return { html: "", debug };
+    } catch (error) {
+      const item = { method: "IFRAME", endpoint: articleUrl, error: error?.message || String(error), tookMs: Date.now() - started };
+      debug.push(item);
+      previewCommentLog(articleUrl, "error", item);
+      return { html: "", debug };
+    } finally {
+      try { frame?.remove?.(); } catch (_) {}
+    }
+  }
+
+  async function fetchCommentsFromEndpoint(articleUrl, articleDoc, signal, cacheMode){
+    const info = previewRequestInfo(articleUrl, articleDoc);
+    if (!info.id || !info.no) return { html: "", debug: [{ error: "id/no 없음", info }] };
+
+    const endpoints = commentEndpointCandidates(articleUrl);
+    const bodies = commentRequestBodies(info);
+    const debug = [];
+    let lastError = null;
+
+    previewCommentLog(articleUrl, "start", {
+      galleryType: info.galleryType,
+      id: info.id,
+      no: info.no,
+      hasToken: !!info.securityToken,
+      endpoints,
+      bodyCount: bodies.length
+    });
+
+    const tryRequest = async (method, endpoint, body) => {
+      const requestUrl = method === "GET" ? `${endpoint}${endpoint.includes("?") ? "&" : "?"}${body}` : endpoint;
+      const started = Date.now();
+      const requestOptions = {
+        cache: cacheMode,
+        method,
+        body: method === "POST" ? body : "",
+        referrer: articleUrl,
+        accept: "application/json,text/javascript,text/html,*/*;q=0.8",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+          "X-Requested-With": "XMLHttpRequest",
+          "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7"
+        }
+      };
+
+      const useDirectFirst = info.galleryType === "mini" || info.galleryType === "person";
+      let response;
+      let fetchVia = useDirectFirst ? "direct" : "background";
+
+      try {
+        response = useDirectFirst
+          ? await fetchTextDirect(requestUrl, signal, requestOptions)
+          : await fetchText(requestUrl, signal, requestOptions);
+      } catch (firstError) {
+        // 미니/인물 댓글은 background service worker fetch가 페이지 내부 AJAX와 다르게 보일 수 있다.
+        // direct가 실패하면 기존 background 브릿지로, background가 실패하면 direct로 교차 fallback한다.
+        try {
+          fetchVia = useDirectFirst ? "background-after-direct" : "direct-after-background";
+          response = useDirectFirst
+            ? await fetchText(requestUrl, signal, requestOptions)
+            : await fetchTextDirect(requestUrl, signal, requestOptions);
+        } catch (secondError) {
+          secondError.message = `${secondError.message || secondError} / first:${firstError?.message || firstError}`;
+          throw secondError;
+        }
+      }
+
+      const html = commentResponseToHtml(response.text, response.finalUrl || endpoint);
+      const item = {
+        method,
+        endpoint,
+        via: fetchVia,
+        status: response.status,
+        length: String(response.text || "").length,
+        tookMs: Date.now() - started,
+        body: safeCommentBodyForLog(body),
+        snippet: html ? "댓글 HTML 추출 성공" : responseSnippet(response.text)
+      };
+      debug.push(item);
+      previewCommentLog(articleUrl, html ? "success" : "miss", item);
+      return html;
+    };
+
+    for (const endpoint of endpoints) {
+      for (const body of bodies) {
+        try {
+          const html = await tryRequest("POST", endpoint, body);
+          if (html) return { html, debug };
+        } catch (error) {
+          lastError = error;
+          const item = { method: "POST", endpoint, error: error?.message || String(error), body: safeCommentBodyForLog(body) };
+          debug.push(item);
+          previewCommentLog(articleUrl, "error", item);
+        }
+      }
+    }
+
+    // 일부 응답은 같은 파라미터를 GET query로 받을 때 HTML fragment를 반환한다.
+    // POST가 전부 비었을 때만 제한적으로 GET fallback을 시도한다.
+    for (const endpoint of endpoints.slice(0, 2)) {
+      for (const body of bodies.slice(0, 6)) {
+        try {
+          const html = await tryRequest("GET", endpoint, body);
+          if (html) return { html, debug };
+        } catch (error) {
+          lastError = error;
+          const item = { method: "GET", endpoint, error: error?.message || String(error), body: safeCommentBodyForLog(body) };
+          debug.push(item);
+          previewCommentLog(articleUrl, "error", item);
+        }
+      }
+    }
+
+    if (lastError) {
+      lastError.commentDebug = debug;
+      throw lastError;
+    }
+    return { html: "", debug };
   }
 
   async function loadPreview(url, { force = false } = {}){
@@ -1525,16 +1953,38 @@ syncSettings(handleUrl);
     }
 
     try {
-      const articleDoc = new DOMParser().parseFromString(data?.rawHtml || "", "text/html");
-      const endpointComments = await fetchCommentsFromEndpoint(url, articleDoc, activeAbort.signal, cacheMode);
-      if (endpointComments) {
-        data.commentsHTML = endpointComments;
-        const countDoc = new DOMParser().parseFromString(`<div>${endpointComments}</div>`, "text/html");
-        const count = countDoc.querySelectorAll(".dcbpv-comment-item").length;
-        data.commentTitle = `댓글${count ? ` ${count}개` : ""}`;
+      const galleryType = previewGalleryTypeFromUrl(url);
+      const expectedComments = expectedCommentCountFromData(data);
+      const needsRenderedFrame = (galleryType === "mini" || galleryType === "person")
+        && expectedComments > 0
+        && actualCommentItemCountFromHtml(data?.commentsHTML || "") === 0;
+
+      let endpointResult = null;
+
+      if (needsRenderedFrame) {
+        const frameResult = await fetchCommentsViaRenderedFrame(url, activeAbort.signal);
+        if (frameResult?.debug?.length) data.commentDebug = [...(data.commentDebug || []), ...frameResult.debug];
+        if (frameResult?.html) {
+          data.commentsHTML = frameResult.html;
+          const count = actualCommentItemCountFromHtml(frameResult.html);
+          data.commentTitle = `댓글${count ? ` ${count}개` : ""}`;
+        }
+      }
+
+      if (!data?.commentsHTML || actualCommentItemCountFromHtml(data.commentsHTML) === 0) {
+        const commentSourceHtml = data?.desktopRawHtml || data?.rawHtml || "";
+        const articleDoc = new DOMParser().parseFromString(commentSourceHtml, "text/html");
+        endpointResult = await fetchCommentsFromEndpoint(url, articleDoc, activeAbort.signal, cacheMode);
+        if (endpointResult?.debug) data.commentDebug = [...(data.commentDebug || []), ...endpointResult.debug];
+        if (endpointResult?.html) {
+          data.commentsHTML = endpointResult.html;
+          const count = actualCommentItemCountFromHtml(endpointResult.html);
+          data.commentTitle = `댓글${count ? ` ${count}개` : ""}`;
+        }
       }
     } catch (commentError) {
       data.commentError = commentError?.message || String(commentError);
+      if (commentError?.commentDebug) data.commentDebug = [...(data.commentDebug || []), ...commentError.commentDebug];
     }
 
     if (isWeakPreviewData(data) && !data.commentsHTML) {
@@ -1564,6 +2014,7 @@ syncSettings(handleUrl);
     hideImgComment: false,
     hideDccon: false,
     showUidBadge: false,
+    showMemberIpInfo: true,
     hideAnonymousEnabled: false,
     doryBlockEnabled: true,
     keywordBlockEnabled: false,
@@ -1756,6 +2207,16 @@ syncSettings(handleUrl);
     list.prepend(note);
   }
 
+
+  function refreshPreviewMemberIpBadges(root){
+    try {
+      globalThis.DCMemberIpView?.refresh?.(root || document);
+    } catch (_) {}
+    try {
+      document.dispatchEvent(new CustomEvent("dc-member-ip-view:refresh", { detail: { root: root || document } }));
+    } catch (_) {}
+  }
+
   async function applyPreviewFeatureBridge(overlay, data){
     if (!overlay || !data) return;
     ensurePreviewFilterStyle();
@@ -1768,6 +2229,7 @@ syncSettings(handleUrl);
     const matcher = previewBlockMatcher(conf.blockedUids || []);
 
     if (conf.showUidBadge) addUidBadges(overlay);
+    if (conf.showMemberIpInfo !== false) refreshPreviewMemberIpBadges(overlay);
     if (conf.hideComment) applyCommentUiFilter(overlay);
     if (conf.hideImgComment) applyImageCommentFilter(overlay);
     if (conf.hideDccon) applyDcconFilter(overlay);
@@ -1843,6 +2305,11 @@ syncSettings(handleUrl);
     closePreview();
     currentPreviewData = data;
 
+    const commentDebugLines = Array.isArray(data.commentDebug)
+      ? data.commentDebug.slice(-4).map(commentDebugSummaryItem).filter(Boolean)
+      : [];
+    const commentEmptyHtml = data.commentsHTML || `<div class="dcbpv-empty">댓글이 없거나 댓글 영역을 찾지 못했습니다.${data.commentError ? `<br><small>오류: ${escapeText(data.commentError)}</small>` : ""}${commentDebugLines.length ? `<br><small>콘솔에서 [DCB Preview Comment] 로그를 확인하세요.<br>${escapeText(commentDebugLines.join(" | "))}</small>` : ""}</div>`;
+
     const overlay = document.createElement("div");
     overlay.id = OVERLAY_ID;
     overlay.innerHTML = `
@@ -1869,7 +2336,7 @@ syncSettings(handleUrl);
           </div>
           <section class="dcbpv-section dcbpv-comments">
             <h3 class="dcbpv-section-title">${escapeText(data.commentTitle || "댓글")}</h3>
-            <article class="dcbpv-html dcbpv-comment-html">${data.commentsHTML || `<div class="dcbpv-empty">댓글이 없거나 댓글 영역을 찾지 못했습니다.</div>`}</article>
+            <article class="dcbpv-html dcbpv-comment-html">${commentEmptyHtml}</article>
           </section>
           <nav class="dcbpv-actions">
             <button class="dcbpv-btn primary" type="button" data-act="open">원문 보기</button>
