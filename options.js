@@ -70,7 +70,7 @@ const BACKUP_KEYS = [
   "userBlockEnabled", "userBlockTriggerMode", "userBlockHoverHintEnabled", "blockedUids", "hideComment", "hideImgComment", "hideDccon",
   "hideMainEnabled", "hideGallEnabled", "hideSearchEnabled",
   "enabled", "galleryBlockEnabled", "builtinDcbestBlockEnabled", "blockMode", "quickBlockButtonPosition", "quickBlockButtonPositionSavedAt", "autoRefreshEnabled",
-  "autoRefreshInterval", "delay", "showUidBadge", "linkWarnEnabled", "hideDCGray",
+  "autoRefreshInterval", "delay", "showUidBadge", "showMemberIpInfo", "linkWarnEnabled", "hideDCGray",
   "previewEnabled", "hideAnonymousEnabled", "gamemecaBlockEnabled", "doryBlockEnabled", "noticeBlockEnabled", "compactListEnabled",
   "userMemoEnabled", "userMemos",
   IMAGE_BLOCK_CONFIG_KEY, IMAGE_BLOCK_RECORD_KEY,
@@ -104,6 +104,7 @@ const BACKUP_DEFAULTS = {
   autoRefreshInterval: 60,
   delay: 5,
   showUidBadge: false,
+  showMemberIpInfo: true,
   linkWarnEnabled: true,
   hideDCGray: undefined,
   previewEnabled: false,
@@ -176,6 +177,7 @@ const toggleHideMainEl = document.getElementById("toggleHideMain");
 const toggleHideGallEl = document.getElementById("toggleHideGall");
 const toggleHideSearchEl = document.getElementById("toggleHideSearch");
 const toggleUidBadgeEl = document.getElementById("toggleUidBadge");
+const showMemberIpInfoEl = document.getElementById("showMemberIpInfo");
 const compactListEnabledEl = document.getElementById("compactListEnabled");
 const userMemoEnabledEl = document.getElementById("userMemoEnabled");
 
@@ -1613,6 +1615,12 @@ if (toggleUidBadgeEl) {
   });
 }
 
+if (showMemberIpInfoEl) {
+  showMemberIpInfoEl.addEventListener("change", (e) => {
+    chrome.storage.sync.set({ showMemberIpInfo: !!e.target.checked });
+  });
+}
+
 if (compactListEnabledEl) {
   compactListEnabledEl.addEventListener("change", (e) => {
     chrome.storage.sync.set({ compactListEnabled: !!e.target.checked });
@@ -1809,6 +1817,7 @@ chrome.storage.sync.get(
     hideGallEnabled: true,
     hideSearchEnabled: true,
     showUidBadge: false,
+    showMemberIpInfo: true,
     compactListEnabled: false,
     userMemoEnabled: true,
     hideComment: false,
@@ -1849,6 +1858,7 @@ chrome.storage.sync.get(
     hideGallEnabled,
     hideSearchEnabled,
     showUidBadge,
+    showMemberIpInfo,
     compactListEnabled,
     userMemoEnabled,
     hideComment,
@@ -1908,6 +1918,7 @@ chrome.storage.sync.get(
     setChecked(toggleHideGallEl, hideGallEnabled);
     setChecked(toggleHideSearchEl, hideSearchEnabled);
     setChecked(toggleUidBadgeEl, showUidBadge);
+    setChecked(showMemberIpInfoEl, showMemberIpInfo);
     setChecked(compactListEnabledEl, compactListEnabled);
     setChecked(userMemoEnabledEl, userMemoEnabled);
 
@@ -2019,6 +2030,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
     if (changes.hideGallEnabled) setChecked(toggleHideGallEl, changes.hideGallEnabled.newValue);
     if (changes.hideSearchEnabled) setChecked(toggleHideSearchEl, changes.hideSearchEnabled.newValue);
     if (changes.showUidBadge) setChecked(toggleUidBadgeEl, changes.showUidBadge.newValue);
+    if (changes.showMemberIpInfo) setChecked(showMemberIpInfoEl, changes.showMemberIpInfo.newValue);
     if (changes.compactListEnabled) setChecked(compactListEnabledEl, changes.compactListEnabled.newValue);
     if (changes.userMemoEnabled) setChecked(userMemoEnabledEl, changes.userMemoEnabled.newValue);
 
