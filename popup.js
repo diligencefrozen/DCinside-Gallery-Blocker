@@ -51,6 +51,7 @@ const toggleHideGall = document.getElementById("toggleHideGall");
 const toggleHideSearch = document.getElementById("toggleHideSearch");
 
 const toggleUidBadge = document.getElementById("toggleUidBadge");
+const showMemberIpInfoToggle = document.getElementById("showMemberIpInfo");
 const hideAnonymousToggle = document.getElementById("hideAnonymousEnabled");
 const gamemecaBlockToggle = document.getElementById("gamemecaBlockEnabled");
 const doryBlockToggle = document.getElementById("doryBlockEnabled");
@@ -102,6 +103,7 @@ const DEFAULTS = {
   hideSearchEnabled: true,
 
   showUidBadge: false,
+  showMemberIpInfo: true,
   hideAnonymousEnabled: false,
   gamemecaBlockEnabled: true,
   doryBlockEnabled: true,
@@ -991,6 +993,7 @@ chrome.storage.sync.get(DEFAULTS, (conf) => {
     hideGallEnabled,
     hideSearchEnabled,
     showUidBadge,
+    showMemberIpInfo,
     hideAnonymousEnabled,
     gamemecaBlockEnabled,
     doryBlockEnabled,
@@ -1036,6 +1039,7 @@ chrome.storage.sync.get(DEFAULTS, (conf) => {
   setChecked(toggleHideGall, hideGallEnabled);
   setChecked(toggleHideSearch, hideSearchEnabled);
   setChecked(toggleUidBadge, showUidBadge);
+  setChecked(showMemberIpInfoToggle, showMemberIpInfo);
   setChecked(hideAnonymousToggle, hideAnonymousEnabled);
   setChecked(gamemecaBlockToggle, gamemecaBlockEnabled);
   setChecked(doryBlockToggle, doryBlockEnabled);
@@ -1314,6 +1318,9 @@ if (toggleHideSearch) {
 if (toggleUidBadge) {
   toggleUidBadge.onchange = (e) => chrome.storage.sync.set({ showUidBadge: !!e.target.checked });
 }
+if (showMemberIpInfoToggle) {
+  showMemberIpInfoToggle.onchange = (e) => chrome.storage.sync.set({ showMemberIpInfo: !!e.target.checked });
+}
 if (hideAnonymousToggle) {
   hideAnonymousToggle.onchange = (e) => chrome.storage.sync.set({ hideAnonymousEnabled: !!e.target.checked });
 }
@@ -1456,6 +1463,7 @@ chrome.storage.onChanged.addListener((c, a) => {
     if (c.hideGallEnabled) setChecked(toggleHideGall, c.hideGallEnabled.newValue);
     if (c.hideSearchEnabled) setChecked(toggleHideSearch, c.hideSearchEnabled.newValue);
     if (c.showUidBadge) setChecked(toggleUidBadge, c.showUidBadge.newValue);
+    if (c.showMemberIpInfo) setChecked(showMemberIpInfoToggle, c.showMemberIpInfo.newValue);
     if (c.hideAnonymousEnabled) setChecked(hideAnonymousToggle, c.hideAnonymousEnabled.newValue);
     if (c.gamemecaBlockEnabled) setChecked(gamemecaBlockToggle, c.gamemecaBlockEnabled.newValue);
     if (c.doryBlockEnabled) setChecked(doryBlockToggle, c.doryBlockEnabled.newValue);
