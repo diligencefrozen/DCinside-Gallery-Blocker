@@ -221,7 +221,8 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
       "dcbFontFamily",
       "dcbFontCustomFamily",
       "dcbFontScale",
-      "dcbApplyFontToDc"
+      "dcbApplyFontToDc",
+      "showMemberIpInfo"
     ]);
 
     const patch = {};
@@ -281,6 +282,10 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
 
     if (typeof seed.dcbApplyFontToDc === "undefined") {
       patch.dcbApplyFontToDc = true;
+    }
+
+    if (typeof seed.showMemberIpInfo === "undefined") {
+      patch.showMemberIpInfo = true;
     }
 
     if (Object.keys(patch).length) {
@@ -445,11 +450,12 @@ async function dcbFetchDcinsideHtml(rawUrl, options = {}) {
 
   const headers = new Headers();
   headers.set("Accept", options.accept || "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
+  headers.set("Accept-Language", "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7");
 
   const extraHeaders = options.headers && typeof options.headers === "object" ? options.headers : {};
   Object.entries(extraHeaders).forEach(([name, value]) => {
     const key = String(name || "").toLowerCase();
-    if (!["content-type", "x-requested-with", "accept"].includes(key)) return;
+    if (!["content-type", "x-requested-with", "accept", "accept-language"].includes(key)) return;
     headers.set(name, String(value));
   });
 
