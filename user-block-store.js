@@ -19,9 +19,26 @@
     return Date.now();
   }
 
-  function normalizeToken(value) {
-    const clean = String(value || "")
+  function normalizeNick(value) {
+    const nick = String(value || "")
+      .normalize("NFKC")
       .trim()
+      .replace(/\s+/g, " ")
+      .replace(/\((?:\d{1,3}\.){1,3}\d{0,3}\)\s*$/g, "")
+      .trim();
+
+    return nick.slice(0, 80);
+  }
+
+  function normalizeToken(value) {
+    const raw = String(value || "").trim();
+    const nickMatch = raw.match(/^nick\s*[:=]\s*(.+)$/i);
+    if (nickMatch) {
+      const nick = normalizeNick(nickMatch[1]);
+      return nick ? `nick:${nick}` : "";
+    }
+
+    const clean = raw
       .replace(/^uid\s*[:=]\s*/i, "")
       .replace(/^ip\s*[:=]\s*/i, "")
       .replace(/^\(|\)$/g, "")
@@ -32,8 +49,10 @@
 
     const ip = normalizeIpPrefix(clean);
     if (ip && isIpLike(clean)) return ip;
+    if (isUidLike(clean)) return clean;
 
-    return clean;
+    const implicitNick = normalizeNick(raw);
+    return implicitNick ? `nick:${implicitNick}` : "";
   }
 
   function normalizeIpPrefix(value) {
@@ -48,8 +67,13 @@
     return /^\d{1,3}(?:\.\d{1,3}){1,3}$/.test(String(value || "").trim());
   }
 
+  function isUidLike(value) {
+    return /^[A-Za-z0-9._-]{2,64}$/.test(String(value || "").trim());
+  }
+
   function classifyToken(value) {
     const clean = normalizeToken(value);
+    if (/^nick:/i.test(clean)) return "nick";
     return normalizeIpPrefix(clean) && isIpLike(clean) ? "ip" : "uid";
   }
 
