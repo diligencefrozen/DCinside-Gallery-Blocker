@@ -44,6 +44,7 @@
     "[data-ip]",
     "[data-memo-uid]",
     "[data-memo-ip]",
+    "[data-nick]",
     '[onclick*="gallog.dcinside.com"]',
     '[href*="gallog.dcinside.com"]',
     '[title*="갤로그"]'
@@ -126,8 +127,26 @@
   function normalizeToken(v) {
     return String(v || "")
       .trim()
+      .replace(/^uid\s*[:=]\s*/i, "")
+      .replace(/^ip\s*[:=]\s*/i, "")
       .replace(/^\(|\)$/g, "")
       .trim();
+  }
+
+  function normalizeNick(value) {
+    const nick = String(value || "")
+      .normalize("NFKC")
+      .trim()
+      .replace(/\s+/g, " ")
+      .replace(/\((?:\d{1,3}\.){1,3}\d{0,3}\)\s*$/g, "")
+      .trim();
+
+    return nick.slice(0, 80);
+  }
+
+  function isWeakNickname(nick) {
+    const key = normalizeNick(nick).replace(/\s+/g, "").toLowerCase();
+    return !key || ["ㅇㅇ", "익명", "무명", "유동", "유동닉", "anonymous"].includes(key);
   }
 
   function isIpLike(v) {
@@ -176,6 +195,7 @@
       "data-userid",
       "data-user_id",
       "data-memo-uid",
+      "data-nick",
       "onclick",
       "href",
       "title",
@@ -265,6 +285,26 @@
     return normalizeIpPrefix(text);
   }
 
+  function nicknameFromAuthor(scope) {
+    if (!scope) return "";
+
+    const nickEl =
+      scope.matches?.(".nickname, .nick_name, .user_nick")
+        ? scope
+        : (scope.querySelector?.(":scope > .nickname") ||
+           scope.querySelector?.(".nickname") ||
+           scope.querySelector?.(".nick_name") ||
+           scope.querySelector?.(".user_nick") ||
+           null);
+
+    return normalizeNick(
+      scope.getAttribute?.("data-nick") ||
+      nickEl?.getAttribute?.("title") ||
+      nickEl?.textContent ||
+      ""
+    );
+  }
+
   function readDataToken(scope, name) {
     if (!scope) return "";
 
@@ -298,7 +338,7 @@
     const writerContainer = closest(hit, WRITER_CONTAINER_SELECTOR);
     if (writerContainer) return writerContainer;
 
-    const dataOwner = closest(hit, "[data-uid], [data-ip], [data-memo-uid], [data-memo-ip]");
+    const dataOwner = closest(hit, "[data-uid], [data-ip], [data-memo-uid], [data-memo-ip], [data-nick]");
     if (dataOwner) return dataOwner;
 
     if (hit.matches?.(".writer_nikcon")) {
@@ -328,7 +368,11 @@
       ipPrefixFromText(author) ||
       "";
 
-    return normalizeToken(uid || ip);
+    const nick = nicknameFromAuthor(author);
+    if (uid || ip) return normalizeToken(uid || ip);
+    if (nick && !isWeakNickname(nick)) return `nick:${nick}`;
+
+    return "";
   }
 
   function pickBlockToken(target) {
@@ -531,6 +575,31 @@
         letter-spacing: -0.01em;
       }
 
+      #${HINT_ID} .dcb-hover-tip {
+        display: block;
+        margin-top: 6px;
+        color: #94a3b8;
+        font-size: 10.5px;
+        font-weight: 650;
+        line-height: 1.35;
+        letter-spacing: -0.01em;
+      }
+
+      #${HINT_ID} .dcb-hover-tip .dcb-hover-key {
+        min-width: auto;
+        height: 17px;
+        margin-right: 4px;
+        padding: 0 5px;
+        border-color: rgba(203, 213, 225, 0.85);
+        border-bottom-width: 1px;
+        border-radius: 6px;
+        background: #f8fafc;
+        color: #475569;
+        font-size: 10px;
+        font-weight: 850;
+        vertical-align: 1px;
+      }
+
       #${HINT_ID} .dcb-hover-key {
         display: inline-flex;
         align-items: center;
@@ -678,6 +747,7 @@
         <span class="dcb-hover-key">우클릭</span>
         ${escapeHtml(action)}
       </span>
+      <span class="dcb-hover-tip"><span class="dcb-hover-key">Shift+우클릭</span> 차단 아님 · 메모 작성</span>
       ${token ? `<span class="dcb-hover-token">대상: ${escapeHtml(token)}</span>` : ""}
     `;
 
@@ -733,7 +803,7 @@
         if (!res?.ok) {
           const desc = (() => {
             if (res?.reason === "EMPTY_TOKEN") {
-              return "이 작성자 영역에서 UID/IP를 찾지 못했습니다.";
+              return "이 작성자 영역에서 UID/IP/닉네임을 찾지 못했습니다.";
             }
 
             if (res?.reason === "LOCAL_QUOTA_EXCEEDED") {
@@ -847,7 +917,7 @@
 
           showToast({
             title: "차단할 수 없음",
-            desc: "이 작성자 영역에서 UID/IP를 찾지 못했습니다.",
+            desc: "이 작성자 영역에서 UID/IP/닉네임을 찾지 못했습니다.",
             variant: "error"
           });
         }
