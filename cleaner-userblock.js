@@ -11,7 +11,7 @@
 
   const DEFAULTS = {
     userBlockEnabled: true,
-    blockedUids: [],          // ['회원UID', '118.235' 같은 IP prefix]
+    blockedUids: [],          // ['회원UID', '118.235' 같은 IP prefix, 'nick:닉네임']
     includeGray: true,
     hideDCGray: undefined
   };
@@ -22,6 +22,10 @@
     "td.gall_writer",
     ".refresherUserData",
     ".dcb-uid-badge",
+    ".nickname",
+    ".nick_name",
+    ".user_nick",
+    "[data-nick]",
     "[data-uid]",
     "[data-ip]",
     "[data-memo-uid]",
@@ -48,21 +52,55 @@
 
   const cssEscape = (s) => String(s || "").replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 
-  function normalizeToken(value) {
-    return String(value || "")
+  function normalizeNick(value) {
+    const nick = String(value || "")
+      .normalize("NFKC")
       .trim()
+      .replace(/\s+/g, " ")
+      .replace(/\((?:\d{1,3}\.){1,3}\d{0,3}\)\s*$/g, "")
+      .trim();
+
+    return nick.slice(0, 80);
+  }
+
+  function normalizeToken(value) {
+    const raw = String(value || "").trim();
+    const nickMatch = raw.match(/^nick\s*[:=]\s*(.+)$/i);
+    if (nickMatch) {
+      const nick = normalizeNick(nickMatch[1]);
+      return nick ? `nick:${nick}` : "";
+    }
+
+    const clean = raw
       .replace(/^uid\s*[:=]\s*/i, "")
       .replace(/^ip\s*[:=]\s*/i, "")
       .replace(/^\(|\)$/g, "")
+      .replace(/\s+/g, "")
       .trim();
+
+    if (!clean) return "";
+
+    const ip = normalizeIpPrefix(clean);
+    if (ip && isIpLike(clean)) return ip;
+    if (isUidLike(clean)) return clean;
+
+    const implicitNick = normalizeNick(raw);
+    return implicitNick ? `nick:${implicitNick}` : "";
   }
 
   function isIpLike(value) {
     return /^\d{1,3}(?:\.\d{1,3}){1,3}$/.test(String(value || "").trim());
   }
 
+  function isUidLike(value) {
+    return /^[A-Za-z0-9._-]{2,64}$/.test(String(value || "").trim());
+  }
+
   function normalizeIpPrefix(value) {
-    const s = normalizeToken(value);
+    const s = String(value || "")
+      .trim()
+      .replace(/^ip\s*[:=]\s*/i, "")
+      .replace(/^\(|\)$/g, "");
     const m = s.match(/\b(\d{1,3}\.\d{1,3})(?:\.\d{1,3}){0,2}\b/);
     return m ? m[1] : "";
   }
@@ -95,6 +133,7 @@
       "data-memo-uid",
       "data-ip",
       "data-memo-ip",
+      "data-nick",
       "onclick",
       "href",
       "title",
@@ -204,8 +243,28 @@
     return normalizeIpPrefix(text);
   }
 
+  function nicknameFromScope(scope) {
+    if (!scope) return "";
+
+    const nickEl =
+      scope.matches?.(".nickname, .nick_name, .user_nick")
+        ? scope
+        : (scope.querySelector?.(":scope > .nickname") ||
+           scope.querySelector?.(".nickname") ||
+           scope.querySelector?.(".nick_name") ||
+           scope.querySelector?.(".user_nick") ||
+           null);
+
+    return normalizeNick(
+      readDataToken(scope, "data-nick") ||
+      nickEl?.getAttribute?.("title") ||
+      nickEl?.textContent ||
+      ""
+    );
+  }
+
   function extractWriterTokens(scope) {
-    if (!scope) return { uid: "", ip: "" };
+    if (!scope) return { uid: "", ip: "", nick: "" };
 
     const uid =
       normalizeUidCandidate(readDataToken(scope, "data-uid")) ||
@@ -224,16 +283,25 @@
       ipPrefixFromText(scope) ||
       "";
 
-    return { uid, ip };
+    const nick = nicknameFromScope(scope);
+
+    return { uid, ip, nick };
   }
 
   function buildMatcher(rawTokens) {
     const uids = new Set();
     const ips = new Set();
+    const nicks = new Set();
 
     (Array.isArray(rawTokens) ? rawTokens : []).forEach((raw) => {
       const clean = normalizeToken(raw);
       if (!clean) return;
+
+      if (/^nick:/i.test(clean)) {
+        const nick = normalizeNick(clean.replace(/^nick\s*[:=]\s*/i, ""));
+        if (nick) nicks.add(nick.toLowerCase());
+        return;
+      }
 
       const ip = normalizeIpPrefix(clean);
       if (ip && isIpLike(clean)) {
@@ -245,15 +313,27 @@
       if (uid) uids.add(tokenKey(uid));
     });
 
-    return { uids, ips, empty: !uids.size && !ips.size };
+    return { uids, ips, nicks, empty: !uids.size && !ips.size && !nicks.size };
+  }
+
+  function nickMatchesBlockedToken(nick, blockedNicks) {
+    const haystack = normalizeNick(nick).toLowerCase();
+    if (!haystack || !blockedNicks?.size) return false;
+
+    for (const needle of blockedNicks) {
+      if (needle && haystack.includes(needle)) return true;
+    }
+
+    return false;
   }
 
   function writerMatches(scope, matcher) {
     if (!scope || matcher.empty) return false;
 
-    const { uid, ip } = extractWriterTokens(scope);
+    const { uid, ip, nick } = extractWriterTokens(scope);
     if (uid && matcher.uids.has(tokenKey(uid))) return true;
     if (ip && matcher.ips.has(normalizeIpPrefix(ip))) return true;
+    if (nickMatchesBlockedToken(nick, matcher.nicks)) return true;
 
     return false;
   }
@@ -334,6 +414,19 @@
         const clean = normalizeToken(raw);
         if (!clean) return;
 
+        if (/^nick:/i.test(clean)) {
+          const nick = normalizeNick(clean.replace(/^nick\s*[:=]\s*/i, ""));
+          if (nick) {
+            addRulesForAttr(`[data-nick*="${cssEscape(nick)}"]`);
+            lines.push(
+              `.gall_list tr:has(.gall_writer .nickname[title*="${cssEscape(nick)}"]){display:none!important}`,
+              `.comment_wrap li.ub-content:has(.nickname[title*="${cssEscape(nick)}"]){display:none!important}`,
+              `.cmt_list li.ub-content:has(.nickname[title*="${cssEscape(nick)}"]){display:none!important}`
+            );
+          }
+          return;
+        }
+
         const ip = normalizeIpPrefix(clean);
         if (ip && isIpLike(clean)) {
           addRulesForAttr(`[data-ip^="${cssEscape(ip)}"]`);
@@ -388,11 +481,119 @@
     return null;
   }
 
+  function isReplyCommentItem(el) {
+    if (!el || el.nodeType !== 1) return false;
+    if (el.matches?.(".reply, .reply_line, .reply_item, .dcbpv-comment-item.reply, li[id^='reply_'], li[id^='reply_li_']")) return true;
+    if (el.querySelector?.(":scope > .reply_info, :scope > .reply_box, :scope > .reply_txtbox")) return true;
+
+    const depth = el.getAttribute?.("data-depth") || el.getAttribute?.("depth") || el.dataset?.depth || "";
+    if (depth && Number(depth) > 0) return true;
+
+    const parentNo = el.getAttribute?.("data-parent-no") || el.getAttribute?.("data-parent") || el.getAttribute?.("p-no") || "";
+    if (parentNo) return true;
+
+    return /(^|\s)(reply|reply_line|reply_item)(\s|$)/i.test(String(el.className || ""));
+  }
+
+  function readCommentNo(el) {
+    if (!el || el.nodeType !== 1) return "";
+
+    const fromId = String(el.id || "").match(/(?:comment|reply)_(?:li_)?(\d+)/i);
+    if (fromId) return fromId[1];
+
+    const attrNames = [
+      "data-no", "data-comment-no", "data-commentno", "data-cno", "data-cmt-no", "data-article-no", "no"
+    ];
+
+    for (const name of attrNames) {
+      const value = el.getAttribute?.(name);
+      if (value && /^\d+$/.test(String(value).trim())) return String(value).trim();
+    }
+
+    const info = el.querySelector?.(":scope > .cmt_info[data-no], :scope > .reply_info[data-no], .cmt_info[data-no], .reply_info[data-no]");
+    const infoNo = info?.getAttribute?.("data-no");
+    return infoNo && /^\d+$/.test(String(infoNo).trim()) ? String(infoNo).trim() : "";
+  }
+
+  function collectReplyContainer(container, out) {
+    if (!container || container.nodeType !== 1) return;
+    if (!out.includes(container)) out.push(container);
+    container.querySelectorAll?.(
+      "li.reply, li.reply_line, li.reply_item, li[id^='reply_'], li[id^='reply_li_'], " +
+      ".reply_item, .reply_box li, .reply_list li, .dcbpv-comment-item.reply"
+    ).forEach((item) => {
+      if (!out.includes(item)) out.push(item);
+    });
+  }
+
+  function findReplyContainerForParentComment(root) {
+    if (!root || root.nodeType !== 1 || isReplyCommentItem(root)) return null;
+
+    const commentNo = readCommentNo(root);
+    if (!commentNo) return null;
+
+    const escapedNo = cssEscape(commentNo);
+    const scopedSelector = [
+      `#reply_list_${escapedNo}`,
+      `.reply_list[p-no="${escapedNo}"]`,
+      `.reply_list[data-parent-no="${escapedNo}"]`,
+      `.reply_box[p-no="${escapedNo}"]`,
+      `.reply_box[data-parent-no="${escapedNo}"]`,
+      `[data-parent-no="${escapedNo}"]`,
+      `[data-parent="${escapedNo}"]`
+    ].join(",");
+
+    let sib = root.nextElementSibling;
+    let guard = 0;
+    while (sib && guard < 6) {
+      if (sib.matches?.(scopedSelector) || sib.querySelector?.(scopedSelector)) return sib;
+      if (isReplyCommentItem(sib)) return sib;
+      sib = sib.nextElementSibling;
+      guard += 1;
+    }
+
+    const local = root.parentElement?.querySelector?.(scopedSelector) || document.querySelector(scopedSelector);
+    if (!local) return null;
+    return local.closest?.("li, .reply_box, .reply_list, .comment_wrap, .cmt_list") || local;
+  }
+
+  function expandCommentThread(root) {
+    if (!root || root.nodeType !== 1) return [];
+
+    const out = [root];
+
+    root.querySelectorAll?.("li.reply, li.reply_line, li.reply_item, li[id^='reply_'], li[id^='reply_li_'], .reply_item, .reply_box li, .reply_list li, .dcbpv-comment-item.reply").forEach((item) => {
+      if (!out.includes(item)) out.push(item);
+    });
+
+    const replyContainer = findReplyContainerForParentComment(root);
+    if (replyContainer) collectReplyContainer(replyContainer, out);
+
+    if (!isReplyCommentItem(root)) {
+      let sib = root.nextElementSibling;
+      let guard = 0;
+      while (sib && guard < 80) {
+        if (replyContainer && (sib === replyContainer || replyContainer.contains?.(sib))) {
+          collectReplyContainer(sib, out);
+          sib = sib.nextElementSibling;
+          guard += 1;
+          continue;
+        }
+        if (!isReplyCommentItem(sib)) break;
+        collectReplyContainer(sib, out);
+        sib = sib.nextElementSibling;
+        guard += 1;
+      }
+    }
+
+    return out;
+  }
+
   function findCommentTargets(writer) {
     const commentLi = writer.closest?.(
       "#focus_cmt li, .comment_wrap li, .cmt_list li, .reply_box li, .reply_list li, .dccon_comment_box li, li.ub-content"
     );
-    if (commentLi && isInsideCommentRoot(commentLi)) return [commentLi];
+    if (commentLi && isInsideCommentRoot(commentLi)) return expandCommentThread(commentLi);
 
     const info = writer.closest?.(".cmt_info, .reply_info, .cmt_nickbox") || writer;
     const body = findBodyFromInfo(info);
