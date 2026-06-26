@@ -18,6 +18,7 @@ const RULE_NS = 40_000;                 // DNR rule id namespace
 const RULE_MAX_OFFSET = 20_000;         // 이 확장프로그램이 쓰는 동적 규칙 범위
 const AREA_PICKER_MENU_ID = "dcb-area-picker-select";
 const USER_BLOCK_CONTEXT_MENU_ID = "dcb-user-block-context";
+const USER_MEMO_CONTEXT_MENU_ID = "dcb-user-memo-context";
 
 /* ───── 유틸 ───── */
 function norm(v) {
@@ -192,6 +193,15 @@ function resetContextMenus() {
             "*://gall.dcinside.com/*"
           ]
         }, () => void chrome.runtime.lastError);
+
+        chrome.contextMenus.create({
+          id: USER_MEMO_CONTEXT_MENU_ID,
+          title: "📝 이 사용자 메모하기",
+          contexts: ["all"],
+          documentUrlPatterns: [
+            "*://gall.dcinside.com/*"
+          ]
+        }, () => void chrome.runtime.lastError);
       } catch (_) {
         // contextMenus 초기화 타이밍 문제는 핵심 차단 기능과 무관하므로 무시한다.
       }
@@ -222,7 +232,8 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
       "dcbFontCustomFamily",
       "dcbFontScale",
       "dcbApplyFontToDc",
-      "showMemberIpInfo"
+      "showMemberIpInfo",
+      "userMemoEnabled"
     ]);
 
     const patch = {};
@@ -286,6 +297,10 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
 
     if (typeof seed.showMemberIpInfo === "undefined") {
       patch.showMemberIpInfo = true;
+    }
+
+    if (typeof seed.userMemoEnabled === "undefined") {
+      patch.userMemoEnabled = false;
     }
 
     if (Object.keys(patch).length) {
@@ -587,6 +602,25 @@ chrome.contextMenus?.onClicked?.addListener((info, tab) => {
     const message = { type: "dcb.legacyContextUserBlock" };
     const done = () => {
       if (chrome.runtime.lastError) showActionBadge(tab.id, "?");
+    };
+
+    if (typeof info.frameId === "number") {
+      chrome.tabs.sendMessage(tab.id, message, { frameId: info.frameId }, done);
+    } else {
+      chrome.tabs.sendMessage(tab.id, message, done);
+    }
+
+    return;
+  }
+
+  if (info.menuItemId === USER_MEMO_CONTEXT_MENU_ID) {
+    const message = { type: "dcb.userMemoOpenContext" };
+    const done = (res) => {
+      if (chrome.runtime.lastError) {
+        showActionBadge(tab.id, "?");
+        return;
+      }
+      showActionBadge(tab.id, res?.ok ? "📝" : "OFF");
     };
 
     if (typeof info.frameId === "number") {
