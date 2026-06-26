@@ -110,7 +110,7 @@ const DEFAULTS = {
   noticeBlockEnabled: true,
   linkWarnEnabled: true,
 
-  userMemoEnabled: true,
+  userMemoEnabled: false,
   compactListEnabled: false,
   blockedIds: [],
 
@@ -160,13 +160,13 @@ function updateUserBlockModeGuide(mode) {
   if (userBlockModeGuide) {
     userBlockModeGuide.innerHTML = normalized === "contextMenu"
       ? '<strong>구 방식:</strong> 작성자 닉네임, 갤로그 아이콘, 메모 버튼 위에서 우클릭한 뒤 브라우저 메뉴의 “이 사용자 차단하기”를 누르면 차단됩니다.'
-      : '<strong>즉시 차단:</strong> 작성자 닉네임, 갤로그 아이콘, 메모 버튼 위에서 우클릭하면 UID/IP가 바로 차단 목록에 저장됩니다.';
+      : '<strong>즉시 차단:</strong> 작성자 닉네임, 갤로그 아이콘, 메모 버튼 위에서 우클릭하면 UID/IP를 우선 저장하고, UID/IP가 없을 때 닉네임을 저장합니다.';
   }
 
   if (userBlockModeSubGuide) {
     userBlockModeSubGuide.textContent = normalized === "contextMenu"
       ? '이 방식은 실수 방지를 위해 한 번 더 메뉴를 선택합니다. 닉네임 안내 팝업은 표시하지 않습니다.'
-      : '글 제목, 본문, 댓글 내용 영역에서는 사용자 차단이 실행되지 않습니다. 안내 팝업은 필요할 때만 켤 수 있습니다.';
+      : '글 제목, 본문, 댓글 내용 영역에서는 사용자 차단이 실행되지 않습니다. 닉네임은 무갤러 또는 nick:무갤러 형식으로 직접 추가할 수 있고, 포함 매칭으로 차단됩니다.';
   }
 }
 
@@ -257,7 +257,32 @@ function setMemoTransferStatus(text, isError = false) {
 }
 
 function sanitizeUid(s) {
-  return String(s || "").trim().replace(/\s+/g, "");
+  const raw = String(s || "").trim();
+  const nickMatch = raw.match(/^nick\s*[:=]\s*(.+)$/i);
+  if (nickMatch) {
+    const nick = nickMatch[1]
+      .normalize("NFKC")
+      .trim()
+      .replace(/\s+/g, " ")
+      .replace(/\((?:\d{1,3}\.){1,3}\d{0,3}\)\s*$/g, "")
+      .trim()
+      .slice(0, 80);
+    return nick ? `nick:${nick}` : "";
+  }
+
+  const compact = raw.replace(/\s+/g, "");
+  if (/^\d{1,3}(?:\.\d{1,3}){1,3}$/.test(compact)) return compact;
+  if (/^[A-Za-z0-9._-]{2,64}$/.test(compact)) return compact;
+
+  const implicitNick = raw
+    .normalize("NFKC")
+    .trim()
+    .replace(/\s+/g, " ")
+    .replace(/\((?:\d{1,3}\.){1,3}\d{0,3}\)\s*$/g, "")
+    .trim()
+    .slice(0, 80);
+
+  return implicitNick ? `nick:${implicitNick}` : "";
 }
 
 function sanitizeKeyword(v) {
@@ -602,6 +627,7 @@ function refreshDcThemeState() {
 /* ───────── UID 차단 목록 ───────── */
 function getUidTokenKind(token) {
   const text = String(token || "").trim();
+  if (/^nick\s*[:=]/i.test(text)) return "NICK";
   return /^\d{1,3}(?:\.\d{1,3}){1,3}$/.test(text) ? "IP" : "UID";
 }
 
@@ -616,7 +642,7 @@ function renderUidList(list) {
 
   if (!uids.length) {
     const li = document.createElement("li");
-    li.innerHTML = `<span class="uid-empty">등록된 유저 아이디와 아이피가 없습니다.</span>`;
+    li.innerHTML = `<span class="uid-empty">등록된 UID/IP/닉네임 차단 대상이 없습니다.</span>`;
     uidListEl.appendChild(li);
     return;
   }
