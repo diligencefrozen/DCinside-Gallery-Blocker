@@ -6,6 +6,8 @@
   const MEMO_TRIGGER_CLASS = "dcb-user-memo-trigger";
   const WRITER_TOOLS_CLASS = "dcb-writer-tools";
   const WRITER_ENHANCED_CLASS = "dcb-writer-enhanced";
+  const WRITER_SELECTOR = ".gall_writer,.ub-writer";
+  const LIST_ROOT_SELECTOR = ".gall_list,.list_array,.ub-list,.dccon_list,.issuebox";
 
   let showEnabled = true;
 
@@ -15,11 +17,22 @@
   function isListWriter(writer) {
     return !!(
       writer &&
-      writer.matches?.("td.gall_writer, .gall_list .gall_writer") &&
+      writer.matches?.("td.gall_writer,td.ub-writer,.gall_list .gall_writer,.gall_list .ub-writer,.ub-writer[data-loc='list'],.gall_writer[data-loc='list']") &&
       (
         writer.getAttribute("data-loc") === "list" ||
-        writer.closest(".gall_list")
+        writer.closest(LIST_ROOT_SELECTOR) ||
+        writer.closest("tr.ub-content,tr")
       )
+    );
+  }
+
+  function getListAddbox(writer) {
+    if (!(writer instanceof Element)) return null;
+    return (
+      writer.querySelector(":scope > .addbox") ||
+      writer.querySelector(":scope > div > .addbox") ||
+      writer.querySelector(":scope > b.addbox") ||
+      writer.querySelector(":scope .addbox")
     );
   }
 
@@ -35,7 +48,7 @@
     });
 
     document.querySelectorAll(`.${WRITER_ENHANCED_CLASS}`).forEach((writer) => {
-      const tools = writer.querySelector(`:scope > .${WRITER_TOOLS_CLASS}`);
+      const tools = writer.querySelector(`:scope .${WRITER_TOOLS_CLASS}`);
       if (!tools) writer.classList.remove(WRITER_ENHANCED_CLASS);
     });
   }
@@ -106,18 +119,23 @@
         box-sizing:border-box !important;
       }
 
-      .gall_writer .${BADGE}{
+      .gall_writer .${BADGE},
+      .ub-writer .${BADGE}{
         position:static !important;
         z-index:auto !important;
       }
 
-      .gall_writer.${WRITER_ENHANCED_CLASS}{
+      .gall_writer.${WRITER_ENHANCED_CLASS},
+      .ub-writer.${WRITER_ENHANCED_CLASS}{
         overflow:visible !important;
       }
 
       .gall_writer.${WRITER_ENHANCED_CLASS} > .nickname,
       .gall_writer.${WRITER_ENHANCED_CLASS} > .writer_nikcon,
-      .gall_writer.${WRITER_ENHANCED_CLASS} > .${WRITER_TOOLS_CLASS}{
+      .gall_writer.${WRITER_ENHANCED_CLASS} > .${WRITER_TOOLS_CLASS},
+      .ub-writer.${WRITER_ENHANCED_CLASS} > .nickname,
+      .ub-writer.${WRITER_ENHANCED_CLASS} > .writer_nikcon,
+      .ub-writer.${WRITER_ENHANCED_CLASS} > .${WRITER_TOOLS_CLASS}{
         vertical-align:middle !important;
       }
 
@@ -127,7 +145,10 @@
 
       .cmt_nickbox .gall_writer.${WRITER_ENHANCED_CLASS},
       .cmt_info .gall_writer.${WRITER_ENHANCED_CLASS},
-      .reply_info .gall_writer.${WRITER_ENHANCED_CLASS}{
+      .reply_info .gall_writer.${WRITER_ENHANCED_CLASS},
+      .cmt_nickbox .ub-writer.${WRITER_ENHANCED_CLASS},
+      .cmt_info .ub-writer.${WRITER_ENHANCED_CLASS},
+      .reply_info .ub-writer.${WRITER_ENHANCED_CLASS}{
         display:inline-flex !important;
         align-items:center !important;
         flex-wrap:wrap !important;
@@ -182,8 +203,8 @@
         overflow:visible !important;
         text-align:center !important;
         vertical-align:middle !important;
-        white-space:normal !important;
-        line-height:1.12 !important;
+        white-space:nowrap !important;
+        line-height:18px !important;
         padding-left:2px !important;
         padding-right:2px !important;
       }
@@ -252,20 +273,41 @@
 
       .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} > .${WRITER_TOOLS_CLASS},
       td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] > .${WRITER_TOOLS_CLASS}{
-        display:flex !important;
+        display:inline-flex !important;
         align-items:center !important;
         justify-content:center !important;
         gap:2px !important;
-        width:100% !important;
-        max-width:100% !important;
+        width:auto !important;
+        max-width:76px !important;
         min-width:0 !important;
-        height:15px !important;
-        line-height:15px !important;
-        margin:0 !important;
+        height:14px !important;
+        line-height:14px !important;
+        margin:0 0 0 2px !important;
         padding:0 !important;
         overflow:hidden !important;
         white-space:nowrap !important;
+        vertical-align:middle !important;
         transform:none !important;
+        box-sizing:border-box !important;
+      }
+
+      .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} .addbox > .${WRITER_TOOLS_CLASS},
+      td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] .addbox > .${WRITER_TOOLS_CLASS}{
+        display:inline-flex !important;
+        align-items:center !important;
+        justify-content:center !important;
+        gap:2px !important;
+        flex:0 1 auto !important;
+        width:auto !important;
+        max-width:76px !important;
+        min-width:0 !important;
+        height:14px !important;
+        line-height:14px !important;
+        margin:0 0 0 2px !important;
+        padding:0 !important;
+        overflow:hidden !important;
+        white-space:nowrap !important;
+        vertical-align:middle !important;
         box-sizing:border-box !important;
       }
 
@@ -289,10 +331,70 @@
         max-width:56px !important;
       }
 
+
+
+      /* 7.3.39: list writer row hardening
+         DC 관리자/고정닉 계정은 addbox가 td 바로 아래가 아니라 div > b.addbox 안에 들어간다.
+         nested addbox까지 한 줄 flex 컨테이너로 고정하고 긴 닉/UID/메모는 셀 안에서만 줄인다. */
+      .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} > div,
+      td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] > div{
+        display:flex !important;
+        align-items:center !important;
+        justify-content:center !important;
+        width:100% !important;
+        max-width:100% !important;
+        min-width:0 !important;
+        height:18px !important;
+        line-height:18px !important;
+        overflow:hidden !important;
+        box-sizing:border-box !important;
+      }
+
+      .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} .addbox,
+      td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] .addbox{
+        flex:1 1 auto !important;
+        min-width:0 !important;
+        max-width:100% !important;
+        overflow:hidden !important;
+        flex-wrap:nowrap !important;
+      }
+
+      .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} .nickname,
+      td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] .nickname{
+        flex:1 1 auto !important;
+        max-width:none !important;
+        min-width:0 !important;
+      }
+
+      .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} .writer_nikcon,
+      td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] .writer_nikcon{
+        flex:0 0 auto !important;
+      }
+
+      .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} .addbox > .${WRITER_TOOLS_CLASS},
+      td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] .addbox > .${WRITER_TOOLS_CLASS}{
+        flex:0 1 auto !important;
+        max-width:68px !important;
+        min-width:0 !important;
+        gap:1px !important;
+        overflow:hidden !important;
+      }
+
+      .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} .${BADGE},
+      td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] .${BADGE}{
+        max-width:44px !important;
+        padding:0 3px !important;
+        font-size:8.5px !important;
+        letter-spacing:-.35px !important;
+      }
+
       @media (max-width:640px){
         .cmt_nickbox .gall_writer.${WRITER_ENHANCED_CLASS},
         .cmt_info .gall_writer.${WRITER_ENHANCED_CLASS},
-        .reply_info .gall_writer.${WRITER_ENHANCED_CLASS}{
+        .reply_info .gall_writer.${WRITER_ENHANCED_CLASS},
+        .cmt_nickbox .ub-writer.${WRITER_ENHANCED_CLASS},
+        .cmt_info .ub-writer.${WRITER_ENHANCED_CLASS},
+        .reply_info .ub-writer.${WRITER_ENHANCED_CLASS}{
           row-gap:4px !important;
         }
 
@@ -355,20 +457,30 @@
   function ensureWriterTools(writer) {
     writer.classList.add(WRITER_ENHANCED_CLASS);
 
-    let tools = writer.querySelector(`:scope > .${WRITER_TOOLS_CLASS}`);
+    let tools = writer.querySelector(`:scope .${WRITER_TOOLS_CLASS}`);
     if (!tools) {
       tools = document.createElement("span");
       tools.className = WRITER_TOOLS_CLASS;
     }
 
     const listMode = isListWriter(writer);
-    const addbox = writer.querySelector(":scope > .addbox");
+    const addbox = listMode ? getListAddbox(writer) : writer.querySelector(":scope > .addbox");
     const nikcon = writer.querySelector(":scope > .writer_nikcon");
     const nick = writer.querySelector(":scope > .nickname");
 
     if (listMode && addbox) {
-      if (addbox.nextSibling !== tools) {
-        addbox.insertAdjacentElement("afterend", tools);
+      // 목록에서는 닉네임/식별코드/메모를 반드시 같은 줄(addbox 내부)에 둔다.
+      const anchor =
+        addbox.querySelector(":scope > .writer_nikcon") ||
+        addbox.querySelector(":scope > .nickname") ||
+        addbox.lastElementChild;
+
+      if (anchor && anchor !== tools) {
+        if (anchor.nextSibling !== tools) {
+          anchor.insertAdjacentElement("afterend", tools);
+        }
+      } else if (tools.parentElement !== addbox) {
+        addbox.appendChild(tools);
       }
       return tools;
     }
@@ -444,7 +556,7 @@
     }
 
     ensureStyle();
-    document.querySelectorAll(".gall_writer").forEach(placeBadge);
+    document.querySelectorAll(WRITER_SELECTOR).forEach(placeBadge);
   }
 
   try {
@@ -486,8 +598,8 @@
         if (isUidOwnNode(n)) continue;
         if (n.nodeType === 1) {
           if (
-            n.matches?.(".gall_writer") ||
-            n.querySelector?.(".gall_writer") ||
+            n.matches?.(WRITER_SELECTOR) ||
+            n.querySelector?.(WRITER_SELECTOR) ||
             n.classList?.contains(MEMO_TRIGGER_CLASS) ||
             n.querySelector?.(`.${MEMO_TRIGGER_CLASS}`)
           ) {
@@ -500,8 +612,8 @@
         if (isUidOwnNode(n)) continue;
         if (n.nodeType === 1) {
           if (
-            n.matches?.(".gall_writer") ||
-            n.querySelector?.(".gall_writer") ||
+            n.matches?.(WRITER_SELECTOR) ||
+            n.querySelector?.(WRITER_SELECTOR) ||
             n.classList?.contains(MEMO_TRIGGER_CLASS) ||
             n.querySelector?.(`.${MEMO_TRIGGER_CLASS}`)
           ) {
