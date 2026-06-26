@@ -28,7 +28,7 @@ let previewEnabled = false;
 // 미니/인물 갤러리 댓글 로딩 진단 로그
 // - 미니/인물에서만 기본 출력
 // - 다른 갤러리도 보고 싶으면 콘솔에서 localStorage.setItem("dcbPreviewCommentDebug", "1")
-const PREVIEW_COMMENT_DEBUG = true;
+const PREVIEW_COMMENT_DEBUG = false;
 
 function normalizeUserBlockedIds(blockedIds = []) {
   return Array.isArray(blockedIds)
@@ -97,7 +97,7 @@ function getGalleryId(){
   if(qsId) return qsId.trim().toLowerCase();
 
   /* 2) /mgallery/foo …  /mini/bar … */
-  const m = location.pathname.match(/\/(?:mgallery|mini)\/([^\/?#]+)/);
+  const m = location.pathname.match(/\/(?:mgallery|mini|person)\/([^\/?#]+)/);
   return m ? m[1].trim().toLowerCase() : null;
 }
 
@@ -330,6 +330,9 @@ syncSettings(handleUrl);
   const cache = new Map();
   let activeAbort = null;
   let currentPreviewData = null;
+  let previewDcconObserver = null;
+  let previewDcconTimer = 0;
+  const previewMediaSettleTimers = new WeakMap();
 
   const escapeText = (value) => String(value ?? "").replace(/[&<>'"]/g, (ch) => ({
     "&": "&amp;",
@@ -375,8 +378,8 @@ syncSettings(handleUrl);
   }
 
   function previewCommentDebugEnabled(articleUrl){
-    const type = previewGalleryTypeFromUrl(articleUrl);
-    if (type === "mini" || type === "person") return true;
+    // 성능 보호: 미니/인물갤에서도 진단 로그는 명시적으로 켠 경우에만 출력합니다.
+    // 콘솔에서 localStorage.setItem("dcbPreviewCommentDebug", "1") 입력 시 활성화됩니다.
     try { return localStorage.getItem("dcbPreviewCommentDebug") === "1"; } catch (_) { return PREVIEW_COMMENT_DEBUG === true; }
   }
 
@@ -457,6 +460,7 @@ syncSettings(handleUrl);
       #${OVERLAY_ID} .dcbpv-movie-wrap{width:min(100%,560px);margin:10px auto;overflow:hidden;border-radius:10px;background:#000}
       #${OVERLAY_ID} .dcbpv-movie-wrap iframe{width:100%!important;height:700px!important;margin:0;border-radius:0;transform:scale(.875);transform-origin:top left;min-height:0}
       #${OVERLAY_ID} .dcbpv-dccon,#${OVERLAY_ID} img.dcbpv-dccon,#${OVERLAY_ID} video.dcbpv-dccon,#${OVERLAY_ID} img[src*="dccon.php"]{display:inline-block!important;max-width:min(120px,32vw)!important;height:auto!important;margin:4px!important;border-radius:6px;box-shadow:none}
+      #${OVERLAY_ID} .dcbpv-filter-hidden,#${OVERLAY_ID} .dcb-dccon-content-hidden,#${OVERLAY_ID} .dcbpv-dccon-hidden,#${OVERLAY_ID} [data-dcb-dccon-hidden="true"]{display:none!important}
       #${OVERLAY_ID} .dcbpv-comment-scope,#${OVERLAY_ID} .dcbpv-comments{border-top:1px solid #eef2f7;padding-top:16px}
       #${OVERLAY_ID} .dcbpv-comments .dcbpv-html{font-size:13px;line-height:1.62}
       #${OVERLAY_ID} .dcbpv-comment-list{display:flex;flex-direction:column;gap:10px}
@@ -488,7 +492,19 @@ syncSettings(handleUrl);
     document.head.appendChild(style);
   }
 
+  function stopPreviewDcconObserver(){
+    if (previewDcconTimer) {
+      clearTimeout(previewDcconTimer);
+      previewDcconTimer = 0;
+    }
+    if (previewDcconObserver) {
+      previewDcconObserver.disconnect();
+      previewDcconObserver = null;
+    }
+  }
+
   function closePreview(){
+    stopPreviewDcconObserver();
     const overlay = document.getElementById(OVERLAY_ID);
     if (overlay) overlay.remove();
     currentPreviewData = null;
@@ -688,12 +704,15 @@ syncSettings(handleUrl);
     });
 
     root.querySelectorAll("img").forEach((img) => {
+      if (img.dataset.dcbpvMediaSettled === "1") return;
+      img.dataset.dcbpvMediaSettled = "1";
       const currentSrc = img.getAttribute("src") || "";
       const gifUrl = pickImageCandidate(img, baseUrl, { allowVideo: false });
       const mp4Url = collectImageCandidates(img, baseUrl).find((url) => /\.(?:mp4|webm)(?:[?#]|$)/i.test(url)) || "";
       const isLoadingImage = isPlaceholderImageUrl(currentSrc) || img.classList.contains("lazy") || img.classList.contains("img_loading");
-      const isInComment = !!img.closest(".all-comment,.dcbpv-comment-scope,.comment_wrap,#comment_wrap,.cmt_list,.reply_box,.comment_dccon");
-      const wasDccon = img.classList.contains("written_dccon") || /dccon\.php/i.test(currentSrc) || /dccon\.php/i.test(gifUrl);
+      const isInComment = !!img.closest(".all-comment,.dcbpv-comment-scope,.dcbpv-comment-item,.dcbpv-comment-body,.comment_wrap,#comment_wrap,.cmt_list,.reply_box,.comment_dccon,.dccon_comment_box,.dccon_area");
+      const attrBlob = Array.from(img.attributes || []).map((attr) => `${attr.name}=${attr.value}`).join(" ");
+      const wasDccon = /(?:written_dccon|comment_dccon|dccon_img|coment_dccon_img|\bdccon\b|dccon\.php|reqpath=['\"]?\/dccon)/i.test(`${img.className || ""} ${currentSrc} ${gifUrl} ${mp4Url} ${attrBlob}`);
 
       if (mp4Url && isLoadingImage && !gifUrl) {
         const video = (img.ownerDocument || document).createElement("video");
@@ -735,8 +754,14 @@ syncSettings(handleUrl);
     });
 
     root.querySelectorAll("video").forEach((video) => {
+      if (video.dataset.dcbpvMediaSettled === "1") return;
+      video.dataset.dcbpvMediaSettled = "1";
       const src = video.getAttribute("src");
+      const attrBlob = Array.from(video.attributes || []).map((attr) => `${attr.name}=${attr.value}`).join(" ");
       if (src) video.src = makeAbsolute(src, baseUrl);
+      if (/(?:written_dccon|comment_dccon|dccon_img|coment_dccon_img|\bdccon\b|dccon\.php|reqpath=['\"]?\/dccon)/i.test(`${video.className || ""} ${src || ""} ${attrBlob}`)) {
+        video.classList.add("dcbpv-dccon");
+      }
       video.autoplay = video.autoplay || true;
       video.loop = video.loop || true;
       video.muted = true;
@@ -745,7 +770,7 @@ syncSettings(handleUrl);
       video.removeAttribute("height");
     });
 
-    root.querySelectorAll(".written_dccon").forEach((node) => {
+    root.querySelectorAll(".written_dccon,.comment_dccon,.dccon_img,.coment_dccon_img,img[class*='dccon'],video[class*='dccon']").forEach((node) => {
       node.classList.remove("written_dccon");
       node.classList.add("dcbpv-dccon");
     });
@@ -927,6 +952,16 @@ syncSettings(handleUrl);
     return String(value || "").normalize("NFKC").replace(/\s+/g, "").trim();
   }
 
+  function normalizePreviewBlockNick(value){
+    return String(value || "")
+      .normalize("NFKC")
+      .trim()
+      .replace(/\s+/g, " ")
+      .replace(/\((?:\d{1,3}\.){1,3}\d{0,3}\)\s*$/g, "")
+      .trim()
+      .slice(0, 80);
+  }
+
   function cleanPreviewToken(value){
     return String(value || "")
       .trim()
@@ -947,6 +982,12 @@ syncSettings(handleUrl);
     return /^[A-Za-z0-9._-]{2,64}$/.test(uid) ? uid : "";
   }
 
+  function previewNickToken(value){
+    const raw = String(value || "").trim();
+    const match = raw.match(/^nick\s*[:=]\s*(.+)$/i);
+    return match ? normalizePreviewBlockNick(match[1]) : "";
+  }
+
   function gallogUidFromText(value){
     const text = String(value || "");
     const direct = text.match(/gallog\.dcinside\.com\/?([A-Za-z0-9._-]{2,64})/i);
@@ -965,24 +1006,53 @@ syncSettings(handleUrl);
       .join(" ");
   }
 
+  function previewIdentityText(node){
+    if (!node) return "";
+    const refs = [node];
+    node.querySelectorAll?.([
+      ".writer_nikcon",
+      ".refresherUserData",
+      ".dcb-uid-badge",
+      ".ip",
+      ".writer_ip",
+      "[data-uid]",
+      "[data-user-id]",
+      "[data-userid]",
+      "[data-user_id]",
+      "[data-memo-uid]",
+      "[data-ip]",
+      "[data-memo-ip]",
+      "[onclick*=\"gallog\"]",
+      "a[href*=\"gallog\"]"
+    ].join(",")).forEach((el) => refs.push(el));
+
+    return refs
+      .slice(0, 12)
+      .map((el) => [textFromPreviewAttrs(el), el.textContent || ""].filter(Boolean).join(" "))
+      .filter(Boolean)
+      .join(" ");
+  }
+
   function previewWriterMeta(node){
     if (!node) return { nick: "", uid: "", ip: "" };
     const writer = node.matches?.(".gall_writer,.ub-writer,.writer_info,.user_info,.cmt_nickbox") ? node : node.querySelector?.(".gall_writer,.ub-writer,.writer_info,.user_info,.cmt_nickbox");
-    const refText = [textFromPreviewAttrs(node), textFromPreviewAttrs(writer), textFromPreviewAttrs(writer?.querySelector?.('.writer_nikcon,[onclick*="gallog"],a[href*="gallog"],.dcb-uid-badge'))].join(" ");
+    const identityText = [previewIdentityText(node), previewIdentityText(writer)].join(" ");
     const nick = writer?.getAttribute?.("data-nick")
       || node.getAttribute?.("data-nick")
       || writer?.querySelector?.(".nickname em,.nickname,.nick_name,em")?.textContent?.trim()
-      || writer?.textContent?.replace(/메모\s*추가|삭제|수정|답글/g, "").replace(/\s+/g, " ").trim()
+      || writer?.textContent?.replace(/메모\s*추가|삭제|수정|답글/g, "").replace(/\([^)]*\)/g, "").replace(/\s+/g, " ").trim()
       || "";
     const uid = previewUidToken(writer?.getAttribute?.("data-uid"))
       || previewUidToken(node.getAttribute?.("data-uid"))
       || previewUidToken(writer?.getAttribute?.("data-memo-uid"))
-      || gallogUidFromText(refText)
+      || previewUidToken(writer?.querySelector?.(".dcb-uid-badge")?.dataset?.fullUid)
+      || gallogUidFromText(identityText)
       || "";
     const ip = previewIpPrefix(writer?.getAttribute?.("data-ip"))
       || previewIpPrefix(node.getAttribute?.("data-ip"))
       || previewIpPrefix(writer?.getAttribute?.("data-memo-ip"))
       || previewIpPrefix(writer?.querySelector?.(".ip,.writer_ip")?.textContent || "")
+      || previewIpPrefix(identityText)
       || "";
     return { nick, uid, ip };
   }
@@ -999,14 +1069,48 @@ syncSettings(handleUrl);
   }
 
   function commentMetaFromElement(item){
-    const writer = item?.querySelector?.(".gall_writer,.ub-writer,.cmt_nickbox,.nickname,.nick_name");
-    return previewWriterMeta(writer || item);
+    return previewWriterMeta(item);
+  }
+
+  function commentRecordIdentityBlob(record, depth = 0){
+    if (depth > 4 || record == null) return "";
+    if (typeof record === "string") return record;
+    if (typeof record === "number" || typeof record === "boolean") return String(record);
+    if (Array.isArray(record)) return record.slice(0, 20).map((item) => commentRecordIdentityBlob(item, depth + 1)).join(" ");
+    if (typeof record !== "object") return "";
+
+    const keys = [
+      "name", "nick", "nickname", "user_name", "userName", "member_nick", "memberNick",
+      "user_id", "userId", "uid", "member_id", "memberId", "gallog_id", "gallogId",
+      "gallog", "gallog_url", "gallogUrl", "user_data", "userData", "writer", "writer_html",
+      "ip", "ip_addr", "ipaddr", "user_ip"
+    ];
+
+    return keys
+      .filter((key) => Object.prototype.hasOwnProperty.call(record, key))
+      .map((key) => commentRecordIdentityBlob(record[key], depth + 1))
+      .filter(Boolean)
+      .join(" ");
+  }
+
+  function stripPreviewHtmlText(value){
+    const text = String(value || "").trim();
+    if (!text) return "";
+    if (!looksLikeHtml(text)) return text;
+    const doc = new DOMParser().parseFromString(`<div>${text}</div>`, "text/html");
+    return doc.body?.textContent?.replace(/\s+/g, " ").trim() || "";
   }
 
   function commentMetaFromRecord(record){
-    const nick = recordText(record, ["name", "nick", "nickname", "user_name", "user_id", "ip"]) || "익명";
-    const uid = previewUidToken(recordText(record, ["user_id", "userId", "uid", "member_id", "memberId", "gallog_id", "gallogId"]));
-    const ip = previewIpPrefix(recordText(record, ["ip", "ip_addr", "ipaddr", "user_ip"]));
+    const nick = stripPreviewHtmlText(recordText(record, ["name", "nick", "nickname", "user_name", "userName", "member_nick", "memberNick"])) || "익명";
+    const identityBlob = commentRecordIdentityBlob(record);
+    const uid = previewUidToken(recordText(record, ["user_id", "userId", "uid", "member_id", "memberId", "gallog_id", "gallogId"]))
+      || gallogUidFromText(identityBlob)
+      || previewUidToken(recordText(record, ["gallog", "gallog_url", "gallogUrl"]))
+      || "";
+    const ip = previewIpPrefix(recordText(record, ["ip", "ip_addr", "ipaddr", "user_ip"]))
+      || previewIpPrefix(identityBlob)
+      || "";
     return { nick, uid, ip };
   }
 
@@ -2000,10 +2104,22 @@ syncSettings(handleUrl);
   }
 
   function settlePreviewMedia(root, baseUrl){
-    const run = () => normalizeDcMedia(root, baseUrl);
+    if (!root) return;
+
+    // 성능 보호: 이미지 정규화는 DOM을 많이 건드리므로 overlay 1개당 짧게 묶어서 실행합니다.
+    // 이전처럼 매 호출마다 5회씩 재실행하면 이미지 src/class 변경 → observer → 재정규화 루프가 생길 수 있습니다.
+    if (!previewMediaSettleTimers.has(root)) previewMediaSettleTimers.set(root, []);
+    const timers = previewMediaSettleTimers.get(root) || [];
+    timers.splice(0).forEach((id) => clearTimeout(id));
+
+    const run = () => {
+      if (!document.documentElement.contains(root)) return;
+      normalizeDcMedia(root, baseUrl);
+    };
+
     run();
-    requestAnimationFrame(run);
-    [80, 260, 760, 1500].forEach((delay) => setTimeout(run, delay));
+    const id = setTimeout(run, 180);
+    previewMediaSettleTimers.set(root, [id]);
   }
 
   const PREVIEW_FILTER_DEFAULTS = {
@@ -2075,7 +2191,7 @@ syncSettings(handleUrl);
       #${OVERLAY_ID} .dcbpv-writer-ref .writer_nikcon{width:12px;height:11px;display:inline-block;background:linear-gradient(135deg,#93c5fd,#2563eb);border-radius:3px;opacity:.85;flex:0 0 auto}
       #${OVERLAY_ID} .dcbpv-writer-ref .ip{color:#64748b;font-size:12px}
       #${OVERLAY_ID} .dcb-uid-badge,#${OVERLAY_ID} .dcbpv-uid-badge{display:inline-flex;align-items:center;flex:0 0 auto;font-size:11px;color:#64748b;background:rgba(100,116,139,.12);padding:1px 6px;border-radius:10px;line-height:1.2;white-space:nowrap}
-      #${OVERLAY_ID} .dcbpv-article .dcb-dccon-content-hidden,#${OVERLAY_ID} .dcbpv-article .dcbpv-dccon-hidden{display:none!important}
+      #${OVERLAY_ID} .dcb-dccon-content-hidden,#${OVERLAY_ID} .dcbpv-dccon-hidden,#${OVERLAY_ID} [data-dcb-dccon-hidden="true"]{display:none!important}
     `;
   }
 
@@ -2097,18 +2213,25 @@ syncSettings(handleUrl);
   }
 
   function previewWriterFromNode(node){
-    const writer = node?.matches?.(".gall_writer,.ub-writer") ? node : node?.querySelector?.(".gall_writer,.ub-writer");
+    const meta = previewWriterMeta(node);
     return {
-      nick: writer?.getAttribute?.("data-nick") || node?.getAttribute?.("data-nick") || writer?.textContent?.replace(/\([^)]*\)/g, "").trim() || "",
-      uid: previewUidToken(writer?.getAttribute?.("data-uid") || node?.getAttribute?.("data-uid") || writer?.querySelector?.(".dcb-uid-badge")?.dataset?.fullUid || ""),
-      ip: previewIpPrefix(writer?.getAttribute?.("data-ip") || node?.getAttribute?.("data-ip") || writer?.querySelector?.(".ip")?.textContent || "")
+      nick: meta.nick || node?.getAttribute?.("data-nick") || "",
+      uid: previewUidToken(meta.uid || node?.getAttribute?.("data-uid") || ""),
+      ip: previewIpPrefix(meta.ip || node?.getAttribute?.("data-ip") || "")
     };
   }
 
   function previewBlockMatcher(tokens){
     const uids = new Set();
     const ips = new Set();
+    const nicks = new Set();
     (Array.isArray(tokens) ? tokens : []).forEach((raw) => {
+      const nick = previewNickToken(raw);
+      if (nick) {
+        nicks.add(nick.toLowerCase());
+        return;
+      }
+
       const clean = cleanPreviewToken(raw);
       if (!clean) return;
       const ip = previewIpPrefix(clean);
@@ -2117,16 +2240,36 @@ syncSettings(handleUrl);
         return;
       }
       const uid = previewUidToken(clean);
-      if (uid) uids.add(uid.toLowerCase());
+      if (uid) {
+        uids.add(uid.toLowerCase());
+        return;
+      }
+
+      const implicitNick = normalizePreviewBlockNick(clean);
+      if (implicitNick) nicks.add(implicitNick.toLowerCase());
     });
-    return { uids, ips, empty: !uids.size && !ips.size };
+    return { uids, ips, nicks, empty: !uids.size && !ips.size && !nicks.size };
+  }
+
+  function previewNickMatchesBlockedToken(nick, blockedNicks){
+    const haystack = normalizePreviewBlockNick(nick).toLowerCase();
+    if (!haystack || !blockedNicks?.size) return false;
+
+    for (const needle of blockedNicks) {
+      if (needle && haystack.includes(needle)) return true;
+    }
+
+    return false;
   }
 
   function previewWriterBlocked(meta, matcher){
     if (!meta || matcher.empty) return false;
     const uid = previewUidToken(meta.uid);
     const ip = previewIpPrefix(meta.ip);
-    return !!(uid && matcher.uids.has(uid.toLowerCase())) || !!(ip && matcher.ips.has(ip));
+    const nick = normalizePreviewBlockNick(meta.nick);
+    return !!(uid && matcher.uids.has(uid.toLowerCase()))
+      || !!(ip && matcher.ips.has(ip))
+      || previewNickMatchesBlockedToken(nick, matcher.nicks);
   }
 
   function previewIsAnonymous(meta, node){
@@ -2166,17 +2309,65 @@ syncSettings(handleUrl);
     });
   }
 
-  function applyDcconFilter(overlay){
-    overlay.querySelectorAll(".dcbpv-article .dcbpv-dccon,.dcbpv-article .written_dccon,.dcbpv-article .comment_dccon,.dcbpv-article img[src*='dccon.php'],.dcbpv-article video[src*='dccon']").forEach((node) => {
-      node.classList.add("dcbpv-dccon-hidden", "dcb-dccon-content-hidden");
-      node.setAttribute("data-dcb-dccon-hidden", "true");
-    });
+  const PREVIEW_DCCON_CANDIDATE_SELECTOR = [
+    ".dcbpv-dccon",
+    ".written_dccon",
+    ".comment_dccon",
+    ".dccon_img",
+    ".coment_dccon_img",
+    "img[src*='dccon']",
+    "img[data-src*='dccon']",
+    "img[data-original*='dccon']",
+    "img[data-gif*='dccon']",
+    "img[data-mp4*='dccon']",
+    "video[src*='dccon']",
+    "video[data-src*='dccon']",
+    "video[data-mp4*='dccon']",
+    "source[src*='dccon']",
+    "[reqpath*='dccon']",
+    "[class*='dccon']"
+  ].join(",");
 
-    overlay.querySelectorAll(".dcbpv-comment-item").forEach((row) => {
-      if (!row.querySelector(".dcbpv-dccon,.written_dccon,.comment_dccon,img[src*='dccon.php'],video[src*='dccon']")) return;
+  function previewNodeHasDcconSignature(node){
+    if (!(node instanceof Element)) return false;
+    const attrBlob = Array.from(node.attributes || []).map((attr) => `${attr.name}=${attr.value}`).join(" ");
+    return /(?:dcbpv-dccon|written_dccon|comment_dccon|dccon_img|coment_dccon_img|\bdccon\b|dccon\.php|reqpath=['\"]?\/dccon)/i.test(`${node.className || ""} ${attrBlob}`);
+  }
+
+  function markPreviewDcconNode(node){
+    if (!(node instanceof Element) || !previewNodeHasDcconSignature(node)) return false;
+    if (node.dataset.dcbpvDcconProcessed !== "1") {
+      node.dataset.dcbpvDcconProcessed = "1";
+      node.classList.add("dcbpv-dccon", "dcbpv-dccon-hidden", "dcb-dccon-content-hidden");
+      node.setAttribute("data-dcb-dccon-hidden", "true");
+    }
+    const row = node.closest(".dcbpv-comment-item");
+    if (row && row.dataset.dcbpvBlockedReason !== "dccon") {
       row.classList.add("dcbpv-filter-hidden");
       row.dataset.dcbpvBlockedReason = "dccon";
+    }
+    return true;
+  }
+
+  function applyDcconFilter(scope){
+    const root = scope || document.getElementById(OVERLAY_ID);
+    if (!root) return;
+
+    if (root instanceof Element && root.matches?.(PREVIEW_DCCON_CANDIDATE_SELECTOR)) {
+      markPreviewDcconNode(root);
+    }
+
+    root.querySelectorAll?.(PREVIEW_DCCON_CANDIDATE_SELECTOR).forEach((node) => {
+      markPreviewDcconNode(node);
     });
+  }
+
+  function previewMutationMayContainDccon(node){
+    if (!(node instanceof Element)) return false;
+    if (node.dataset?.dcbpvDcconProcessed === "1") return false;
+    return node.matches?.(PREVIEW_DCCON_CANDIDATE_SELECTOR)
+      || previewNodeHasDcconSignature(node)
+      || !!node.querySelector?.(PREVIEW_DCCON_CANDIDATE_SELECTOR);
   }
 
   function applyCommentUiFilter(overlay){
@@ -2195,6 +2386,34 @@ syncSettings(handleUrl);
     return row.querySelector(".dcbpv-comment-body")?.innerText || row.textContent || "";
   }
 
+  function previewCommentIsReplyRow(row){
+    if (!row || row.nodeType !== 1) return false;
+    if (row.classList.contains("reply")) return true;
+    const depth = row.getAttribute("data-depth") || row.dataset?.depth || "";
+    if (depth && Number(depth) > 0) return true;
+    return !!row.querySelector?.(":scope .reply_info, :scope .reply_txtbox");
+  }
+
+  function cascadePreviewBlockedReplies(overlay){
+    const list = overlay?.querySelector?.(".dcbpv-comment-list");
+    if (!list) return;
+
+    let parentBlocked = false;
+    list.querySelectorAll(":scope > .dcbpv-comment-item").forEach((row) => {
+      const isReply = previewCommentIsReplyRow(row);
+      if (!isReply) {
+        parentBlocked = row.classList.contains("dcbpv-filter-hidden");
+        return;
+      }
+
+      if (parentBlocked) {
+        row.classList.add("dcbpv-filter-hidden");
+        if (!row.dataset.dcbpvBlockedReason) row.dataset.dcbpvBlockedReason = "blocked-parent";
+        row.dataset.dcbpvBlockedParent = "1";
+      }
+    });
+  }
+
   function summarizeHiddenComments(overlay){
     const list = overlay.querySelector(".dcbpv-comment-list");
     if (!list) return;
@@ -2207,6 +2426,43 @@ syncSettings(handleUrl);
     list.prepend(note);
   }
 
+  function startPreviewDcconObserver(overlay, data){
+    if (!overlay || previewDcconObserver) return;
+    const pendingScopes = new Set();
+    const rerun = () => {
+      if (previewDcconTimer) return;
+      previewDcconTimer = setTimeout(() => {
+        previewDcconTimer = 0;
+        if (!document.documentElement.contains(overlay)) return stopPreviewDcconObserver();
+        const scopes = pendingScopes.size ? Array.from(pendingScopes) : [overlay];
+        pendingScopes.clear();
+        scopes.forEach((scope) => applyDcconFilter(scope));
+        summarizeHiddenComments(overlay);
+      }, 120);
+    };
+
+    previewDcconObserver = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        if (mutation.type === "childList") {
+          for (const node of mutation.addedNodes || []) {
+            if (previewMutationMayContainDccon(node)) pendingScopes.add(node);
+          }
+        } else if (mutation.type === "attributes") {
+          const target = mutation.target;
+          if (previewMutationMayContainDccon(target)) pendingScopes.add(target);
+        }
+      }
+      if (pendingScopes.size) rerun();
+    });
+
+    previewDcconObserver.observe(overlay, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["src", "class", "data-src", "data-original", "data-gif", "data-mp4", "reqpath"]
+    });
+  }
+
 
   function refreshPreviewMemberIpBadges(root){
     try {
@@ -2214,6 +2470,15 @@ syncSettings(handleUrl);
     } catch (_) {}
     try {
       document.dispatchEvent(new CustomEvent("dc-member-ip-view:refresh", { detail: { root: root || document } }));
+    } catch (_) {}
+  }
+
+  function refreshPreviewUserMemos(root){
+    try {
+      globalThis.DCBUserMemo?.refresh?.(root || document);
+    } catch (_) {}
+    try {
+      document.dispatchEvent(new CustomEvent("dcb-user-memo:refresh", { detail: { root: root || document } }));
     } catch (_) {}
   }
 
@@ -2230,9 +2495,15 @@ syncSettings(handleUrl);
 
     if (conf.showUidBadge) addUidBadges(overlay);
     if (conf.showMemberIpInfo !== false) refreshPreviewMemberIpBadges(overlay);
+    refreshPreviewUserMemos(overlay);
     if (conf.hideComment) applyCommentUiFilter(overlay);
     if (conf.hideImgComment) applyImageCommentFilter(overlay);
-    if (conf.hideDccon) applyDcconFilter(overlay);
+    if (conf.hideDccon) {
+      applyDcconFilter(overlay);
+      startPreviewDcconObserver(overlay, data);
+    } else {
+      stopPreviewDcconObserver();
+    }
 
     if (conf.userBlockEnabled !== false && previewWriterBlocked(authorMeta, matcher)) {
       replaceSectionWithNote(articleSection, filterNote("user", authorMeta.uid || authorMeta.ip || authorMeta.nick));
@@ -2263,8 +2534,16 @@ syncSettings(handleUrl);
       if (titleKw || bodyKw) replaceSectionWithNote(articleSection, filterNote("keyword-hide", (titleKw || bodyKw).label, "article"));
     }
 
+    let hideRepliesForBlockedParent = false;
     overlay.querySelectorAll(".dcbpv-comment-item").forEach((row, index) => {
+      const isReply = row.classList.contains("reply");
+      if (!isReply) hideRepliesForBlockedParent = false;
+
       const meta = previewWriterFromNode(row);
+      if (hideRepliesForBlockedParent && isReply) {
+        row.classList.add("dcbpv-filter-hidden");
+        row.dataset.dcbpvBlockedReason = "blocked-parent";
+      }
       if (conf.doryBlockEnabled !== false && (row.classList.contains("dory") || normalizePreviewNick(meta.nick || row.dataset.nick) === "댓글돌이")) {
         row.classList.add("dcbpv-filter-hidden");
         row.dataset.dcbpvBlockedReason = "dory";
@@ -2272,6 +2551,7 @@ syncSettings(handleUrl);
       if (conf.userBlockEnabled !== false && previewWriterBlocked(meta, matcher)) {
         row.classList.add("dcbpv-filter-hidden");
         row.dataset.dcbpvBlockedReason = "user";
+        if (!isReply) hideRepliesForBlockedParent = true;
       }
       if (conf.hideAnonymousEnabled && previewIsAnonymous(meta, row)) {
         row.classList.add("dcbpv-filter-hidden");
@@ -2296,6 +2576,7 @@ syncSettings(handleUrl);
       }
     });
 
+    cascadePreviewBlockedReplies(overlay);
     summarizeHiddenComments(overlay);
   }
 
@@ -2444,9 +2725,30 @@ syncSettings(handleUrl);
   }
 
   function previewUrlFromTarget(target){
-    const cell = target.closest?.(".gall_tit");
-    const link = target.closest?.("a[href*='board/view']") || cell?.querySelector?.("a[href*='board/view']");
-    return link?.href || "";
+    if (!(target instanceof Element)) return "";
+
+    const row = target.closest?.("tr.ub-content, tr, li.ub-content, li");
+    const cell = target.closest?.(".gall_tit, .ub-word, .title, .tit") || row?.querySelector?.(".gall_tit, .ub-word, .title, .tit");
+    const link =
+      target.closest?.("a[href*='/board/view']") ||
+      cell?.querySelector?.("a[href*='/board/view']") ||
+      row?.querySelector?.("a[href*='/board/view']") ||
+      target.closest?.("a[href*='board/view']") ||
+      cell?.querySelector?.("a[href*='board/view']") ||
+      row?.querySelector?.("a[href*='board/view']");
+
+    const href = link?.href || link?.getAttribute?.("href") || "";
+    if (!href) return "";
+
+    try {
+      const u = new URL(href, location.href);
+      if (u.hostname !== "gall.dcinside.com") return "";
+      if (!/^\/(?:board|mgallery\/board|mini\/board|person\/board)\/view\/?$/i.test(u.pathname)) return "";
+      if (!u.searchParams.get("id") || !u.searchParams.get("no")) return "";
+      return u.href;
+    } catch (_) {
+      return "";
+    }
   }
 
   document.addEventListener("contextmenu", (event) => {
