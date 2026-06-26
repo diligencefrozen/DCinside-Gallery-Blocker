@@ -113,7 +113,7 @@ const BACKUP_DEFAULTS = {
   doryBlockEnabled: true,
   noticeBlockEnabled: true,
   compactListEnabled: false,
-  userMemoEnabled: true,
+  userMemoEnabled: false,
   userMemos: {},
   [IMAGE_BLOCK_CONFIG_KEY]: IMAGE_BLOCK_CONFIG_DEFAULT,
   [IMAGE_BLOCK_RECORD_KEY]: {},
@@ -221,7 +221,34 @@ const keywordTargetComments = document.getElementById("keywordTargetComments");
 
 /* ───── 공통 유틸 ───── */
 const norm = s => String(s || "").trim().toLowerCase();
-const sanitizeUid = s => String(s || "").trim().replace(/\s+/g, "");
+function sanitizeUid(s) {
+  const raw = String(s || "").trim();
+  const nickMatch = raw.match(/^nick\s*[:=]\s*(.+)$/i);
+  if (nickMatch) {
+    const nick = nickMatch[1]
+      .normalize("NFKC")
+      .trim()
+      .replace(/\s+/g, " ")
+      .replace(/\((?:\d{1,3}\.){1,3}\d{0,3}\)\s*$/g, "")
+      .trim()
+      .slice(0, 80);
+    return nick ? `nick:${nick}` : "";
+  }
+
+  const compact = raw.replace(/\s+/g, "");
+  if (/^\d{1,3}(?:\.\d{1,3}){1,3}$/.test(compact)) return compact;
+  if (/^[A-Za-z0-9._-]{2,64}$/.test(compact)) return compact;
+
+  const implicitNick = raw
+    .normalize("NFKC")
+    .trim()
+    .replace(/\s+/g, " ")
+    .replace(/\((?:\d{1,3}\.){1,3}\d{0,3}\)\s*$/g, "")
+    .trim()
+    .slice(0, 80);
+
+  return implicitNick ? `nick:${implicitNick}` : "";
+}
 
 let userBlockEnabledState = true;
 let userBlockTriggerModeState = "instant";
@@ -1009,13 +1036,13 @@ function updateOptionUserBlockModeGuide(mode) {
   if (optionUserBlockModeTitle) {
     optionUserBlockModeTitle.textContent = normalized === "contextMenu"
       ? "구 방식: 우클릭 메뉴에서 한 번 더 선택해 차단합니다."
-      : "즉시 차단: 우클릭 한 번으로 UID/IP를 차단합니다.";
+      : "즉시 차단: 우클릭 한 번으로 UID/IP/닉네임을 차단합니다.";
   }
 
   if (optionUserBlockModeText) {
     optionUserBlockModeText.innerHTML = normalized === "contextMenu"
       ? "<strong>닉네임, 갤로그 아이콘, 메모 버튼</strong> 위에서 우클릭한 뒤 브라우저 메뉴의 “이 사용자 차단하기”를 누르세요."
-      : "<strong>닉네임, 갤로그 아이콘, 메모 버튼</strong> 위에서 우클릭하세요. UID가 있으면 UID로, UID가 없는 유동닉은 IP 앞자리로 저장됩니다.";
+      : "<strong>닉네임, 갤로그 아이콘, 메모 버튼</strong> 위에서 우클릭하세요. UID/IP를 우선 저장하고, 둘 다 없을 때 닉네임을 저장합니다. 닉네임은 무갤러 또는 nick:무갤러 형식으로 직접 추가할 수 있고, 포함 매칭으로 차단됩니다.";
   }
 
   if (optionUserBlockModeSub) {
@@ -1047,7 +1074,7 @@ function renderUidList(uids) {
 
   if (!uids || !uids.length) {
     uidListEl.innerHTML =
-      '<li class="note" style="background:transparent;padding:0">등록된 유저 아이디가 없습니다.</li>';
+      '<li class="note" style="background:transparent;padding:0">등록된 UID/IP/닉네임 차단 대상이 없습니다.</li>';
     return;
   }
 
@@ -1819,7 +1846,7 @@ chrome.storage.sync.get(
     showUidBadge: false,
     showMemberIpInfo: true,
     compactListEnabled: false,
-    userMemoEnabled: true,
+    userMemoEnabled: false,
     hideComment: false,
     hideImgComment: false,
     hideDccon: false,
