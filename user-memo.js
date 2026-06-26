@@ -10,20 +10,26 @@
   const UID_BADGE_CLASS = "dcb-uid-badge";
   const WRITER_TOOLS_CLASS = "dcb-writer-tools";
   const WRITER_ENHANCED_CLASS = "dcb-writer-enhanced";
+  const WRITER_SELECTOR = ".gall_writer,.ub-writer";
+  const LIST_ROOT_SELECTOR = ".gall_list,.list_array,.ub-list,.dccon_list,.issuebox";
+  const PREVIEW_ROOT_SELECTOR = "#dcbpv-overlay,.dcbpv-overlay,.dcbpv-panel,.dcbpv-comment-list";
 
   const SYNC_DEFAULTS = {
-    userMemoEnabled: true
+    userMemoEnabled: false
   };
 
   const LOCAL_DEFAULTS = {
     userMemos: {}
   };
 
-  let enabled = true;
+  let enabled = false;
   let memoMap = {};
   let currentMeta = null;
   let observer = null;
   let renderQueued = false;
+  const CONTEXT_MEMO_TTL = 8000;
+  let lastContextMemoMeta = null;
+  let lastContextMemoAt = 0;
 
   function isIpLike(s) {
     return /^\d{1,3}(?:\.\d{1,3}){1,3}$/.test(String(s || "").trim());
@@ -40,12 +46,27 @@
   function isListWriter(writer) {
     return !!(
       writer &&
-      writer.matches?.("td.gall_writer, .gall_list .gall_writer") &&
+      writer.matches?.("td.gall_writer,td.ub-writer,.gall_list .gall_writer,.gall_list .ub-writer,.ub-writer[data-loc='list'],.gall_writer[data-loc='list']") &&
       (
         writer.getAttribute("data-loc") === "list" ||
-        writer.closest(".gall_list")
+        writer.closest(LIST_ROOT_SELECTOR) ||
+        writer.closest("tr.ub-content,tr")
       )
     );
+  }
+
+  function getListAddbox(writer) {
+    if (!(writer instanceof Element)) return null;
+    return (
+      writer.querySelector(":scope > .addbox") ||
+      writer.querySelector(":scope > div > .addbox") ||
+      writer.querySelector(":scope > b.addbox") ||
+      writer.querySelector(":scope .addbox")
+    );
+  }
+
+  function isPreviewWriter(writer) {
+    return !!(writer && writer.closest?.(PREVIEW_ROOT_SELECTOR));
   }
 
   function ensureStyle() {
@@ -62,21 +83,33 @@
       .${WRITER_TOOLS_CLASS}{
         display:inline-flex !important;
         align-items:center !important;
-        gap:4px !important;
+        gap:3px !important;
         flex-wrap:nowrap !important;
         vertical-align:middle !important;
-        margin-left:5px !important;
+        margin-left:3px !important;
         max-width:100% !important;
         white-space:nowrap !important;
       }
 
-      .gall_writer.${WRITER_ENHANCED_CLASS}{
+      .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} > .${WRITER_TOOLS_CLASS},
+      td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] > .${WRITER_TOOLS_CLASS}{
+        display:inline-flex !important;
+        vertical-align:baseline !important;
+        margin-left:2px !important;
+        gap:2px !important;
+      }
+
+      .gall_writer.${WRITER_ENHANCED_CLASS},
+      .ub-writer.${WRITER_ENHANCED_CLASS}{
         overflow:visible !important;
       }
 
       .gall_writer.${WRITER_ENHANCED_CLASS} > .nickname,
       .gall_writer.${WRITER_ENHANCED_CLASS} > .writer_nikcon,
-      .gall_writer.${WRITER_ENHANCED_CLASS} > .${WRITER_TOOLS_CLASS}{
+      .gall_writer.${WRITER_ENHANCED_CLASS} > .${WRITER_TOOLS_CLASS},
+      .ub-writer.${WRITER_ENHANCED_CLASS} > .nickname,
+      .ub-writer.${WRITER_ENHANCED_CLASS} > .writer_nikcon,
+      .ub-writer.${WRITER_ENHANCED_CLASS} > .${WRITER_TOOLS_CLASS}{
         vertical-align:middle !important;
       }
 
@@ -86,7 +119,10 @@
 
       .cmt_nickbox .gall_writer.${WRITER_ENHANCED_CLASS},
       .cmt_info .gall_writer.${WRITER_ENHANCED_CLASS},
-      .reply_info .gall_writer.${WRITER_ENHANCED_CLASS}{
+      .reply_info .gall_writer.${WRITER_ENHANCED_CLASS},
+      .cmt_nickbox .ub-writer.${WRITER_ENHANCED_CLASS},
+      .cmt_info .ub-writer.${WRITER_ENHANCED_CLASS},
+      .reply_info .ub-writer.${WRITER_ENHANCED_CLASS}{
         display:inline-flex !important;
         align-items:center !important;
         flex-wrap:wrap !important;
@@ -140,8 +176,8 @@
         overflow:visible !important;
         text-align:center !important;
         vertical-align:middle !important;
-        white-space:normal !important;
-        line-height:1.12 !important;
+        white-space:nowrap !important;
+        line-height:18px !important;
         padding-left:2px !important;
         padding-right:2px !important;
       }
@@ -165,7 +201,7 @@
       .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} .nickname,
       td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] .nickname{
         display:inline-block !important;
-        max-width:calc(100% - 22px) !important;
+        max-width:calc(100% - 74px) !important;
         min-width:0 !important;
         overflow:hidden !important;
         text-overflow:ellipsis !important;
@@ -210,19 +246,20 @@
 
       .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} > .${WRITER_TOOLS_CLASS},
       td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] > .${WRITER_TOOLS_CLASS}{
-        display:flex !important;
+        display:inline-flex !important;
         align-items:center !important;
         justify-content:center !important;
         gap:2px !important;
-        width:100% !important;
-        max-width:100% !important;
+        width:auto !important;
+        max-width:92px !important;
         min-width:0 !important;
-        height:15px !important;
-        line-height:15px !important;
-        margin:0 !important;
+        height:14px !important;
+        line-height:14px !important;
+        margin:0 0 0 2px !important;
         padding:0 !important;
         overflow:hidden !important;
         white-space:nowrap !important;
+        vertical-align:middle !important;
         transform:none !important;
         box-sizing:border-box !important;
       }
@@ -334,34 +371,64 @@
       }
 
       /*
-        목록에서는 "메모 추가" 대신 "메모"로 줄이고,
-        버튼 자체도 미니 버튼으로 압축
+        게시글 목록에서는 빈 "메모" 버튼을 만들지 않는다.
+        저장된 메모가 있을 때만 닉네임 옆에 작은 칩으로 표시한다.
       */
 
       .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} .${TRIGGER_CLASS},
       td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] .${TRIGGER_CLASS}{
         flex:0 1 auto !important;
-        max-width:42px !important;
+        max-width:72px !important;
         min-width:0 !important;
-        min-height:14px !important;
-        height:15px !important;
-        max-height:15px !important;
-        padding:0 5px !important;
-        font-size:9.5px !important;
-        line-height:13px !important;
-        gap:3px !important;
+        min-height:13px !important;
+        height:14px !important;
+        max-height:14px !important;
+        padding:0 4px !important;
+        font-size:9px !important;
+        line-height:12px !important;
+        gap:2px !important;
         border-radius:999px !important;
         overflow:hidden !important;
         text-overflow:ellipsis !important;
         white-space:nowrap !important;
         box-sizing:border-box !important;
+        vertical-align:baseline !important;
       }
 
-      .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} .${TRIGGER_CLASS}::before,
-      td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] .${TRIGGER_CLASS}::before{
-        width:4px !important;
-        height:4px !important;
-        flex:0 0 4px !important;
+      .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} .addbox > .${WRITER_TOOLS_CLASS},
+      td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] .addbox > .${WRITER_TOOLS_CLASS}{
+        display:inline-flex !important;
+        align-items:center !important;
+        justify-content:center !important;
+        gap:2px !important;
+        width:auto !important;
+        max-width:92px !important;
+        min-width:0 !important;
+        height:14px !important;
+        line-height:14px !important;
+        margin:0 0 0 2px !important;
+        padding:0 !important;
+        overflow:hidden !important;
+        white-space:nowrap !important;
+        vertical-align:middle !important;
+        transform:none !important;
+        box-sizing:border-box !important;
+      }
+
+      .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} .addbox > .${WRITER_TOOLS_CLASS} .${TRIGGER_CLASS},
+      td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] .addbox > .${WRITER_TOOLS_CLASS} .${TRIGGER_CLASS}{
+        max-width:72px !important;
+        min-width:0 !important;
+        height:14px !important;
+        line-height:12px !important;
+        padding:0 4px !important;
+        font-size:9px !important;
+        gap:2px !important;
+      }
+
+      #dcbpv-overlay .${TRIGGER_CLASS}:not(.has-memo),
+      .dcbpv-panel .${TRIGGER_CLASS}:not(.has-memo){
+        display:none !important;
       }
 
       .dcb-user-memo-overlay{
@@ -502,10 +569,77 @@
         color:#ef4444 !important;
       }
 
+
+
+      /* 7.3.39: list writer row hardening
+         닉네임/관리자 아이콘/식별코드/메모를 nested addbox 안 한 줄로 고정한다. */
+      .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} > div,
+      td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] > div{
+        display:flex !important;
+        align-items:center !important;
+        justify-content:center !important;
+        width:100% !important;
+        max-width:100% !important;
+        min-width:0 !important;
+        height:18px !important;
+        line-height:18px !important;
+        overflow:hidden !important;
+        box-sizing:border-box !important;
+      }
+
+      .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} .addbox,
+      td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] .addbox{
+        flex:1 1 auto !important;
+        min-width:0 !important;
+        max-width:100% !important;
+        overflow:hidden !important;
+        flex-wrap:nowrap !important;
+      }
+
+      .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} .nickname,
+      td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] .nickname{
+        flex:1 1 auto !important;
+        max-width:none !important;
+        min-width:0 !important;
+      }
+
+      .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} .writer_nikcon,
+      td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] .writer_nikcon{
+        flex:0 0 auto !important;
+      }
+
+      .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} .addbox > .${WRITER_TOOLS_CLASS},
+      td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] .addbox > .${WRITER_TOOLS_CLASS}{
+        flex:0 1 auto !important;
+        max-width:72px !important;
+        min-width:0 !important;
+        gap:1px !important;
+        overflow:hidden !important;
+      }
+
+      .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} .${UID_BADGE_CLASS},
+      td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] .${UID_BADGE_CLASS}{
+        max-width:42px !important;
+        padding:0 3px !important;
+        font-size:8.5px !important;
+        letter-spacing:-.35px !important;
+      }
+
+      .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} .addbox > .${WRITER_TOOLS_CLASS} .${TRIGGER_CLASS},
+      td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] .addbox > .${WRITER_TOOLS_CLASS} .${TRIGGER_CLASS}{
+        max-width:44px !important;
+        padding:0 3px !important;
+        font-size:8.5px !important;
+        letter-spacing:-.35px !important;
+      }
+
       @media (max-width:640px){
         .cmt_nickbox .gall_writer.${WRITER_ENHANCED_CLASS},
         .cmt_info .gall_writer.${WRITER_ENHANCED_CLASS},
-        .reply_info .gall_writer.${WRITER_ENHANCED_CLASS}{
+        .reply_info .gall_writer.${WRITER_ENHANCED_CLASS},
+        .cmt_nickbox .ub-writer.${WRITER_ENHANCED_CLASS},
+        .cmt_info .ub-writer.${WRITER_ENHANCED_CLASS},
+        .reply_info .ub-writer.${WRITER_ENHANCED_CLASS}{
           row-gap:4px !important;
         }
 
@@ -532,13 +666,13 @@
 
         .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} .${TRIGGER_CLASS},
         td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] .${TRIGGER_CLASS}{
-          max-width:38px !important;
-          min-height:14px !important;
-          height:14px !important;
-          max-height:14px !important;
-          padding:0 4px !important;
-          font-size:9px !important;
-          line-height:12px !important;
+          max-width:58px !important;
+          min-height:13px !important;
+          height:13px !important;
+          max-height:13px !important;
+          padding:0 3px !important;
+          font-size:8.5px !important;
+          line-height:11px !important;
         }
 
         .dcb-user-memo-panel{
@@ -566,7 +700,7 @@
     });
 
     document.querySelectorAll(`.${WRITER_ENHANCED_CLASS}`).forEach((writer) => {
-      const tools = writer.querySelector(`:scope > .${WRITER_TOOLS_CLASS}`);
+      const tools = writer.querySelector(`.${WRITER_TOOLS_CLASS}`);
       if (!tools) writer.classList.remove(WRITER_ENHANCED_CLASS);
     });
   }
@@ -588,12 +722,29 @@
   }
 
   function extractUid(writer) {
-    let uid = writer.getAttribute("data-uid") || "";
+    let uid = writer.getAttribute("data-uid") || writer.getAttribute("data-memo-uid") || "";
     if (uid && !isIpLike(uid)) return uid;
 
+    const badge = writer.querySelector(`.${UID_BADGE_CLASS}`);
+    uid = badge?.dataset?.fullUid || badge?.title || "";
+    if (uid && !isIpLike(uid)) return uid;
+
+    const rf =
+      writer.querySelector(".refresherUserData") ||
+      writer.parentElement?.querySelector(".refresherUserData");
+
+    if (rf) {
+      uid = rf.getAttribute("title") || "";
+      if (!uid) {
+        const m = (rf.textContent || "").match(/\(([A-Za-z0-9._-]+)\)/);
+        if (m) uid = m[1];
+      }
+      if (uid && !isIpLike(uid)) return uid;
+    }
+
     const link =
-      writer.querySelector('.writer_nikcon,[onclick*="gallog.dcinside.com"],a[href*="gallog.dcinside.com"]') ||
-      writer.parentElement?.querySelector('.writer_nikcon,[onclick*="gallog.dcinside.com"],a[href*="gallog.dcinside.com"]');
+      writer.querySelector('.writer_nikcon,[onclick*="gallog.dcinside.com"],a[href*="gallog.dcinside.com"],[onclick*="gallog"],a[href*="gallog"]') ||
+      writer.parentElement?.querySelector('.writer_nikcon,[onclick*="gallog.dcinside.com"],a[href*="gallog.dcinside.com"],[onclick*="gallog"],a[href*="gallog"]');
 
     if (link) {
       const src = link.getAttribute("onclick") || link.getAttribute("href") || "";
@@ -608,8 +759,14 @@
   }
 
   function extractIp(writer) {
-    let ip = writer.getAttribute("data-ip") || "";
+    let ip = writer.getAttribute("data-ip") || writer.getAttribute("data-memo-ip") || "";
     if (ip && isIpLike(ip)) return ip;
+
+    const ipNode = writer.querySelector(".ip,.writer_ip") || writer.parentElement?.querySelector(".ip,.writer_ip");
+    ip = ipNode?.textContent || "";
+    if (ip && /(\d{1,3}(?:\.\d{1,3}){1,3})/.test(ip)) {
+      return ip.match(/(\d{1,3}(?:\.\d{1,3}){1,3})/)?.[1] || "";
+    }
 
     const text = (writer.textContent || "").trim();
     const m = text.match(/(\d{1,3}(?:\.\d{1,3}){1,3})/);
@@ -629,11 +786,11 @@
     return sanitizeText(txt, 60) || '알 수 없음';
   }
 
-  function isMiniGalleryPage() {
-    return /^\/mini\/(?:board\/lists|board\/view)(?:\/|$)/.test(location.pathname);
+  function isStrictIdentityPage() {
+    return /^\/(?:mini|person)\/(?:board\/lists|board\/view)(?:\/|$)/.test(location.pathname);
   }
 
-  function isMiniMemoTarget(writer) {
+  function isStrictMemoTarget(writer) {
     const uid = extractUid(writer);
     if (uid) return true;
 
@@ -648,14 +805,14 @@
     const ip = uid ? '' : extractIp(writer);
     const nickname = extractNickname(writer);
 
-    if (isMiniGalleryPage() && !isMiniMemoTarget(writer)) {
+    if (isStrictIdentityPage() && !isStrictMemoTarget(writer)) {
       return null;
     }
 
     let key = '';
     if (uid) key = `uid:${uid}`;
     else if (ip) key = `ip:${ip}`;
-    else if (!isMiniGalleryPage() && nickname) key = `nick:${nickname}`;
+    else if (!isStrictIdentityPage() && nickname) key = `nick:${nickname}`;
 
     if (!key) return null;
 
@@ -843,6 +1000,43 @@
     });
   }
 
+  function shouldShowListMemoChip(meta, writer) {
+    const compactSurface = isListWriter(writer) || isPreviewWriter(writer);
+    if (!compactSurface) return true;
+    const saved = meta?.key ? memoMap[meta.key] : null;
+    return !!(saved && saved.memo);
+  }
+
+  function rememberContextMemoTarget(target) {
+    const writer = target?.closest?.(WRITER_SELECTOR);
+    if (!writer) {
+      lastContextMemoMeta = null;
+      lastContextMemoAt = 0;
+      return;
+    }
+
+    const meta = getWriterMeta(writer);
+    if (!meta) {
+      lastContextMemoMeta = null;
+      lastContextMemoAt = 0;
+      return;
+    }
+
+    lastContextMemoMeta = meta;
+    lastContextMemoAt = Date.now();
+  }
+
+  function openContextMemo() {
+    if (!lastContextMemoMeta || Date.now() - lastContextMemoAt > CONTEXT_MEMO_TTL) {
+      return { ok: false, reason: 'NO_TARGET', message: '메모할 작성자를 다시 우클릭해 주세요.' };
+    }
+
+    ensureStyle();
+    ensureModal();
+    openModal(lastContextMemoMeta);
+    return { ok: true };
+  }
+
   function createTrigger() {
     const btn = document.createElement('button');
     btn.type = 'button';
@@ -862,31 +1056,40 @@
     return btn;
   }
 
+  function formatCompactMemoText(memo) {
+    const text = String(memo || "").replace(/\s+/g, " ").trim();
+    if (text.length <= 14) return text;
+    return `${text.slice(0, 14)}…`;
+  }
+
   function updateTrigger(btn, meta, writer) {
     const listMode = isListWriter(writer);
+    const previewMode = isPreviewWriter(writer);
+    const compactMode = listMode || previewMode;
 
     btn.dataset.memoKey = meta.key;
     btn.dataset.memoUid = meta.uid || '';
     btn.dataset.memoIp = meta.ip || '';
     btn.dataset.memoNickname = meta.nickname || '';
-    btn.dataset.loc = listMode ? 'list' : '';
+    btn.dataset.loc = listMode ? 'list' : (previewMode ? 'preview' : '');
 
     const saved = memoMap[meta.key];
 
     btn.classList.toggle('has-memo', !!saved);
     btn.classList.toggle('is-list', listMode);
+    btn.classList.toggle('is-preview', previewMode);
 
     if (saved && saved.memo) {
       const color = isValidColor(saved.color) ? saved.color : DEFAULT_COLOR;
 
-      btn.textContent = saved.memo;
+      btn.textContent = compactMode ? formatCompactMemoText(saved.memo) : saved.memo;
       btn.title = saved.memo;
       btn.setAttribute('aria-label', `이용자 메모: ${saved.memo}`);
       btn.style.color = color;
       btn.style.borderColor = `${color}4d`;
       btn.style.background = `${color}14`;
     } else {
-      btn.textContent = listMode ? '메모' : '메모 추가';
+      btn.textContent = compactMode ? '메모' : '메모 추가';
       btn.title = '이용자 메모 작성';
       btn.setAttribute('aria-label', '이용자 메모 작성');
       btn.style.color = '';
@@ -928,20 +1131,30 @@
   function ensureWriterTools(writer) {
     writer.classList.add(WRITER_ENHANCED_CLASS);
 
-    let tools = writer.querySelector(`:scope > .${WRITER_TOOLS_CLASS}`);
+    let tools = writer.querySelector(`.${WRITER_TOOLS_CLASS}`);
     if (!tools) {
       tools = document.createElement("span");
       tools.className = WRITER_TOOLS_CLASS;
     }
 
     const listMode = isListWriter(writer);
-    const addbox = writer.querySelector(":scope > .addbox");
+    const addbox = listMode ? getListAddbox(writer) : writer.querySelector(":scope > .addbox");
     const nikcon = writer.querySelector(":scope > .writer_nikcon");
     const nick = writer.querySelector(":scope > .nickname");
 
     if (listMode && addbox) {
-      if (addbox.nextSibling !== tools) {
-        addbox.insertAdjacentElement("afterend", tools);
+      // 목록에서는 닉네임, 기본 갤로그 아이콘, 식별코드, 메모 내용을 한 줄에 둔다.
+      const anchor =
+        addbox.querySelector(":scope > .writer_nikcon") ||
+        addbox.querySelector(":scope > .nickname") ||
+        addbox.lastElementChild;
+
+      if (anchor && anchor !== tools) {
+        if (anchor.nextSibling !== tools) {
+          anchor.insertAdjacentElement("afterend", tools);
+        }
+      } else if (tools.parentElement !== addbox) {
+        addbox.appendChild(tools);
       }
       return tools;
     }
@@ -999,8 +1212,13 @@
       return;
     }
 
+    if (!shouldShowListMemoChip(meta, writer)) {
+      removeTriggerForWriter(writer);
+      return;
+    }
+
     let btn =
-      writer.querySelector(`:scope > .${WRITER_TOOLS_CLASS} > .${TRIGGER_CLASS}`) ||
+      writer.querySelector(`.${WRITER_TOOLS_CLASS} > .${TRIGGER_CLASS}`) ||
       writer.querySelector(`:scope > .${TRIGGER_CLASS}`);
 
     if (!btn) {
@@ -1014,16 +1232,26 @@
     placeTrigger(writer, btn);
   }
 
-  function renderAll() {
-    if (!enabled) {
+  function removeInjectedUiInRoot(root = document) {
+    if (root === document) {
       removeInjectedUi();
+      return;
+    }
+    root.querySelectorAll?.(`.${TRIGGER_CLASS}`).forEach((el) => el.remove());
+    cleanupEmptySlots();
+    cleanupEmptyWriterTools();
+  }
+
+  function renderAll(root = document) {
+    if (!enabled) {
+      removeInjectedUiInRoot(root);
       return;
     }
 
     ensureStyle();
     ensureModal();
 
-    document.querySelectorAll('.gall_writer').forEach(renderWriter);
+    root.querySelectorAll?.(WRITER_SELECTOR).forEach(renderWriter);
 
     cleanupEmptySlots();
     cleanupEmptyWriterTools();
@@ -1064,14 +1292,14 @@
       for (const n of m.addedNodes) {
         if (isOurNode(n)) continue;
         if (n.nodeType === 1) {
-          if (n.matches?.('.gall_writer') || n.querySelector?.('.gall_writer')) return true;
+          if (n.matches?.(WRITER_SELECTOR) || n.querySelector?.(WRITER_SELECTOR)) return true;
         }
       }
 
       for (const n of m.removedNodes) {
         if (isOurNode(n)) continue;
         if (n.nodeType === 1) {
-          if (n.matches?.('.gall_writer') || n.querySelector?.('.gall_writer')) return true;
+          if (n.matches?.(WRITER_SELECTOR) || n.querySelector?.(WRITER_SELECTOR)) return true;
         }
       }
     }
@@ -1092,6 +1320,16 @@
       subtree: true
     });
   }
+
+  try {
+    globalThis.DCBUserMemo = Object.freeze({
+      refresh: (root = document) => renderAll(root)
+    });
+
+    document.addEventListener("dcb-user-memo:refresh", (event) => {
+      renderAll(event?.detail?.root || document);
+    });
+  } catch (_) {}
 
   function initStorage() {
     chrome.storage.sync.get(SYNC_DEFAULTS, ({ userMemoEnabled }) => {
@@ -1116,6 +1354,33 @@
       }
     });
   }
+
+  window.addEventListener('contextmenu', (e) => {
+    rememberContextMemoTarget(e.target);
+
+    // 작성자 영역에서 Shift+우클릭하면 즉시 메모 편집창을 연다.
+    // 일반 우클릭은 기존 사용자 차단 흐름을 건드리지 않는다.
+    if (!e.shiftKey) return;
+
+    const res = openContextMemo();
+    if (!res?.ok) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation?.();
+  }, true);
+
+  document.addEventListener('dcb-user-memo:open-context', () => {
+    openContextMemo();
+  });
+
+  try {
+    chrome.runtime?.onMessage?.addListener((message, _sender, sendResponse) => {
+      if (message?.type !== 'dcb.userMemoOpenContext') return;
+      sendResponse(openContextMemo());
+      return true;
+    });
+  } catch (_) {}
 
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') closeModal();
