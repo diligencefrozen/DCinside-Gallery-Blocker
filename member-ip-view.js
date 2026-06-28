@@ -84,9 +84,42 @@ const IP_PREFIX_SOURCE = `1=11,0,LG%ED%97%AC%EB%A1%9C%EB%B9%84%EC%A0%84|16,0,%EB
     const matched = text.match(/\b\d{1,3}(?:\.\d{1,3}){1,3}\b/);
     if (!matched) return "";
 
-    const chunks = matched[0].split(".").map((v) => String(toInt(v)));
-    if (chunks.some((v) => v === "NaN")) return "";
-    return chunks.join(".");
+    const nums = matched[0].split(".").map((v) => toInt(v));
+    if (nums.some((v) => !Number.isFinite(v) || v < 0 || v > 255)) return "";
+    return nums.map(String).join(".");
+  }
+
+  function unwrapIpToken(raw) {
+    return String(raw || "")
+      .trim()
+      .replace(/^\(|\)$/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function isDateLikeIpToken(raw) {
+    const token = unwrapIpToken(raw);
+    if (!token) return false;
+
+    return /^(?:\d{2,4}\.)?\d{1,2}\.\d{1,2}(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?$/.test(token)
+      || /^\d{1,2}:\d{2}(?::\d{2})?$/.test(token);
+  }
+
+  function isWriterIpContext(ipEl) {
+    return !!(
+      ipEl?.matches?.(".writer_ip") ||
+      ipEl?.closest?.(".gall_writer,.ub-writer,.writer_info,.user_info,.cmt_nickbox,[data-ip],[data-memo-ip]")
+    );
+  }
+
+  function shouldSkipIpElement(ipEl) {
+    if (!(ipEl instanceof Element)) return true;
+    if (!isDateLikeIpToken(ipEl.textContent || "")) return false;
+
+    // DCInside uses class="ip" both for anonymous IP fragments and for date text
+    // such as (06.28). Only allow date-shaped tokens when they are inside
+    // an actual writer/IP context; otherwise they are timestamps, not IPs.
+    return !isWriterIpContext(ipEl);
   }
 
   function prefixKey(ip) {
@@ -289,6 +322,7 @@ const IP_PREFIX_SOURCE = `1=11,0,LG%ED%97%AC%EB%A1%9C%EB%B9%84%EC%A0%84|16,0,%EB
     if (!(ipEl instanceof Element)) return;
     if (ipEl.closest?.(`.${BADGE_CLASS}`)) return;
     if (hasExistingBadge(ipEl)) return;
+    if (shouldSkipIpElement(ipEl)) return;
 
     const ip = normalizeIpText(ipEl.textContent || "");
     if (!ip) return;
@@ -305,8 +339,11 @@ const IP_PREFIX_SOURCE = `1=11,0,LG%ED%97%AC%EB%A1%9C%EB%B9%84%EC%A0%84|16,0,%EB
 
     const anchor = writer.querySelector?.(".ip,.writer_ip");
     if (anchor) {
-      attachMemberIpBadge(anchor);
-      return;
+      const anchorIp = normalizeIpText(anchor.textContent || "");
+      if (anchorIp && anchorIp === ip && !shouldSkipIpElement(anchor)) {
+        attachMemberIpBadge(anchor);
+        return;
+      }
     }
 
     const tools = writer.querySelector?.(".dcb-writer-tools");
