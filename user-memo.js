@@ -583,7 +583,7 @@
         min-width:0 !important;
         height:18px !important;
         line-height:18px !important;
-        overflow:hidden !important;
+        overflow:visible !important;
         box-sizing:border-box !important;
       }
 
@@ -592,7 +592,7 @@
         flex:1 1 auto !important;
         min-width:0 !important;
         max-width:100% !important;
-        overflow:hidden !important;
+        overflow:visible !important;
         flex-wrap:nowrap !important;
       }
 
@@ -631,6 +631,30 @@
         padding:0 3px !important;
         font-size:8.5px !important;
         letter-spacing:-.35px !important;
+      }
+
+
+
+      /* DCInside native member menu guard.
+         The nickname click menu (<ul class="user_data_list">) is injected inside/near
+         the writer cell. Keep our compact writer layout from clipping that dropdown. */
+      .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} .user_data_list,
+      td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] .user_data_list{
+        position:absolute !important;
+        z-index:2147483000 !important;
+        overflow:visible !important;
+        max-width:none !important;
+        white-space:normal !important;
+        flex:0 0 auto !important;
+      }
+
+      .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS}:has(.user_data_list),
+      .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} .addbox:has(.user_data_list),
+      .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} .nickname:has(.user_data_list),
+      td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"]:has(.user_data_list),
+      td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] .addbox:has(.user_data_list),
+      td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] .nickname:has(.user_data_list){
+        overflow:visible !important;
       }
 
       @media (max-width:640px){
