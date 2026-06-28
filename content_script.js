@@ -480,6 +480,17 @@ syncSettings(handleUrl);
       #${OVERLAY_ID} .dcbpv-btn.warn{color:#b91c1c;border-color:#fecaca;background:#fff7f7}
       #${OVERLAY_ID} .dcbpv-center{min-height:240px;display:grid;place-items:center;text-align:center;color:#64748b;padding:28px}
       #${OVERLAY_ID} .dcbpv-spinner{width:34px;height:34px;border-radius:50%;border:3px solid #dbeafe;border-top-color:#2563eb;margin:0 auto 14px;animation:dcbpv-spin .8s linear infinite}
+      #${OVERLAY_ID} .dcbpv-user-data-list{position:fixed;z-index:2147483640;min-width:156px;margin:0;padding:6px 0;list-style:none;border:1px solid #d8dde8;border-radius:10px;background:#fff;color:#111827;box-shadow:0 14px 38px rgba(15,23,42,.22);font-size:12px;line-height:1.35;overflow:hidden}
+      #${OVERLAY_ID} .dcbpv-user-data-list li{margin:0;padding:0;list-style:none;white-space:nowrap}
+      #${OVERLAY_ID} .dcbpv-user-data-list li.nick{padding:7px 10px 6px;font-weight:800;color:#0f172a;border-bottom:1px solid #eef2f7;background:#fbfcff}
+      #${OVERLAY_ID} .dcbpv-user-data-list li.loaf{display:flex;gap:0;border-bottom:1px solid #eef2f7}
+      #${OVERLAY_ID} .dcbpv-user-data-list li.loaf a{flex:1;text-align:center}
+      #${OVERLAY_ID} .dcbpv-user-data-list a{display:block;padding:7px 10px;color:#334155;text-decoration:none;cursor:pointer}
+      #${OVERLAY_ID} .dcbpv-user-data-list a:hover{background:#f1f5f9;color:#0f172a}
+      #${OVERLAY_ID} .dcbpv-user-data-list .num{margin-left:3px;font-weight:800;color:#dc2626}
+      #${OVERLAY_ID} .dcbpv-user-data-list .cut{display:inline-block;max-width:132px;overflow:hidden;text-overflow:ellipsis;vertical-align:top}
+      #${OVERLAY_ID} .dcbpv-user-data-list .dcbpv-menu-muted{color:#94a3b8;cursor:default}
+      #${OVERLAY_ID} .dcbpv-user-data-list .dcbpv-menu-muted:hover{background:transparent;color:#94a3b8}
       #${OVERLAY_ID} .dcbpv-share-popup{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(420px,88vw);padding:20px;border-radius:16px;background:#fff;box-shadow:0 18px 70px rgba(0,0,0,.28);border:1px solid #e5e7eb;z-index:2}
       #${OVERLAY_ID} .dcbpv-share-popup h3{margin:0 0 14px;font-size:17px;color:#0f172a}
       #${OVERLAY_ID} .dcbpv-share-close{position:absolute;right:12px;top:10px;width:30px;height:30px;border:0;border-radius:8px;background:transparent;color:#64748b;font-size:20px;cursor:pointer}
@@ -971,9 +982,43 @@ syncSettings(handleUrl);
       .trim();
   }
 
-  function previewIpPrefix(value){
-    const found = cleanPreviewToken(value).match(/\b(\d{1,3}\.\d{1,3})(?:\.\d{1,3}){0,2}\b/);
-    return found ? found[1] : "";
+  function looksLikePreviewDateToken(value){
+    const token = cleanPreviewToken(value).replace(/\s+/g, " ");
+    if (!token) return false;
+
+    return /^(?:\d{2,4}\.)?\d{1,2}\.\d{1,2}(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?$/.test(token)
+      || /^\d{1,2}:\d{2}(?::\d{2})?$/.test(token);
+  }
+
+  function validPreviewIpParts(ip){
+    const nums = String(ip || "").split(".").map((v) => Number.parseInt(v, 10));
+    return nums.length >= 2 && nums.every((v) => Number.isFinite(v) && v >= 0 && v <= 255);
+  }
+
+  function previewIpPrefix(value, options = {}){
+    const text = cleanPreviewToken(value);
+    const allowDateLike = !!options.allowDateLike;
+    const matches = text.matchAll(/\b(\d{1,3}\.\d{1,3})(?:\.\d{1,3}){0,2}\b/g);
+
+    for (const found of matches) {
+      if (!allowDateLike && looksLikePreviewDateToken(found[0])) continue;
+      if (!validPreviewIpParts(found[0])) continue;
+      return found[1].split(".").map((v) => String(Number.parseInt(v, 10))).join(".");
+    }
+
+    return "";
+  }
+
+  function previewIpElementIsWriterScoped(el){
+    return !!(
+      el?.matches?.(".writer_ip") ||
+      el?.closest?.(".gall_writer,.ub-writer,.writer_info,.user_info,.cmt_nickbox,[data-ip],[data-memo-ip]")
+    );
+  }
+
+  function previewIpPrefixFromElement(el){
+    if (!el) return "";
+    return previewIpPrefix(el.textContent || "", { allowDateLike: previewIpElementIsWriterScoped(el) });
   }
 
   function previewUidToken(value){
@@ -1048,10 +1093,11 @@ syncSettings(handleUrl);
       || previewUidToken(writer?.querySelector?.(".dcb-uid-badge")?.dataset?.fullUid)
       || gallogUidFromText(identityText)
       || "";
-    const ip = previewIpPrefix(writer?.getAttribute?.("data-ip"))
-      || previewIpPrefix(node.getAttribute?.("data-ip"))
-      || previewIpPrefix(writer?.getAttribute?.("data-memo-ip"))
-      || previewIpPrefix(writer?.querySelector?.(".ip,.writer_ip")?.textContent || "")
+    const writerIpEl = writer?.querySelector?.(".ip,.writer_ip");
+    const ip = previewIpPrefix(writer?.getAttribute?.("data-ip"), { allowDateLike: true })
+      || previewIpPrefix(node.getAttribute?.("data-ip"), { allowDateLike: true })
+      || previewIpPrefix(writer?.getAttribute?.("data-memo-ip"), { allowDateLike: true })
+      || previewIpPrefixFromElement(writerIpEl)
       || previewIpPrefix(identityText)
       || "";
     return { nick, uid, ip };
@@ -1060,12 +1106,131 @@ syncSettings(handleUrl);
   function previewWriterBadge(meta = {}){
     const nick = meta.nick || "익명";
     const uid = previewUidToken(meta.uid);
-    const ip = previewIpPrefix(meta.ip);
+    const ip = previewIpPrefix(meta.ip, { allowDateLike: true });
     const loc = meta.loc || "preview";
-    const nickHtml = `<span class="nickname in" title="${escapeText(nick)}"><em>${escapeText(nick)}</em></span>`;
+    const nickHtml = `<span class="nickname in" title="${escapeText(nick)}" role="button" tabindex="0"><em>${escapeText(nick)}</em></span>`;
     const mark = uid ? `<span class="writer_nikcon" aria-hidden="true"></span>` : "";
     const ipHtml = ip ? ` <span class="ip">(${escapeText(ip)})</span>` : "";
     return `<span class="gall_writer ub-writer dcbpv-writer-ref" data-loc="${escapeText(loc)}" data-nick="${escapeText(nick)}" data-uid="${escapeText(uid)}" data-ip="${escapeText(ip)}">${nickHtml}${mark}${ipHtml}</span>`;
+  }
+
+  function previewJsString(value){
+    return JSON.stringify(String(value || ""));
+  }
+
+  function previewBoardListPathForUrl(url){
+    try {
+      const path = new URL(url || location.href, location.href).pathname || "";
+      if (/^\/mgallery\//i.test(path)) return "/mgallery/board/lists/";
+      if (/^\/mini\//i.test(path)) return "/mini/board/lists/";
+      if (/^\/person\//i.test(path)) return "/person/board/lists/";
+    } catch (_) {}
+    return "/board/lists/";
+  }
+
+  function previewGallogUrl(uid, suffix = ""){
+    const clean = previewUidToken(uid);
+    if (!clean) return "";
+    return `https://gallog.dcinside.com/${encodeURIComponent(clean)}${suffix}`;
+  }
+
+  function closePreviewUserMenu(root = document){
+    root.querySelectorAll?.("[data-dcbpv-user-menu='1']").forEach((node) => node.remove());
+  }
+
+  function positionPreviewUserMenu(menu, anchor){
+    const rect = anchor?.getBoundingClientRect?.();
+    if (!rect) return;
+    const gap = 6;
+    const width = Math.max(menu.offsetWidth || 156, 156);
+    const height = Math.max(menu.offsetHeight || 160, 120);
+    let left = rect.left;
+    let top = rect.bottom + gap;
+
+    if (left + width > window.innerWidth - 8) left = Math.max(8, window.innerWidth - width - 8);
+    if (top + height > window.innerHeight - 8) top = Math.max(8, rect.top - height - gap);
+
+    menu.style.left = `${Math.round(left)}px`;
+    menu.style.top = `${Math.round(top)}px`;
+  }
+
+  function openPreviewUserMenu(anchor, data){
+    const writer = anchor?.closest?.(".dcbpv-writer-ref,.gall_writer,.ub-writer");
+    if (!writer) return;
+
+    const nick = writer.getAttribute("data-nick") || writer.querySelector(".nickname em,.nickname")?.textContent?.trim() || "";
+    const uid = previewUidToken(writer.getAttribute("data-uid") || writer.getAttribute("data-memo-uid") || writer.querySelector(".dcb-uid-badge")?.dataset?.fullUid || "");
+    const gallId = data?.gallId || galleryIdFrom(data?.url || location.href) || "";
+    const listPath = previewBoardListPathForUrl(data?.url || location.href);
+    const searchUrl = gallId
+      ? makeAbsolute(`${listPath}?id=${encodeURIComponent(gallId)}&s_type=search_name&s_keyword=${encodeURIComponent(nick)}`, location.href)
+      : "";
+
+    const overlay = document.getElementById(OVERLAY_ID) || document.documentElement;
+    closePreviewUserMenu(overlay);
+
+    const menu = document.createElement("ul");
+    menu.className = "user_data_list dcbpv-user-data-list";
+    menu.dataset.dcbpvUserMenu = "1";
+    menu.dataset.uid = uid;
+    menu.dataset.nick = nick;
+    menu.innerHTML = `
+      <li class="nick">${uid ? `<a href="${escapeText(previewGallogUrl(uid))}" target="_blank" rel="noreferrer noopener"><span class="cut">${escapeText(nick || uid)}</span></a>` : `<span class="cut">${escapeText(nick || "알 수 없음")}</span>`}</li>
+      <li class="loaf">
+        ${uid ? `<a href="${escapeText(previewGallogUrl(uid, "/posting"))}" target="_blank" rel="noreferrer noopener">게시물<em class="num font_lightred">↗</em></a><a href="${escapeText(previewGallogUrl(uid, "/comment"))}" target="_blank" rel="noreferrer noopener">댓글<em class="num font_lightred">↗</em></a>` : `<a class="dcbpv-menu-muted">게시물</a><a class="dcbpv-menu-muted">댓글</a>`}
+      </li>
+      ${uid ? `<li class="bg_grey"><a href="${escapeText(previewGallogUrl(uid))}" target="_blank" rel="noreferrer noopener">갤로그<em class="sp_img icon_go"></em></a></li>` : ""}
+      ${searchUrl ? `<li class="bg_grey"><a href="${escapeText(searchUrl)}" target="_blank" rel="noreferrer noopener">작성글 검색<em class="sp_img icon_go"></em></a></li>` : ""}
+      ${uid ? `<li class="bg_grey"><a href="javascript:;" data-dcbpv-menu-act="memo">이용자 메모<em class="sp_img icon_go"></em></a></li>` : ""}
+      ${nick ? `<li class="bg_jingrey"><a href="javascript:;" data-dcbpv-menu-act="block-nick">차단(닉네임)<em class="sp_img icon_go"></em></a></li>` : ""}
+      ${uid ? `<li class="bg_jingrey"><a href="javascript:;" data-dcbpv-menu-act="block-uid">차단(식별 코드)<em class="sp_img icon_go"></em></a></li>` : ""}
+    `;
+
+    overlay.appendChild(menu);
+    positionPreviewUserMenu(menu, anchor);
+  }
+
+  function callPageUserMemo(uid){
+    if (!uid) return false;
+    try {
+      const script = document.createElement("script");
+      script.textContent = `try{ if(window.UserMemo && typeof window.UserMemo.winAdd === "function") window.UserMemo.winAdd(${previewJsString(uid)}, null); }catch(e){}`;
+      (document.head || document.documentElement).appendChild(script);
+      script.remove();
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  async function handlePreviewUserMenuAction(menu, action){
+    const uid = previewUidToken(menu?.dataset?.uid || "");
+    const nick = String(menu?.dataset?.nick || "").trim();
+
+    if (action === "memo") {
+      callPageUserMemo(uid);
+      closePreviewUserMenu(menu?.parentElement || document);
+      return;
+    }
+
+    const token = action === "block-uid" ? uid : (nick ? `nick:${nick}` : "");
+    if (!token) return;
+
+    try {
+      if (globalThis.DCBUserBlockStore?.addToken) {
+        const result = await globalThis.DCBUserBlockStore.addToken(token);
+        if (!result?.ok && result?.reason !== "DUPLICATE") throw new Error(result?.message || "차단 저장 실패");
+      } else {
+        const current = await storageGet("local", { blockedUids: [] });
+        const list = Array.isArray(current.blockedUids) ? current.blockedUids : [];
+        if (!list.includes(token)) await chrome.storage.local.set({ blockedUids: [...list, token] });
+      }
+      document.dispatchEvent(new CustomEvent("dcb-userblock:refresh"));
+      menu.querySelector(`[data-dcbpv-menu-act="${action}"]`).textContent = "차단됨";
+      setTimeout(() => closePreviewUserMenu(menu?.parentElement || document), 450);
+    } catch (error) {
+      menu.querySelector(`[data-dcbpv-menu-act="${action}"]`).textContent = "저장 실패";
+    }
   }
 
   function commentMetaFromElement(item){
@@ -1108,7 +1273,7 @@ syncSettings(handleUrl);
       || gallogUidFromText(identityBlob)
       || previewUidToken(recordText(record, ["gallog", "gallog_url", "gallogUrl"]))
       || "";
-    const ip = previewIpPrefix(recordText(record, ["ip", "ip_addr", "ipaddr", "user_ip"]))
+    const ip = previewIpPrefix(recordText(record, ["ip", "ip_addr", "ipaddr", "user_ip"]), { allowDateLike: true })
       || previewIpPrefix(identityBlob)
       || "";
     return { nick, uid, ip };
@@ -2217,7 +2382,7 @@ syncSettings(handleUrl);
     return {
       nick: meta.nick || node?.getAttribute?.("data-nick") || "",
       uid: previewUidToken(meta.uid || node?.getAttribute?.("data-uid") || ""),
-      ip: previewIpPrefix(meta.ip || node?.getAttribute?.("data-ip") || "")
+      ip: previewIpPrefix(meta.ip || node?.getAttribute?.("data-ip") || "", { allowDateLike: true })
     };
   }
 
@@ -2234,7 +2399,7 @@ syncSettings(handleUrl);
 
       const clean = cleanPreviewToken(raw);
       if (!clean) return;
-      const ip = previewIpPrefix(clean);
+      const ip = previewIpPrefix(clean, { allowDateLike: true });
       if (ip && /^\d{1,3}(?:\.\d{1,3}){1,3}$/.test(clean)) {
         ips.add(ip);
         return;
@@ -2265,7 +2430,7 @@ syncSettings(handleUrl);
   function previewWriterBlocked(meta, matcher){
     if (!meta || matcher.empty) return false;
     const uid = previewUidToken(meta.uid);
-    const ip = previewIpPrefix(meta.ip);
+    const ip = previewIpPrefix(meta.ip, { allowDateLike: true });
     const nick = normalizePreviewBlockNick(meta.nick);
     return !!(uid && matcher.uids.has(uid.toLowerCase()))
       || !!(ip && matcher.ips.has(ip))
@@ -2277,7 +2442,7 @@ syncSettings(handleUrl);
     if (previewUidToken(meta.uid)) return false;
     const writer = node?.matches?.(".gall_writer,.ub-writer") ? node : node?.querySelector?.(".gall_writer,.ub-writer");
     if (writer?.querySelector?.(".writer_nikcon,[onclick*=gallog],[href*=gallog]")) return false;
-    return !!previewIpPrefix(meta.ip);
+    return !!previewIpPrefix(meta.ip, { allowDateLike: true });
   }
 
   function filterNote(kind, label, revealKey = ""){
@@ -2628,6 +2793,25 @@ syncSettings(handleUrl);
       </section>`;
 
     overlay.addEventListener("click", (event) => {
+      const menu = event.target.closest("[data-dcbpv-user-menu='1']");
+      const menuAction = event.target.closest("[data-dcbpv-menu-act]")?.dataset?.dcbpvMenuAct;
+      if (menuAction && menu) {
+        event.preventDefault();
+        event.stopPropagation();
+        handlePreviewUserMenuAction(menu, menuAction);
+        return;
+      }
+
+      const previewNick = event.target.closest(".dcbpv-writer-ref .nickname");
+      if (previewNick) {
+        event.preventDefault();
+        event.stopPropagation();
+        openPreviewUserMenu(previewNick, data);
+        return;
+      }
+
+      if (!menu) closePreviewUserMenu(overlay);
+
       const revealButton = event.target.closest("[data-dcbpv-reveal]");
       if (revealButton) {
         const key = revealButton.dataset.dcbpvReveal;
@@ -2761,7 +2945,16 @@ syncSettings(handleUrl);
   }, true);
 
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && document.getElementById(OVERLAY_ID)) closePreview();
+    if ((event.key === "Enter" || event.key === " ") && event.target?.closest?.(".dcbpv-writer-ref .nickname")) {
+      event.preventDefault();
+      const overlay = document.getElementById(OVERLAY_ID);
+      if (overlay && currentPreviewData) openPreviewUserMenu(event.target.closest(".dcbpv-writer-ref .nickname"), currentPreviewData);
+      return;
+    }
+    if (event.key === "Escape" && document.getElementById(OVERLAY_ID)) {
+      closePreviewUserMenu(document);
+      closePreview();
+    }
   });
 })();
 
