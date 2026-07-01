@@ -480,17 +480,22 @@ syncSettings(handleUrl);
       #${OVERLAY_ID} .dcbpv-btn.warn{color:#b91c1c;border-color:#fecaca;background:#fff7f7}
       #${OVERLAY_ID} .dcbpv-center{min-height:240px;display:grid;place-items:center;text-align:center;color:#64748b;padding:28px}
       #${OVERLAY_ID} .dcbpv-spinner{width:34px;height:34px;border-radius:50%;border:3px solid #dbeafe;border-top-color:#2563eb;margin:0 auto 14px;animation:dcbpv-spin .8s linear infinite}
-      #${OVERLAY_ID} .dcbpv-user-data-list{position:fixed;z-index:2147483640;min-width:156px;margin:0;padding:6px 0;list-style:none;border:1px solid #d8dde8;border-radius:10px;background:#fff;color:#111827;box-shadow:0 14px 38px rgba(15,23,42,.22);font-size:12px;line-height:1.35;overflow:hidden}
-      #${OVERLAY_ID} .dcbpv-user-data-list li{margin:0;padding:0;list-style:none;white-space:nowrap}
-      #${OVERLAY_ID} .dcbpv-user-data-list li.nick{padding:7px 10px 6px;font-weight:800;color:#0f172a;border-bottom:1px solid #eef2f7;background:#fbfcff}
-      #${OVERLAY_ID} .dcbpv-user-data-list li.loaf{display:flex;gap:0;border-bottom:1px solid #eef2f7}
-      #${OVERLAY_ID} .dcbpv-user-data-list li.loaf a{flex:1;text-align:center}
-      #${OVERLAY_ID} .dcbpv-user-data-list a{display:block;padding:7px 10px;color:#334155;text-decoration:none;cursor:pointer}
-      #${OVERLAY_ID} .dcbpv-user-data-list a:hover{background:#f1f5f9;color:#0f172a}
-      #${OVERLAY_ID} .dcbpv-user-data-list .num{margin-left:3px;font-weight:800;color:#dc2626}
-      #${OVERLAY_ID} .dcbpv-user-data-list .cut{display:inline-block;max-width:132px;overflow:hidden;text-overflow:ellipsis;vertical-align:top}
-      #${OVERLAY_ID} .dcbpv-user-data-list .dcbpv-menu-muted{color:#94a3b8;cursor:default}
-      #${OVERLAY_ID} .dcbpv-user-data-list .dcbpv-menu-muted:hover{background:transparent;color:#94a3b8}
+      #${OVERLAY_ID} .dcbpv-user-data-list{position:fixed!important;z-index:2147483640!important;min-width:156px!important;margin:0!important;padding:6px 0!important;list-style:none!important;border:1px solid #d8dde8!important;border-radius:10px!important;background:#fff!important;color:#111827!important;box-shadow:0 14px 38px rgba(15,23,42,.22)!important;font-size:12px!important;line-height:1.35!important;overflow:hidden!important}
+      #${OVERLAY_ID} .dcbpv-user-data-list,#${OVERLAY_ID} .dcbpv-user-data-list *{box-sizing:border-box!important;background-image:none!important;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif!important;text-shadow:none!important}
+      #${OVERLAY_ID} .dcbpv-user-data-list li{margin:0!important;padding:0!important;list-style:none!important;white-space:nowrap!important;background:transparent!important}
+      #${OVERLAY_ID} .dcbpv-user-data-list .dcbpv-menu-nick{padding:7px 10px 6px!important;font-weight:800!important;color:#0f172a!important;border-bottom:1px solid #eef2f7!important;background:#fbfcff!important}
+      #${OVERLAY_ID} .dcbpv-user-data-list .dcbpv-menu-stat{display:flex!important;gap:0!important;border-bottom:1px solid #eef2f7!important}
+      #${OVERLAY_ID} .dcbpv-user-data-list .dcbpv-menu-stat a{flex:1!important;text-align:center!important}
+      #${OVERLAY_ID} .dcbpv-user-data-list a{display:block!important;padding:7px 10px!important;color:#334155!important;text-decoration:none!important;cursor:pointer!important}
+      #${OVERLAY_ID} .dcbpv-user-data-list a:hover{background:#f1f5f9!important;color:#0f172a!important}
+      #${OVERLAY_ID} .dcbpv-user-data-list .dcbpv-menu-row a{padding-right:24px!important}
+      #${OVERLAY_ID} .dcbpv-user-data-list .dcbpv-menu-danger a{background:#f8fafc!important;color:#475569!important}
+      #${OVERLAY_ID} .dcbpv-user-data-list .dcbpv-menu-num{margin-left:3px!important;font-weight:800!important;color:#dc2626!important}
+      #${OVERLAY_ID} .dcbpv-user-data-list .dcbpv-menu-cut{display:inline-block!important;max-width:132px!important;overflow:hidden!important;text-overflow:ellipsis!important;vertical-align:top!important}
+      #${OVERLAY_ID} .dcbpv-user-data-list .dcbpv-menu-arrow{float:right!important;margin-left:8px!important;color:#94a3b8!important;font-weight:800!important}
+      #${OVERLAY_ID} .dcbpv-user-data-list .dcbpv-menu-ip{margin-left:4px!important;color:#64748b!important;font-weight:500!important}
+      #${OVERLAY_ID} .dcbpv-user-data-list .dcbpv-menu-muted{color:#94a3b8!important;cursor:default!important}
+      #${OVERLAY_ID} .dcbpv-user-data-list .dcbpv-menu-muted:hover{background:transparent!important;color:#94a3b8!important}
       #${OVERLAY_ID} .dcbpv-share-popup{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(420px,88vw);padding:20px;border-radius:16px;background:#fff;box-shadow:0 18px 70px rgba(0,0,0,.28);border:1px solid #e5e7eb;z-index:2}
       #${OVERLAY_ID} .dcbpv-share-popup h3{margin:0 0 14px;font-size:17px;color:#0f172a}
       #${OVERLAY_ID} .dcbpv-share-close{position:absolute;right:12px;top:10px;width:30px;height:30px;border:0;border-radius:8px;background:transparent;color:#64748b;font-size:20px;cursor:pointer}
@@ -1160,6 +1165,7 @@ syncSettings(handleUrl);
 
     const nick = writer.getAttribute("data-nick") || writer.querySelector(".nickname em,.nickname")?.textContent?.trim() || "";
     const uid = previewUidToken(writer.getAttribute("data-uid") || writer.getAttribute("data-memo-uid") || writer.querySelector(".dcb-uid-badge")?.dataset?.fullUid || "");
+    const ip = previewIpPrefix(writer.getAttribute("data-ip") || writer.getAttribute("data-memo-ip") || writer.querySelector(".ip,.writer_ip")?.textContent || "", { allowDateLike: true });
     const gallId = data?.gallId || galleryIdFrom(data?.url || location.href) || "";
     const listPath = previewBoardListPathForUrl(data?.url || location.href);
     const searchUrl = gallId
@@ -1170,20 +1176,20 @@ syncSettings(handleUrl);
     closePreviewUserMenu(overlay);
 
     const menu = document.createElement("ul");
-    menu.className = "user_data_list dcbpv-user-data-list";
+    menu.className = "dcbpv-user-data-list";
     menu.dataset.dcbpvUserMenu = "1";
     menu.dataset.uid = uid;
     menu.dataset.nick = nick;
+    menu.dataset.ip = ip;
     menu.innerHTML = `
-      <li class="nick">${uid ? `<a href="${escapeText(previewGallogUrl(uid))}" target="_blank" rel="noreferrer noopener"><span class="cut">${escapeText(nick || uid)}</span></a>` : `<span class="cut">${escapeText(nick || "알 수 없음")}</span>`}</li>
-      <li class="loaf">
-        ${uid ? `<a href="${escapeText(previewGallogUrl(uid, "/posting"))}" target="_blank" rel="noreferrer noopener">게시물<em class="num font_lightred">↗</em></a><a href="${escapeText(previewGallogUrl(uid, "/comment"))}" target="_blank" rel="noreferrer noopener">댓글<em class="num font_lightred">↗</em></a>` : `<a class="dcbpv-menu-muted">게시물</a><a class="dcbpv-menu-muted">댓글</a>`}
-      </li>
-      ${uid ? `<li class="bg_grey"><a href="${escapeText(previewGallogUrl(uid))}" target="_blank" rel="noreferrer noopener">갤로그<em class="sp_img icon_go"></em></a></li>` : ""}
-      ${searchUrl ? `<li class="bg_grey"><a href="${escapeText(searchUrl)}" target="_blank" rel="noreferrer noopener">작성글 검색<em class="sp_img icon_go"></em></a></li>` : ""}
-      ${uid ? `<li class="bg_grey"><a href="javascript:;" data-dcbpv-menu-act="memo">이용자 메모<em class="sp_img icon_go"></em></a></li>` : ""}
-      ${nick ? `<li class="bg_jingrey"><a href="javascript:;" data-dcbpv-menu-act="block-nick">차단(닉네임)<em class="sp_img icon_go"></em></a></li>` : ""}
-      ${uid ? `<li class="bg_jingrey"><a href="javascript:;" data-dcbpv-menu-act="block-uid">차단(식별 코드)<em class="sp_img icon_go"></em></a></li>` : ""}
+      <li class="dcbpv-menu-nick">${uid ? `<a href="${escapeText(previewGallogUrl(uid))}" target="_blank" rel="noreferrer noopener"><span class="dcbpv-menu-cut">${escapeText(nick || uid)}</span></a>` : `<span class="dcbpv-menu-cut">${escapeText(nick || "알 수 없음")}</span>${ip ? `<span class="dcbpv-menu-ip">(${escapeText(ip)})</span>` : ""}`}</li>
+      ${uid ? `<li class="dcbpv-menu-stat"><a href="${escapeText(previewGallogUrl(uid, "/posting"))}" target="_blank" rel="noreferrer noopener">게시물<span class="dcbpv-menu-num">↗</span></a><a href="${escapeText(previewGallogUrl(uid, "/comment"))}" target="_blank" rel="noreferrer noopener">댓글<span class="dcbpv-menu-num">↗</span></a></li>` : ""}
+      ${uid ? `<li class="dcbpv-menu-row"><a href="${escapeText(previewGallogUrl(uid))}" target="_blank" rel="noreferrer noopener">갤로그<span class="dcbpv-menu-arrow">›</span></a></li>` : ""}
+      ${searchUrl ? `<li class="dcbpv-menu-row"><a href="${escapeText(searchUrl)}" target="_blank" rel="noreferrer noopener">작성글 검색<span class="dcbpv-menu-arrow">›</span></a></li>` : ""}
+      ${(uid || ip) ? `<li class="dcbpv-menu-row"><a href="javascript:;" data-dcbpv-menu-act="memo">이용자 메모<span class="dcbpv-menu-arrow">›</span></a></li>` : ""}
+      ${nick ? `<li class="dcbpv-menu-row dcbpv-menu-danger"><a href="javascript:;" data-dcbpv-menu-act="block-nick">차단(닉네임)<span class="dcbpv-menu-arrow">›</span></a></li>` : ""}
+      ${uid ? `<li class="dcbpv-menu-row dcbpv-menu-danger"><a href="javascript:;" data-dcbpv-menu-act="block-uid">차단(식별 코드)<span class="dcbpv-menu-arrow">›</span></a></li>` : ""}
+      ${(!uid && ip) ? `<li class="dcbpv-menu-row dcbpv-menu-danger"><a href="javascript:;" data-dcbpv-menu-act="block-ip">차단(IP)<span class="dcbpv-menu-arrow">›</span></a></li>` : ""}
     `;
 
     overlay.appendChild(menu);
@@ -1206,14 +1212,15 @@ syncSettings(handleUrl);
   async function handlePreviewUserMenuAction(menu, action){
     const uid = previewUidToken(menu?.dataset?.uid || "");
     const nick = String(menu?.dataset?.nick || "").trim();
+    const ip = previewIpPrefix(menu?.dataset?.ip || "", { allowDateLike: true });
 
     if (action === "memo") {
-      callPageUserMemo(uid);
+      callPageUserMemo(uid || ip);
       closePreviewUserMenu(menu?.parentElement || document);
       return;
     }
 
-    const token = action === "block-uid" ? uid : (nick ? `nick:${nick}` : "");
+    const token = action === "block-uid" ? uid : action === "block-ip" ? ip : (nick ? `nick:${nick}` : "");
     if (!token) return;
 
     try {
@@ -2802,11 +2809,11 @@ syncSettings(handleUrl);
         return;
       }
 
-      const previewNick = event.target.closest(".dcbpv-writer-ref .nickname");
-      if (previewNick) {
+      const previewWriterTarget = event.target.closest(".dcbpv-writer-ref .nickname, .dcbpv-writer-ref .ip");
+      if (previewWriterTarget) {
         event.preventDefault();
         event.stopPropagation();
-        openPreviewUserMenu(previewNick, data);
+        openPreviewUserMenu(previewWriterTarget, data);
         return;
       }
 
