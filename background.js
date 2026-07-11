@@ -19,6 +19,28 @@ const RULE_MAX_OFFSET = 20_000;         // 이 확장프로그램이 쓰는 동�
 const AREA_PICKER_MENU_ID = "dcb-area-picker-select";
 const USER_BLOCK_CONTEXT_MENU_ID = "dcb-user-block-context";
 const USER_MEMO_CONTEXT_MENU_ID = "dcb-user-memo-context";
+const IMAGE_BLOCK_CONFIG_KEY = "dcbImageBlockConfig";
+const LOW_ACTIVITY_RULE_KEY = "dcbImageAccountRules";
+const DEFAULT_OFF_MIGRATION_KEY = "dcbDefaultOffMigration742";
+const IMAGE_BLOCK_INSTALL_DEFAULT = Object.freeze({
+  enabled: false,
+  hideMemberImages: true,
+  hideGuestImages: true
+});
+const LOW_ACTIVITY_INSTALL_DEFAULT = Object.freeze({
+  enabled: false,
+  blockPosts: true,
+  blockComments: true,
+  ageRuleEnabled: true,
+  maxPublicAgeDays: 30,
+  postRuleEnabled: true,
+  minPostCount: 5,
+  commentRuleEnabled: true,
+  minCommentCount: 10,
+  activityMatchMode: "both",
+  holdWhileChecking: true,
+  cacheHours: 24
+});
 
 /* ───── 유틸 ───── */
 function norm(v) {
@@ -233,7 +255,12 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
       "dcbFontScale",
       "dcbApplyFontToDc",
       "showMemberIpInfo",
-      "userMemoEnabled"
+      "userMemoEnabled",
+      "recentPostsEnabled",
+      "recentPostsLimit",
+      IMAGE_BLOCK_CONFIG_KEY,
+      LOW_ACTIVITY_RULE_KEY,
+      DEFAULT_OFF_MIGRATION_KEY
     ]);
 
     const patch = {};
@@ -301,6 +328,40 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
 
     if (typeof seed.userMemoEnabled === "undefined") {
       patch.userMemoEnabled = false;
+    }
+
+    if (typeof seed.recentPostsEnabled === "undefined") {
+      patch.recentPostsEnabled = false;
+    }
+
+    if (typeof seed.recentPostsLimit === "undefined") {
+      patch.recentPostsLimit = 5;
+    } else {
+      const safeRecentPostsLimit = Math.min(5, Math.max(1, Number.parseInt(seed.recentPostsLimit, 10) || 5));
+      if (safeRecentPostsLimit !== seed.recentPostsLimit) {
+        patch.recentPostsLimit = safeRecentPostsLimit;
+      }
+    }
+
+    if (!seed[IMAGE_BLOCK_CONFIG_KEY] || typeof seed[IMAGE_BLOCK_CONFIG_KEY] !== "object") {
+      patch[IMAGE_BLOCK_CONFIG_KEY] = IMAGE_BLOCK_INSTALL_DEFAULT;
+    }
+
+    if (!seed[LOW_ACTIVITY_RULE_KEY] || typeof seed[LOW_ACTIVITY_RULE_KEY] !== "object") {
+      patch[LOW_ACTIVITY_RULE_KEY] = LOW_ACTIVITY_INSTALL_DEFAULT;
+    }
+
+    if (seed[DEFAULT_OFF_MIGRATION_KEY] !== true) {
+      const imageConfig = seed[IMAGE_BLOCK_CONFIG_KEY] && typeof seed[IMAGE_BLOCK_CONFIG_KEY] === "object"
+        ? seed[IMAGE_BLOCK_CONFIG_KEY]
+        : IMAGE_BLOCK_INSTALL_DEFAULT;
+      const accountRules = seed[LOW_ACTIVITY_RULE_KEY] && typeof seed[LOW_ACTIVITY_RULE_KEY] === "object"
+        ? seed[LOW_ACTIVITY_RULE_KEY]
+        : LOW_ACTIVITY_INSTALL_DEFAULT;
+
+      patch[IMAGE_BLOCK_CONFIG_KEY] = { ...imageConfig, enabled: false };
+      patch[LOW_ACTIVITY_RULE_KEY] = { ...accountRules, enabled: false };
+      patch[DEFAULT_OFF_MIGRATION_KEY] = true;
     }
 
     if (Object.keys(patch).length) {
