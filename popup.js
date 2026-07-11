@@ -1517,6 +1517,7 @@ if (openOptionsBtn) {
 
 (() => {
   const CONFIG_KEY = "dcbImageBlockConfig";
+  const AUTHOR_TARGET_KEY = "dcbImageBlockAuthorTargets";
   const DEFAULTS = Object.freeze({
     enabled: false,
     toolbar: false,
@@ -1539,10 +1540,15 @@ if (openOptionsBtn) {
   const ui = {
     enabled: document.getElementById("imageBlockEnabled"),
     status: document.getElementById("imageBlockStatus"),
-    list: document.getElementById("openImageBlockList")
+    list: document.getElementById("openImageBlockList"),
+    targetInput: document.getElementById("imageAuthorTargetInput"),
+    targetAdd: document.getElementById("addImageAuthorTarget"),
+    targetList: document.getElementById("imageAuthorTargetList"),
+    targetCount: document.getElementById("imageAuthorTargetCount")
   };
 
   if (!ui.enabled && !ui.list) return;
+  let authorTargets = [];
 
   const applyOneClick = (value = {}) => {
     const on = value?.enabled === true;
@@ -1551,11 +1557,11 @@ if (openOptionsBtn) {
       ...(value && typeof value === "object" ? value : {}),
       enabled: on,
       toolbar: on,
-      blurAnonymous: on,
-      blurSemi: on,
-      blurNew: on,
-      blurFixed: on,
-      blurManager: on,
+      blurAnonymous: false,
+      blurSemi: false,
+      blurNew: false,
+      blurFixed: false,
+      blurManager: false,
       normalPost: on,
       recommendedPost: on,
       skipSmall: false,
@@ -1578,6 +1584,71 @@ if (openOptionsBtn) {
     if (ui.enabled) ui.enabled.checked = state.enabled === true;
   };
 
+  const normalizeTargets = (values) => {
+    const out = [];
+    const seen = new Set();
+    (Array.isArray(values) ? values : []).forEach((value) => {
+      const token = globalThis.DCBUserBlockStore?.normalizeToken
+        ? DCBUserBlockStore.normalizeToken(value)
+        : sanitizeUid(value);
+      const key = token.toLowerCase();
+      if (!token || seen.has(key)) return;
+      seen.add(key);
+      out.push(token);
+    });
+    return out;
+  };
+
+  const targetKind = (token) => {
+    if (/^nick\s*[:=]/i.test(token)) return "NICK";
+    return /^\d{1,3}(?:\.\d{1,3}){1,3}$/.test(token) ? "IP" : "UID";
+  };
+
+  const renderTargets = (values) => {
+    authorTargets = normalizeTargets(values);
+    if (ui.targetCount) ui.targetCount.textContent = `${authorTargets.length}개`;
+    if (!ui.targetList) return;
+
+    ui.targetList.innerHTML = "";
+    if (!authorTargets.length) {
+      const empty = document.createElement("li");
+      empty.innerHTML = '<span class="uid-empty">등록된 이미지 숨김 대상이 없습니다.</span>';
+      ui.targetList.appendChild(empty);
+      return;
+    }
+
+    authorTargets.forEach((token, index) => {
+      const item = document.createElement("li");
+      const left = document.createElement("span");
+      left.className = "uid-list-left";
+      const kind = document.createElement("span");
+      kind.className = "uid-kind";
+      kind.textContent = targetKind(token);
+      const code = document.createElement("code");
+      code.textContent = token;
+      const remove = document.createElement("button");
+      remove.className = "btn btn-danger";
+      remove.type = "button";
+      remove.dataset.index = String(index);
+      remove.textContent = "삭제";
+      left.append(kind, code);
+      item.append(left, remove);
+      ui.targetList.appendChild(item);
+    });
+  };
+
+  const saveTargets = (values, message = "이미지 숨김 대상을 저장했어요.") => {
+    const next = normalizeTargets(values);
+    chrome.storage.local.set({ [AUTHOR_TARGET_KEY]: next }, () => {
+      if (chrome.runtime.lastError) {
+        notice("이미지 숨김 대상을 저장하지 못했어요.", true);
+        return;
+      }
+      renderTargets(next);
+      notice(message);
+    });
+  };
+
   const current = () => applyOneClick({ enabled: ui.enabled?.checked === true });
 
   const save = () => {
@@ -1589,15 +1660,22 @@ if (openOptionsBtn) {
       }
       chrome.storage.local.set({ [CONFIG_KEY]: next });
       render(next);
-      notice(next.enabled ? "이미지 차단을 켰어요. 모든 작성자 이미지에 바로 적용됩니다." : "이미지 차단을 껐어요. 필요할 때 다시 켜면 됩니다.");
+      notice(next.enabled
+        ? `이미지 숨기기를 켰어요. 직접 대상 ${authorTargets.length}명과 자동 판정에 적용됩니다.`
+        : "이미지 숨기기를 껐어요. 대상 목록은 그대로 유지됩니다.");
     });
   };
 
   const load = () => {
-    chrome.storage.sync.get({ [CONFIG_KEY]: DEFAULTS }, (data) => {
-      const state = applyOneClick(data[CONFIG_KEY]);
-      render(state);
-      notice(state.enabled ? "이미지 차단 사용 중입니다. 모든 작성자 이미지에 적용됩니다." : "이미지 차단은 꺼져 있어요.");
+    chrome.storage.sync.get({ [CONFIG_KEY]: null }, (syncData) => {
+      chrome.storage.local.get({ [CONFIG_KEY]: null, [AUTHOR_TARGET_KEY]: null }, (localData) => {
+        const state = applyOneClick(syncData[CONFIG_KEY] || localData[CONFIG_KEY] || DEFAULTS);
+        render(state);
+        renderTargets(localData[AUTHOR_TARGET_KEY] || []);
+        notice(state.enabled
+          ? `이미지 숨김 사용 중 · 직접 대상 ${authorTargets.length}명 + 자동 판정`
+          : "이미지 숨기기는 꺼져 있어요.");
+      });
     });
   };
 
@@ -1620,9 +1698,39 @@ if (openOptionsBtn) {
 
   ui.enabled?.addEventListener("change", save);
   ui.list?.addEventListener("click", () => sendToActivePage("dcb.imageBlock.openList"));
+  ui.targetAdd?.addEventListener("click", () => {
+    const token = globalThis.DCBUserBlockStore?.normalizeToken
+      ? DCBUserBlockStore.normalizeToken(ui.targetInput?.value || "")
+      : sanitizeUid(ui.targetInput?.value || "");
+    if (!token) {
+      notice("UID, IP 또는 닉네임을 입력해 주세요.", true);
+      return;
+    }
+    const next = normalizeTargets([...authorTargets, token]);
+    if (next.length === authorTargets.length) {
+      notice("이미 등록된 작성자입니다.", true);
+      return;
+    }
+    if (ui.targetInput) ui.targetInput.value = "";
+    saveTargets(next, `${token} 작성자의 이미지를 숨기도록 추가했어요.`);
+  });
+  ui.targetInput?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    ui.targetAdd?.click();
+  });
+  ui.targetList?.addEventListener("click", (event) => {
+    const button = event.target.closest("button[data-index]");
+    if (!button) return;
+    const index = Number(button.dataset.index);
+    if (!Number.isInteger(index) || index < 0 || index >= authorTargets.length) return;
+    const removed = authorTargets[index];
+    saveTargets(authorTargets.filter((_, idx) => idx !== index), `${removed} 작성자를 이미지 숨김 대상에서 삭제했어요.`);
+  });
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if ((area === "sync" || area === "local") && changes[CONFIG_KEY]) render(applyOneClick(changes[CONFIG_KEY].newValue));
+    if (area === "local" && changes[AUTHOR_TARGET_KEY]) renderTargets(changes[AUTHOR_TARGET_KEY].newValue || []);
   });
 
   load();

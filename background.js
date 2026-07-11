@@ -437,6 +437,7 @@ chrome.storage.onChanged.addListener((c, area) => {
 /* ───── 공통 HTML fetch 브릿지: 미리보기에서 모바일 글/댓글 HTML을 가져오기 위함 ───── */
 const DCB_FETCH_ALLOWED_HOSTS = new Set([
   "gall.dcinside.com",
+  "gallog.dcinside.com",
   "m.dcinside.com",
   "www.dcinside.com",
   "search.dcinside.com"

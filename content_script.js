@@ -1286,8 +1286,37 @@ syncSettings(handleUrl);
     return { nick, uid, ip };
   }
 
-  function commentLooksAutomated(item, nick){
-    return normalizePreviewNick(nick) === "댓글돌이" || !!item?.querySelector?.(".nickname.cmtboy,.comment_dory,.dory_txt") || item?.classList?.contains("dory");
+  function doryIdentityMatches(meta = {}){
+    const nick = normalizePreviewNick(meta.nick);
+    const uid = String(meta.uid || "").normalize("NFKC").replace(/\s+/g, "").toLowerCase();
+    return nick === "댓글돌이" || /^(?:dory|issue_?feed)$/.test(uid);
+  }
+
+  function doryMarkerMatches(value){
+    return /(?:^|[\s_-])(?:dory|issue[_-]?feed)(?:$|[\s_-])|comment[_-]?dory|dory[_-]?txt|cmtboy/i.test(String(value || ""));
+  }
+
+  function commentLooksAutomated(item, meta = {}){
+    if (doryIdentityMatches(meta)) return true;
+    if (!item) return false;
+
+    const writer = item.matches?.(".gall_writer,.ub-writer") ? item : item.querySelector?.(".gall_writer,.ub-writer");
+    if (doryIdentityMatches({
+      nick: writer?.getAttribute?.("data-nick") || writer?.querySelector?.(".nickname")?.textContent || "",
+      uid: writer?.getAttribute?.("data-uid") || writer?.getAttribute?.("data-user-id") || writer?.getAttribute?.("data-userid") || ""
+    })) return true;
+
+    const attrMarker = [
+      item.className,
+      item.id,
+      item.getAttribute?.("data-type"),
+      item.getAttribute?.("data-comment-type"),
+      item.getAttribute?.("data-kind"),
+      item.getAttribute?.("data-role")
+    ].filter(Boolean).join(" ");
+
+    return doryMarkerMatches(attrMarker)
+      || !!item.querySelector?.(".nickname.cmtboy,.comment_dory,.dory_txt,.issuefeed,[class*='issuefeed'],[id*='issuefeed'],[data-type*='issuefeed'],[data-comment-type*='issuefeed']");
   }
 
   function buildWriterHTML(doc, root, baseUrl){
@@ -1398,7 +1427,7 @@ syncSettings(handleUrl);
         if (/^(등록순|최신순|답글순|댓글닫기|새로고침|본문 보기|전체 댓글)/.test(plain)) return "";
         const depthClass = item.classList?.contains("reply") || item.classList?.contains("reply_line") || item.querySelector?.(".reply_info") ? " reply" : "";
         const deletedClass = /삭제된 댓글|운영자에 의해/.test(plain) ? " deleted" : "";
-        const doryClass = commentLooksAutomated(item, nick) ? " dory" : "";
+        const doryClass = commentLooksAutomated(item, { ...meta, nick }) ? " dory" : "";
         return `<div class="dcbpv-comment-item${depthClass}${deletedClass}${doryClass}" data-dcbpv-comment="1" data-nick="${escapeText(nick)}" data-uid="${escapeText(meta.uid)}" data-ip="${escapeText(meta.ip)}"><div class="dcbpv-comment-meta">${previewWriterBadge({ nick, uid: meta.uid, ip: meta.ip, loc: "preview-comment" })}${date ? `<span>${escapeText(date)}</span>` : ""}</div><div class="dcbpv-comment-body">${body}</div></div>`;
       }).filter(Boolean);
       if (rows.length) return `<div class="dcbpv-comment-list">${rows.join("")}</div>`;
@@ -1815,6 +1844,24 @@ syncSettings(handleUrl);
     return htmlFromElement(doc.body.firstElementChild || doc.body, baseUrl);
   }
 
+  function commentRecordLooksAutomated(record, meta = {}){
+    if (doryIdentityMatches(meta)) return true;
+
+    const enabledFlag = [
+      "dory", "is_dory", "isDory", "issuefeed", "issue_feed", "is_issuefeed", "isIssuefeed", "is_bot", "isBot"
+    ].some((key) => /^(?:1|y|yes|true)$/i.test(String(record?.[key] ?? "").trim()));
+    if (enabledFlag) return true;
+
+    const marker = [
+      "type", "comment_type", "commentType", "kind", "writer_type", "writerType", "nicktype", "nick_type",
+      "class", "className", "css_class", "template", "source", "provider"
+    ].map((key) => record?.[key]).filter((value) => value != null).join(" ");
+    if (doryMarkerMatches(marker)) return true;
+
+    const rawBody = recordText(record, ["memo", "contents", "content", "comment", "comment_memo", "text", "body"]);
+    return /<[^>]+(?:dory|issue[_-]?feed|cmtboy)/i.test(rawBody);
+  }
+
   function commentRecordsToHtml(records, baseUrl){
     const rows = records.map((record) => {
       const body = commentRecordBody(record, baseUrl);
@@ -1825,7 +1872,7 @@ syncSettings(handleUrl);
       const date = recordText(record, ["reg_date", "date_time", "date", "time"]);
       const replyClass = String(record.depth || record.c_depth || record.reply || "") !== "0" && String(record.depth || record.c_depth || record.reply || "") !== "" ? " reply" : "";
       const deletedClass = /삭제|차단|운영자/.test(plain) || /Y/i.test(String(record.del_yn || record.is_delete || "")) ? " deleted" : "";
-      const doryClass = normalizePreviewNick(nick) === "댓글돌이" ? " dory" : "";
+      const doryClass = commentRecordLooksAutomated(record, { ...meta, nick }) ? " dory" : "";
       return `<div class="dcbpv-comment-item${replyClass}${deletedClass}${doryClass}" data-dcbpv-comment="1" data-nick="${escapeText(nick)}" data-uid="${escapeText(meta.uid)}" data-ip="${escapeText(meta.ip)}"><div class="dcbpv-comment-meta">${previewWriterBadge({ nick, uid: meta.uid, ip: meta.ip, loc: "preview-comment" })}${date ? `<span>${escapeText(date)}</span>` : ""}</div><div class="dcbpv-comment-body">${body}</div></div>`;
     }).filter(Boolean);
     return rows.length ? `<div class="dcbpv-comment-list">${rows.join("")}</div>` : "";
@@ -2716,7 +2763,7 @@ syncSettings(handleUrl);
         row.classList.add("dcbpv-filter-hidden");
         row.dataset.dcbpvBlockedReason = "blocked-parent";
       }
-      if (conf.doryBlockEnabled !== false && (row.classList.contains("dory") || normalizePreviewNick(meta.nick || row.dataset.nick) === "댓글돌이")) {
+      if (conf.doryBlockEnabled !== false && commentLooksAutomated(row, { ...meta, nick: meta.nick || row.dataset.nick })) {
         row.classList.add("dcbpv-filter-hidden");
         row.dataset.dcbpvBlockedReason = "dory";
       }
@@ -2964,4 +3011,3 @@ syncSettings(handleUrl);
     }
   });
 })();
-

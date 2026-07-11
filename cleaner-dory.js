@@ -5,6 +5,7 @@
   const STYLE_ID = "dcb-dory-block-style";
   const BLOCKED_CLASS = "dcb-dory-blocked";
   const BLOCKED_NICK = "댓글돌이";
+  const AUTOMATED_IDS = new Set(["dory", "issuefeed", "issue_feed"]);
 
   const DEFAULTS = {
     doryBlockEnabled: true
@@ -19,6 +20,14 @@
       .normalize("NFKC")
       .replace(/\s+/g, "")
       .trim();
+  }
+
+  function normalizeIdentity(value) {
+    return String(value || "").normalize("NFKC").replace(/\s+/g, "").trim().toLowerCase();
+  }
+
+  function hasAutomatedMarker(value) {
+    return /(?:^|[\s_-])(?:dory|issue[_-]?feed)(?:$|[\s_-])|comment[_-]?dory|dory[_-]?txt|cmtboy/i.test(String(value || ""));
   }
 
   function ensureStyle() {
@@ -49,6 +58,17 @@
       .cmt_list li.ub-content:has(.dory_txt) {
         display: none !important;
       }
+
+      #dcb-preview-overlay .dcbpv-comment-item.dory,
+      #dcb-preview-overlay .dcbpv-comment-item.issuefeed,
+      #dcb-preview-overlay .dcbpv-comment-item:has(.gall_writer[data-nick="${BLOCKED_NICK}"]),
+      #dcb-preview-overlay .dcbpv-comment-item:has(.nickname.cmtboy),
+      #dcb-preview-overlay .dcbpv-comment-item:has(.comment_dory),
+      #dcb-preview-overlay .dcbpv-comment-item:has(.dory_txt),
+      #dcb-preview-overlay .dcbpv-comment-item:has([class*="issuefeed"]),
+      #dcb-preview-overlay .dcbpv-comment-item:has([id*="issuefeed"]) {
+        display: none !important;
+      }
     `;
   }
 
@@ -74,16 +94,35 @@
       writer.textContent
     ];
 
-    return candidates.some((value) => normalizeNick(value) === BLOCKED_NICK);
+    if (candidates.some((value) => normalizeNick(value) === BLOCKED_NICK)) return true;
+
+    const identities = [
+      writer.getAttribute("data-uid"),
+      writer.getAttribute("data-user-id"),
+      writer.getAttribute("data-userid"),
+      writer.getAttribute("data-user_id"),
+      writer.getAttribute("data-memo-uid")
+    ];
+    return identities.some((value) => AUTOMATED_IDS.has(normalizeIdentity(value)));
   }
 
   function nodeLooksLikeDory(node) {
     if (!node || node.nodeType !== 1) return false;
 
+    const attrMarker = [
+      node.className,
+      node.id,
+      node.getAttribute?.("data-type"),
+      node.getAttribute?.("data-comment-type"),
+      node.getAttribute?.("data-kind"),
+      node.getAttribute?.("data-role")
+    ].filter(Boolean).join(" ");
+
     return (
-      node.matches?.("li.dory, .comment_dory, .dory_txt, .nickname.cmtboy") ||
+      node.matches?.(".dory, .comment_dory, .dory_txt, .nickname.cmtboy, .issuefeed") ||
+      hasAutomatedMarker(attrMarker) ||
       writerMatches(node.matches?.(".gall_writer, .ub-writer") ? node : null) ||
-      !!node.querySelector?.('.gall_writer[data-nick="댓글돌이"], .nickname.cmtboy, .comment_dory, .dory_txt')
+      !!node.querySelector?.('.gall_writer[data-nick="댓글돌이"], .gall_writer[data-uid="dory"], .gall_writer[data-uid="issuefeed"], .nickname.cmtboy, .comment_dory, .dory_txt, .issuefeed, [class*="issuefeed"], [id*="issuefeed"]')
     );
   }
 
@@ -92,7 +131,8 @@
 
     const commentLi = node.closest(
       "#focus_cmt li, .comment_wrap li, .cmt_list li, .reply_box li, .reply_list li, " +
-      ".dccon_comment_box li, li.ub-content, li[id^='comment_li_'], li.dory"
+      ".dccon_comment_box li, li.ub-content, li[id^='comment_li_'], li.dory, " +
+      "#dcb-preview-overlay .dcbpv-comment-item"
     );
     if (commentLi) return commentLi;
 
@@ -121,7 +161,7 @@
 
     document
       .querySelectorAll(
-        'li.dory, .comment_dory, .dory_txt, .nickname.cmtboy, .gall_writer, .ub-writer'
+        '.dory, .comment_dory, .dory_txt, .nickname.cmtboy, .issuefeed, [class*="issuefeed"], [id*="issuefeed"], [data-type*="issuefeed"], [data-comment-type*="issuefeed"], .gall_writer, .ub-writer'
       )
       .forEach((node) => {
         if (!nodeLooksLikeDory(node)) return;
@@ -143,12 +183,13 @@
     observer = new MutationObserver(() => scheduleApply());
 
     const observe = () => {
-      if (document.body) {
-        observer.observe(document.body, { childList: true, subtree: true });
+      if (document.documentElement) {
+        // 페이지 미리보기는 body 밖, html 바로 아래에 추가된다.
+        observer.observe(document.documentElement, { childList: true, subtree: true });
       }
     };
 
-    if (document.body) observe();
+    if (document.documentElement) observe();
     else document.addEventListener("DOMContentLoaded", observe, { once: true });
   }
 

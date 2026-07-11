@@ -161,9 +161,9 @@
     padding:8px 9px;
     font-size:12px;
   }
-  ul#uidList{list-style:none;display:flex;flex-direction:column;gap:6px;max-height:150px;overflow:auto}
-  ul#uidList li{display:flex;justify-content:space-between;align-items:center;gap:8px;border:1px solid #333;border-radius:8px;padding:6px 8px;background:#151a22}
-  ul#uidList code{opacity:.96;word-break:break-all}
+  ul#uidList,ul#imageAuthorTargetList{list-style:none;display:flex;flex-direction:column;gap:6px;max-height:150px;margin:0;padding:0;overflow:auto}
+  ul#uidList li,ul#imageAuthorTargetList li{display:flex;justify-content:space-between;align-items:center;gap:8px;border:1px solid #333;border-radius:8px;padding:6px 8px;background:#151a22}
+  ul#uidList code,ul#imageAuthorTargetList code{opacity:.96;word-break:break-all}
   .uid-list-left{display:flex;align-items:center;gap:6px;min-width:0}
   .uid-kind{
     flex:0 0 auto;
@@ -851,10 +851,29 @@
   .media-row small{display:block;color:#8491a5;font-size:10px;font-weight:700;line-height:1.25;white-space:normal}
   .media-mini-field{display:flex;align-items:center;gap:6px;justify-self:end}
   .media-mini-field input[type="number"]{width:64px;height:30px;padding:0 7px;border-radius:9px;background:#111827;border:1px solid rgba(148,163,184,.22);font-size:12px}
-  .media-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .media-actions{display:grid;grid-template-columns:1fr;gap:8px}
   .media-actions button{min-height:32px;border-radius:10px;border:1px solid rgba(148,163,184,.28);background:#101827;color:#dbeafe;font-size:12px;font-weight:850;box-shadow:none}
   .media-actions button:hover{background:#17233a;color:#f8fafc;border-color:rgba(147,197,253,.44);box-shadow:none}
   .media-status{min-height:15px;color:#9dd6a5;font-size:11px;line-height:1.35}
+  .media-author-panel{display:flex;flex-direction:column;gap:7px;padding:9px;border:1px solid rgba(148,163,184,.18);border-radius:12px;background:rgba(8,15,27,.58)}
+  .media-author-head{display:flex;align-items:center;justify-content:space-between;gap:8px;color:#dbeafe;font-size:11px;font-weight:850}
+  .media-author-head span:last-child{color:#94a3b8;font-variant-numeric:tabular-nums}
+  .media-author-panel .row-input{margin:0}
+  .media-author-panel input{min-width:0}
+  .media-risk-panel{display:flex;flex-direction:column;gap:8px;padding:10px;border:1px solid rgba(34,211,238,.28);border-radius:13px;background:linear-gradient(145deg,rgba(8,47,73,.46),rgba(8,15,27,.72))}
+  .media-risk-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .media-risk-head strong{color:#cffafe;font-size:11.5px;font-weight:900}
+  .media-risk-grid{display:grid;grid-template-columns:1fr;gap:6px}
+  .media-risk-rule{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px;padding:7px 8px;border:1px solid rgba(148,163,184,.15);border-radius:10px;background:rgba(15,23,42,.68);color:#dbeafe;font-size:10.5px;font-weight:750}
+  .media-risk-rule>span{display:flex;align-items:center;gap:6px;min-width:0}
+  .media-risk-rule input[type="checkbox"]{accent-color:#22d3ee}
+  .media-risk-rule input[type="number"]{width:58px;height:28px;padding:0 6px;border:1px solid rgba(148,163,184,.25);border-radius:8px;background:#0b1120;color:#f8fafc;font-size:11px;text-align:right}
+  .media-risk-rule select{width:146px;height:29px;padding:0 7px;border:1px solid rgba(148,163,184,.25);border-radius:8px;background:#0b1120;color:#f8fafc;font-size:10.5px}
+  .media-risk-rule.is-disabled{opacity:.48}
+  .media-risk-note{margin:0;color:#8fb9ca;font-size:9.8px;line-height:1.4}
+  .media-risk-actions{display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .media-risk-actions button{min-height:27px;padding:0 9px;border:1px solid rgba(103,232,249,.28);border-radius:9px;background:#0e2940;color:#cffafe;font-size:10px;font-weight:800}
+  .media-risk-status{min-height:14px;color:#9dd6a5;font-size:9.8px;line-height:1.35;text-align:right}
 
 </style>
 </head>
@@ -932,22 +951,68 @@
     <div class="media-essentials-head">
       <div class="media-essentials-copy">
         <strong>이미지 차단</strong>
-        <span>켜면 게시글 이미지를 빠르게 흐림 처리하고, 이미지 위 차단 버튼으로 바로 가릴 수 있어요.</span>
+        <span>게시글과 미리보기에서 등록한 작성자 및 신규·저활동 계정의 본문 이미지를 접어 둡니다.</span>
       </div>
       <span class="media-pill">Simple</span>
     </div>
 
     <div class="media-toggle-grid">
       <div class="media-row">
-        <span>이미지 차단 켜기<small>차단 버튼, 일반글,개념글 적용을 한 번에 켭니다</small></span>
+        <span>이미지 숨기기 켜기<small>직접 등록 대상과 자동 판정 대상에 적용합니다</small></span>
         <label class="switch"><input type="checkbox" id="imageBlockEnabled"><span class="slider"></span></label>
       </div>
     </div>
 
-    <p class="mini-note">켜는 순간 유동,고닉,반고닉,신규회원,주딱/파딱 이미지까지 한 번에 흐림 처리합니다.</p>
+    <div class="media-author-panel" aria-label="이미지를 숨길 작성자 목록">
+      <div class="media-author-head"><span>이미지를 숨길 작성자</span><span id="imageAuthorTargetCount">0개</span></div>
+      <div class="row-input">
+        <input id="imageAuthorTargetInput" type="text" placeholder="UID, 39.7 또는 nick:닉네임">
+        <button id="addImageAuthorTarget" type="button">추가</button>
+      </div>
+      <ul id="imageAuthorTargetList"></ul>
+    </div>
+
+    <p class="mini-note">대상 작성자의 이미지는 게시글과 페이지 미리보기에서 축소판 없이 완전히 접힙니다. “이미지 보기”를 누르면 현재 화면에서만 복원됩니다. 대상 목록은 브라우저 로컬에만 저장됩니다.</p>
+
+    <div class="media-risk-panel" data-image-account-settings aria-label="신규 저활동 작성자 자동 이미지 숨김 설정">
+      <div class="media-risk-head">
+        <strong>신규·저활동 계정 자동 숨김</strong>
+        <label class="switch" title="신규·저활동 계정 자동 판정"><input type="checkbox" data-account-field="enabled"><span class="slider"></span></label>
+      </div>
+      <div class="media-risk-grid">
+        <label class="media-risk-rule">
+          <span><input type="checkbox" data-account-field="ageRuleEnabled" data-account-dependent>최초 공개 활동</span>
+          <span><input type="number" min="0" max="3650" data-account-field="maxPublicAgeDays" data-account-dependent>일 이하</span>
+        </label>
+        <label class="media-risk-rule">
+          <span><input type="checkbox" data-account-field="postRuleEnabled" data-account-dependent>작성 글</span>
+          <span><input type="number" min="0" data-account-field="minPostCount" data-account-dependent>개 미만</span>
+        </label>
+        <label class="media-risk-rule">
+          <span><input type="checkbox" data-account-field="commentRuleEnabled" data-account-dependent>작성 댓글</span>
+          <span><input type="number" min="0" data-account-field="minCommentCount" data-account-dependent>개 미만</span>
+        </label>
+        <label class="media-risk-rule">
+          <span>활동량 판정</span>
+          <select data-account-field="activityMatchMode" data-account-dependent>
+            <option value="both">글·댓글 모두 미달</option>
+            <option value="any">하나만 미달해도</option>
+          </select>
+        </label>
+        <label class="media-risk-rule">
+          <span>확인 중 먼저 숨기기</span>
+          <input type="checkbox" data-account-field="holdWhileChecking" data-account-dependent>
+        </label>
+      </div>
+      <p class="media-risk-note">회원 UID에만 적용됩니다. 디시는 실제 가입일을 공개하지 않아 갤로그의 최초 공개 활동일을 신규 여부의 근사치로 사용합니다. 확인 불가 시 글·댓글 기준만 적용하며, 0은 해당 기준을 끕니다.</p>
+      <div class="media-risk-actions">
+        <button type="button" data-account-clear-cache title="판정 캐시 초기화" aria-label="판정 캐시 초기화">초기화</button>
+        <span class="media-risk-status" data-account-status></span>
+      </div>
+    </div>
 
     <div class="media-actions">
-      <button type="button" id="openImageBlockList">차단 목록</button>
+      <button type="button" id="openImageBlockList">개별 이미지 차단 목록</button>
     </div>
     <div class="media-status" id="imageBlockStatus"></div>
   </section>
@@ -1341,5 +1406,6 @@
   <script src="user-block-store.js"></script>
   <script src="popup.js"></script>
   <script src="keyword-hide-ui.js"></script>
+  <script src="image-account-settings-ui.js"></script>
 </body>
 </html>

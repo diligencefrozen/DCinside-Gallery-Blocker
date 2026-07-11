@@ -812,7 +812,7 @@
 }
 .image-block-actions{
   display:grid;
-  grid-template-columns:1fr 1fr;
+  grid-template-columns:1fr;
   gap:10px;
 }
 .image-block-status{
@@ -820,10 +820,37 @@
   color:#9dd6a5;
   font-size:13px;
 }
+.image-author-panel{display:flex;flex-direction:column;gap:10px;padding:12px;border:1px solid rgba(148,163,184,.18);border-radius:14px;background:rgba(8,15,27,.56)}
+.image-author-head{display:flex;align-items:center;justify-content:space-between;gap:12px;color:#dbeafe;font-size:13px;font-weight:800}
+.image-author-head span:last-child{color:#8b9bb4;font-variant-numeric:tabular-nums}
+.image-author-input{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px}
+.image-author-input input{min-width:0}
+.image-author-list{list-style:none;display:flex;flex-direction:column;gap:7px;max-height:180px;margin:0;padding:0;overflow:auto}
+.image-author-list li{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border:1px solid #30363d;border-radius:10px;background:#151a22}
+.image-author-list code{min-width:0;word-break:break-all;color:#e5eefb}
+.image-author-token{display:flex;align-items:center;gap:8px;min-width:0}
+.image-author-kind{flex:0 0 auto;min-width:34px;padding:2px 6px;border-radius:999px;background:#1e293b;color:#bfdbfe;font-size:10px;font-weight:900;text-align:center}
+.image-author-empty{justify-content:flex-start!important;color:#8b9bb4;font-size:12px;border-style:dashed!important}
+.image-risk-panel{display:flex;flex-direction:column;gap:12px;padding:14px;border:1px solid rgba(34,211,238,.25);border-radius:16px;background:linear-gradient(145deg,rgba(8,47,73,.38),rgba(8,15,27,.68))}
+.image-risk-head{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:14px}
+.image-risk-head strong{display:block;color:#cffafe;font-size:14px;font-weight:850}
+.image-risk-head span{display:block;margin-top:3px;color:#8fb9ca;font-size:12px;line-height:1.4}
+.image-risk-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+.image-risk-rule{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:10px;min-height:42px;padding:9px 10px;border:1px solid rgba(148,163,184,.17);border-radius:11px;background:rgba(15,23,42,.68);color:#dbeafe;font-size:12px;font-weight:750}
+.image-risk-rule>span{display:flex;align-items:center;gap:7px;min-width:0}
+.image-risk-rule input[type="checkbox"]{accent-color:#22d3ee}
+.image-risk-rule input[type="number"]{width:72px;height:32px;padding:0 8px;border:1px solid #30363d;border-radius:8px;background:#010409;color:#f8fafc;text-align:right}
+.image-risk-rule select{width:175px;height:32px;padding:0 8px;border:1px solid #30363d;border-radius:8px;background:#010409;color:#f8fafc}
+.image-risk-rule.is-disabled{opacity:.48}
+.image-risk-note{margin:0;color:#8fb9ca;font-size:11.5px;line-height:1.5}
+.image-risk-actions{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.image-risk-actions button{min-height:32px;border-color:rgba(103,232,249,.28);background:#0e2940;color:#cffafe}
+.image-risk-status{min-height:16px;color:#9dd6a5;font-size:11.5px;text-align:right}
 @media(max-width:520px){
   .image-block-grid.compact{grid-template-columns:1fr}
   .image-block-row{grid-template-columns:1fr;align-items:start}
   .image-block-mini-field{justify-content:flex-start}
+  .image-risk-grid{grid-template-columns:1fr}
 }
 
 </style>
@@ -1432,22 +1459,68 @@
     <div class="image-block-head">
       <div class="image-block-copy">
         <h2>🖼️ 이미지 차단</h2>
-        <p class="note">켜면 게시글 이미지를 빠르게 흐림 처리하고, 이미지 위 차단 버튼으로 바로 가릴 수 있어요.</p>
+        <p class="note">게시글과 페이지 미리보기에서 등록한 작성자 및 신규·저활동 계정의 본문 이미지를 접어 두고, 필요할 때 버튼으로 다시 볼 수 있어요.</p>
       </div>
       <span class="image-block-pill">간단 모드</span>
     </div>
 
     <div class="image-block-grid">
       <div class="image-block-row">
-        <span>이미지 차단 켜기<small>차단 버튼, 일반글,개념글 적용을 한 번에 켭니다</small></span>
+        <span>이미지 숨기기 켜기<small>직접 등록 대상과 자동 판정 대상에 적용합니다</small></span>
         <label class="switch"><input type="checkbox" id="mediaShieldEnabled"><span class="slider"></span></label>
       </div>
     </div>
 
-    <p class="note">켜는 순간 유동,고닉,반고닉,신규회원,주딱/파딱 이미지까지 한 번에 흐림 처리합니다.</p>
+    <div class="image-author-panel" aria-label="이미지를 숨길 작성자 목록">
+      <div class="image-author-head"><span>이미지를 숨길 작성자</span><span id="mediaShieldAuthorCount">0개</span></div>
+      <div class="image-author-input">
+        <input id="mediaShieldAuthorInput" type="text" placeholder="UID, 39.7 또는 nick:닉네임">
+        <button id="addMediaShieldAuthor" type="button">추가</button>
+      </div>
+      <ul class="image-author-list" id="mediaShieldAuthorList"></ul>
+    </div>
+
+    <p class="note">대상 작성자의 이미지는 게시글과 페이지 미리보기에서 축소판 없이 완전히 접힙니다. “이미지 보기”를 누르면 현재 화면에서만 복원됩니다. 대상 목록은 브라우저 로컬에만 저장됩니다.</p>
+
+    <div class="image-risk-panel" data-image-account-settings aria-label="신규 저활동 작성자 자동 이미지 숨김 설정">
+      <div class="image-risk-head">
+        <div><strong>신규·저활동 계정 자동 숨김</strong><span>공개 활동 기간과 작성 글·댓글 수를 기준으로 이미지를 자동으로 접습니다.</span></div>
+        <label class="switch" title="신규·저활동 계정 자동 판정"><input type="checkbox" data-account-field="enabled"><span class="slider"></span></label>
+      </div>
+      <div class="image-risk-grid">
+        <label class="image-risk-rule">
+          <span><input type="checkbox" data-account-field="ageRuleEnabled" data-account-dependent>최초 공개 활동</span>
+          <span><input type="number" min="0" max="3650" data-account-field="maxPublicAgeDays" data-account-dependent>일 이하</span>
+        </label>
+        <label class="image-risk-rule">
+          <span><input type="checkbox" data-account-field="postRuleEnabled" data-account-dependent>작성 글</span>
+          <span><input type="number" min="0" data-account-field="minPostCount" data-account-dependent>개 미만</span>
+        </label>
+        <label class="image-risk-rule">
+          <span><input type="checkbox" data-account-field="commentRuleEnabled" data-account-dependent>작성 댓글</span>
+          <span><input type="number" min="0" data-account-field="minCommentCount" data-account-dependent>개 미만</span>
+        </label>
+        <label class="image-risk-rule">
+          <span>활동량 판정 방식</span>
+          <select data-account-field="activityMatchMode" data-account-dependent>
+            <option value="both">글·댓글 모두 미달</option>
+            <option value="any">하나만 미달해도</option>
+          </select>
+        </label>
+        <label class="image-risk-rule">
+          <span>확인 중 이미지 먼저 숨기기</span>
+          <input type="checkbox" data-account-field="holdWhileChecking" data-account-dependent>
+        </label>
+      </div>
+      <p class="image-risk-note">자동 판정은 회원 UID에만 적용됩니다. 디시는 실제 회원가입일을 공개하지 않으므로 갤로그의 가장 오래된 공개 글·댓글 날짜를 ‘최초 공개 활동일’로 사용합니다. 갤로그가 비공개면 기간 조건을 건너뛰고 글·댓글 수만 판정하며, 기준값 0은 해당 조건을 비활성화합니다.</p>
+      <div class="image-risk-actions">
+        <button type="button" data-account-clear-cache>판정 캐시 초기화</button>
+        <span class="image-risk-status" data-account-status></span>
+      </div>
+    </div>
 
     <div class="image-block-actions">
-      <button type="button" id="openMediaShieldBlocked">차단 목록</button>
+      <button type="button" id="openMediaShieldBlocked">개별 이미지 차단 목록</button>
     </div>
     <div class="image-block-status" id="mediaShieldStatus"></div>
   </section>
@@ -1480,5 +1553,6 @@
 <script src="user-block-store.js"></script>
 <script src="options.js"></script>
 <script src="keyword-hide-ui.js"></script>
+<script src="image-account-settings-ui.js"></script>
 </body>
 </html>

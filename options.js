@@ -46,6 +46,8 @@ const KEYWORD_DEFAULT_TARGETS = {
 
 const IMAGE_BLOCK_CONFIG_KEY = "dcbImageBlockConfig";
 const IMAGE_BLOCK_RECORD_KEY = "dcbImageBlockRecords";
+const IMAGE_BLOCK_AUTHOR_TARGET_KEY = "dcbImageBlockAuthorTargets";
+const IMAGE_ACCOUNT_RULE_KEY = "dcbImageAccountRules";
 const IMAGE_BLOCK_CONFIG_DEFAULT = {
   enabled: false,
   toolbar: false,
@@ -64,6 +66,18 @@ const IMAGE_BLOCK_CONFIG_DEFAULT = {
   shortcuts: false,
   hideBlockedNotice: false
 };
+const IMAGE_ACCOUNT_RULE_DEFAULT = {
+  enabled: true,
+  ageRuleEnabled: true,
+  maxPublicAgeDays: 30,
+  postRuleEnabled: true,
+  minPostCount: 5,
+  commentRuleEnabled: true,
+  minCommentCount: 10,
+  activityMatchMode: "both",
+  holdWhileChecking: true,
+  cacheHours: 24
+};
 
 const BACKUP_KEYS = [
   "blockedIds", "removeSelectors", "removeSelectorsGall", "removeSelectorsSearch",
@@ -73,7 +87,7 @@ const BACKUP_KEYS = [
   "autoRefreshInterval", "delay", "showUidBadge", "showMemberIpInfo", "linkWarnEnabled", "hideDCGray",
   "previewEnabled", "hideAnonymousEnabled", "gamemecaBlockEnabled", "doryBlockEnabled", "noticeBlockEnabled", "compactListEnabled",
   "userMemoEnabled", "userMemos",
-  IMAGE_BLOCK_CONFIG_KEY, IMAGE_BLOCK_RECORD_KEY,
+  IMAGE_BLOCK_CONFIG_KEY, IMAGE_BLOCK_RECORD_KEY, IMAGE_BLOCK_AUTHOR_TARGET_KEY, IMAGE_ACCOUNT_RULE_KEY,
   "keywordBlockEnabled", "blockedKeywords", "keywordBlockTargets",
   "keywordHideEnabled", "hiddenKeywords", "keywordHideTargets",
   "dcbFontFamily", "dcbFontCustomFamily", "dcbFontScale", "dcbApplyFontToDc"
@@ -117,6 +131,8 @@ const BACKUP_DEFAULTS = {
   userMemos: {},
   [IMAGE_BLOCK_CONFIG_KEY]: IMAGE_BLOCK_CONFIG_DEFAULT,
   [IMAGE_BLOCK_RECORD_KEY]: {},
+  [IMAGE_BLOCK_AUTHOR_TARGET_KEY]: [],
+  [IMAGE_ACCOUNT_RULE_KEY]: IMAGE_ACCOUNT_RULE_DEFAULT,
   keywordBlockEnabled: false,
   blockedKeywords: [],
   keywordBlockTargets: KEYWORD_DEFAULT_TARGETS,
@@ -561,11 +577,11 @@ function normalizeImageBlockConfig(value) {
     ...source,
     enabled,
     toolbar: enabled,
-    blurAnonymous: enabled,
-    blurSemi: enabled,
-    blurNew: enabled,
-    blurFixed: enabled,
-    blurManager: enabled,
+    blurAnonymous: false,
+    blurSemi: false,
+    blurNew: false,
+    blurFixed: false,
+    blurManager: false,
     normalPost: enabled,
     recommendedPost: enabled,
     skipSmall: false,
@@ -588,6 +604,41 @@ function normalizeImageBlockRecords(value) {
     }
   }
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
+function normalizeImageAuthorTargets(value) {
+  const out = [];
+  const seen = new Set();
+  (Array.isArray(value) ? value : []).forEach((entry) => {
+    const token = globalThis.DCBUserBlockStore?.normalizeToken
+      ? DCBUserBlockStore.normalizeToken(entry)
+      : sanitizeUid(entry);
+    const key = token.toLowerCase();
+    if (!token || seen.has(key)) return;
+    seen.add(key);
+    out.push(token);
+  });
+  return out;
+}
+
+function normalizeImageAccountRules(value) {
+  const source = value && typeof value === "object" ? value : {};
+  const int = (input, fallback, min, max) => {
+    const parsed = Number.parseInt(input, 10);
+    return Number.isFinite(parsed) ? Math.min(max, Math.max(min, parsed)) : fallback;
+  };
+  return {
+    enabled: source.enabled !== false,
+    ageRuleEnabled: source.ageRuleEnabled !== false,
+    maxPublicAgeDays: int(source.maxPublicAgeDays, IMAGE_ACCOUNT_RULE_DEFAULT.maxPublicAgeDays, 0, 3650),
+    postRuleEnabled: source.postRuleEnabled !== false,
+    minPostCount: int(source.minPostCount, IMAGE_ACCOUNT_RULE_DEFAULT.minPostCount, 0, 1_000_000),
+    commentRuleEnabled: source.commentRuleEnabled !== false,
+    minCommentCount: int(source.minCommentCount, IMAGE_ACCOUNT_RULE_DEFAULT.minCommentCount, 0, 1_000_000),
+    activityMatchMode: source.activityMatchMode === "any" ? "any" : "both",
+    holdWhileChecking: source.holdWhileChecking !== false,
+    cacheHours: int(source.cacheHours, IMAGE_ACCOUNT_RULE_DEFAULT.cacheHours, 1, 168)
+  };
 }
 
 function sanitizeImport(raw) {
@@ -661,7 +712,8 @@ async function exportSettings() {
           [QUICK_BLOCK_POSITION_SAVED_AT_KEY]: 0,
           userMemos: {},
           [IMAGE_BLOCK_CONFIG_KEY]: null,
-          [IMAGE_BLOCK_RECORD_KEY]: {}
+          [IMAGE_BLOCK_RECORD_KEY]: {},
+          [IMAGE_BLOCK_AUTHOR_TARGET_KEY]: []
         })
       : {};
 
@@ -676,9 +728,10 @@ async function exportSettings() {
       localSnapshot[IMAGE_BLOCK_CONFIG_KEY] || syncSnapshot[IMAGE_BLOCK_CONFIG_KEY]
     );
     snapshot[IMAGE_BLOCK_RECORD_KEY] = normalizeImageBlockRecords(localSnapshot[IMAGE_BLOCK_RECORD_KEY]);
+    snapshot[IMAGE_BLOCK_AUTHOR_TARGET_KEY] = normalizeImageAuthorTargets(localSnapshot[IMAGE_BLOCK_AUTHOR_TARGET_KEY]);
 
     const payload = {
-      version: 4,
+      version: 6,
       exportedAt: new Date().toISOString(),
       data: snapshot
     };
@@ -717,10 +770,19 @@ function importSettingsFromFile(file) {
       const imageBlockRecordsPatch = hasImageBlockRecords
         ? normalizeImageBlockRecords(patch[IMAGE_BLOCK_RECORD_KEY])
         : null;
+      const hasImageBlockAuthorTargets = Object.prototype.hasOwnProperty.call(patch, IMAGE_BLOCK_AUTHOR_TARGET_KEY);
+      const imageBlockAuthorTargetsPatch = hasImageBlockAuthorTargets
+        ? normalizeImageAuthorTargets(patch[IMAGE_BLOCK_AUTHOR_TARGET_KEY])
+        : null;
+      const hasImageAccountRules = Object.prototype.hasOwnProperty.call(patch, IMAGE_ACCOUNT_RULE_KEY);
+      if (hasImageAccountRules) {
+        patch[IMAGE_ACCOUNT_RULE_KEY] = normalizeImageAccountRules(patch[IMAGE_ACCOUNT_RULE_KEY]);
+      }
 
       delete patch.blockedUids;
       delete patch.userMemos;
       delete patch[IMAGE_BLOCK_RECORD_KEY];
+      delete patch[IMAGE_BLOCK_AUTHOR_TARGET_KEY];
       if (hasImageBlockConfig) patch[IMAGE_BLOCK_CONFIG_KEY] = imageBlockConfigPatch;
 
       if (Object.prototype.hasOwnProperty.call(patch, QUICK_BLOCK_POSITION_KEY)) {
@@ -749,6 +811,10 @@ function importSettingsFromFile(file) {
 
       if (hasImageBlockRecords && chrome.storage.local) {
         await chrome.storage.local.set({ [IMAGE_BLOCK_RECORD_KEY]: imageBlockRecordsPatch || {} });
+      }
+
+      if (hasImageBlockAuthorTargets && chrome.storage.local) {
+        await chrome.storage.local.set({ [IMAGE_BLOCK_AUTHOR_TARGET_KEY]: imageBlockAuthorTargetsPatch || [] });
       }
 
       if (hasBlockedUids && globalThis.DCBUserBlockStore?.setAllTokens) {
@@ -2119,6 +2185,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 (() => {
   const CONFIG_KEY = "dcbImageBlockConfig";
+  const AUTHOR_TARGET_KEY = "dcbImageBlockAuthorTargets";
   const DEFAULTS = Object.freeze({
     enabled: false,
     toolbar: false,
@@ -2139,12 +2206,17 @@ chrome.storage.onChanged.addListener((changes, area) => {
   });
 
   const ui = {
-    enabled: document.getElementById("imageBlockEnabled"),
-    status: document.getElementById("imageBlockStatus"),
-    list: document.getElementById("openImageBlockList")
+    enabled: document.getElementById("mediaShieldEnabled"),
+    status: document.getElementById("mediaShieldStatus"),
+    list: document.getElementById("openMediaShieldBlocked"),
+    targetInput: document.getElementById("mediaShieldAuthorInput"),
+    targetAdd: document.getElementById("addMediaShieldAuthor"),
+    targetList: document.getElementById("mediaShieldAuthorList"),
+    targetCount: document.getElementById("mediaShieldAuthorCount")
   };
 
   if (!ui.enabled && !ui.list) return;
+  let authorTargets = [];
 
   const applyOneClick = (value = {}) => {
     const on = value?.enabled === true;
@@ -2153,11 +2225,11 @@ chrome.storage.onChanged.addListener((changes, area) => {
       ...(value && typeof value === "object" ? value : {}),
       enabled: on,
       toolbar: on,
-      blurAnonymous: on,
-      blurSemi: on,
-      blurNew: on,
-      blurFixed: on,
-      blurManager: on,
+      blurAnonymous: false,
+      blurSemi: false,
+      blurNew: false,
+      blurFixed: false,
+      blurManager: false,
       normalPost: on,
       recommendedPost: on,
       skipSmall: false,
@@ -2180,6 +2252,71 @@ chrome.storage.onChanged.addListener((changes, area) => {
     if (ui.enabled) ui.enabled.checked = state.enabled === true;
   };
 
+  const normalizeTargets = (values) => {
+    const out = [];
+    const seen = new Set();
+    (Array.isArray(values) ? values : []).forEach((value) => {
+      const token = globalThis.DCBUserBlockStore?.normalizeToken
+        ? DCBUserBlockStore.normalizeToken(value)
+        : sanitizeUid(value);
+      const key = token.toLowerCase();
+      if (!token || seen.has(key)) return;
+      seen.add(key);
+      out.push(token);
+    });
+    return out;
+  };
+
+  const targetKind = (token) => {
+    if (/^nick\s*[:=]/i.test(token)) return "NICK";
+    return /^\d{1,3}(?:\.\d{1,3}){1,3}$/.test(token) ? "IP" : "UID";
+  };
+
+  const renderTargets = (values) => {
+    authorTargets = normalizeTargets(values);
+    if (ui.targetCount) ui.targetCount.textContent = `${authorTargets.length}개`;
+    if (!ui.targetList) return;
+    ui.targetList.innerHTML = "";
+
+    if (!authorTargets.length) {
+      const empty = document.createElement("li");
+      empty.className = "image-author-empty";
+      empty.textContent = "등록된 이미지 숨김 대상이 없습니다.";
+      ui.targetList.appendChild(empty);
+      return;
+    }
+
+    authorTargets.forEach((token, index) => {
+      const item = document.createElement("li");
+      const left = document.createElement("span");
+      left.className = "image-author-token";
+      const kind = document.createElement("span");
+      kind.className = "image-author-kind";
+      kind.textContent = targetKind(token);
+      const code = document.createElement("code");
+      code.textContent = token;
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.dataset.index = String(index);
+      remove.textContent = "삭제";
+      left.append(kind, code);
+      item.append(left, remove);
+      ui.targetList.appendChild(item);
+    });
+  };
+
+  const saveTargets = (values, message = "이미지 숨김 대상을 저장했어요.") => {
+    const next = normalizeTargets(values);
+    chrome.storage.local.set({ [AUTHOR_TARGET_KEY]: next }, () => {
+      if (chrome.runtime.lastError) {
+        notice("이미지 숨김 대상을 저장하지 못했어요.", true);
+        return;
+      }
+      renderTargets(next);
+      notice(message);
+    });
+  };
+
   const current = () => applyOneClick({ enabled: ui.enabled?.checked === true });
 
   const save = () => {
@@ -2191,15 +2328,22 @@ chrome.storage.onChanged.addListener((changes, area) => {
       }
       chrome.storage.local.set({ [CONFIG_KEY]: next });
       render(next);
-      notice(next.enabled ? "이미지 차단을 켰어요. 모든 작성자 이미지에 바로 적용됩니다." : "이미지 차단을 껐어요. 필요할 때 다시 켜면 됩니다.");
+      notice(next.enabled
+        ? `이미지 숨기기를 켰어요. 직접 대상 ${authorTargets.length}명과 자동 판정에 적용됩니다.`
+        : "이미지 숨기기를 껐어요. 대상 목록은 그대로 유지됩니다.");
     });
   };
 
   const load = () => {
-    chrome.storage.sync.get({ [CONFIG_KEY]: DEFAULTS }, (data) => {
-      const state = applyOneClick(data[CONFIG_KEY]);
-      render(state);
-      notice(state.enabled ? "이미지 차단 사용 중입니다. 모든 작성자 이미지에 적용됩니다." : "이미지 차단은 꺼져 있어요.");
+    chrome.storage.sync.get({ [CONFIG_KEY]: null }, (syncData) => {
+      chrome.storage.local.get({ [CONFIG_KEY]: null, [AUTHOR_TARGET_KEY]: null }, (localData) => {
+        const state = applyOneClick(syncData[CONFIG_KEY] || localData[CONFIG_KEY] || DEFAULTS);
+        render(state);
+        renderTargets(localData[AUTHOR_TARGET_KEY] || []);
+        notice(state.enabled
+          ? `이미지 숨김 사용 중 · 직접 대상 ${authorTargets.length}명 + 자동 판정`
+          : "이미지 숨기기는 꺼져 있어요.");
+      });
     });
   };
 
@@ -2230,9 +2374,39 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
   ui.enabled?.addEventListener("change", save);
   ui.list?.addEventListener("click", () => sendToPage("dcb.imageBlock.openList"));
+  ui.targetAdd?.addEventListener("click", () => {
+    const token = globalThis.DCBUserBlockStore?.normalizeToken
+      ? DCBUserBlockStore.normalizeToken(ui.targetInput?.value || "")
+      : sanitizeUid(ui.targetInput?.value || "");
+    if (!token) {
+      notice("UID, IP 또는 닉네임을 입력해 주세요.", true);
+      return;
+    }
+    const next = normalizeTargets([...authorTargets, token]);
+    if (next.length === authorTargets.length) {
+      notice("이미 등록된 작성자입니다.", true);
+      return;
+    }
+    if (ui.targetInput) ui.targetInput.value = "";
+    saveTargets(next, `${token} 작성자의 이미지를 숨기도록 추가했어요.`);
+  });
+  ui.targetInput?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    ui.targetAdd?.click();
+  });
+  ui.targetList?.addEventListener("click", (event) => {
+    const button = event.target.closest("button[data-index]");
+    if (!button) return;
+    const index = Number(button.dataset.index);
+    if (!Number.isInteger(index) || index < 0 || index >= authorTargets.length) return;
+    const removed = authorTargets[index];
+    saveTargets(authorTargets.filter((_, idx) => idx !== index), `${removed} 작성자를 이미지 숨김 대상에서 삭제했어요.`);
+  });
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if ((area === "sync" || area === "local") && changes[CONFIG_KEY]) render(applyOneClick(changes[CONFIG_KEY].newValue));
+    if (area === "local" && changes[AUTHOR_TARGET_KEY]) renderTargets(changes[AUTHOR_TARGET_KEY].newValue || []);
   });
 
   load();

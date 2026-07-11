@@ -4,6 +4,7 @@
   const UI = "dcibx";
   const CONFIG_KEY = "dcbImageBlockConfig";
   const RECORD_KEY = "dcbImageBlockRecords";
+  const AUTHOR_TARGET_KEY = "dcbImageBlockAuthorTargets";
   const BASE_CONFIG = Object.freeze({
     enabled: false,
     toolbar: false,
@@ -25,7 +26,10 @@
 
   let config = { ...BASE_CONFIG };
   let records = {};
-  let author = "anonymous";
+  let authorTargets = [];
+  let authorMatcher = { uids: new Set(), ips: new Set(), nicks: new Set(), empty: true };
+  let authorIdentity = { uid: "", ip: "", nick: "" };
+  let authorSignature = "";
   let ready = false;
   let observer = null;
   let pulse = null;
@@ -43,11 +47,13 @@
       ...(value && typeof value === "object" ? value : {}),
       enabled,
       toolbar: enabled,
-      blurAnonymous: enabled,
-      blurSemi: enabled,
-      blurNew: enabled,
-      blurFixed: enabled,
-      blurManager: enabled,
+      // 레거시 작성자 유형 전체 블러는 더 이상 사용하지 않는다.
+      // 필드는 이전 설정/백업 호환을 위해 남겨 둔다.
+      blurAnonymous: false,
+      blurSemi: false,
+      blurNew: false,
+      blurFixed: false,
+      blurManager: false,
       normalPost: enabled,
       recommendedPost: enabled,
       skipSmall: false,
@@ -74,13 +80,88 @@
 
   const storeLocal = (key, value) => chrome.storage.local.set({ [key]: value });
 
+  function normalizeNick(value) {
+    return cleanText(value)
+      .normalize("NFKC")
+      .replace(/\s+/g, " ")
+      .replace(/\((?:\d{1,3}\.){1,3}\d{0,3}\)\s*$/g, "")
+      .trim()
+      .slice(0, 80);
+  }
+
+  function normalizeIpPrefix(value) {
+    const match = cleanText(value)
+      .replace(/^ip\s*[:=]\s*/i, "")
+      .replace(/^\(|\)$/g, "")
+      .match(/\b(\d{1,3}\.\d{1,3})(?:\.\d{1,3}){0,2}\b/);
+    return match ? match[1] : "";
+  }
+
+  function normalizeAuthorTarget(value) {
+    const raw = cleanText(value);
+    const nickMatch = raw.match(/^nick\s*[:=]\s*(.+)$/i);
+    if (nickMatch) {
+      const nick = normalizeNick(nickMatch[1]);
+      return nick ? `nick:${nick}` : "";
+    }
+
+    const compact = raw
+      .replace(/^uid\s*[:=]\s*/i, "")
+      .replace(/^ip\s*[:=]\s*/i, "")
+      .replace(/^\(|\)$/g, "")
+      .replace(/\s+/g, "")
+      .trim();
+    if (!compact) return "";
+
+    if (/^\d{1,3}(?:\.\d{1,3}){1,3}$/.test(compact)) return normalizeIpPrefix(compact);
+    if (/^[A-Za-z0-9._-]{2,64}$/.test(compact)) return compact;
+
+    const nick = normalizeNick(raw);
+    return nick ? `nick:${nick}` : "";
+  }
+
+  function normalizeAuthorTargets(values) {
+    const out = [];
+    const seen = new Set();
+    (Array.isArray(values) ? values : []).forEach((value) => {
+      const token = normalizeAuthorTarget(value);
+      const key = token.toLowerCase();
+      if (!token || seen.has(key)) return;
+      seen.add(key);
+      out.push(token);
+    });
+    return out;
+  }
+
+  function buildAuthorMatcher(values) {
+    const uids = new Set();
+    const ips = new Set();
+    const nicks = new Set();
+    normalizeAuthorTargets(values).forEach((token) => {
+      if (/^nick:/i.test(token)) {
+        const nick = normalizeNick(token.replace(/^nick\s*[:=]\s*/i, ""));
+        if (nick) nicks.add(nick.toLowerCase());
+        return;
+      }
+      const ip = normalizeIpPrefix(token);
+      if (ip && /^\d{1,3}(?:\.\d{1,3}){1,3}$/.test(token)) {
+        ips.add(ip);
+        return;
+      }
+      uids.add(token.toLowerCase());
+    });
+    return { uids, ips, nicks, empty: !uids.size && !ips.size && !nicks.size };
+  }
+
   async function loadStore() {
     const [syncData, localData] = await Promise.all([
       chrome.storage.sync.get({ [CONFIG_KEY]: null }),
-      chrome.storage.local.get({ [CONFIG_KEY]: null, [RECORD_KEY]: {} })
+      chrome.storage.local.get({ [CONFIG_KEY]: null, [RECORD_KEY]: {}, [AUTHOR_TARGET_KEY]: null })
     ]);
-    config = oneClickConfig(localData[CONFIG_KEY] || syncData[CONFIG_KEY] || BASE_CONFIG);
+    config = oneClickConfig(syncData[CONFIG_KEY] || localData[CONFIG_KEY] || BASE_CONFIG);
     records = asRecordMap(localData[RECORD_KEY]);
+    authorTargets = normalizeAuthorTargets(localData[AUTHOR_TARGET_KEY]);
+    authorMatcher = buildAuthorMatcher(authorTargets);
     ready = true;
   }
 
@@ -91,16 +172,22 @@
     style.textContent = `
       .${UI}-frame{position:relative;display:inline-block;max-width:100%;vertical-align:top;isolation:isolate}
       .${UI}-frame img,.${UI}-frame video,.${UI}-frame iframe{max-width:100%}
-      .${UI}-blur img,.${UI}-blur video,.${UI}-blur iframe{filter:blur(19px) saturate(.82);transition:filter .18s ease}
-      .${UI}-blur:after{content:'클릭하면 바로 보여요';position:absolute;left:50%;top:50%;z-index:3;transform:translate(-50%,-50%);padding:8px 11px;border-radius:999px;background:rgba(15,23,42,.78);color:#fff;font:800 12px/1 system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;letter-spacing:-.01em;pointer-events:none;backdrop-filter:blur(10px)}
       .${UI}-actions{position:absolute;right:10px;top:10px;z-index:2147483000;display:flex;gap:6px;padding:5px;border:1px solid rgba(255,255,255,.14);border-radius:999px;background:rgba(8,13,23,.72);box-shadow:0 12px 30px rgba(0,0,0,.22);backdrop-filter:blur(14px);opacity:.88;transition:opacity .16s ease,transform .16s ease;transform:translateY(-2px)}
       .${UI}-frame:hover .${UI}-actions,.${UI}-actions:focus-within{opacity:1;transform:translateY(0)}
-      .${UI}-actions button,.${UI}-modal button{appearance:none;border:0;border-radius:999px;background:#f8fafc;color:#111827;font:850 11px/1 system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;letter-spacing:-.01em;min-height:26px;padding:0 10px;cursor:pointer}
+      .${UI}-actions button,.${UI}-modal button,.${UI}-notice button{appearance:none;border:0;border-radius:999px;background:#f8fafc;color:#111827;font:850 11px/1 system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;letter-spacing:-.01em;min-height:30px;padding:0 12px;cursor:pointer;box-shadow:0 5px 16px rgba(0,0,0,.22);transition:filter .15s ease,transform .15s ease,box-shadow .15s ease}
       .${UI}-actions button{background:#ff4d6d;color:#fff}
       .${UI}-notice{display:flex;align-items:center;gap:10px;cursor:pointer;margin:12px 0;padding:12px 13px;border:1px solid rgba(148,163,184,.26);border-radius:16px;background:#0f172a;color:#dbeafe;font:750 12px/1.4 system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
-      .${UI}-notice img{width:46px;height:46px;object-fit:cover;border-radius:12px;background:#1f2937}
       .${UI}-notice strong{display:block;color:#fff;font-size:13px;margin-bottom:2px}
-      .${UI}-notice button{margin-left:auto;white-space:nowrap}
+      .${UI}-notice button{margin-left:0;white-space:nowrap}
+      .${UI}-notice>span+button{margin-left:auto}
+      .${UI}-notice button[data-act='peek']{background:#67e8f9;color:#083344;border:1px solid #a5f3fc;box-shadow:0 0 0 2px rgba(103,232,249,.16),0 8px 20px rgba(6,182,212,.26)}
+      .${UI}-notice button[data-act='unblock']{background:#fb7185;color:#fff;border:1px solid #fda4af;box-shadow:0 0 0 2px rgba(251,113,133,.14),0 8px 20px rgba(225,29,72,.24)}
+      .${UI}-notice button:hover{filter:brightness(1.1);transform:translateY(-1px)}
+      .${UI}-author-notice{min-height:52px;border-style:dashed;background:linear-gradient(135deg,#0f172a,#111827)}
+      .${UI}-author-notice span span{display:block;color:#a5b4c7;font-size:11px;font-weight:650}
+      .${UI}-signal-notice{min-height:52px;border-color:rgba(103,232,249,.48);background:linear-gradient(135deg,#082f49,#0f172a)}
+      .${UI}-signal-notice[data-pending='1']{border-style:dashed;opacity:.94}
+      .${UI}-signal-notice span span{display:block;color:#bae6fd;font-size:11px;font-weight:650}
       .${UI}-overlay{position:fixed;inset:0;z-index:2147483400;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(2,6,23,.62);backdrop-filter:blur(10px)}
       .${UI}-modal{width:min(780px,calc(100vw - 32px));max-height:min(720px,calc(100vh - 32px));display:flex;flex-direction:column;overflow:hidden;border:1px solid rgba(255,255,255,.12);border-radius:24px;background:#0b1120;color:#e5edf8;box-shadow:0 30px 90px rgba(0,0,0,.4);font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
       .${UI}-top{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:18px 20px;border-bottom:1px solid rgba(148,163,184,.16)}
@@ -115,6 +202,9 @@
       .${UI}-info strong{color:#e5edf8;font-size:12px;line-height:1.3}
       .${UI}-info button{width:100%;min-height:30px;background:#ff4d6d;color:#fff}
       .${UI}-empty{padding:42px 20px;text-align:center;color:#94a3b8;font-weight:750}
+      #dcb-preview-overlay .dcbpv-article .${UI}-frame{display:block;width:max-content;max-width:100%;margin:10px auto}
+      #dcb-preview-overlay .dcbpv-article .${UI}-frame>img,#dcb-preview-overlay .dcbpv-article .${UI}-frame>video,#dcb-preview-overlay .dcbpv-article .${UI}-frame>iframe{margin:0!important}
+      #dcb-preview-overlay .dcbpv-article>.${UI}-notice{margin:10px 0}
     `;
     const host = document.head || document.documentElement;
     if (!host) {
@@ -128,41 +218,127 @@
     return cleanText(value).replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
   }
 
-  function detectAuthor() {
-    const box = $(".gall_writer");
-    if (!box) return "anonymous";
-    const html = box.innerHTML || "";
-    const uid = cleanText(box.getAttribute("data-uid"));
-    const ip = cleanText(box.getAttribute("data-ip"));
-    if (/sub_manager|manager/i.test(html)) return "manager";
-    if (uid && /newnik/i.test(html)) return "new";
-    if (uid && /fix_nik/i.test(html)) return "fixed";
-    if (uid) return "semi";
-    if (ip || $(".ip", box)) return "anonymous";
-    return "anonymous";
+  function previewRootFor(subject) {
+    if (!subject || subject === document) return null;
+    const node = subject.nodeType === 1 ? subject : subject.parentElement;
+    return node?.closest?.("#dcb-preview-overlay") || null;
   }
 
-  function recommendedPage() {
+  function authorBox(subject = null) {
+    const previewRoot = previewRootFor(subject);
+    if (previewRoot) {
+      return $(
+        ".dcbpv-author-name .gall_writer,.dcbpv-author-name .ub-writer," +
+        ".dcbpv-writer .gall_writer,.dcbpv-writer .ub-writer",
+        previewRoot
+      );
+    }
+    return $(
+      ".gall_writer[data-loc='view']," +
+      ".gallview_head .gall_writer,.view_head .gall_writer," +
+      ".view_content_wrap .gall_writer,.gall_writer"
+    );
+  }
+
+  function dataValue(scope, names) {
+    for (const name of names) {
+      const own = cleanText(scope?.getAttribute?.(name));
+      if (own) return own;
+      const child = scope?.querySelector?.(`[${name}]`);
+      const nested = cleanText(child?.getAttribute?.(name));
+      if (nested) return nested;
+    }
+    return "";
+  }
+
+  function uidFromGallog(scope) {
+    if (!scope) return "";
+    const refs = [scope, ...$$("[href*='gallog.dcinside.com'],[onclick*='gallog.dcinside.com']", scope)];
+    for (const ref of refs) {
+      const text = [ref.getAttribute?.("href"), ref.getAttribute?.("onclick")].filter(Boolean).join(" ");
+      const match = text.match(/gallog\.dcinside\.com\/?([A-Za-z0-9._-]{2,64})/i);
+      if (match) return match[1];
+      const query = text.match(/[?&](?:id|user_id|userid|uid)=([A-Za-z0-9._-]{2,64})/i);
+      if (query) return query[1];
+    }
+    return "";
+  }
+
+  function detectAuthorIdentity(subject = null) {
+    const box = authorBox(subject);
+    if (!box) return { uid: "", ip: "", nick: "" };
+
+    const rawUid =
+      dataValue(box, ["data-full-uid", "data-uid", "data-memo-uid", "data-user-id", "data-userid", "data-user_id"]) ||
+      cleanText($(".dcb-uid-badge", box)?.getAttribute?.("data-full-uid")) ||
+      uidFromGallog(box);
+    const uid = /^[A-Za-z0-9._-]{2,64}$/.test(rawUid) && !/^\d{1,3}(?:\.\d{1,3}){1,3}$/.test(rawUid)
+      ? rawUid
+      : "";
+
+    const rawIp =
+      dataValue(box, ["data-ip", "data-memo-ip"]) ||
+      cleanText($(".ip,.refresherUserData.ip", box)?.textContent) ||
+      cleanText(box.textContent);
+    const ip = normalizeIpPrefix(rawIp);
+
+    const nickEl = $(".nickname,.nick_name,.user_nick", box);
+    const nick = normalizeNick(
+      dataValue(box, ["data-nick"]) ||
+      nickEl?.getAttribute?.("title") ||
+      nickEl?.textContent ||
+      ""
+    );
+
+    return { uid, ip, nick };
+  }
+
+  function refreshAuthorIdentity() {
+    const next = detectAuthorIdentity();
+    const signature = `${next.uid.toLowerCase()}|${next.ip}|${next.nick.toLowerCase()}`;
+    const changed = signature !== authorSignature;
+    authorIdentity = next;
+    authorSignature = signature;
+    return changed;
+  }
+
+  function authorMatchesTarget(identity = authorIdentity) {
+    if (authorMatcher.empty) return false;
+    if (identity.uid && authorMatcher.uids.has(identity.uid.toLowerCase())) return true;
+    if (identity.ip && authorMatcher.ips.has(normalizeIpPrefix(identity.ip))) return true;
+    const nick = normalizeNick(identity.nick).toLowerCase();
+    if (nick) {
+      for (const blockedNick of authorMatcher.nicks) {
+        if (blockedNick && nick.includes(blockedNick)) return true;
+      }
+    }
+    return false;
+  }
+
+  function recommendedPage(subject = null) {
+    // 목록 위에 열린 미리보기는 별도의 게시글이므로 목록의 추천 아이콘을
+    // 판정 근거로 사용하지 않는다. 간단 모드에서는 일반/추천 모두 활성화된다.
+    if (previewRootFor(subject)) return false;
     const params = new URLSearchParams(location.search);
     if (params.get("exception_mode") === "recommend") return true;
     return !!$(".gallview_head .icon_recomimg,.view_head .icon_recomimg,.titlebox .icon_recomimg");
   }
 
-  function blurAllowed() {
+  function postAllowed(subject = null) {
     if (!config.enabled) return false;
-    if (recommendedPage() ? !config.recommendedPost : !config.normalPost) return false;
-    return !!{
-      anonymous: config.blurAnonymous,
-      semi: config.blurSemi,
-      new: config.blurNew,
-      fixed: config.blurFixed,
-      manager: config.blurManager
-    }[author];
+    if (recommendedPage(subject) ? !config.recommendedPost : !config.normalPost) return false;
+    return true;
   }
 
   function gatherMedia(base) {
     if (!base) return [];
-    const selector = ".writing_view_box img,.writing_view_box video,.writing_view_box iframe,.write_div img,.write_div video,.write_div iframe";
+    const selector = [
+      ".writing_view_box img", ".writing_view_box video", ".writing_view_box iframe",
+      ".write_div img", ".write_div video", ".write_div iframe",
+      "#dcb-preview-overlay .dcbpv-article img",
+      "#dcb-preview-overlay .dcbpv-article video",
+      "#dcb-preview-overlay .dcbpv-article iframe"
+    ].join(",");
     if (base.nodeType === 9 || base.nodeType === 11) return $$(selector, base);
     if (base.nodeType !== 1) return [];
     const self = base.matches?.(selector) ? [base] : [];
@@ -187,6 +363,9 @@
     delete frame.dataset.ibxKey;
     delete frame.dataset.ibxClick;
     delete frame.dataset.ibxPeek;
+    delete frame.dataset.ibxAuthorPeek;
+    delete frame.dataset.ibxSignalPeek;
+    delete frame.dataset.ibxSignalUid;
   }
 
   function mediaAllowed(el) {
@@ -351,6 +530,113 @@
     frame.style.display = "";
     $(`:scope > .${UI}-actions`, frame)?.remove();
     dropNotice(frame);
+    delete frame.dataset.ibxAuthorPeek;
+    delete frame.dataset.ibxSignalPeek;
+    delete frame.dataset.ibxSignalUid;
+  }
+
+  function authorLabel(identity) {
+    if (identity.uid) return `UID ${identity.uid}`;
+    if (identity.ip) return `IP ${identity.ip}`;
+    if (identity.nick) return identity.nick;
+    return "등록한 작성자";
+  }
+
+  function revealAuthorNotice(frame, el, identity) {
+    frame.style.display = "none";
+    dropNotice(frame);
+    if (frame.dataset.ibxAuthorPeek === "1") return;
+
+    const box = document.createElement("div");
+    box.className = `${UI}-notice ${UI}-author-notice`;
+    box.innerHTML = `<span><strong>차단 대상 작성자의 이미지를 숨겼어요</strong><span>${escapeHtml(authorLabel(identity))} · 이 페이지에서만 다시 볼 수 있어요</span></span><button type="button" data-act="peek">이미지 보기</button>`;
+
+    const reveal = (event) => {
+      event?.preventDefault?.();
+      event?.stopPropagation?.();
+      frame.dataset.ibxAuthorPeek = "1";
+      frame.dataset.ibxSignalPeek = "1";
+      box.remove();
+      frame.style.display = "";
+      void prepare(el);
+    };
+
+    box.addEventListener("click", reveal, true);
+    $("[data-act='peek']", box).onclick = reveal;
+    frame.parentNode?.insertBefore(box, frame);
+  }
+
+  function showAccountSignalNotice(frame, el, identity, verdict = null, pending = false) {
+    frame.style.display = "none";
+    dropNotice(frame);
+    if (frame.dataset.ibxSignalPeek === "1") return;
+
+    const box = document.createElement("div");
+    box.className = `${UI}-notice ${UI}-signal-notice`;
+    box.dataset.pending = pending ? "1" : "0";
+
+    const title = pending
+      ? "작성자 활동 정보를 확인하고 있어요"
+      : "신규·저활동 작성자의 이미지를 숨겼어요";
+    const detail = pending
+      ? `${authorLabel(identity)} · 확인하는 동안 이미지를 먼저 접어 둡니다`
+      : `${authorLabel(identity)} · ${verdict?.summary || "설정한 활동 기준 미달"}`;
+
+    box.innerHTML = `<span><strong>${escapeHtml(title)}</strong><span>${escapeHtml(detail)}</span></span><button type="button" data-act="peek">이미지 보기</button>`;
+
+    const reveal = (event) => {
+      event?.preventDefault?.();
+      event?.stopPropagation?.();
+      frame.dataset.ibxSignalPeek = "1";
+      box.remove();
+      frame.style.display = "";
+      if (!pending) void prepare(el);
+    };
+
+    box.addEventListener("click", reveal, true);
+    $("[data-act='peek']", box).onclick = reveal;
+    frame.parentNode?.insertBefore(box, frame);
+  }
+
+  async function applyAutomaticAccountRule(frame, el, identity) {
+    const filter = globalThis.DCBImageAccountFilter;
+    if (!filter || !identity.uid || frame.dataset.ibxSignalPeek === "1") return false;
+
+    try {
+      await filter.ready();
+      const settings = filter.getSettings();
+      if (!settings.enabled) return false;
+
+      const uid = identity.uid;
+      frame.dataset.ibxSignalUid = uid;
+      const cachedVerdict = filter.peek?.(uid);
+      if (cachedVerdict) {
+        if (cachedVerdict.shouldHide) {
+          showAccountSignalNotice(frame, el, identity, cachedVerdict, false);
+          return true;
+        }
+        return false;
+      }
+
+      if (settings.holdWhileChecking) showAccountSignalNotice(frame, el, identity, null, true);
+
+      const verdict = await filter.evaluate(uid);
+      if (!frame.isConnected || frame.dataset.ibxSignalUid !== uid) return false;
+      if (frame.dataset.ibxSignalPeek === "1") return false;
+
+      if (verdict?.shouldHide) {
+        showAccountSignalNotice(frame, el, identity, verdict, false);
+        return true;
+      }
+
+      dropNotice(frame);
+      frame.style.display = "";
+      return false;
+    } catch (_) {
+      dropNotice(frame);
+      frame.style.display = "";
+      return false;
+    }
   }
 
   const titleFor = (item) => typeof item === "string" ? item || "직접 차단한 이미지" : item?.memo || "직접 차단한 이미지";
@@ -404,11 +690,10 @@
     frame.style.display = "none";
     dropNotice(frame);
     if (frame.dataset.ibxPeek === "1") return;
-    const item = records[key] || {};
     const box = document.createElement("div");
-    const thumb = thumbFor(item);
     box.className = `${UI}-notice`;
-    box.innerHTML = `${thumb ? `<img src="${escapeHtml(thumb)}" alt="">` : ""}<span><strong>이미지를 가렸어요</strong><span>클릭하면 바로 볼 수 있어요</span></span><button type="button" data-act="peek">보기</button><button type="button" data-act="unblock">차단 해제</button>`;
+    // 숨긴 이미지가 알림 안의 축소판으로 다시 노출되지 않도록 텍스트와 동작만 표시한다.
+    box.innerHTML = `<span><strong>이미지를 가렸어요</strong><span>필요하면 이미지만 보거나 차단을 해제할 수 있어요</span></span><button type="button" data-act="peek">이미지 보기</button><button type="button" data-act="unblock">차단 해제</button>`;
     const reveal = () => {
       frame.dataset.ibxPeek = "1";
       box.remove();
@@ -451,7 +736,7 @@
     };
   }
 
-  function drawActions(frame, el, info, infoPromise) {
+  function drawActions(frame, el, info) {
     let actions = $(`:scope > .${UI}-actions`, frame);
     if (!config.enabled) {
       actions?.remove();
@@ -471,7 +756,7 @@
       delete frame.dataset.ibxPeek;
       revealNotice(frame, quickKey);
       void storeLocal(RECORD_KEY, records);
-      infoPromise?.then((full) => {
+      inspect(el, info.src).then((full) => {
         if (!full?.key || full.key === quickKey) return;
         writeAliases(quickKey, full, { ...item, ...makeRecord(el, full, quickKey), blockedAt: item.blockedAt });
         if (frame.isConnected) frame.dataset.ibxKey = full.key;
@@ -491,25 +776,21 @@
     }
 
     const frame = frameFor(el);
-    author = detectAuthor();
+    const currentAuthor = detectAuthorIdentity(el);
 
-    if (!frame.dataset.ibxClick) {
-      frame.dataset.ibxClick = "1";
-      frame.addEventListener("click", (event) => {
-        if (!frame.classList.contains(`${UI}-blur`)) return;
-        if (event.target.closest(`.${UI}-actions`)) return;
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        frame.classList.remove(`${UI}-blur`);
-        frame.dataset.ibxPeek = "1";
-      }, true);
+    if (postAllowed(el) && authorMatchesTarget(currentAuthor) && frame.dataset.ibxAuthorPeek !== "1") {
+      revealAuthorNotice(frame, el, currentAuthor);
+      return;
     }
 
-    frame.classList.toggle(`${UI}-blur`, blurAllowed() && frame.dataset.ibxPeek !== "1");
+    if (postAllowed(el) && await applyAutomaticAccountRule(frame, el, currentAuthor)) return;
+
+    dropNotice(frame);
+    frame.style.display = "";
+    frame.classList.remove(`${UI}-blur`);
 
     const quickKey = `quick:${await digestText(src)}`;
     const quickInfo = { key: quickKey, src, mime: "", ext: "bin", dataUrl: "", thumb: el.tagName === "IMG" ? src : "" };
-    const fullInfo = inspect(el, src);
     frame.dataset.ibxKey = quickKey;
 
     if (records[quickKey] && frame.dataset.ibxPeek !== "1") {
@@ -519,11 +800,15 @@
 
     dropNotice(frame);
     frame.style.display = "";
-    drawActions(frame, el, quickInfo, fullInfo);
+    drawActions(frame, el, quickInfo);
+
+    // 개별 이미지 차단 기록이 없으면 파일 다운로드/해시 계산을 생략한다.
+    // 작성자 필터와 차단 버튼은 이 경로에서 이미 즉시 동작한다.
+    if (!Object.keys(records).length) return;
 
     let info = quickInfo;
     try {
-      info = await fullInfo;
+      info = await inspect(el, src);
     } catch (_) {}
     if (!frame.isConnected) return;
 
@@ -544,14 +829,14 @@
     frame.dataset.ibxKey = info.key;
     dropNotice(frame);
     frame.style.display = "";
-    drawActions(frame, el, info, fullInfo);
-    frame.classList.toggle(`${UI}-blur`, blurAllowed() && frame.dataset.ibxPeek !== "1");
+    drawActions(frame, el, info);
+    frame.classList.remove(`${UI}-blur`);
   }
 
   function scan(base = document) {
     if (!ready) return;
-    author = detectAuthor();
-    gatherMedia(base).forEach((el) => void prepare(el));
+    const authorChanged = refreshAuthorIdentity();
+    gatherMedia(authorChanged ? document : base).forEach((el) => void prepare(el));
   }
 
   function watch() {
@@ -565,7 +850,12 @@
         if (item.type === "attributes") scan(item.target);
       }
     });
-    observer.observe(document.documentElement || document, { childList: true, subtree: true, attributes: true, attributeFilter: ["src", "data-src", "class"] });
+    observer.observe(document.documentElement || document, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["src", "data-src", "class", "data-uid", "data-full-uid", "data-ip", "data-nick", "title"]
+    });
   }
 
   function warmup() {
@@ -643,7 +933,27 @@
   chrome.storage.onChanged.addListener((changes, area) => {
     const configChanged = (area === "sync" || area === "local") && changes[CONFIG_KEY];
     const recordsChanged = area === "local" && changes[RECORD_KEY];
-    if (configChanged || recordsChanged) loadStore().then(() => scan(document));
+    const authorTargetsChanged = area === "local" && changes[AUTHOR_TARGET_KEY];
+    if (authorTargetsChanged) {
+      $$(`.${UI}-frame`).forEach((frame) => delete frame.dataset.ibxAuthorPeek);
+    }
+    if (configChanged || recordsChanged || authorTargetsChanged) loadStore().then(() => scan(document));
+  });
+
+  window.addEventListener("dcb:image-account-rules-changed", () => {
+    $$(`.${UI}-frame`).forEach((frame) => {
+      delete frame.dataset.ibxSignalPeek;
+      delete frame.dataset.ibxSignalUid;
+    });
+    scan(document);
+  });
+
+  document.addEventListener("dcb-preview-state", (event) => {
+    if (!event?.detail?.open) return;
+    requestAnimationFrame(() => {
+      const previewRoot = document.getElementById("dcb-preview-overlay");
+      if (previewRoot) scan(previewRoot);
+    });
   });
 
   async function boot() {
