@@ -4,9 +4,10 @@
   const UI = "dcibx";
   const CONFIG_KEY = "dcbImageBlockConfig";
   const RECORD_KEY = "dcbImageBlockRecords";
-  const AUTHOR_TARGET_KEY = "dcbImageBlockAuthorTargets";
   const BASE_CONFIG = Object.freeze({
     enabled: false,
+    hideMemberImages: true,
+    hideGuestImages: true,
     toolbar: false,
     blurAnonymous: false,
     blurSemi: false,
@@ -26,9 +27,7 @@
 
   let config = { ...BASE_CONFIG };
   let records = {};
-  let authorTargets = [];
-  let authorMatcher = { uids: new Set(), ips: new Set(), nicks: new Set(), empty: true };
-  let authorIdentity = { uid: "", ip: "", nick: "" };
+  let authorIdentity = { uid: "", ip: "", nick: "", member: false };
   let authorSignature = "";
   let ready = false;
   let observer = null;
@@ -46,6 +45,8 @@
       ...BASE_CONFIG,
       ...(value && typeof value === "object" ? value : {}),
       enabled,
+      hideMemberImages: true,
+      hideGuestImages: true,
       toolbar: enabled,
       // 레거시 작성자 유형 전체 블러는 더 이상 사용하지 않는다.
       // 필드는 이전 설정/백업 호환을 위해 남겨 둔다.
@@ -94,74 +95,19 @@
       .replace(/^ip\s*[:=]\s*/i, "")
       .replace(/^\(|\)$/g, "")
       .match(/\b(\d{1,3}\.\d{1,3})(?:\.\d{1,3}){0,2}\b/);
-    return match ? match[1] : "";
-  }
-
-  function normalizeAuthorTarget(value) {
-    const raw = cleanText(value);
-    const nickMatch = raw.match(/^nick\s*[:=]\s*(.+)$/i);
-    if (nickMatch) {
-      const nick = normalizeNick(nickMatch[1]);
-      return nick ? `nick:${nick}` : "";
-    }
-
-    const compact = raw
-      .replace(/^uid\s*[:=]\s*/i, "")
-      .replace(/^ip\s*[:=]\s*/i, "")
-      .replace(/^\(|\)$/g, "")
-      .replace(/\s+/g, "")
-      .trim();
-    if (!compact) return "";
-
-    if (/^\d{1,3}(?:\.\d{1,3}){1,3}$/.test(compact)) return normalizeIpPrefix(compact);
-    if (/^[A-Za-z0-9._-]{2,64}$/.test(compact)) return compact;
-
-    const nick = normalizeNick(raw);
-    return nick ? `nick:${nick}` : "";
-  }
-
-  function normalizeAuthorTargets(values) {
-    const out = [];
-    const seen = new Set();
-    (Array.isArray(values) ? values : []).forEach((value) => {
-      const token = normalizeAuthorTarget(value);
-      const key = token.toLowerCase();
-      if (!token || seen.has(key)) return;
-      seen.add(key);
-      out.push(token);
-    });
-    return out;
-  }
-
-  function buildAuthorMatcher(values) {
-    const uids = new Set();
-    const ips = new Set();
-    const nicks = new Set();
-    normalizeAuthorTargets(values).forEach((token) => {
-      if (/^nick:/i.test(token)) {
-        const nick = normalizeNick(token.replace(/^nick\s*[:=]\s*/i, ""));
-        if (nick) nicks.add(nick.toLowerCase());
-        return;
-      }
-      const ip = normalizeIpPrefix(token);
-      if (ip && /^\d{1,3}(?:\.\d{1,3}){1,3}$/.test(token)) {
-        ips.add(ip);
-        return;
-      }
-      uids.add(token.toLowerCase());
-    });
-    return { uids, ips, nicks, empty: !uids.size && !ips.size && !nicks.size };
+    if (!match) return "";
+    const parts = match[0].split(".").map((part) => Number.parseInt(part, 10));
+    if (parts.length < 2 || parts.some((part) => !Number.isFinite(part) || part < 0 || part > 255)) return "";
+    return `${parts[0]}.${parts[1]}`;
   }
 
   async function loadStore() {
     const [syncData, localData] = await Promise.all([
       chrome.storage.sync.get({ [CONFIG_KEY]: null }),
-      chrome.storage.local.get({ [CONFIG_KEY]: null, [RECORD_KEY]: {}, [AUTHOR_TARGET_KEY]: null })
+      chrome.storage.local.get({ [CONFIG_KEY]: null, [RECORD_KEY]: {} })
     ]);
     config = oneClickConfig(syncData[CONFIG_KEY] || localData[CONFIG_KEY] || BASE_CONFIG);
     records = asRecordMap(localData[RECORD_KEY]);
-    authorTargets = normalizeAuthorTargets(localData[AUTHOR_TARGET_KEY]);
-    authorMatcher = buildAuthorMatcher(authorTargets);
     ready = true;
   }
 
@@ -185,9 +131,6 @@
       .${UI}-notice button:hover{filter:brightness(1.1);transform:translateY(-1px)}
       .${UI}-author-notice{min-height:52px;border-style:dashed;background:linear-gradient(135deg,#0f172a,#111827)}
       .${UI}-author-notice span span{display:block;color:#a5b4c7;font-size:11px;font-weight:650}
-      .${UI}-signal-notice{min-height:52px;border-color:rgba(103,232,249,.48);background:linear-gradient(135deg,#082f49,#0f172a)}
-      .${UI}-signal-notice[data-pending='1']{border-style:dashed;opacity:.94}
-      .${UI}-signal-notice span span{display:block;color:#bae6fd;font-size:11px;font-weight:650}
       .${UI}-overlay{position:fixed;inset:0;z-index:2147483400;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(2,6,23,.62);backdrop-filter:blur(10px)}
       .${UI}-modal{width:min(780px,calc(100vw - 32px));max-height:min(720px,calc(100vh - 32px));display:flex;flex-direction:column;overflow:hidden;border:1px solid rgba(255,255,255,.12);border-radius:24px;background:#0b1120;color:#e5edf8;box-shadow:0 30px 90px rgba(0,0,0,.4);font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
       .${UI}-top{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:18px 20px;border-bottom:1px solid rgba(148,163,184,.16)}
@@ -264,22 +207,32 @@
     return "";
   }
 
+  function hasGallogMarker(scope) {
+    if (!scope) return false;
+    if (uidFromGallog(scope)) return true;
+    if (scope.matches?.(".writer_nikcon,.dcb-uid-badge")) return true;
+    return !!scope.querySelector?.(
+      ".writer_nikcon,.dcb-uid-badge,[href*='gallog'],[onclick*='gallog']"
+    );
+  }
+
   function detectAuthorIdentity(subject = null) {
     const box = authorBox(subject);
-    if (!box) return { uid: "", ip: "", nick: "" };
+    if (!box) return { uid: "", ip: "", nick: "", member: false };
+
+    const member = hasGallogMarker(box);
 
     const rawUid =
       dataValue(box, ["data-full-uid", "data-uid", "data-memo-uid", "data-user-id", "data-userid", "data-user_id"]) ||
       cleanText($(".dcb-uid-badge", box)?.getAttribute?.("data-full-uid")) ||
       uidFromGallog(box);
-    const uid = /^[A-Za-z0-9._-]{2,64}$/.test(rawUid) && !/^\d{1,3}(?:\.\d{1,3}){1,3}$/.test(rawUid)
+    const uid = member && /^[A-Za-z0-9._-]{2,64}$/.test(rawUid) && !/^\d{1,3}(?:\.\d{1,3}){1,3}$/.test(rawUid)
       ? rawUid
       : "";
 
     const rawIp =
       dataValue(box, ["data-ip", "data-memo-ip"]) ||
-      cleanText($(".ip,.refresherUserData.ip", box)?.textContent) ||
-      cleanText(box.textContent);
+      cleanText($(".ip,.writer_ip,.refresherUserData.ip", box)?.textContent);
     const ip = normalizeIpPrefix(rawIp);
 
     const nickEl = $(".nickname,.nick_name,.user_nick", box);
@@ -290,29 +243,23 @@
       ""
     );
 
-    return { uid, ip, nick };
+    return { uid, ip, nick, member };
   }
 
   function refreshAuthorIdentity() {
     const next = detectAuthorIdentity();
-    const signature = `${next.uid.toLowerCase()}|${next.ip}|${next.nick.toLowerCase()}`;
+    const signature = `${next.member ? "member" : "other"}|${next.uid.toLowerCase()}|${next.ip}|${next.nick.toLowerCase()}`;
     const changed = signature !== authorSignature;
     authorIdentity = next;
     authorSignature = signature;
     return changed;
   }
 
-  function authorMatchesTarget(identity = authorIdentity) {
-    if (authorMatcher.empty) return false;
-    if (identity.uid && authorMatcher.uids.has(identity.uid.toLowerCase())) return true;
-    if (identity.ip && authorMatcher.ips.has(normalizeIpPrefix(identity.ip))) return true;
-    const nick = normalizeNick(identity.nick).toLowerCase();
-    if (nick) {
-      for (const blockedNick of authorMatcher.nicks) {
-        if (blockedNick && nick.includes(blockedNick)) return true;
-      }
-    }
-    return false;
+  function shouldHideAuthorImages(identity = authorIdentity) {
+    if (identity?.member) return config.hideMemberImages !== false;
+    if (identity?.ip) return config.hideGuestImages !== false;
+    // 작성자 식별 정보가 없는 익명 모드도 이미지 차단 대상이다.
+    return true;
   }
 
   function recommendedPage(subject = null) {
@@ -364,8 +311,6 @@
     delete frame.dataset.ibxClick;
     delete frame.dataset.ibxPeek;
     delete frame.dataset.ibxAuthorPeek;
-    delete frame.dataset.ibxSignalPeek;
-    delete frame.dataset.ibxSignalUid;
   }
 
   function mediaAllowed(el) {
@@ -531,15 +476,13 @@
     $(`:scope > .${UI}-actions`, frame)?.remove();
     dropNotice(frame);
     delete frame.dataset.ibxAuthorPeek;
-    delete frame.dataset.ibxSignalPeek;
-    delete frame.dataset.ibxSignalUid;
   }
 
   function authorLabel(identity) {
     if (identity.uid) return `UID ${identity.uid}`;
+    if (identity.member) return "갤로그 회원";
     if (identity.ip) return `IP ${identity.ip}`;
-    if (identity.nick) return identity.nick;
-    return "등록한 작성자";
+    return "익명 모드";
   }
 
   function revealAuthorNotice(frame, el, identity) {
@@ -549,13 +492,13 @@
 
     const box = document.createElement("div");
     box.className = `${UI}-notice ${UI}-author-notice`;
-    box.innerHTML = `<span><strong>차단 대상 작성자의 이미지를 숨겼어요</strong><span>${escapeHtml(authorLabel(identity))} · 이 페이지에서만 다시 볼 수 있어요</span></span><button type="button" data-act="peek">이미지 보기</button>`;
+    const authorType = identity.member ? "회원" : identity.ip ? "비회원" : "익명";
+    box.innerHTML = `<span><strong>${authorType} 작성자의 이미지를 숨겼어요</strong><span>${escapeHtml(authorLabel(identity))} · 계정 활동량과 무관하게 적용됩니다</span></span><button type="button" data-act="peek">이미지 보기</button>`;
 
     const reveal = (event) => {
       event?.preventDefault?.();
       event?.stopPropagation?.();
       frame.dataset.ibxAuthorPeek = "1";
-      frame.dataset.ibxSignalPeek = "1";
       box.remove();
       frame.style.display = "";
       void prepare(el);
@@ -564,79 +507,6 @@
     box.addEventListener("click", reveal, true);
     $("[data-act='peek']", box).onclick = reveal;
     frame.parentNode?.insertBefore(box, frame);
-  }
-
-  function showAccountSignalNotice(frame, el, identity, verdict = null, pending = false) {
-    frame.style.display = "none";
-    dropNotice(frame);
-    if (frame.dataset.ibxSignalPeek === "1") return;
-
-    const box = document.createElement("div");
-    box.className = `${UI}-notice ${UI}-signal-notice`;
-    box.dataset.pending = pending ? "1" : "0";
-
-    const title = pending
-      ? "작성자 활동 정보를 확인하고 있어요"
-      : "신규·저활동 작성자의 이미지를 숨겼어요";
-    const detail = pending
-      ? `${authorLabel(identity)} · 확인하는 동안 이미지를 먼저 접어 둡니다`
-      : `${authorLabel(identity)} · ${verdict?.summary || "설정한 활동 기준 미달"}`;
-
-    box.innerHTML = `<span><strong>${escapeHtml(title)}</strong><span>${escapeHtml(detail)}</span></span><button type="button" data-act="peek">이미지 보기</button>`;
-
-    const reveal = (event) => {
-      event?.preventDefault?.();
-      event?.stopPropagation?.();
-      frame.dataset.ibxSignalPeek = "1";
-      box.remove();
-      frame.style.display = "";
-      if (!pending) void prepare(el);
-    };
-
-    box.addEventListener("click", reveal, true);
-    $("[data-act='peek']", box).onclick = reveal;
-    frame.parentNode?.insertBefore(box, frame);
-  }
-
-  async function applyAutomaticAccountRule(frame, el, identity) {
-    const filter = globalThis.DCBImageAccountFilter;
-    if (!filter || !identity.uid || frame.dataset.ibxSignalPeek === "1") return false;
-
-    try {
-      await filter.ready();
-      const settings = filter.getSettings();
-      if (!settings.enabled) return false;
-
-      const uid = identity.uid;
-      frame.dataset.ibxSignalUid = uid;
-      const cachedVerdict = filter.peek?.(uid);
-      if (cachedVerdict) {
-        if (cachedVerdict.shouldHide) {
-          showAccountSignalNotice(frame, el, identity, cachedVerdict, false);
-          return true;
-        }
-        return false;
-      }
-
-      if (settings.holdWhileChecking) showAccountSignalNotice(frame, el, identity, null, true);
-
-      const verdict = await filter.evaluate(uid);
-      if (!frame.isConnected || frame.dataset.ibxSignalUid !== uid) return false;
-      if (frame.dataset.ibxSignalPeek === "1") return false;
-
-      if (verdict?.shouldHide) {
-        showAccountSignalNotice(frame, el, identity, verdict, false);
-        return true;
-      }
-
-      dropNotice(frame);
-      frame.style.display = "";
-      return false;
-    } catch (_) {
-      dropNotice(frame);
-      frame.style.display = "";
-      return false;
-    }
   }
 
   const titleFor = (item) => typeof item === "string" ? item || "직접 차단한 이미지" : item?.memo || "직접 차단한 이미지";
@@ -778,12 +648,10 @@
     const frame = frameFor(el);
     const currentAuthor = detectAuthorIdentity(el);
 
-    if (postAllowed(el) && authorMatchesTarget(currentAuthor) && frame.dataset.ibxAuthorPeek !== "1") {
+    if (postAllowed(el) && shouldHideAuthorImages(currentAuthor) && frame.dataset.ibxAuthorPeek !== "1") {
       revealAuthorNotice(frame, el, currentAuthor);
       return;
     }
-
-    if (postAllowed(el) && await applyAutomaticAccountRule(frame, el, currentAuthor)) return;
 
     dropNotice(frame);
     frame.style.display = "";
@@ -854,7 +722,7 @@
       childList: true,
       subtree: true,
       attributes: true,
-      attributeFilter: ["src", "data-src", "class", "data-uid", "data-full-uid", "data-ip", "data-nick", "title"]
+      attributeFilter: ["src", "data-src", "class", "data-uid", "data-full-uid", "data-ip", "data-nick", "title", "href", "onclick"]
     });
   }
 
@@ -933,19 +801,10 @@
   chrome.storage.onChanged.addListener((changes, area) => {
     const configChanged = (area === "sync" || area === "local") && changes[CONFIG_KEY];
     const recordsChanged = area === "local" && changes[RECORD_KEY];
-    const authorTargetsChanged = area === "local" && changes[AUTHOR_TARGET_KEY];
-    if (authorTargetsChanged) {
-      $$(`.${UI}-frame`).forEach((frame) => delete frame.dataset.ibxAuthorPeek);
-    }
-    if (configChanged || recordsChanged || authorTargetsChanged) loadStore().then(() => scan(document));
-  });
-
-  window.addEventListener("dcb:image-account-rules-changed", () => {
-    $$(`.${UI}-frame`).forEach((frame) => {
-      delete frame.dataset.ibxSignalPeek;
-      delete frame.dataset.ibxSignalUid;
+    if (configChanged || recordsChanged) loadStore().then(() => {
+      if (configChanged) $$(`.${UI}-frame`).forEach((frame) => delete frame.dataset.ibxAuthorPeek);
+      scan(document);
     });
-    scan(document);
   });
 
   document.addEventListener("dcb-preview-state", (event) => {

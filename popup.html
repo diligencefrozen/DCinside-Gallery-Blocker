@@ -161,9 +161,9 @@
     padding:8px 9px;
     font-size:12px;
   }
-  ul#uidList,ul#imageAuthorTargetList{list-style:none;display:flex;flex-direction:column;gap:6px;max-height:150px;margin:0;padding:0;overflow:auto}
-  ul#uidList li,ul#imageAuthorTargetList li{display:flex;justify-content:space-between;align-items:center;gap:8px;border:1px solid #333;border-radius:8px;padding:6px 8px;background:#151a22}
-  ul#uidList code,ul#imageAuthorTargetList code{opacity:.96;word-break:break-all}
+  ul#uidList{list-style:none;display:flex;flex-direction:column;gap:6px;max-height:150px;margin:0;padding:0;overflow:auto}
+  ul#uidList li{display:flex;justify-content:space-between;align-items:center;gap:8px;border:1px solid #333;border-radius:8px;padding:6px 8px;background:#151a22}
+  ul#uidList code{opacity:.96;word-break:break-all}
   .uid-list-left{display:flex;align-items:center;gap:6px;min-width:0}
   .uid-kind{
     flex:0 0 auto;
@@ -855,11 +855,6 @@
   .media-actions button{min-height:32px;border-radius:10px;border:1px solid rgba(148,163,184,.28);background:#101827;color:#dbeafe;font-size:12px;font-weight:850;box-shadow:none}
   .media-actions button:hover{background:#17233a;color:#f8fafc;border-color:rgba(147,197,253,.44);box-shadow:none}
   .media-status{min-height:15px;color:#9dd6a5;font-size:11px;line-height:1.35}
-  .media-author-panel{display:flex;flex-direction:column;gap:7px;padding:9px;border:1px solid rgba(148,163,184,.18);border-radius:12px;background:rgba(8,15,27,.58)}
-  .media-author-head{display:flex;align-items:center;justify-content:space-between;gap:8px;color:#dbeafe;font-size:11px;font-weight:850}
-  .media-author-head span:last-child{color:#94a3b8;font-variant-numeric:tabular-nums}
-  .media-author-panel .row-input{margin:0}
-  .media-author-panel input{min-width:0}
   .media-risk-panel{display:flex;flex-direction:column;gap:8px;padding:10px;border:1px solid rgba(34,211,238,.28);border-radius:13px;background:linear-gradient(145deg,rgba(8,47,73,.46),rgba(8,15,27,.72))}
   .media-risk-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
   .media-risk-head strong{color:#cffafe;font-size:11.5px;font-weight:900}
@@ -951,35 +946,49 @@
     <div class="media-essentials-head">
       <div class="media-essentials-copy">
         <strong>이미지 차단</strong>
-        <span>게시글과 미리보기에서 등록한 작성자 및 신규·저활동 계정의 본문 이미지를 접어 둡니다.</span>
+        <span>회원·비회원·익명 작성자의 본문 이미지를 활동량과 무관하게 모두 접어 둡니다.</span>
       </div>
       <span class="media-pill">Simple</span>
     </div>
 
     <div class="media-toggle-grid">
       <div class="media-row">
-        <span>이미지 숨기기 켜기<small>직접 등록 대상과 자동 판정 대상에 적용합니다</small></span>
+        <span>모든 이미지 숨기기<small>작성자 식별 정보가 없는 익명 모드에도 적용합니다</small></span>
         <label class="switch"><input type="checkbox" id="imageBlockEnabled"><span class="slider"></span></label>
       </div>
     </div>
 
-    <div class="media-author-panel" aria-label="이미지를 숨길 작성자 목록">
-      <div class="media-author-head"><span>이미지를 숨길 작성자</span><span id="imageAuthorTargetCount">0개</span></div>
-      <div class="row-input">
-        <input id="imageAuthorTargetInput" type="text" placeholder="UID, 39.7 또는 nick:닉네임">
-        <button id="addImageAuthorTarget" type="button">추가</button>
+    <p class="mini-note">회원·비회원·익명 모드 구분 없이 게시글의 본문 이미지를 모두 가립니다. “이미지 보기”를 누르면 현재 화면에서만 복원됩니다.</p>
+
+    <div class="media-actions">
+      <button type="button" id="openImageBlockList">개별 이미지 차단 목록</button>
+    </div>
+    <div class="media-status" id="imageBlockStatus"></div>
+  </section>
+
+  <section class="media-essentials-card" aria-label="깡계 차단 옵션">
+    <div class="media-essentials-head">
+      <div class="media-essentials-copy">
+        <strong>깡계 차단하기</strong>
+        <span>신규·저활동 회원을 판정해 해당 회원의 글과 댓글을 숨깁니다.</span>
       </div>
-      <ul id="imageAuthorTargetList"></ul>
+      <span class="media-pill">Account</span>
     </div>
 
-    <p class="mini-note">대상 작성자의 이미지는 게시글과 페이지 미리보기에서 축소판 없이 완전히 접힙니다. “이미지 보기”를 누르면 현재 화면에서만 복원됩니다. 대상 목록은 브라우저 로컬에만 저장됩니다.</p>
-
-    <div class="media-risk-panel" data-image-account-settings aria-label="신규 저활동 작성자 자동 이미지 숨김 설정">
+    <div class="media-risk-panel" data-account-activity-settings aria-label="신규 저활동 회원 차단 설정">
       <div class="media-risk-head">
-        <strong>신규·저활동 계정 자동 숨김</strong>
-        <label class="switch" title="신규·저활동 계정 자동 판정"><input type="checkbox" data-account-field="enabled"><span class="slider"></span></label>
+        <strong>신규·저활동 회원 자동 차단</strong>
+        <label class="switch" title="깡계 차단"><input type="checkbox" data-account-field="enabled"><span class="slider"></span></label>
       </div>
       <div class="media-risk-grid">
+        <label class="media-risk-rule">
+          <span>게시글 차단</span>
+          <input type="checkbox" data-account-field="blockPosts" data-account-dependent>
+        </label>
+        <label class="media-risk-rule">
+          <span>댓글 차단</span>
+          <input type="checkbox" data-account-field="blockComments" data-account-dependent>
+        </label>
         <label class="media-risk-rule">
           <span><input type="checkbox" data-account-field="ageRuleEnabled" data-account-dependent>최초 공개 활동</span>
           <span><input type="number" min="0" max="3650" data-account-field="maxPublicAgeDays" data-account-dependent>일 이하</span>
@@ -1000,21 +1009,16 @@
           </select>
         </label>
         <label class="media-risk-rule">
-          <span>확인 중 먼저 숨기기</span>
+          <span>확인 중 콘텐츠 숨기기</span>
           <input type="checkbox" data-account-field="holdWhileChecking" data-account-dependent>
         </label>
       </div>
-      <p class="media-risk-note">회원 UID에만 적용됩니다. 디시는 실제 가입일을 공개하지 않아 갤로그의 최초 공개 활동일을 신규 여부의 근사치로 사용합니다. 확인 불가 시 글·댓글 기준만 적용하며, 0은 해당 기준을 끕니다.</p>
+      <p class="media-risk-note">회원 UID에만 적용됩니다. 실제 가입일 대신 갤로그의 최초 공개 활동일을 신규 여부의 근사치로 사용합니다. 확인할 수 없는 조건은 건너뛰며, 기준값 0은 해당 조건을 끕니다.</p>
       <div class="media-risk-actions">
         <button type="button" data-account-clear-cache title="판정 캐시 초기화" aria-label="판정 캐시 초기화">초기화</button>
         <span class="media-risk-status" data-account-status></span>
       </div>
     </div>
-
-    <div class="media-actions">
-      <button type="button" id="openImageBlockList">개별 이미지 차단 목록</button>
-    </div>
-    <div class="media-status" id="imageBlockStatus"></div>
   </section>
 
   <div class="user-block-card" aria-label="사용자 차단 목록 관리">

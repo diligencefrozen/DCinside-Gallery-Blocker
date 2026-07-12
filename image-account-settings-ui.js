@@ -4,7 +4,9 @@
   const STORAGE_KEY = "dcbImageAccountRules";
   const CACHE_KEY = "dcbImageAccountSignalCache";
   const DEFAULTS = Object.freeze({
-    enabled: true,
+    enabled: false,
+    blockPosts: true,
+    blockComments: true,
     ageRuleEnabled: true,
     maxPublicAgeDays: 30,
     postRuleEnabled: true,
@@ -16,7 +18,7 @@
     cacheHours: 24
   });
 
-  const roots = Array.from(document.querySelectorAll("[data-image-account-settings]"));
+  const roots = Array.from(document.querySelectorAll("[data-account-activity-settings],[data-image-account-settings]"));
   if (!roots.length) return;
 
   function integer(value, fallback, min, max) {
@@ -28,7 +30,9 @@
   function normalize(value = {}) {
     const source = value && typeof value === "object" ? value : {};
     return {
-      enabled: source.enabled !== false,
+      enabled: source.enabled === true,
+      blockPosts: source.blockPosts !== false,
+      blockComments: source.blockComments !== false,
       ageRuleEnabled: source.ageRuleEnabled !== false,
       maxPublicAgeDays: integer(source.maxPublicAgeDays, DEFAULTS.maxPublicAgeDays, 0, 3650),
       postRuleEnabled: source.postRuleEnabled !== false,
@@ -55,6 +59,8 @@
   function read(root) {
     return normalize({
       enabled: field(root, "enabled")?.checked === true,
+      blockPosts: field(root, "blockPosts")?.checked === true,
+      blockComments: field(root, "blockComments")?.checked === true,
       ageRuleEnabled: field(root, "ageRuleEnabled")?.checked === true,
       maxPublicAgeDays: field(root, "maxPublicAgeDays")?.value,
       postRuleEnabled: field(root, "postRuleEnabled")?.checked === true,
@@ -71,6 +77,8 @@
     const value = normalize(settings);
     const assignments = {
       enabled: value.enabled,
+      blockPosts: value.blockPosts,
+      blockComments: value.blockComments,
       ageRuleEnabled: value.ageRuleEnabled,
       maxPublicAgeDays: value.maxPublicAgeDays,
       postRuleEnabled: value.postRuleEnabled,
@@ -99,12 +107,12 @@
     const next = read(root);
     chrome.storage.sync.set({ [STORAGE_KEY]: next }, () => {
       if (chrome.runtime.lastError) {
-        status(root, "자동 이미지 숨김 기준을 저장하지 못했어요.", true);
+        status(root, "깡계 차단 기준을 저장하지 못했어요.", true);
         return;
       }
       render(root, next);
       const mode = next.activityMatchMode === "any" ? "하나만 미달해도" : "글·댓글 모두 미달할 때";
-      status(root, next.enabled ? `자동 판정 저장 완료 · ${mode}` : "자동 판정을 껐어요.");
+      status(root, next.enabled ? `깡계 차단 저장 완료 · ${mode}` : "깡계 차단을 껐어요.");
     });
   }
 
@@ -129,7 +137,7 @@
     roots.forEach((root) => {
       const settings = normalize(data[STORAGE_KEY]);
       render(root, settings);
-      status(root, settings.enabled ? "신규·저활동 작성자 자동 판정 사용 중" : "자동 판정은 꺼져 있어요.");
+      status(root, settings.enabled ? "깡계 차단 사용 중" : "깡계 차단은 꺼져 있어요.");
     });
   });
 

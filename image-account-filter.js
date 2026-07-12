@@ -1,8 +1,9 @@
 (() => {
   "use strict";
 
-  if (globalThis.DCBImageAccountFilter) return;
+  if (globalThis.DCBAccountActivityFilter) return;
 
+  // 기존 설치의 설정을 유지하기 위해 저장 키는 그대로 사용한다.
   const SETTINGS_KEY = "dcbImageAccountRules";
   const CACHE_KEY = "dcbImageAccountSignalCache";
   const DAY_MS = 24 * 60 * 60 * 1000;
@@ -11,7 +12,9 @@
   const PUBLIC_ITEMS_PER_PAGE = 20;
 
   const DEFAULT_SETTINGS = Object.freeze({
-    enabled: true,
+    enabled: false,
+    blockPosts: true,
+    blockComments: true,
     ageRuleEnabled: true,
     maxPublicAgeDays: 30,
     postRuleEnabled: true,
@@ -34,7 +37,9 @@
   function normalizeSettings(value = {}) {
     const source = value && typeof value === "object" ? value : {};
     return {
-      enabled: source.enabled !== false,
+      enabled: source.enabled === true,
+      blockPosts: source.blockPosts !== false,
+      blockComments: source.blockComments !== false,
       ageRuleEnabled: source.ageRuleEnabled !== false,
       maxPublicAgeDays: boundedInteger(source.maxPublicAgeDays, DEFAULT_SETTINGS.maxPublicAgeDays, 0, 3650),
       postRuleEnabled: source.postRuleEnabled !== false,
@@ -335,7 +340,7 @@
       await this.readyPromise;
       const uid = normalizeUid(rawUid);
       if (!uid || !this.settings.enabled) {
-        return { uid, available: false, shouldHide: false, reasons: [], summary: "자동 판정 비활성화" };
+        return { uid, available: false, shouldHide: false, reasons: [], summary: "깡계 차단 비활성화" };
       }
 
       const cached = this.cache[uid.toLowerCase()];
@@ -379,14 +384,14 @@
     if (area === "sync" && changes[SETTINGS_KEY]) {
       service.settings = normalizeSettings(changes[SETTINGS_KEY].newValue);
       try {
-        window.dispatchEvent(new CustomEvent("dcb:image-account-rules-changed", {
+        window.dispatchEvent(new CustomEvent("dcb:account-activity-rules-changed", {
           detail: { settings: { ...service.settings } }
         }));
       } catch (_) {}
     }
   });
 
-  globalThis.DCBImageAccountFilter = Object.freeze({
+  const api = Object.freeze({
     SETTINGS_KEY,
     CACHE_KEY,
     DEFAULT_SETTINGS,
@@ -397,4 +402,7 @@
     evaluate: (uid) => service.evaluate(uid),
     clearCache: () => service.clearCache()
   });
+  globalThis.DCBAccountActivityFilter = api;
+  // 외부 사용자 스크립트와 이전 버전 호환용 별칭.
+  globalThis.DCBImageAccountFilter = api;
 })();
