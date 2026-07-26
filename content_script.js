@@ -457,6 +457,17 @@ syncSettings(handleUrl);
       #${OVERLAY_ID} .dcbpv-html img,#${OVERLAY_ID} .dcbpv-html video{display:block;margin:10px auto;border-radius:10px}
       #${OVERLAY_ID} .dcbpv-html img.dcbpv-img-broken{min-height:80px;background:repeating-linear-gradient(45deg,#f8fafc,#f8fafc 8px,#eef2f7 8px,#eef2f7 16px);border:1px dashed #cbd5e1}
       #${OVERLAY_ID} .dcbpv-html iframe{display:block;width:min(100%,640px)!important;min-height:320px;margin:10px auto;border-radius:10px;background:#000}
+      #${OVERLAY_ID} .dcbpv-pum-card{margin:0;overflow:hidden;border:1px solid #dbe2ea;border-radius:14px;background:#fff;color:#334155;box-shadow:0 5px 18px rgba(15,23,42,.06)}
+      #${OVERLAY_ID} .dcbpv-pum-card .gallview_head{display:block;position:static;min-height:0;margin:0;padding:13px 15px;border:0;border-bottom:1px solid #e5e7eb;background:#f8fafc}
+      #${OVERLAY_ID} .dcbpv-pum-card .gallview_head>a{display:inline-block;color:#2563eb;text-decoration:none}
+      #${OVERLAY_ID} .dcbpv-pum-card .gallview_head h3{display:block;margin:0 0 7px;padding:0;color:#2563eb;font-size:13px;line-height:1.4}
+      #${OVERLAY_ID} .dcbpv-pum-card .gall_writer{display:flex;align-items:center;gap:8px;flex-wrap:wrap;position:static;width:auto;margin:0;padding:0;color:#64748b;font-size:12px;line-height:1.45}
+      #${OVERLAY_ID} .dcbpv-pum-card .gall_writer .nickname{color:#0f172a;font-weight:700}
+      #${OVERLAY_ID} .dcbpv-pum-card .gall_writer .gall_count{margin-left:auto}
+      #${OVERLAY_ID} .dcbpv-pum-card .cloned_card_body>a{display:block;padding:15px;color:inherit;text-decoration:none}
+      #${OVERLAY_ID} .dcbpv-pum-card .cloned_subject h4{margin:0 0 8px;color:#0f172a;font-size:15px;line-height:1.5}
+      #${OVERLAY_ID} .dcbpv-pum-card .cloned_card_body p{display:block!important;margin:0;color:#475569;line-height:1.65;white-space:normal!important}
+      #${OVERLAY_ID} .dcbpv-pum-card .cloned_media:empty{display:none}
       #${OVERLAY_ID} .dcbpv-movie-wrap{width:min(100%,560px);margin:10px auto;overflow:hidden;border-radius:10px;background:#000}
       #${OVERLAY_ID} .dcbpv-movie-wrap iframe{width:100%!important;height:700px!important;margin:0;border-radius:0;transform:scale(.875);transform-origin:top left;min-height:0}
       #${OVERLAY_ID} .dcbpv-dccon,#${OVERLAY_ID} img.dcbpv-dccon,#${OVERLAY_ID} video.dcbpv-dccon,#${OVERLAY_ID} img[src*="dccon.php"]{display:inline-block!important;max-width:min(120px,32vw)!important;height:auto!important;margin:4px!important;border-radius:6px;box-shadow:none}
@@ -581,7 +592,10 @@ syncSettings(handleUrl);
       [...node.attributes].forEach((attr) => {
         const name = attr.name.toLowerCase();
         if (name.startsWith("on")) node.removeAttribute(attr.name);
-        if (name === "src" || name === "href") node.setAttribute(attr.name, makeAbsolute(attr.value, baseUrl));
+        if (name === "src" || name === "href") {
+          if (attr.value.trim()) node.setAttribute(attr.name, makeAbsolute(attr.value, baseUrl));
+          else node.removeAttribute(attr.name);
+        }
         if (name === "srcset" || name === "style" || name === "id") node.removeAttribute(attr.name);
       });
     });
@@ -873,8 +887,8 @@ syncSettings(handleUrl);
 
   function findBestContent(doc, mode){
     const exactSelectors = mode === "desktop"
-      ? ["#write_div", ".write_div", ".writing_view_box .write_div", ".gallview_contents .write_div", ".view_content .write_div", ".thum-txtin", ".view_txt"]
-      : [".thum-txtin", ".view_txt", "#write_div", ".write_div", ".writing_view_box .write_div"];
+      ? ["#write_div", ".write_div", "#pum_container.cloned_card", "#pum_container", ".writing_view_box .write_div", ".gallview_contents .write_div", ".view_content .write_div", ".thum-txtin", ".view_txt"]
+      : [".thum-txtin", ".view_txt", "#write_div", ".write_div", "#pum_container.cloned_card", "#pum_container", ".writing_view_box .write_div"];
     const broadSelectors = mode === "desktop"
       ? [".writing_view_box", ".gallview_contents", ".view_content", ".view_txt"]
       : [".gallview_contents", ".view_content", ".writing_view_box", "article", "section"];
@@ -903,6 +917,7 @@ syncSettings(handleUrl);
       let score = 0;
       score += Math.min(text.length, 1400) / 20;
       if (node.matches("#write_div,.write_div,.thum-txtin,.view_txt")) score += 90;
+      if (node.matches("#pum_container")) score += 100;
       if (node.matches(".writing_view_box,.gallview_contents")) score += 28;
       if (node.closest(".gallview,.gallview_wrap,.view_wrap,.view_content_wrap,.writing_view_box,article")) score += 24;
       if (node.querySelector("img,video,iframe")) score += 16;
@@ -1352,6 +1367,7 @@ syncSettings(handleUrl);
 
   function articleHTMLFromElement(source, baseUrl){
     if (!source) return "";
+    const isPumCard = source.matches?.("#pum_container.cloned_card,#pum_container");
     const clone = source.cloneNode(true);
     clone.querySelectorAll([
       "#comment_wrap", ".comment_wrap", ".all-comment", ".cmt_list", ".reply_list", ".cmt_write_box", ".comment_write",
@@ -1361,6 +1377,15 @@ syncSettings(handleUrl);
     ].join(",")).forEach((node) => node.remove());
     normalizeDcMedia(clone, baseUrl);
     stripUnsafe(clone, baseUrl);
+    if (isPumCard) {
+      clone.removeAttribute("id");
+      clone.classList.add("dcbpv-pum-card");
+      clone.querySelectorAll("img:not([src]),img[src='']").forEach((node) => node.remove());
+      clone.querySelectorAll(".cloned_media").forEach((node) => {
+        if (!node.querySelector("img,video,iframe") && !node.textContent.trim()) node.remove();
+      });
+      return clone.outerHTML.trim();
+    }
     return clone.innerHTML.trim();
   }
 
@@ -2020,6 +2045,91 @@ syncSettings(handleUrl);
     });
   }
 
+  async function fetchPreviewViaRenderedFrame(articleUrl, signal){
+    let frame = null;
+    const started = Date.now();
+
+    try {
+      const parsed = new URL(articleUrl, location.href);
+      if (parsed.origin !== location.origin) return null;
+
+      frame = document.createElement("iframe");
+      frame.src = parsed.href;
+      frame.loading = "eager";
+      frame.referrerPolicy = "strict-origin-when-cross-origin";
+      frame.setAttribute("aria-hidden", "true");
+      frame.setAttribute("data-dcbpv-article-frame", "1");
+      Object.assign(frame.style, {
+        position: "fixed",
+        left: "-12000px",
+        top: "-12000px",
+        width: "980px",
+        height: "1200px",
+        opacity: "0.001",
+        pointerEvents: "none",
+        zIndex: "-1"
+      });
+
+      const loadPromise = new Promise((resolve) => {
+        frame.addEventListener("load", resolve, { once: true });
+      });
+
+      (document.documentElement || document.body).appendChild(frame);
+
+      await Promise.race([loadPromise, waitMs(3000, signal)]).catch((error) => {
+        if (error?.name === "AbortError") throw error;
+      });
+
+      // 펌 카드는 원본 fetch HTML에는 없고 페이지 스크립트가 뒤늦게
+      // #pum_container.cloned_card 로 생성하므로 렌더링된 DOM을 기다린다.
+      const checkpoints = [0, 250, 650, 1200, 2000, 3200, 4800];
+      let previousCheckpoint = 0;
+
+      for (const checkpoint of checkpoints) {
+        const delay = Math.max(0, checkpoint - previousCheckpoint);
+        previousCheckpoint = checkpoint;
+        if (delay) await waitMs(delay, signal);
+        if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+
+        let doc = null;
+        try {
+          doc = frame.contentDocument || frame.contentWindow?.document;
+        } catch (_) {
+          return null;
+        }
+        if (!doc?.body) continue;
+
+        const pumCard = doc.querySelector("#pum_container.cloned_card,#pum_container");
+        const pumHasPayload = !!pumCard && Boolean(
+          pumCard.textContent?.replace(/\s+/g, " ").trim()
+          || pumCard.querySelector("img[src],video[src],iframe[src]")
+        );
+
+        // 일반 동적 본문도 살리되, 펌 카드가 생성될 시간을 먼저 보장한다.
+        const content = pumCard || findBestContent(doc, "desktop");
+        if (!content) continue;
+        if (!pumHasPayload && checkpoint < 1200) continue;
+
+        const renderedHtml = doc.documentElement?.outerHTML || "";
+        if (!renderedHtml) continue;
+
+        const renderedData = parseDesktopFallback(renderedHtml, articleUrl, parsed.href);
+        if (!isWeakPreviewData(renderedData)) {
+          renderedData.renderedFrame = true;
+          renderedData.renderedFrameTookMs = Date.now() - started;
+          return renderedData;
+        }
+      }
+
+      return null;
+    } catch (error) {
+      if (error?.name === "AbortError") throw error;
+      return null;
+    } finally {
+      try { frame?.remove?.(); } catch (_) {}
+    }
+  }
+
   async function fetchCommentsViaRenderedFrame(articleUrl, signal){
     const type = previewGalleryTypeFromUrl(articleUrl);
     if (type !== "mini" && type !== "person") return { html: "", debug: [{ method: "IFRAME", endpoint: articleUrl, error: "iframe 대상 아님" }] };
@@ -2272,6 +2382,14 @@ syncSettings(handleUrl);
       } catch (desktopError) {
         if (!data) throw desktopError;
         if (mobileError) data.mobileError = mobileError.message || String(mobileError);
+      }
+    }
+
+    if (!data || isWeakPreviewData(data)) {
+      const renderedData = await fetchPreviewViaRenderedFrame(url, activeAbort.signal);
+      if (renderedData) {
+        // 렌더링된 본문을 우선하고, 기존 fetch에서 얻은 댓글/통계만 보충한다.
+        data = data ? mergePreviewData(renderedData, data) : renderedData;
       }
     }
 
