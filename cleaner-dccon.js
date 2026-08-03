@@ -39,6 +39,7 @@ cleaner-dccon.js - 디시콘(DCcon) 숨기기
   const STYLE_ID = 'dcb-hide-dccon-style';
   const COMMENT_HIDDEN_CLASS = 'dcb-dccon-comment-hidden';
   const CONTENT_HIDDEN_CLASS = 'dcb-dccon-content-hidden';
+  const SELECTIVE_HIDDEN_SEL = '.dcb-selective-dccon-hidden, [data-dcb-selective-dccon-hidden="true"]';
   const CSS_RULE = `
     /* Chrome 계열에서는 :has()로 디시콘 댓글 행을 CSS 단계에서 먼저 숨깁니다. */
     div.cmt_info:has(.comment_dccon),
@@ -132,6 +133,7 @@ cleaner-dccon.js - 디시콘(DCcon) 숨기기
   const restoreInlineDisplay = () => {
     // 이전 버전이 직접 넣은 inline display:none 흔적을 가능한 범위에서 복원합니다.
     document.querySelectorAll(`${COMMENT_DCCON_SEL}, ${CONTENT_DCCON_SELS.join(',')}`).forEach(el => {
+      if (el.matches?.(SELECTIVE_HIDDEN_SEL) || el.closest?.(SELECTIVE_HIDDEN_SEL)) return;
       if (el.style?.display === 'none') {
         el.style.removeProperty('display');
       }

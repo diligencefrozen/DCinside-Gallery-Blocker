@@ -19,6 +19,9 @@ const RULE_MAX_OFFSET = 20_000;         // 이 확장프로그램이 쓰는 동�
 const AREA_PICKER_MENU_ID = "dcb-area-picker-select";
 const USER_BLOCK_CONTEXT_MENU_ID = "dcb-user-block-context";
 const USER_MEMO_CONTEXT_MENU_ID = "dcb-user-memo-context";
+const DCCON_BLOCK_CONTEXT_MENU_ID = "dcb-dccon-block-context";
+const DCCON_BLOCK_ITEM_MENU_ID = "dcb-dccon-block-item";
+const DCCON_BLOCK_GROUP_MENU_ID = "dcb-dccon-block-group";
 const IMAGE_BLOCK_CONFIG_KEY = "dcbImageBlockConfig";
 const LOW_ACTIVITY_RULE_KEY = "dcbImageAccountRules";
 const DEFAULT_OFF_MIGRATION_KEY = "dcbDefaultOffMigration742";
@@ -220,6 +223,35 @@ function resetContextMenus() {
           id: USER_MEMO_CONTEXT_MENU_ID,
           title: "📝 이 사용자 메모하기",
           contexts: ["all"],
+          documentUrlPatterns: [
+            "*://gall.dcinside.com/*"
+          ]
+        }, () => void chrome.runtime.lastError);
+
+        chrome.contextMenus.create({
+          id: DCCON_BLOCK_CONTEXT_MENU_ID,
+          title: "🧩 디시콘 차단",
+          contexts: ["image", "video"],
+          documentUrlPatterns: [
+            "*://gall.dcinside.com/*"
+          ]
+        }, () => void chrome.runtime.lastError);
+
+        chrome.contextMenus.create({
+          id: DCCON_BLOCK_ITEM_MENU_ID,
+          parentId: DCCON_BLOCK_CONTEXT_MENU_ID,
+          title: "이 디시콘만 차단",
+          contexts: ["image", "video"],
+          documentUrlPatterns: [
+            "*://gall.dcinside.com/*"
+          ]
+        }, () => void chrome.runtime.lastError);
+
+        chrome.contextMenus.create({
+          id: DCCON_BLOCK_GROUP_MENU_ID,
+          parentId: DCCON_BLOCK_CONTEXT_MENU_ID,
+          title: "이 디시콘 그룹 전체 차단",
+          contexts: ["image", "video"],
           documentUrlPatterns: [
             "*://gall.dcinside.com/*"
           ]
@@ -659,6 +691,31 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 /* ───── 우클릭 메뉴: 사용자 차단 / 영역 숨기기 선택 ───── */
 chrome.contextMenus?.onClicked?.addListener((info, tab) => {
   if (!tab?.id) return;
+
+  if (
+    info.menuItemId === DCCON_BLOCK_ITEM_MENU_ID
+    || info.menuItemId === DCCON_BLOCK_GROUP_MENU_ID
+  ) {
+    const message = {
+      type: "dcb.dcconBlockContext",
+      mode: info.menuItemId === DCCON_BLOCK_GROUP_MENU_ID ? "group" : "item"
+    };
+    const done = (res) => {
+      if (chrome.runtime.lastError) {
+        showActionBadge(tab.id, "?");
+        return;
+      }
+      showActionBadge(tab.id, res?.ok ? "✔" : "!");
+    };
+
+    if (typeof info.frameId === "number") {
+      chrome.tabs.sendMessage(tab.id, message, { frameId: info.frameId }, done);
+    } else {
+      chrome.tabs.sendMessage(tab.id, message, done);
+    }
+
+    return;
+  }
 
   if (info.menuItemId === USER_BLOCK_CONTEXT_MENU_ID) {
     const message = { type: "dcb.legacyContextUserBlock" };

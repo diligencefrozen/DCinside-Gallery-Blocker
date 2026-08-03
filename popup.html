@@ -681,6 +681,166 @@
   .keyword-sync-count{display:inline-flex;align-items:center;justify-content:center;min-width:34px;padding:2px 7px;border-radius:999px;background:rgba(96,165,250,.13);border:1px solid rgba(147,197,253,.26);color:#bfdbfe;font-size:10.5px;font-weight:900;line-height:1.35}
   .soft-section-note{margin-top:-10px}
 
+  .dccon-block-manager{
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+    padding:12px;
+    border:1px solid rgba(79,124,255,.34);
+    border-radius:15px;
+    background:linear-gradient(180deg,rgba(79,124,255,.12),rgba(15,23,42,.76));
+  }
+  .dccon-block-manager-head{
+    display:flex;
+    align-items:flex-start;
+    justify-content:space-between;
+    gap:10px;
+  }
+  .dccon-block-manager-copy{
+    display:flex;
+    flex-direction:column;
+    gap:3px;
+    min-width:0;
+  }
+  .dccon-block-manager-copy strong{
+    color:#f8fbff;
+    font-size:13px;
+    font-weight:900;
+    letter-spacing:-.025em;
+  }
+  .dccon-block-manager-copy span{
+    color:#9fb3d9;
+    font-size:10.5px;
+    line-height:1.4;
+  }
+  .dccon-block-manager-badge{
+    flex:0 0 auto;
+    padding:3px 7px;
+    border:1px solid rgba(147,197,253,.24);
+    border-radius:999px;
+    background:rgba(37,99,235,.13);
+    color:#bfdbfe;
+    font-size:9.5px;
+    font-weight:900;
+  }
+  .dccon-block-guide{
+    padding:8px 9px;
+    border:1px solid rgba(148,163,184,.17);
+    border-radius:10px;
+    background:rgba(15,23,42,.66);
+    color:#c9d7e8;
+    font-size:10.5px;
+    line-height:1.45;
+  }
+  .dccon-block-guide strong{color:#fff}
+  .dccon-block-grid{
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+  }
+  .dccon-block-panel{
+    min-width:0;
+    padding:9px;
+    border:1px solid rgba(148,163,184,.18);
+    border-radius:11px;
+    background:rgba(9,14,24,.7);
+  }
+  .dccon-block-panel-head{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:8px;
+    margin-bottom:7px;
+  }
+  .dccon-block-panel-title{
+    display:flex;
+    align-items:center;
+    gap:6px;
+    min-width:0;
+    color:#e5edf8;
+    font-size:11.5px;
+  }
+  .dccon-block-count{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    min-width:24px;
+    padding:2px 6px;
+    border-radius:999px;
+    background:rgba(79,124,255,.18);
+    color:#bfdbfe;
+    font-size:10px;
+    font-weight:900;
+  }
+  .dccon-block-clear,
+  .dccon-block-remove{
+    flex:0 0 auto;
+    padding:4px 7px;
+    border-color:rgba(248,113,113,.46);
+    color:#fca5a5;
+    font-size:10.5px;
+  }
+  .dccon-block-clear:disabled{
+    cursor:not-allowed;
+    opacity:.42;
+  }
+  .dccon-block-clear:disabled:hover{
+    background:transparent;
+    color:#fca5a5;
+    box-shadow:none;
+  }
+  .dccon-block-list{
+    display:flex;
+    flex-direction:column;
+    gap:6px;
+    max-height:126px;
+    margin:0;
+    padding:0;
+    overflow:auto;
+    list-style:none;
+  }
+  .dccon-block-list li{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:8px;
+    min-width:0;
+    padding:7px 8px;
+    border:1px solid rgba(148,163,184,.16);
+    border-radius:8px;
+    background:#151a22;
+  }
+  .dccon-block-copy{
+    display:flex;
+    flex-direction:column;
+    gap:2px;
+    min-width:0;
+  }
+  .dccon-block-copy strong,
+  .dccon-block-copy code,
+  .dccon-block-copy small{
+    max-width:205px;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+  .dccon-block-copy strong{color:#e5edf8;font-size:10.8px}
+  .dccon-block-copy code,
+  .dccon-block-copy small{color:#8fa0b6;font-size:9.8px}
+  .dccon-block-empty{
+    display:block !important;
+    border-style:dashed !important;
+    color:#8fa0b6;
+    font-size:10.5px;
+  }
+  .dccon-block-status{
+    min-height:14px;
+    margin:0;
+    color:#9dd6a5;
+    font-size:10.5px;
+    line-height:1.35;
+  }
+
   .donation-card{
     display:flex;
     flex-direction:column;
@@ -1128,6 +1288,47 @@
       <span class="slider"></span>
     </label>
   </label>
+  <p class="hint" style="margin-top:-10px">특정 디시콘이나 그룹만 차단하려면 해당 디시콘을 우클릭하세요. 차단 해제는 아래 목록이나 설정 메뉴에서 할 수 있습니다.</p>
+
+  <section class="dccon-block-manager" id="dcconBlockManager" aria-label="숨길 디시콘 선택하기">
+    <div class="dccon-block-manager-head">
+      <div class="dccon-block-manager-copy">
+        <strong>🧩 숨길 디시콘 선택하기</strong>
+        <span>개별 디시콘과 그룹 숨김 목록을 팝업에서 바로 확인하고 해제합니다.</span>
+      </div>
+      <span class="dccon-block-manager-badge">SELECT</span>
+    </div>
+
+    <div class="dccon-block-guide">
+      디시인사이드 페이지에서 <strong>디시콘을 우클릭</strong>한 뒤 “이 디시콘만 차단” 또는 “이 디시콘 그룹 전체 차단”을 선택하세요.
+    </div>
+
+    <div class="dccon-block-grid">
+      <section class="dccon-block-panel" aria-label="개별 디시콘 차단 목록">
+        <div class="dccon-block-panel-head">
+          <div class="dccon-block-panel-title">
+            <strong>개별 디시콘</strong>
+            <span class="dccon-block-count" id="dcconBlockedItemCount">0</span>
+          </div>
+          <button class="dccon-block-clear" id="clearBlockedDcconItems" type="button">전체 해제</button>
+        </div>
+        <ul class="dccon-block-list" id="blockedDcconItemList"></ul>
+      </section>
+
+      <section class="dccon-block-panel" aria-label="디시콘 그룹 차단 목록">
+        <div class="dccon-block-panel-head">
+          <div class="dccon-block-panel-title">
+            <strong>디시콘 그룹</strong>
+            <span class="dccon-block-count" id="dcconBlockedGroupCount">0</span>
+          </div>
+          <button class="dccon-block-clear" id="clearBlockedDcconGroups" type="button">전체 해제</button>
+        </div>
+        <ul class="dccon-block-list" id="blockedDcconGroupList"></ul>
+      </section>
+    </div>
+
+    <p class="dccon-block-status" id="dcconBlockManagerStatus" role="status"></p>
+  </section>
 
   <label class="row">
     <span style="min-width:110px;">페이지 미리보기</span>
@@ -1408,7 +1609,9 @@
   <script src="font-config.js"></script>
   <script src="font-ui.js"></script>
   <script src="user-block-store.js"></script>
+  <script src="dccon-block-store.js"></script>
   <script src="popup.js"></script>
+  <script src="dccon-block-options.js"></script>
   <script src="keyword-hide-ui.js"></script>
   <script src="image-account-settings-ui.js"></script>
 </body>

@@ -48,6 +48,12 @@ const IMAGE_BLOCK_CONFIG_KEY = "dcbImageBlockConfig";
 const IMAGE_BLOCK_RECORD_KEY = "dcbImageBlockRecords";
 const IMAGE_BLOCK_AUTHOR_TARGET_KEY = "dcbImageBlockAuthorTargets";
 const IMAGE_ACCOUNT_RULE_KEY = "dcbImageAccountRules";
+const DCCON_BLOCK_STATE_KEY = "dcbDcconBlockState";
+const DCCON_BLOCK_STATE_DEFAULT = {
+  version: 1,
+  items: {},
+  groups: {}
+};
 const IMAGE_BLOCK_CONFIG_DEFAULT = {
   enabled: false,
   hideMemberImages: true,
@@ -92,6 +98,7 @@ const BACKUP_KEYS = [
   "previewEnabled", "hideAnonymousEnabled", "gamemecaBlockEnabled", "doryBlockEnabled", "noticeBlockEnabled", "compactListEnabled",
   "userMemoEnabled", "userMemos",
   IMAGE_BLOCK_CONFIG_KEY, IMAGE_BLOCK_RECORD_KEY, IMAGE_BLOCK_AUTHOR_TARGET_KEY, IMAGE_ACCOUNT_RULE_KEY,
+  DCCON_BLOCK_STATE_KEY,
   "keywordBlockEnabled", "blockedKeywords", "keywordBlockTargets",
   "keywordHideEnabled", "hiddenKeywords", "keywordHideTargets",
   "dcbFontFamily", "dcbFontCustomFamily", "dcbFontScale", "dcbApplyFontToDc"
@@ -137,6 +144,7 @@ const BACKUP_DEFAULTS = {
   [IMAGE_BLOCK_RECORD_KEY]: {},
   [IMAGE_BLOCK_AUTHOR_TARGET_KEY]: [],
   [IMAGE_ACCOUNT_RULE_KEY]: IMAGE_ACCOUNT_RULE_DEFAULT,
+  [DCCON_BLOCK_STATE_KEY]: DCCON_BLOCK_STATE_DEFAULT,
   keywordBlockEnabled: false,
   blockedKeywords: [],
   keywordBlockTargets: KEYWORD_DEFAULT_TARGETS,
@@ -649,6 +657,16 @@ function normalizeImageAccountRules(value) {
   };
 }
 
+function normalizeDcconBlockState(value) {
+  if (globalThis.DCBDcconBlockStore?.normalizeState) {
+    return DCBDcconBlockStore.normalizeState(value);
+  }
+
+  return value && typeof value === "object"
+    ? value
+    : { ...DCCON_BLOCK_STATE_DEFAULT };
+}
+
 function sanitizeImport(raw) {
   const body = raw && typeof raw === "object"
     ? (raw.data && typeof raw.data === "object" ? raw.data : raw)
@@ -721,7 +739,8 @@ async function exportSettings() {
           userMemos: {},
           [IMAGE_BLOCK_CONFIG_KEY]: null,
           [IMAGE_BLOCK_RECORD_KEY]: {},
-          [IMAGE_BLOCK_AUTHOR_TARGET_KEY]: []
+          [IMAGE_BLOCK_AUTHOR_TARGET_KEY]: [],
+          [DCCON_BLOCK_STATE_KEY]: DCCON_BLOCK_STATE_DEFAULT
         })
       : {};
 
@@ -737,9 +756,10 @@ async function exportSettings() {
     );
     snapshot[IMAGE_BLOCK_RECORD_KEY] = normalizeImageBlockRecords(localSnapshot[IMAGE_BLOCK_RECORD_KEY]);
     snapshot[IMAGE_BLOCK_AUTHOR_TARGET_KEY] = normalizeImageAuthorTargets(localSnapshot[IMAGE_BLOCK_AUTHOR_TARGET_KEY]);
+    snapshot[DCCON_BLOCK_STATE_KEY] = normalizeDcconBlockState(localSnapshot[DCCON_BLOCK_STATE_KEY]);
 
     const payload = {
-      version: 6,
+      version: 7,
       exportedAt: new Date().toISOString(),
       data: snapshot
     };
@@ -786,11 +806,16 @@ function importSettingsFromFile(file) {
       if (hasImageAccountRules) {
         patch[IMAGE_ACCOUNT_RULE_KEY] = normalizeImageAccountRules(patch[IMAGE_ACCOUNT_RULE_KEY]);
       }
+      const hasDcconBlockState = Object.prototype.hasOwnProperty.call(patch, DCCON_BLOCK_STATE_KEY);
+      const dcconBlockStatePatch = hasDcconBlockState
+        ? normalizeDcconBlockState(patch[DCCON_BLOCK_STATE_KEY])
+        : null;
 
       delete patch.blockedUids;
       delete patch.userMemos;
       delete patch[IMAGE_BLOCK_RECORD_KEY];
       delete patch[IMAGE_BLOCK_AUTHOR_TARGET_KEY];
+      delete patch[DCCON_BLOCK_STATE_KEY];
       if (hasImageBlockConfig) patch[IMAGE_BLOCK_CONFIG_KEY] = imageBlockConfigPatch;
 
       if (Object.prototype.hasOwnProperty.call(patch, QUICK_BLOCK_POSITION_KEY)) {
@@ -823,6 +848,10 @@ function importSettingsFromFile(file) {
 
       if (hasImageBlockAuthorTargets && chrome.storage.local) {
         await chrome.storage.local.set({ [IMAGE_BLOCK_AUTHOR_TARGET_KEY]: imageBlockAuthorTargetsPatch || [] });
+      }
+
+      if (hasDcconBlockState && chrome.storage.local) {
+        await chrome.storage.local.set({ [DCCON_BLOCK_STATE_KEY]: dcconBlockStatePatch || DCCON_BLOCK_STATE_DEFAULT });
       }
 
       if (hasBlockedUids && globalThis.DCBUserBlockStore?.setAllTokens) {

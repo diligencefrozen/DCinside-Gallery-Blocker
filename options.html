@@ -254,6 +254,135 @@
   color:#9dd6a5;
 }
 
+.dccon-block-manager{
+  gap:14px;
+}
+
+.dccon-block-guide{
+  display:flex;
+  gap:12px;
+  align-items:flex-start;
+  padding:14px;
+  border:1px solid rgba(79,124,255,.34);
+  border-radius:14px;
+  background:linear-gradient(180deg,rgba(79,124,255,.12),rgba(79,124,255,.04));
+}
+
+.dccon-block-guide strong{
+  color:#fff;
+}
+
+.dccon-block-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:12px;
+}
+
+.dccon-block-panel{
+  min-width:0;
+  padding:14px;
+  border:1px solid #30363d;
+  border-radius:12px;
+  background:#0d1117;
+}
+
+.dccon-block-panel-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  margin-bottom:10px;
+}
+
+.dccon-block-panel-title{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  min-width:0;
+}
+
+.dccon-block-count{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-width:28px;
+  padding:2px 7px;
+  border-radius:999px;
+  background:rgba(79,124,255,.18);
+  color:#bfdbfe;
+  font-size:12px;
+  font-weight:700;
+}
+
+.dccon-block-clear{
+  padding:6px 9px;
+  border-color:#7f1d1d;
+  color:#fca5a5;
+  font-size:12px;
+}
+
+.dccon-block-list{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  max-height:280px;
+  overflow:auto;
+}
+
+.dccon-block-list li{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  padding:9px 10px;
+  border:1px solid #30363d;
+  border-radius:9px;
+  background:#161b22;
+}
+
+.dccon-block-copy{
+  display:flex;
+  flex-direction:column;
+  gap:3px;
+  min-width:0;
+}
+
+.dccon-block-copy strong,
+.dccon-block-copy code{
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+.dccon-block-copy small{
+  color:#8b949e;
+}
+
+.dccon-block-remove{
+  flex:0 0 auto;
+  padding:5px 8px;
+  font-size:12px;
+}
+
+.dccon-block-empty{
+  display:block !important;
+  border:0 !important;
+  padding:10px 0 !important;
+  background:transparent !important;
+  color:#8b949e;
+  font-size:13px;
+}
+
+.dccon-block-status{
+  min-height:16px;
+  color:#9dd6a5;
+  font-size:12px;
+}
+
+@media(max-width:720px){
+  .dccon-block-grid{grid-template-columns:1fr}
+}
+
 .quick-guide-card{
   display:flex;
   gap:14px;
@@ -1442,6 +1571,41 @@
     * 디시콘: 본문과 댓글의 디시콘 숨김</p>
   </section>
 
+  <section class="card dccon-block-manager" id="dcconBlockManager" aria-label="숨길 디시콘 선택하기">
+    <h2>🧩 숨길 디시콘 선택하기</h2>
+    <div class="dccon-block-guide">
+      <span aria-hidden="true">🖱️</span>
+      <p class="note"><strong>디시콘을 우클릭</strong>한 뒤 “이 디시콘만 차단” 또는 “이 디시콘 그룹 전체 차단”을 선택하세요. 전체 숨기기 설정과 별개로 동작합니다.</p>
+    </div>
+
+    <div class="dccon-block-grid">
+      <section class="dccon-block-panel" aria-label="개별 디시콘 차단 목록">
+        <div class="dccon-block-panel-head">
+          <div class="dccon-block-panel-title">
+            <strong>개별 디시콘</strong>
+            <span class="dccon-block-count" id="dcconBlockedItemCount">0</span>
+          </div>
+          <button class="dccon-block-clear" id="clearBlockedDcconItems" type="button">전체 해제</button>
+        </div>
+        <ul class="dccon-block-list" id="blockedDcconItemList"></ul>
+      </section>
+
+      <section class="dccon-block-panel" aria-label="디시콘 그룹 차단 목록">
+        <div class="dccon-block-panel-head">
+          <div class="dccon-block-panel-title">
+            <strong>디시콘 그룹</strong>
+            <span class="dccon-block-count" id="dcconBlockedGroupCount">0</span>
+          </div>
+          <button class="dccon-block-clear" id="clearBlockedDcconGroups" type="button">전체 해제</button>
+        </div>
+        <ul class="dccon-block-list" id="blockedDcconGroupList"></ul>
+      </section>
+    </div>
+
+    <p class="dccon-block-status" id="dcconBlockManagerStatus" role="status"></p>
+    <p class="note">차단 목록은 브라우저 로컬 저장소에만 보관됩니다. 그룹 차단 시 디시인사이드에서 해당 그룹의 구성 목록을 한 번 확인합니다.</p>
+  </section>
+
 
 
   <section class="card image-block-card" aria-label="이미지 차단 옵션">
@@ -1549,7 +1713,9 @@
 <script src="font-config.js"></script>
 <script src="font-ui.js"></script>
 <script src="user-block-store.js"></script>
+<script src="dccon-block-store.js"></script>
 <script src="options.js"></script>
+<script src="dccon-block-options.js"></script>
 <script src="keyword-hide-ui.js"></script>
 <script src="image-account-settings-ui.js"></script>
 </body>
