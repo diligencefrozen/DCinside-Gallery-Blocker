@@ -332,6 +332,9 @@ syncSettings(handleUrl);
   let currentPreviewData = null;
   let previewDcconObserver = null;
   let previewDcconTimer = 0;
+  let previewUserBlockMutationPending = 0;
+  let previewUserBlockRerenderPending = false;
+  let previewFilterRerenderTimer = 0;
   const previewMediaSettleTimers = new WeakMap();
 
   const escapeText = (value) => String(value ?? "").replace(/[&<>'"]/g, (ch) => ({
@@ -532,6 +535,10 @@ syncSettings(handleUrl);
 
   function closePreview(){
     stopPreviewDcconObserver();
+    if (previewFilterRerenderTimer) {
+      clearTimeout(previewFilterRerenderTimer);
+      previewFilterRerenderTimer = 0;
+    }
     const overlay = document.getElementById(OVERLAY_ID);
     if (overlay) overlay.remove();
     currentPreviewData = null;
@@ -1174,6 +1181,105 @@ syncSettings(handleUrl);
     menu.style.top = `${Math.round(top)}px`;
   }
 
+  function previewMenuBlockToken(menu, action){
+    const uid = previewUidToken(menu?.dataset?.uid || "");
+    const nick = String(menu?.dataset?.nick || "").trim();
+    const ip = previewIpPrefix(menu?.dataset?.ip || "", { allowDateLike: true });
+    return action === "block-uid" ? uid : action === "block-ip" ? ip : (nick ? `nick:${nick}` : "");
+  }
+
+  function previewMenuBlockLabel(action, blocked){
+    const kind = action === "block-uid" ? "식별 코드" : action === "block-ip" ? "IP" : "닉네임";
+    return `${blocked ? "차단 해제" : "차단"}(${kind})`;
+  }
+
+  function previewMatchedBlockTokens(action, targetToken, storedTokens){
+    const normalize = globalThis.DCBUserBlockStore?.normalizeToken
+      ? (value) => DCBUserBlockStore.normalizeToken(value)
+      : (value) => String(value || "").normalize("NFKC").trim();
+    const makeKey = globalThis.DCBUserBlockStore?.makeBlockKey
+      ? (value) => DCBUserBlockStore.makeBlockKey(value)
+      : (value) => normalize(value).toLowerCase();
+    const target = normalize(targetToken);
+    if (!target) return [];
+
+    const matches = [];
+    const seen = new Set();
+    const targetNick = action === "block-nick"
+      ? target.replace(/^nick\s*[:=]\s*/i, "").toLowerCase()
+      : "";
+
+    for (const raw of Array.isArray(storedTokens) ? storedTokens : []) {
+      const stored = normalize(raw);
+      if (!stored) continue;
+
+      const matched = action === "block-nick"
+        ? /^nick\s*[:=]/i.test(stored)
+          && targetNick.includes(stored.replace(/^nick\s*[:=]\s*/i, "").toLowerCase())
+        : makeKey(stored) === makeKey(target);
+      const key = makeKey(stored);
+      if (!matched || !key || seen.has(key)) continue;
+      seen.add(key);
+      matches.push(stored);
+    }
+
+    return matches;
+  }
+
+  async function previewStoredBlockTokens(){
+    if (!globalThis.DCBUserBlockStore?.getAllTokens) return [];
+    const reader = DCBUserBlockStore.getAllTokensReadOnly || DCBUserBlockStore.getAllTokens;
+    const tokens = await reader();
+    return Array.isArray(tokens) ? tokens : [];
+  }
+
+  async function refreshPreviewUserMenuBlockStates(menu){
+    if (!globalThis.DCBUserBlockStore?.getAllTokens || !menu?.isConnected) return;
+
+    const actions = ["block-nick", "block-uid", "block-ip"];
+    try {
+      const storedTokens = await previewStoredBlockTokens();
+      await Promise.all(actions.map(async (action) => {
+        const link = menu.querySelector?.(`[data-dcbpv-menu-act="${action}"]`);
+        const token = previewMenuBlockToken(menu, action);
+        if (!link || !token) return;
+
+        const matchedTokens = previewMatchedBlockTokens(action, token, storedTokens);
+        const blocked = matchedTokens.length > 0;
+        if (!link.isConnected || link.dataset.busy === "1") return;
+        link.dataset.blocked = blocked ? "1" : "0";
+        link.dataset.blockTokens = JSON.stringify(matchedTokens);
+        link.innerHTML = `${escapeText(previewMenuBlockLabel(action, blocked))}<span class="dcbpv-menu-arrow">›</span>`;
+      }));
+    } catch (_) {
+      // 상태 표시 보강이 실패해도 기본 차단/해제 메뉴는 그대로 사용할 수 있다.
+    }
+  }
+
+  function togglePreviewUserBlock(token){
+    return new Promise((resolve, reject) => {
+      chrome.runtime.sendMessage({ type: "dcb.instantCtxBlock", token }, (result) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message || "확장 프로그램 연결 실패"));
+          return;
+        }
+        resolve(result);
+      });
+    });
+  }
+
+  function removePreviewUserBlocks(tokens){
+    return new Promise((resolve, reject) => {
+      chrome.runtime.sendMessage({ type: "dcb.userBlockRemoveMany", tokens }, (result) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message || "확장 프로그램 연결 실패"));
+          return;
+        }
+        resolve(result);
+      });
+    });
+  }
+
   function openPreviewUserMenu(anchor, data){
     const writer = anchor?.closest?.(".dcbpv-writer-ref,.gall_writer,.ub-writer");
     if (!writer) return;
@@ -1209,6 +1315,7 @@ syncSettings(handleUrl);
 
     overlay.appendChild(menu);
     positionPreviewUserMenu(menu, anchor);
+    void refreshPreviewUserMenuBlockStates(menu);
   }
 
   function callPageUserMemo(uid){
@@ -1226,7 +1333,6 @@ syncSettings(handleUrl);
 
   async function handlePreviewUserMenuAction(menu, action){
     const uid = previewUidToken(menu?.dataset?.uid || "");
-    const nick = String(menu?.dataset?.nick || "").trim();
     const ip = previewIpPrefix(menu?.dataset?.ip || "", { allowDateLike: true });
 
     if (action === "memo") {
@@ -1235,23 +1341,48 @@ syncSettings(handleUrl);
       return;
     }
 
-    const token = action === "block-uid" ? uid : action === "block-ip" ? ip : (nick ? `nick:${nick}` : "");
+    const token = previewMenuBlockToken(menu, action);
     if (!token) return;
 
+    const actionLink = menu.querySelector(`[data-dcbpv-menu-act="${action}"]`);
+    if (!actionLink || actionLink.dataset.busy === "1" || menu.dataset.busy === "1") return;
+
+    menu.dataset.busy = "1";
+    actionLink.dataset.busy = "1";
+    actionLink.setAttribute("aria-disabled", "true");
+    actionLink.textContent = "처리 중…";
+    previewUserBlockMutationPending += 1;
+
     try {
-      if (globalThis.DCBUserBlockStore?.addToken) {
-        const result = await globalThis.DCBUserBlockStore.addToken(token);
-        if (!result?.ok && result?.reason !== "DUPLICATE") throw new Error(result?.message || "차단 저장 실패");
+      const storedTokens = await previewStoredBlockTokens();
+      const matchedTokens = previewMatchedBlockTokens(action, token, storedTokens);
+      let result;
+
+      if (matchedTokens.length) {
+        result = await removePreviewUserBlocks(matchedTokens);
       } else {
-        const current = await storageGet("local", { blockedUids: [] });
-        const list = Array.isArray(current.blockedUids) ? current.blockedUids : [];
-        if (!list.includes(token)) await chrome.storage.local.set({ blockedUids: [...list, token] });
+        result = await togglePreviewUserBlock(token);
       }
+
+      if (!result?.ok) throw new Error(result?.message || "차단 상태 변경 실패");
       document.dispatchEvent(new CustomEvent("dcb-userblock:refresh"));
-      menu.querySelector(`[data-dcbpv-menu-act="${action}"]`).textContent = "차단됨";
-      setTimeout(() => closePreviewUserMenu(menu?.parentElement || document), 450);
+      actionLink.textContent = result.removed ? "차단 해제됨" : "차단됨";
+      setTimeout(() => {
+        if (menu.isConnected) menu.remove();
+      }, 450);
     } catch (error) {
-      menu.querySelector(`[data-dcbpv-menu-act="${action}"]`).textContent = "저장 실패";
+      menu.dataset.busy = "0";
+      actionLink.dataset.busy = "0";
+      actionLink.removeAttribute("aria-disabled");
+      actionLink.textContent = "변경 실패 · 다시 시도";
+    } finally {
+      setTimeout(() => {
+        previewUserBlockMutationPending = Math.max(0, previewUserBlockMutationPending - 1);
+        if (!previewUserBlockMutationPending && previewUserBlockRerenderPending) {
+          previewUserBlockRerenderPending = false;
+          schedulePreviewFilterRerender();
+        }
+      }, 500);
     }
   }
 
@@ -2495,17 +2626,21 @@ syncSettings(handleUrl);
     ]);
 
     let storeTokens = [];
+    let storeAvailable = false;
     try {
       if (globalThis.DCBUserBlockStore?.getAllTokens) {
-        storeTokens = await globalThis.DCBUserBlockStore.getAllTokens();
+        storeAvailable = true;
+        const reader = globalThis.DCBUserBlockStore.getAllTokensReadOnly || globalThis.DCBUserBlockStore.getAllTokens;
+        storeTokens = await reader();
       }
     } catch (_) {}
 
-    const mergedBlocked = [
-      ...(Array.isArray(sync.blockedUids) ? sync.blockedUids : []),
-      ...(Array.isArray(local.blockedUids) ? local.blockedUids : []),
-      ...(Array.isArray(storeTokens) ? storeTokens : [])
-    ];
+    const mergedBlocked = storeAvailable
+      ? (Array.isArray(storeTokens) ? storeTokens : [])
+      : [
+          ...(Array.isArray(sync.blockedUids) ? sync.blockedUids : []),
+          ...(Array.isArray(local.blockedUids) ? local.blockedUids : [])
+        ];
 
     return { ...PREVIEW_FILTER_DEFAULTS, ...sync, blockedUids: Array.from(new Set(mergedBlocked.map((v) => String(v || "").trim()).filter(Boolean))) };
   }
@@ -3054,6 +3189,28 @@ syncSettings(handleUrl);
     overlay.appendChild(box);
   }
 
+  function schedulePreviewFilterRerender(delay = 40){
+    if (previewFilterRerenderTimer) clearTimeout(previewFilterRerenderTimer);
+
+    const data = currentPreviewData;
+    const scheduledOverlay = document.getElementById(OVERLAY_ID);
+    if (!data || !scheduledOverlay) return;
+
+    previewFilterRerenderTimer = setTimeout(() => {
+      previewFilterRerenderTimer = 0;
+      if (currentPreviewData !== data || document.getElementById(OVERLAY_ID) !== scheduledOverlay) return;
+
+      const scrollTop = scheduledOverlay.querySelector(".dcbpv-scroll")?.scrollTop || 0;
+      renderPreview(data);
+      requestAnimationFrame(() => {
+        const currentOverlay = document.getElementById(OVERLAY_ID);
+        if (!currentOverlay || currentOverlay === scheduledOverlay) return;
+        const scroller = currentOverlay.querySelector(".dcbpv-scroll");
+        if (scroller) scroller.scrollTop = scrollTop;
+      });
+    }, delay);
+  }
+
   chrome.storage.onChanged.addListener((changes, area) => {
     if (!currentPreviewData || area !== "sync" && area !== "local") return;
     const keys = new Set([
@@ -3061,11 +3218,15 @@ syncSettings(handleUrl);
       "showUidBadge", "hideAnonymousEnabled", "doryBlockEnabled", "keywordBlockEnabled", "blockedKeywords", "keywordBlockTargets",
       "keywordHideEnabled", "hiddenKeywords", "keywordHideTargets"
     ]);
-    if (!Object.keys(changes || {}).some((key) => keys.has(key))) return;
-    const data = currentPreviewData;
-    setTimeout(() => {
-      if (currentPreviewData === data && document.getElementById(OVERLAY_ID)) renderPreview(data);
-    }, 40);
+    const knownSettingChanged = Object.keys(changes || {}).some((key) => keys.has(key));
+    const userBlockStoreChanged = area === "local"
+      && !!globalThis.DCBUserBlockStore?.isRelevantChange?.(changes);
+    if (!knownSettingChanged && !userBlockStoreChanged) return;
+    if (previewUserBlockMutationPending) {
+      previewUserBlockRerenderPending = true;
+      return;
+    }
+    schedulePreviewFilterRerender();
   });
 
   async function openPreview(url, options = {}){

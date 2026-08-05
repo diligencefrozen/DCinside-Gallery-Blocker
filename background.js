@@ -19,6 +19,14 @@ const RULE_MAX_OFFSET = 20_000;         // 이 확장프로그램이 쓰는 동�
 const AREA_PICKER_MENU_ID = "dcb-area-picker-select";
 const USER_BLOCK_CONTEXT_MENU_ID = "dcb-user-block-context";
 const USER_MEMO_CONTEXT_MENU_ID = "dcb-user-memo-context";
+
+let userBlockMutationQueue = Promise.resolve();
+
+function queueUserBlockMutation(work) {
+  const job = userBlockMutationQueue.then(work, work);
+  userBlockMutationQueue = job.catch(() => {});
+  return job;
+}
 const DCCON_BLOCK_CONTEXT_MENU_ID = "dcb-dccon-block-context";
 const DCCON_BLOCK_ITEM_MENU_ID = "dcb-dccon-block-item";
 const DCCON_BLOCK_GROUP_MENU_ID = "dcb-dccon-block-group";
@@ -173,10 +181,6 @@ async function normalizeStoredUserBlockList() {
   try {
     if (!globalThis.DCBUserBlockStore) return;
     await DCBUserBlockStore.migrateLegacyToBuckets();
-    const normalized = DCBUserBlockStore.normalizeList(
-      await DCBUserBlockStore.getAllTokens()
-    );
-    await DCBUserBlockStore.setAllTokens(normalized);
   } catch (_) {
     // storage 정리는 보조 기능이므로 실패해도 핵심 차단 흐름은 유지한다.
   }
@@ -212,7 +216,7 @@ function resetContextMenus() {
 
         chrome.contextMenus.create({
           id: USER_BLOCK_CONTEXT_MENU_ID,
-          title: "🚫 이 사용자 차단하기",
+          title: "🚫 이 사용자 차단/해제",
           contexts: ["all"],
           documentUrlPatterns: [
             "*://gall.dcinside.com/*"
@@ -406,7 +410,7 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
 
 /* 서비스워커가 재시작될 때도 우클릭 메뉴를 안정적으로 재구성 */
 resetContextMenus();
-normalizeStoredUserBlockList();
+queueUserBlockMutation(() => normalizeStoredUserBlockList());
 
 /* ───── DNR 규칙 생성 ───── */
 function makeRules(ids) {
@@ -627,8 +631,31 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   return true;
 });
 
-/* ───── 사용자 즉시 차단 ───── */
-async function addBlockedUserToken(token) {
+/* ───── 사용자 즉시 차단/해제 ───── */
+function matchingBlockedUserTokens(storedTokens, candidates) {
+  const normalizedCandidates = DCBUserBlockStore.normalizeList(candidates);
+  const exactKeys = new Set(normalizedCandidates.map((value) => DCBUserBlockStore.makeBlockKey(value)).filter(Boolean));
+  const nickHaystacks = normalizedCandidates
+    .filter((value) => /^nick\s*[:=]/i.test(value))
+    .map((value) => value.replace(/^nick\s*[:=]\s*/i, "").toLowerCase());
+  const seen = new Set();
+
+  return (Array.isArray(storedTokens) ? storedTokens : []).filter((stored) => {
+    const normalized = DCBUserBlockStore.normalizeToken(stored);
+    const key = DCBUserBlockStore.makeBlockKey(normalized);
+    if (!normalized || !key || seen.has(key)) return false;
+
+    const nickNeedle = /^nick\s*[:=]/i.test(normalized)
+      ? normalized.replace(/^nick\s*[:=]\s*/i, "").toLowerCase()
+      : "";
+    const matched = exactKeys.has(key)
+      || (nickNeedle && nickHaystacks.some((haystack) => haystack.includes(nickNeedle)));
+    if (matched) seen.add(key);
+    return matched;
+  });
+}
+
+async function toggleBlockedUserToken(token, candidates = []) {
   if (!globalThis.DCBUserBlockStore) {
     return {
       ok: false,
@@ -641,7 +668,26 @@ async function addBlockedUserToken(token) {
     userBlockEnabled: true
   });
 
-  const res = await DCBUserBlockStore.addToken(token);
+  const normalizedToken = DCBUserBlockStore.normalizeToken(token);
+  const normalizedCandidates = DCBUserBlockStore.normalizeList([
+    normalizedToken,
+    ...(Array.isArray(candidates) ? candidates : [])
+  ]);
+  const storedTokens = await DCBUserBlockStore.getAllTokens();
+  const matchedTokens = matchingBlockedUserTokens(storedTokens, normalizedCandidates);
+  let res;
+
+  if (matchedTokens.length) {
+    res = await DCBUserBlockStore.removeTokens(matchedTokens);
+  } else {
+    const added = await DCBUserBlockStore.addToken(normalizedToken);
+    res = {
+      ...added,
+      removed: false,
+      blocked: !!added?.ok,
+      action: added?.ok ? "blocked" : "unchanged"
+    };
+  }
 
   if (!res?.ok) {
     return res;
@@ -653,10 +699,75 @@ async function addBlockedUserToken(token) {
   };
 }
 
+async function removeBlockedUserToken(token) {
+  if (!globalThis.DCBUserBlockStore) {
+    return {
+      ok: false,
+      reason: "STORAGE_ERROR",
+      message: "사용자 차단 저장 모듈을 불러오지 못했습니다."
+    };
+  }
+
+  return DCBUserBlockStore.removeToken(token);
+}
+
+async function removeBlockedUserTokens(tokens) {
+  if (!globalThis.DCBUserBlockStore) {
+    return {
+      ok: false,
+      reason: "STORAGE_ERROR",
+      message: "사용자 차단 저장 모듈을 불러오지 못했습니다."
+    };
+  }
+
+  if (!Array.isArray(tokens) || !tokens.length || !tokens.every((value) => typeof value === "string")) {
+    return {
+      ok: false,
+      reason: "INVALID_PAYLOAD",
+      message: "차단 해제 목록 형식이 올바르지 않습니다."
+    };
+  }
+
+  return DCBUserBlockStore.removeTokens(tokens);
+}
+
+async function mutateUserBlockList(message) {
+  if (!globalThis.DCBUserBlockStore) {
+    return {
+      ok: false,
+      reason: "STORAGE_ERROR",
+      message: "사용자 차단 저장 모듈을 불러오지 못했습니다."
+    };
+  }
+
+  if (message.type === "dcb.userBlockAdd") {
+    return DCBUserBlockStore.addToken(message.token);
+  }
+
+  if (message.type === "dcb.userBlockSetAll") {
+    if (!Array.isArray(message.tokens) || !message.tokens.every((value) => typeof value === "string")) {
+      return {
+        ok: false,
+        reason: "INVALID_PAYLOAD",
+        message: "사용자 차단 목록 형식이 올바르지 않습니다."
+      };
+    }
+    const tokens = await DCBUserBlockStore.setAllTokens(message.tokens);
+    return { ok: true, tokens, count: tokens.length };
+  }
+
+  if (message.type === "dcb.userBlockClear") {
+    const tokens = await DCBUserBlockStore.clearAllTokens();
+    return { ok: true, tokens, count: 0 };
+  }
+
+  return { ok: false, reason: "UNKNOWN_ACTION", message: "지원하지 않는 사용자 차단 작업입니다." };
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg?.type !== "dcb.instantCtxBlock") return;
 
-  addBlockedUserToken(msg.token)
+  queueUserBlockMutation(() => toggleBlockedUserToken(msg.token, msg.candidates))
     .then((res) => {
       const tabId = sender.tab?.id;
 
@@ -666,7 +777,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         return;
       }
 
-      showActionBadge(tabId, res.userBlockEnabled ? "✔" : "OFF");
+      showActionBadge(tabId, res.removed ? "−" : (res.userBlockEnabled ? "✔" : "OFF"));
 
       if (tabId) {
         const applyMessage = { type: "dcb.userBlockApply", token: res.token };
@@ -678,6 +789,61 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     })
     .catch((error) => {
       showActionBadge(sender.tab?.id, "!");
+      sendResponse({
+        ok: false,
+        reason: "ERROR",
+        message: error?.message || String(error)
+      });
+    });
+
+  return true;
+});
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (!["dcb.userBlockRemove", "dcb.userBlockRemoveMany"].includes(msg?.type)) return;
+
+  const removeTask = msg.type === "dcb.userBlockRemoveMany"
+    ? () => removeBlockedUserTokens(msg.tokens)
+    : () => removeBlockedUserToken(msg.token);
+
+  queueUserBlockMutation(removeTask)
+    .then((res) => {
+      const tabId = sender.tab?.id;
+
+      if (!res?.ok) {
+        showActionBadge(tabId, "!");
+        sendResponse(res);
+        return;
+      }
+
+      showActionBadge(tabId, "−");
+
+      if (tabId && res.removed) {
+        const applyMessage = { type: "dcb.userBlockApply", token: res.token };
+        const options = typeof sender.frameId === "number" ? { frameId: sender.frameId } : undefined;
+        chrome.tabs.sendMessage(tabId, applyMessage, options, () => void chrome.runtime.lastError);
+      }
+
+      sendResponse(res);
+    })
+    .catch((error) => {
+      showActionBadge(sender.tab?.id, "!");
+      sendResponse({
+        ok: false,
+        reason: "ERROR",
+        message: error?.message || String(error)
+      });
+    });
+
+  return true;
+});
+
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (!["dcb.userBlockAdd", "dcb.userBlockSetAll", "dcb.userBlockClear"].includes(msg?.type)) return;
+
+  queueUserBlockMutation(() => mutateUserBlockList(msg))
+    .then((result) => sendResponse(result))
+    .catch((error) => {
       sendResponse({
         ok: false,
         reason: "ERROR",

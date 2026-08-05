@@ -72,7 +72,9 @@
   let userBlockTriggerModeCache = "instant";
   let userBlockHoverHintEnabledCache = true;
   let lastContextBlockToken = "";
+  let lastContextBlockCandidates = [];
   let lastContextBlockAt = 0;
+  const inFlightBlockTokens = new Set();
 
   function normalizeUserBlockTriggerMode(v) {
     return USER_BLOCK_TRIGGER_MODES.has(v) ? v : "instant";
@@ -348,8 +350,8 @@
     return hit;
   }
 
-  function extractBlockToken(author) {
-    if (!author) return "";
+  function extractBlockCandidates(author) {
+    if (!author) return { primary: "", candidates: [] };
 
     let uid =
       normalizeUidCandidate(readDataToken(author, "data-uid")) ||
@@ -369,10 +371,16 @@
       "";
 
     const nick = nicknameFromAuthor(author);
-    if (uid || ip) return normalizeToken(uid || ip);
-    if (nick && !isWeakNickname(nick)) return `nick:${nick}`;
+    const candidates = [uid, ip, nick && !isWeakNickname(nick) ? `nick:${nick}` : ""]
+      .map(normalizeToken)
+      .filter(Boolean);
+    const primary = normalizeToken(uid || ip) || candidates[0] || "";
 
-    return "";
+    return { primary, candidates: Array.from(new Set(candidates)) };
+  }
+
+  function extractBlockToken(author) {
+    return extractBlockCandidates(author).primary;
   }
 
   function pickBlockToken(target) {
@@ -725,10 +733,10 @@
     const prev = document.getElementById(HINT_ID);
     if (prev) prev.remove();
 
-    const title = "작성자 즉시 차단";
-    const subtitle = "이 작성자를 바로 차단할 수 있습니다";
-    const body = "이 영역을 <b>우클릭</b>하면 해당 사용자를 차단 목록에 추가합니다.";
-    const action = "차단 목록에 추가";
+    const title = "작성자 차단 · 해제";
+    const subtitle = "같은 동작을 반복하면 바로 되돌릴 수 있습니다";
+    const body = "이 영역을 <b>우클릭</b>하면 해당 사용자의 차단 상태를 전환합니다.";
+    const action = "차단 / 차단 해제";
 
     const hint = document.createElement("div");
     hint.id = HINT_ID;
@@ -783,16 +791,23 @@
     }, 180);
   }
 
-  function sendInstantBlock(token) {
+  function sendInstantBlock(token, candidates = []) {
+    const requestKey = String(token || "").trim().toLowerCase();
+    if (!requestKey || inFlightBlockTokens.has(requestKey)) return;
+    inFlightBlockTokens.add(requestKey);
+
     chrome.runtime.sendMessage(
       {
         type: "dcb.instantCtxBlock",
-        token
+        token,
+        candidates
       },
       (res) => {
+        inFlightBlockTokens.delete(requestKey);
+
         if (chrome.runtime.lastError) {
           showToast({
-            title: "차단 실패",
+            title: "차단 상태 변경 실패",
             desc: "확장 프로그램을 다시 로드한 뒤 시도해 주세요.",
             token,
             variant: "error"
@@ -818,7 +833,7 @@
           })();
 
           showToast({
-            title: "차단 실패",
+            title: "차단 상태 변경 실패",
             desc,
             token,
             variant: "error"
@@ -826,10 +841,22 @@
           return;
         }
 
+        if (res.removed || res.blocked === false) {
+          showToast({
+            title: "차단 해제 완료",
+            desc: res.userBlockEnabled
+              ? "숨겨졌던 글과 댓글을 다시 표시합니다."
+              : "사용자 차단 목록에서 제거했습니다.",
+            token: res.token || token,
+            variant: "success"
+          });
+          return;
+        }
+
         if (!res.userBlockEnabled) {
           showToast({
-            title: res.added ? "차단 목록에 추가됨" : "이미 차단된 이용자",
-            desc: "사용자 차단 기능이 꺼져 있습니다.",
+            title: "차단 목록에 추가됨",
+            desc: "사용자 차단 기능이 꺼져 있어 콘텐츠는 숨기지 않습니다. 다시 우클릭하면 해제됩니다.",
             token: res.token || token,
             variant: "muted"
           });
@@ -837,8 +864,8 @@
         }
 
         showToast({
-          title: res.added ? "차단 완료" : "이미 차단된 이용자",
-          desc: "글과 댓글이 자동으로 숨김 처리됩니다.",
+          title: "차단 완료",
+          desc: "글과 댓글이 자동으로 숨겨집니다. 같은 사용자를 다시 우클릭하면 해제됩니다.",
           token: res.token || token,
           variant: "success"
         });
@@ -879,8 +906,9 @@
     { passive: true }
   );
 
-  function rememberLegacyContextToken(token) {
+  function rememberLegacyContextToken(token, candidates = []) {
     lastContextBlockToken = token || "";
+    lastContextBlockCandidates = Array.isArray(candidates) ? candidates : [];
     lastContextBlockAt = lastContextBlockToken ? Date.now() : 0;
   }
 
@@ -896,7 +924,7 @@
       return;
     }
 
-    sendInstantBlock(lastContextBlockToken);
+    sendInstantBlock(lastContextBlockToken, lastContextBlockCandidates);
   }
 
   document.addEventListener(
@@ -905,10 +933,10 @@
       const author = findActionableAuthorEl(e.target);
       if (!author) return;
 
-      const token = extractBlockToken(author);
+      const { primary: token, candidates } = extractBlockCandidates(author);
 
       if (!token) {
-        rememberLegacyContextToken("");
+        rememberLegacyContextToken("", []);
 
         if (userBlockTriggerModeCache === "instant") {
           e.preventDefault();
@@ -926,7 +954,7 @@
       }
 
       if (userBlockTriggerModeCache === "contextMenu") {
-        rememberLegacyContextToken(token);
+        rememberLegacyContextToken(token, candidates);
         return;
       }
 
@@ -935,7 +963,7 @@
       e.stopPropagation();
       e.stopImmediatePropagation?.();
 
-      sendInstantBlock(token);
+      sendInstantBlock(token, candidates);
     },
     { capture: true }
   );

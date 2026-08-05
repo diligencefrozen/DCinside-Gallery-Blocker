@@ -129,6 +129,7 @@
     border-radius:14px;
     background:linear-gradient(180deg, rgba(79,124,255,.12), rgba(15,23,42,.72));
   }
+  .user-block-card:focus{outline:2px solid rgba(96,165,250,.9);outline-offset:3px}
   .user-block-head{
     display:flex;
     justify-content:space-between;
@@ -179,6 +180,8 @@
   .uid-empty{font-size:12px;opacity:.78}
   .btn-danger{border-color:#ff6b6b}
   .btn-danger:hover{background:#ff6b6b;color:#000}
+  .user-block-status{min-height:16px;color:#9dd6a5;font-size:11px;font-weight:700;line-height:1.4}
+  .user-block-status.is-error{color:#ff9b9b}
   .divider{height:1px;background:#1f2630;border:0;margin-top:-6px}
 
   .quick-gallery-panel{
@@ -676,6 +679,10 @@
   }
   .quick-toggle-panel .quick-guide p{font-size:11.5px;line-height:1.42}
   .quick-toggle-panel .quick-guide .mini-note{font-size:10.5px}
+  .user-block-shortcuts{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:2px}
+  .user-block-shortcuts button{min-height:30px;padding:0 10px;border:1px solid rgba(147,197,253,.34);border-radius:9px;background:rgba(37,99,235,.15);color:#dbeafe;font-size:11px;font-weight:850}
+  .user-block-shortcuts button:hover{background:rgba(37,99,235,.3)}
+  .user-block-off-hint{color:#facc8b;font-size:10.5px;font-weight:750;line-height:1.35;text-align:right}
    .section-title{margin:0;color:#dbeafe;font-size:12px;font-weight:900;letter-spacing:-.02em}
   .section-title.keyword-title-row{display:flex;align-items:center;justify-content:space-between;gap:8px}
   .keyword-sync-count{display:inline-flex;align-items:center;justify-content:center;min-width:34px;padding:2px 7px;border-radius:999px;background:rgba(96,165,250,.13);border:1px solid rgba(147,197,253,.26);color:#bfdbfe;font-size:10.5px;font-weight:900;line-height:1.35}
@@ -1057,22 +1064,22 @@
     <div class="quick-toggle-grid">
       <div class="row">
         <span>사용자 차단</span>
-        <label class="switch">
-          <input type="checkbox" id="userBlockEnabled">
+        <label class="switch" title="사용자 차단 활성화">
+          <input type="checkbox" id="userBlockEnabled" aria-label="사용자 차단 활성화">
           <span class="slider"></span>
         </label>
       </div>
       <label class="row" for="userBlockTriggerMode">
         <span>사용자 차단 방식</span>
         <select id="userBlockTriggerMode" title="사용자 차단 방식">
-          <option value="instant">우클릭 즉시 차단</option>
-          <option value="contextMenu">우클릭 후 메뉴에서 차단</option>
+          <option value="instant">우클릭 즉시 차단/해제</option>
+          <option value="contextMenu">우클릭 메뉴에서 차단/해제</option>
         </select>
       </label>
       <div class="row" id="userBlockHoverHintRow">
         <span>즉시 차단 안내 팝업</span>
         <label class="switch" title="즉시 차단 모드에서만 표시됩니다">
-          <input type="checkbox" id="userBlockHoverHintEnabled">
+          <input type="checkbox" id="userBlockHoverHintEnabled" aria-label="즉시 차단 안내 팝업 표시">
           <span class="slider"></span>
         </label>
       </div>
@@ -1097,8 +1104,12 @@
         <span class="pill">TIP</span>
         <span>빠른 이용자 차단</span>
       </div>
-      <p id="userBlockModeGuide"><strong>작성자 닉네임, 갤로그 아이콘, 메모 버튼</strong> 위에서 우클릭하면 UID/IP를 우선 저장하고, UID/IP가 없을 때 닉네임을 저장합니다.</p>
-      <p class="mini-note" id="userBlockModeSubGuide">글 제목, 본문, 댓글 내용 영역에서는 사용자 차단이 실행되지 않습니다.</p>
+      <p id="userBlockModeGuide"><strong>작성자 닉네임, 갤로그 아이콘, 메모 버튼</strong> 위에서 한 번 우클릭하면 차단되고, 같은 작성자를 다시 우클릭하면 해제됩니다.</p>
+      <p class="mini-note" id="userBlockModeSubGuide">사용자 차단이 OFF일 때는 작성자 옆 버튼이나 아래 목록에서 바로 해제할 수 있습니다.</p>
+      <div class="user-block-shortcuts">
+        <button id="userBlockManageBtn" type="button" aria-controls="userBlockManager">차단 목록 · 해제 (0)</button>
+        <span class="user-block-off-hint" id="userBlockOffHint" hidden>OFF여도 기존 차단은 해제할 수 있어요.</span>
+      </div>
     </div>
   </div>
 
@@ -1181,11 +1192,11 @@
     </div>
   </section>
 
-  <div class="user-block-card" aria-label="사용자 차단 목록 관리">
+  <section class="user-block-card" id="userBlockManager" aria-labelledby="userBlockManagerTitle" tabindex="-1">
     <div class="user-block-head">
       <div class="user-block-title">
-        <strong>사용자 차단 목록</strong>
-        <span>우클릭으로 추가된 UID/IP/닉네임을 확인하고, 잘못 차단한 대상은 바로 삭제할 수 있습니다.</span>
+        <strong id="userBlockManagerTitle">사용자 차단 목록</strong>
+        <span>우클릭으로 추가된 UID/IP/닉네임을 확인하고, 필요한 대상만 바로 차단 해제할 수 있습니다.</span>
       </div>
       <span class="user-block-count" id="uidListCount">0개</span>
     </div>
@@ -1195,13 +1206,15 @@
         <input id="uidInput" type="text" placeholder="예: userid, 39.7, 무갤러 또는 nick:무갤러">
         <button id="addUidBtn" type="button">추가</button>
       </div>
-      <button id="clearUidListBtn" class="mini-btn btn-danger" type="button" title="사용자 차단 목록 전체 삭제">전체삭제</button>
+      <button id="clearUidListBtn" class="mini-btn btn-danger" type="button" title="사용자 차단 목록 전체 해제">전체해제</button>
     </div>
 
     <ul id="uidList"></ul>
+    <div class="user-block-status" id="userBlockStatus" role="status" aria-live="polite"></div>
     <div class="muted">* UID는 갤로그 사용자 ID, 비회원은 IP 앞부분(예: <code>39.7</code>)입니다. 한글/특수문자 닉네임은 <code>무갤러</code>처럼 입력해도 <code>nick:무갤러</code>로 관리됩니다.</div>
+    <div class="muted">* 사용자 차단을 OFF로 둔 상태에서도 이 목록의 <strong>차단 해제</strong> 버튼을 사용할 수 있습니다.</div>
     <div class="muted">* 사용자 차단 목록은 브라우저 로컬 저장소에만 보관되며 외부 서버로 전송되지 않습니다.</div>
-  </div>
+  </section>
 
   <div class="theme-panel" aria-label="다크모드 설정">
     <span class="theme-mark" aria-hidden="true">◐</span>
@@ -1539,7 +1552,7 @@
   </label>
   <p class="hint">게시물 목록을 더 촘촘하게 표시합니다. UID와 메모 버튼은 목록에서 작게 정리됩니다.</p>
 
-  <p class="hint">사용자 차단 목록은 팝업 상단에서 바로 확인·삭제할 수 있습니다.</p>
+  <p class="hint">사용자 차단 목록은 위의 “차단 목록 · 해제” 버튼에서 바로 확인하고 해제할 수 있습니다.</p>
 
   <hr class="divider">
 

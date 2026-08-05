@@ -1403,15 +1403,15 @@
     <div class="quick-guide-card" role="note" aria-label="빠른 이용자 차단 안내">
       <span class="quick-guide-icon">↗</span>
       <div class="quick-guide-copy">
-        <p class="guide-title" id="optionUserBlockModeTitle">작성자 위에서 우클릭하면 UID/IP/닉네임을 차단합니다.</p>
-        <p class="guide-text" id="optionUserBlockModeText"><strong>닉네임, 갤로그 아이콘, 메모 버튼</strong> 위에서 우클릭하세요. 차단 대상은 UID가 있으면 UID로, 없으면 IP로 저장됩니다.</p>
-        <p class="guide-sub" id="optionUserBlockModeSub">글 제목, 본문, 댓글 내용 영역에서는 사용자 차단이 실행되지 않습니다.</p>
+        <p class="guide-title" id="optionUserBlockModeTitle">작성자 위에서 한 번 우클릭하면 차단, 한 번 더 하면 해제합니다.</p>
+        <p class="guide-text" id="optionUserBlockModeText"><strong>닉네임, 갤로그 아이콘, 메모 버튼</strong> 위에서 우클릭하세요. 차단 대상은 UID가 있으면 UID로, 없으면 IP로 저장되며 같은 동작으로 되돌릴 수 있습니다.</p>
+        <p class="guide-sub" id="optionUserBlockModeSub">사용자 차단이 OFF일 때는 차단된 작성자 옆 버튼이나 아래 목록에서 바로 해제할 수 있습니다.</p>
       </div>
     </div>
     <div class="row" style="justify-content:space-between">
       <span class="note">OFF면 UID/IP/닉네임이 목록에 있어도 사용자 차단을 적용하지 않습니다.</span>
       <label class="switch" title="사용자 차단 활성화">
-        <input type="checkbox" id="userBlockEnabled">
+        <input type="checkbox" id="userBlockEnabled" aria-label="사용자 차단 활성화">
         <span class="slider"></span>
       </label>
     </div>
@@ -1419,15 +1419,15 @@
     <div class="row" style="justify-content:space-between">
       <span class="note">사용자 차단 방식</span>
       <select id="userBlockTriggerMode" title="사용자 차단 방식">
-        <option value="instant">우클릭 즉시 차단</option>
-        <option value="contextMenu">우클릭 후 메뉴에서 차단</option>
+        <option value="instant">우클릭 즉시 차단/해제</option>
+        <option value="contextMenu">우클릭 메뉴에서 차단/해제</option>
       </select>
     </div>
 
     <div class="row" id="userBlockHoverHintRow" style="justify-content:space-between">
       <span class="note">즉시 차단 안내 팝업</span>
       <label class="switch" title="우클릭 즉시 차단 모드에서만 표시됩니다">
-        <input type="checkbox" id="userBlockHoverHintEnabled">
+        <input type="checkbox" id="userBlockHoverHintEnabled" aria-label="즉시 차단 안내 팝업 표시">
         <span class="slider"></span>
       </label>
     </div>
@@ -1437,6 +1437,8 @@
       <button id="addUidBtn">추가</button>
     </div>
     <ul id="uidList"></ul>
+    <p id="optionUserBlockStatus" class="note" role="status" aria-live="polite"></p>
+    <p class="note">* 사용자 차단이 OFF여도 목록은 유지됩니다. 기존 대상은 여기서 <strong>차단 해제</strong>하거나, 페이지의 작성자 옆 <strong>차단됨 · 해제</strong> 버튼으로 해제할 수 있습니다.</p>
     <p class="note">* UID는 작성자 요소의 <code>data-uid</code> 값 또는 갤로그 주소의 사용자 ID입니다. 한글/특수문자 닉네임은 <code>무갤러</code>처럼 입력해도 <code>nick:무갤러</code>로 저장됩니다.</p>
     <p class="note">* 비회원은 IP 앞부분(예: <code>39.7</code>), 닉네임은 포함 매칭으로 일괄 차단됩니다. 예: <code>무갤러</code> 등록 시 <code>무갤러123</code>도 차단됩니다.</p>
     <p class="note">* 사용자 차단 목록은 대량 차단 사용자를 위해 Chrome 로컬 저장소에만 저장되며, 외부 서버로 전송되지 않습니다.</p>

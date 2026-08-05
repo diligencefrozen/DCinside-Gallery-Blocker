@@ -155,6 +155,13 @@
     await chrome.storage[area].remove(keys);
   }
 
+  async function clearLegacyStorageCopies() {
+    await Promise.all([
+      storageRemove("local", LEGACY_KEY).catch(() => {}),
+      storageRemove("sync", LEGACY_KEY).catch(() => {})
+    ]);
+  }
+
   function buildBuckets(values, previousCreatedAtByKey = {}) {
     const buckets = {};
     const cleanList = normalizeList(values);
@@ -232,11 +239,13 @@
 
   async function migrateLegacyToBuckets() {
     const meta = await readMeta();
-    if (meta?.version === 2 && meta.legacyImportedAt) return false;
+    if (meta?.version === 2 && meta.legacyImportedAt) {
+      return false;
+    }
 
     const [localLegacy, syncLegacy] = await Promise.all([
-      storageGet("local", { [LEGACY_KEY]: [] }).catch(() => ({ [LEGACY_KEY]: [] })),
-      storageGet("sync", { [LEGACY_KEY]: [] }).catch(() => ({ [LEGACY_KEY]: [] }))
+      storageGet("local", { [LEGACY_KEY]: [] }),
+      storageGet("sync", { [LEGACY_KEY]: [] })
     ]);
 
     const legacyList = normalizeList([
@@ -292,11 +301,28 @@
     return getAllTokensWithoutMigration();
   }
 
+  async function getAllTokensReadOnly() {
+    const meta = await readMeta();
+    if (meta?.version === 2) return getAllTokensWithoutMigration();
+
+    const [localLegacy, syncLegacy] = await Promise.all([
+      storageGet("local", { [LEGACY_KEY]: [] }),
+      storageGet("sync", { [LEGACY_KEY]: [] })
+    ]);
+
+    return normalizeList([
+      ...(Array.isArray(localLegacy[LEGACY_KEY]) ? localLegacy[LEGACY_KEY] : []),
+      ...(Array.isArray(syncLegacy[LEGACY_KEY]) ? syncLegacy[LEGACY_KEY] : [])
+    ]);
+  }
+
   async function setAllTokens(values) {
     const meta = await readMeta();
-    return writeAllTokens(values, {
+    const list = await writeAllTokens(values, {
       legacyImportedAt: meta?.legacyImportedAt || now()
     });
+    await clearLegacyStorageCopies();
+    return list;
   }
 
   async function addToken(rawToken) {
@@ -310,13 +336,12 @@
       };
     }
 
-    await migrateLegacyToBuckets();
-
     const blockKey = makeBlockKey(token);
     const bucketKey = bucketKeyForBlockKey(blockKey);
     const stamp = now();
 
     try {
+      await migrateLegacyToBuckets();
       const data = await storageGet("local", {
         [bucketKey]: {},
         [META_KEY]: {
@@ -385,21 +410,267 @@
     }
   }
 
-  async function clearAllTokens() {
+  async function hasToken(rawToken) {
+    const token = normalizeToken(rawToken);
+    if (!token) return false;
+
     const meta = await readMeta();
-    await storageRemove("local", allBucketKeys());
-    await storageSet("local", {
-      [LEGACY_KEY]: [],
-      [META_KEY]: {
-        version: 2,
-        count: 0,
-        bucketCount: BUCKET_COUNT,
-        localOnly: true,
-        legacyImportedAt: meta?.legacyImportedAt || now(),
-        updatedAt: now()
+    if (meta?.version !== 2) {
+      const targetKey = makeBlockKey(token);
+      const legacyTokens = await getAllTokensReadOnly();
+      return legacyTokens.some((value) => makeBlockKey(value) === targetKey);
+    }
+
+    const blockKey = makeBlockKey(token);
+    const bucketKey = bucketKeyForBlockKey(blockKey);
+    const data = await storageGet("local", { [bucketKey]: {} });
+    const bucket = data[bucketKey];
+
+    return !!(bucket && typeof bucket === "object" && bucket[blockKey]);
+  }
+
+  async function removeToken(rawToken) {
+    const token = normalizeToken(rawToken);
+
+    if (!token) {
+      return {
+        ok: false,
+        reason: "EMPTY_TOKEN",
+        message: "차단 해제할 UID/IP/닉네임을 찾지 못했습니다."
+      };
+    }
+
+    const blockKey = makeBlockKey(token);
+    const bucketKey = bucketKeyForBlockKey(blockKey);
+    const stamp = now();
+
+    try {
+      await migrateLegacyToBuckets();
+      const data = await storageGet("local", {
+        [bucketKey]: {},
+        [META_KEY]: {
+          version: 2,
+          count: 0,
+          bucketCount: BUCKET_COUNT,
+          localOnly: true,
+          legacyImportedAt: stamp
+        }
+      });
+
+      const bucket = data[bucketKey] && typeof data[bucketKey] === "object"
+        ? { ...data[bucketKey] }
+        : {};
+      const meta = data[META_KEY] && typeof data[META_KEY] === "object"
+        ? data[META_KEY]
+        : { version: 2, count: 0, bucketCount: BUCKET_COUNT, localOnly: true };
+      const removed = !!bucket[blockKey];
+      const count = Math.max(0, Number(meta.count || 0) - (removed ? 1 : 0));
+
+      if (removed) {
+        delete bucket[blockKey];
+
+        await storageSet("local", {
+          [bucketKey]: bucket,
+          [META_KEY]: {
+            ...meta,
+            version: 2,
+            count,
+            bucketCount: BUCKET_COUNT,
+            localOnly: true,
+            legacyImportedAt: meta.legacyImportedAt || stamp,
+            updatedAt: stamp
+          }
+        });
       }
-    });
-    return [];
+
+      return {
+        ok: true,
+        token,
+        removed,
+        alreadyUnblocked: !removed,
+        blocked: false,
+        action: removed ? "unblocked" : "unchanged",
+        count
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        reason: "STORAGE_ERROR",
+        message: error?.message || chromeLastErrorMessage() || String(error)
+      };
+    }
+  }
+
+  async function removeTokens(rawTokens) {
+    const tokens = normalizeList(rawTokens);
+    if (!tokens.length) {
+      return {
+        ok: false,
+        reason: "EMPTY_TOKEN",
+        message: "차단 해제할 UID/IP/닉네임을 찾지 못했습니다."
+      };
+    }
+
+    const stamp = now();
+
+    try {
+      await migrateLegacyToBuckets();
+
+      const targets = tokens.map((token) => {
+        const blockKey = makeBlockKey(token);
+        return { token, blockKey, bucketKey: bucketKeyForBlockKey(blockKey) };
+      });
+      const bucketKeys = Array.from(new Set(targets.map(({ bucketKey }) => bucketKey)));
+      const data = await storageGet("local", [...bucketKeys, META_KEY]);
+      const meta = data[META_KEY] && typeof data[META_KEY] === "object"
+        ? data[META_KEY]
+        : { version: 2, count: 0, bucketCount: BUCKET_COUNT, localOnly: true };
+      const buckets = new Map(bucketKeys.map((bucketKey) => [
+        bucketKey,
+        data[bucketKey] && typeof data[bucketKey] === "object" ? { ...data[bucketKey] } : {}
+      ]));
+      const removedTokens = [];
+      const changedBucketKeys = new Set();
+
+      targets.forEach(({ token, blockKey, bucketKey }) => {
+        const bucket = buckets.get(bucketKey);
+        if (!bucket?.[blockKey]) return;
+        delete bucket[blockKey];
+        removedTokens.push(token);
+        changedBucketKeys.add(bucketKey);
+      });
+
+      const count = Math.max(0, Number(meta.count || 0) - removedTokens.length);
+      if (removedTokens.length) {
+        const patch = {};
+        changedBucketKeys.forEach((bucketKey) => {
+          patch[bucketKey] = buckets.get(bucketKey);
+        });
+        patch[META_KEY] = {
+          ...meta,
+          version: 2,
+          count,
+          bucketCount: BUCKET_COUNT,
+          localOnly: true,
+          legacyImportedAt: meta.legacyImportedAt || stamp,
+          updatedAt: stamp
+        };
+        await storageSet("local", patch);
+      }
+
+      return {
+        ok: true,
+        token: removedTokens[0] || tokens[0],
+        tokens: removedTokens,
+        removed: removedTokens.length > 0,
+        removedCount: removedTokens.length,
+        alreadyUnblocked: removedTokens.length === 0,
+        blocked: false,
+        action: removedTokens.length ? "unblocked" : "unchanged",
+        count
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        reason: "STORAGE_ERROR",
+        message: error?.message || chromeLastErrorMessage() || String(error)
+      };
+    }
+  }
+
+  async function toggleToken(rawToken) {
+    const token = normalizeToken(rawToken);
+
+    if (!token) {
+      return {
+        ok: false,
+        reason: "EMPTY_TOKEN",
+        message: "차단 상태를 바꿀 UID/IP/닉네임을 찾지 못했습니다."
+      };
+    }
+
+    const blockKey = makeBlockKey(token);
+    const bucketKey = bucketKeyForBlockKey(blockKey);
+    const stamp = now();
+
+    try {
+      await migrateLegacyToBuckets();
+      const data = await storageGet("local", {
+        [bucketKey]: {},
+        [META_KEY]: {
+          version: 2,
+          count: 0,
+          bucketCount: BUCKET_COUNT,
+          localOnly: true,
+          legacyImportedAt: stamp
+        }
+      });
+
+      const bucket = data[bucketKey] && typeof data[bucketKey] === "object"
+        ? { ...data[bucketKey] }
+        : {};
+      const meta = data[META_KEY] && typeof data[META_KEY] === "object"
+        ? data[META_KEY]
+        : { version: 2, count: 0, bucketCount: BUCKET_COUNT, localOnly: true };
+      const wasBlocked = !!bucket[blockKey];
+      const blocked = !wasBlocked;
+
+      if (wasBlocked) {
+        delete bucket[blockKey];
+      } else {
+        bucket[blockKey] = {
+          token,
+          type: classifyToken(token),
+          createdAt: stamp,
+          updatedAt: stamp
+        };
+      }
+
+      const count = Math.max(0, Number(meta.count || 0) + (blocked ? 1 : -1));
+
+      await storageSet("local", {
+        [bucketKey]: bucket,
+        [META_KEY]: {
+          ...meta,
+          version: 2,
+          count,
+          bucketCount: BUCKET_COUNT,
+          localOnly: true,
+          legacyImportedAt: meta.legacyImportedAt || stamp,
+          updatedAt: stamp
+        }
+      });
+
+      return {
+        ok: true,
+        token,
+        added: blocked,
+        removed: !blocked,
+        blocked,
+        action: blocked ? "blocked" : "unblocked",
+        count
+      };
+    } catch (error) {
+      const message = error?.message || chromeLastErrorMessage() || String(error);
+
+      if (/quota|exceed|bytes|storage/i.test(message)) {
+        return {
+          ok: false,
+          reason: "LOCAL_QUOTA_EXCEEDED",
+          message: "로컬 차단 저장소 한도에 도달했습니다. 차단 목록 정리가 필요합니다."
+        };
+      }
+
+      return {
+        ok: false,
+        reason: "STORAGE_ERROR",
+        message
+      };
+    }
+  }
+
+  async function clearAllTokens() {
+    return setAllTokens([]);
   }
 
   async function getUsage() {
@@ -435,8 +706,13 @@
     makeBlockKey,
     tokenKey,
     getAllTokens,
+    getAllTokensReadOnly,
     setAllTokens,
     addToken,
+    hasToken,
+    removeToken,
+    removeTokens,
+    toggleToken,
     clearAllTokens,
     migrateLegacyToBuckets,
     getUsage,

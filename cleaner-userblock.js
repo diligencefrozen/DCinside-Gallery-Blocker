@@ -5,9 +5,12 @@
   const STYLE_ID = "dcb-userblock-style";
   const BLOCKED_CLASS = "dcb-userblock-hidden";
   const OLD_MASKED_CLASS = "dcb-masked";
+  const UNBLOCK_BUTTON_CLASS = "dcb-userblock-unblock";
+  const UNBLOCK_HOST_CLASS = "dcb-userblock-unblock-host";
   const CSS_RULE_TOKEN_LIMIT = 500;
 
   let blockedUidsCache = null;
+  let blockedUidsCacheRevision = 0;
 
   const DEFAULTS = {
     userBlockEnabled: true,
@@ -289,9 +292,9 @@
   }
 
   function buildMatcher(rawTokens) {
-    const uids = new Set();
-    const ips = new Set();
-    const nicks = new Set();
+    const uidTokens = new Map();
+    const ipTokens = new Map();
+    const nickTokens = new Map();
 
     (Array.isArray(rawTokens) ? rawTokens : []).forEach((raw) => {
       const clean = normalizeToken(raw);
@@ -299,43 +302,76 @@
 
       if (/^nick:/i.test(clean)) {
         const nick = normalizeNick(clean.replace(/^nick\s*[:=]\s*/i, ""));
-        if (nick) nicks.add(nick.toLowerCase());
+        if (nick) {
+          const key = nick.toLowerCase();
+          nickTokens.set(key, clean);
+        }
         return;
       }
 
       const ip = normalizeIpPrefix(clean);
       if (ip && isIpLike(clean)) {
-        ips.add(ip);
+        ipTokens.set(ip, clean);
         return;
       }
 
       const uid = normalizeUidCandidate(clean);
-      if (uid) uids.add(tokenKey(uid));
+      if (uid) {
+        const key = tokenKey(uid);
+        uidTokens.set(key, clean);
+      }
     });
 
-    return { uids, ips, nicks, empty: !uids.size && !ips.size && !nicks.size };
-  }
-
-  function nickMatchesBlockedToken(nick, blockedNicks) {
-    const haystack = normalizeNick(nick).toLowerCase();
-    if (!haystack || !blockedNicks?.size) return false;
-
-    for (const needle of blockedNicks) {
-      if (needle && haystack.includes(needle)) return true;
-    }
-
-    return false;
+    return {
+      uidTokens,
+      ipTokens,
+      nickTokens,
+      empty: !uidTokens.size && !ipTokens.size && !nickTokens.size
+    };
   }
 
   function writerMatches(scope, matcher) {
     if (!scope || matcher.empty) return false;
 
     const { uid, ip, nick } = extractWriterTokens(scope);
-    if (uid && matcher.uids.has(tokenKey(uid))) return true;
-    if (ip && matcher.ips.has(normalizeIpPrefix(ip))) return true;
-    if (nickMatchesBlockedToken(nick, matcher.nicks)) return true;
+    const uidKey = uid ? tokenKey(uid) : "";
+    if (uidKey && matcher.uidTokens.has(uidKey)) return true;
+
+    const ipKey = ip ? normalizeIpPrefix(ip) : "";
+    if (ipKey && matcher.ipTokens.has(ipKey)) return true;
+
+    const haystack = normalizeNick(nick).toLowerCase();
+    if (!haystack) return false;
+    for (const needle of matcher.nickTokens.keys()) {
+      if (needle && haystack.includes(needle)) return true;
+    }
 
     return false;
+  }
+
+  function findMatchedBlockedToken(scope, matcher) {
+    return findMatchedBlockedTokens(scope, matcher)[0] || "";
+  }
+
+  function findMatchedBlockedTokens(scope, matcher) {
+    if (!scope || matcher.empty) return [];
+
+    const { uid, ip, nick } = extractWriterTokens(scope);
+    const matched = [];
+    const uidKey = uid ? tokenKey(uid) : "";
+    if (uidKey && matcher.uidTokens.has(uidKey)) matched.push(matcher.uidTokens.get(uidKey));
+
+    const ipKey = ip ? normalizeIpPrefix(ip) : "";
+    if (ipKey && matcher.ipTokens.has(ipKey)) matched.push(matcher.ipTokens.get(ipKey));
+
+    const haystack = normalizeNick(nick).toLowerCase();
+    if (haystack) {
+      for (const [needle, token] of matcher.nickTokens) {
+        if (needle && haystack.includes(needle)) matched.push(token);
+      }
+    }
+
+    return [...new Set(matched.filter(Boolean))];
   }
 
   function ensureStyle() {
@@ -358,26 +394,122 @@
 
   async function readBlockedUids() {
     if (Array.isArray(blockedUidsCache)) return blockedUidsCache;
+    const revision = blockedUidsCacheRevision;
 
     if (globalThis.DCBUserBlockStore?.getAllTokens) {
-      blockedUidsCache = await DCBUserBlockStore.getAllTokens();
-      return blockedUidsCache;
+      const reader = DCBUserBlockStore.getAllTokensReadOnly || DCBUserBlockStore.getAllTokens;
+      const tokens = await reader();
+      if (revision === blockedUidsCacheRevision) blockedUidsCache = tokens;
+      return tokens;
     }
 
     const local = await chrome.storage.local.get({ blockedUids: [] });
-    blockedUidsCache = Array.isArray(local.blockedUids) ? local.blockedUids : [];
-    return blockedUidsCache;
+    const tokens = Array.isArray(local.blockedUids) ? local.blockedUids : [];
+    if (revision === blockedUidsCacheRevision) blockedUidsCache = tokens;
+    return tokens;
   }
 
   function invalidateBlockedUidsCache() {
+    blockedUidsCacheRevision += 1;
     blockedUidsCache = null;
   }
 
   function buildCss(conf) {
     const { userBlockEnabled, includeGray, blockedUids } = conf;
-    if (!userBlockEnabled) return "";
+    const lines = [`
+      .${UNBLOCK_HOST_CLASS} {
+        display:inline-flex!important; align-items:center; flex:0 0 auto;
+        min-width:0; max-width:100%; margin:0 0 0 6px!important;
+        overflow:visible; white-space:nowrap; vertical-align:middle;
+        line-height:1; position:relative; z-index:2;
+      }
+      .${UNBLOCK_BUTTON_CLASS} {
+        --dcb-unblock-border:#d7dde7;
+        --dcb-unblock-bg:#ffffff;
+        --dcb-unblock-fg:#475569;
+        --dcb-unblock-muted:#64748b;
+        --dcb-unblock-action:#2563eb;
+        box-sizing:border-box; display:inline-flex; align-items:center;
+        min-width:0; max-width:100%; height:20px; padding:0 5px 0 3px;
+        border:1px solid var(--dcb-unblock-border); border-radius:6px;
+        background:linear-gradient(180deg,#ffffff 0%,#f8fafc 100%);
+        color:var(--dcb-unblock-fg);
+        box-shadow:0 1px 2px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.9);
+        font:600 10px/1 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+        letter-spacing:-.01em; cursor:pointer; vertical-align:middle;
+        transition:border-color .14s ease, box-shadow .14s ease, background .14s ease, transform .14s ease;
+      }
+      .${UNBLOCK_BUTTON_CLASS} .dcb-userblock-unblock-icon {
+        display:inline-flex; align-items:center; justify-content:center;
+        width:14px; height:14px; margin-right:4px; border-radius:4px;
+        background:#eef2f7; color:#64748b; flex:0 0 auto;
+      }
+      .${UNBLOCK_BUTTON_CLASS} .dcb-userblock-unblock-icon svg {
+        display:block; width:10px; height:10px; fill:none; stroke:currentColor;
+        stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round;
+      }
+      .${UNBLOCK_BUTTON_CLASS} .dcb-userblock-unblock-status {
+        overflow:hidden; text-overflow:ellipsis; color:var(--dcb-unblock-muted);
+      }
+      .${UNBLOCK_BUTTON_CLASS} .dcb-userblock-unblock-divider {
+        width:1px; height:10px; margin:0 5px; background:#dbe2ea; flex:0 0 auto;
+      }
+      .${UNBLOCK_BUTTON_CLASS} .dcb-userblock-unblock-action {
+        color:var(--dcb-unblock-action); font-weight:700; flex:0 0 auto;
+      }
+      .${UNBLOCK_BUTTON_CLASS}:hover {
+        border-color:#aeb8c6; background:#fff;
+        box-shadow:0 2px 5px rgba(15,23,42,.12), inset 0 1px 0 rgba(255,255,255,.95);
+        transform:translateY(-1px);
+      }
+      .${UNBLOCK_BUTTON_CLASS}:hover .dcb-userblock-unblock-action { color:#1d4ed8; }
+      .${UNBLOCK_BUTTON_CLASS}:active { transform:translateY(0); box-shadow:0 1px 2px rgba(15,23,42,.08); }
+      .${UNBLOCK_BUTTON_CLASS}:focus-visible {
+        outline:2px solid rgba(37,99,235,.55); outline-offset:2px;
+      }
+      .${UNBLOCK_BUTTON_CLASS}:disabled { opacity:.72; cursor:wait; transform:none; }
+      .${UNBLOCK_BUTTON_CLASS}[data-state="busy"] .dcb-userblock-unblock-icon svg {
+        animation:dcb-userblock-spin .8s linear infinite;
+      }
+      .${UNBLOCK_BUTTON_CLASS}[data-state="success"] {
+        --dcb-unblock-border:#bbf7d0; --dcb-unblock-bg:#f0fdf4;
+        --dcb-unblock-fg:#166534; --dcb-unblock-muted:#166534; --dcb-unblock-action:#166534;
+        background:#f0fdf4;
+      }
+      .${UNBLOCK_BUTTON_CLASS}[data-state="error"] {
+        --dcb-unblock-border:#fecaca; --dcb-unblock-fg:#b91c1c;
+        --dcb-unblock-muted:#b91c1c; --dcb-unblock-action:#b91c1c;
+        background:#fff7f7;
+      }
+      @keyframes dcb-userblock-spin { to { transform:rotate(360deg); } }
+      html[data-theme="dark"] .${UNBLOCK_BUTTON_CLASS},
+      body.dark .${UNBLOCK_BUTTON_CLASS},
+      body.dcb-dark .${UNBLOCK_BUTTON_CLASS},
+      .darkmode .${UNBLOCK_BUTTON_CLASS} {
+        --dcb-unblock-border:#3b4656; --dcb-unblock-bg:#17202c;
+        --dcb-unblock-fg:#d9e2ef; --dcb-unblock-muted:#aab7c8; --dcb-unblock-action:#8ab4ff;
+        background:linear-gradient(180deg,#202a38 0%,#18212d 100%);
+        box-shadow:0 1px 2px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.04);
+      }
+      html[data-theme="dark"] .${UNBLOCK_BUTTON_CLASS} .dcb-userblock-unblock-icon,
+      body.dark .${UNBLOCK_BUTTON_CLASS} .dcb-userblock-unblock-icon,
+      body.dcb-dark .${UNBLOCK_BUTTON_CLASS} .dcb-userblock-unblock-icon,
+      .darkmode .${UNBLOCK_BUTTON_CLASS} .dcb-userblock-unblock-icon { background:#2b3646; }
+      html[data-theme="dark"] .${UNBLOCK_BUTTON_CLASS} .dcb-userblock-unblock-divider,
+      body.dark .${UNBLOCK_BUTTON_CLASS} .dcb-userblock-unblock-divider,
+      body.dcb-dark .${UNBLOCK_BUTTON_CLASS} .dcb-userblock-unblock-divider,
+      .darkmode .${UNBLOCK_BUTTON_CLASS} .dcb-userblock-unblock-divider { background:#3b4656; }
+      @media (max-width:720px) {
+        .${UNBLOCK_HOST_CLASS} { margin-left:4px!important; }
+        .${UNBLOCK_BUTTON_CLASS} { padding-right:4px; }
+        .${UNBLOCK_BUTTON_CLASS} .dcb-userblock-unblock-status,
+        .${UNBLOCK_BUTTON_CLASS} .dcb-userblock-unblock-divider { display:none; }
+        .${UNBLOCK_BUTTON_CLASS} .dcb-userblock-unblock-icon { margin-right:3px; }
+      }
+    `];
 
-    const lines = [];
+    if (!userBlockEnabled) return lines.join("\n");
+
     if (includeGray) lines.push(".block-disable{display:none!important}");
 
     lines.push(`
@@ -639,12 +771,17 @@
   function getCandidateWriters() {
     const seen = new Set();
     const out = [];
+    const authorSelector = ".gall_writer, .ub-writer";
+    const infoSelector = ".cmt_info, .reply_info, .cmt_nickbox, .writer_info, .user_info";
+    const unsafeFallbackSelector = "a, button, input, img, area, base, br, col, embed, hr, link, meta, param, source, track, wbr";
 
     document.querySelectorAll(WRITER_SELECTOR).forEach((node) => {
       const writer =
-        node.closest?.(".gall_writer, .ub-writer") ||
-        node.closest?.(".cmt_info, .reply_info, .cmt_nickbox, .writer_info, .user_info") ||
-        node;
+        (node.matches?.(authorSelector) ? node : null) ||
+        node.closest?.(authorSelector) ||
+        node.querySelector?.(authorSelector) ||
+        node.closest?.(infoSelector) ||
+        (node.matches?.(unsafeFallbackSelector) ? null : node);
 
       if (!writer || seen.has(writer)) return;
       seen.add(writer);
@@ -652,6 +789,237 @@
     });
 
     return out;
+  }
+
+  function cleanupUnblockHost(host) {
+    if (!host?.classList?.contains(UNBLOCK_HOST_CLASS)) return;
+    if (!host.children.length && !host.textContent?.trim()) host.remove();
+  }
+
+  function clearUnblockControls() {
+    document.querySelectorAll(`.${UNBLOCK_BUTTON_CLASS}`).forEach((button) => {
+      const host = button.parentElement;
+      button.remove();
+      cleanupUnblockHost(host);
+    });
+  }
+
+  function createUnblockIcon(state = "default") {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 16 16");
+    svg.setAttribute("aria-hidden", "true");
+    svg.setAttribute("focusable", "false");
+
+    const addPath = (d) => {
+      const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      path.setAttribute("d", d);
+      svg.appendChild(path);
+    };
+
+    if (state === "busy") {
+      addPath("M13 8a5 5 0 1 1-1.46-3.54");
+      addPath("M13 3.5v3h-3");
+    } else if (state === "success") {
+      addPath("M3.5 8.2 6.5 11 12.5 5");
+    } else if (state === "error") {
+      addPath("M8 2.25 14 13H2L8 2.25Z");
+      addPath("M8 6v3.2");
+      addPath("M8 11.5h.01");
+    } else {
+      addPath("M8 1.8 12.6 3.5v3.7c0 3-1.8 5.3-4.6 6.8-2.8-1.5-4.6-3.8-4.6-6.8V3.5L8 1.8Z");
+      addPath("M5.7 5.7 10.3 10.3");
+    }
+
+    return svg;
+  }
+
+  function setUnblockButtonState(button, state = "default") {
+    const safeState = ["busy", "success", "error"].includes(state) ? state : "default";
+    const labels = {
+      default: { status: "차단됨", action: "해제" },
+      busy: { status: "처리 중", action: "" },
+      success: { status: "해제됨", action: "" },
+      error: { status: "실패", action: "재시도" }
+    }[safeState];
+
+    button.dataset.state = safeState === "default" ? "" : safeState;
+    button.replaceChildren();
+
+    const icon = document.createElement("span");
+    icon.className = "dcb-userblock-unblock-icon";
+    icon.setAttribute("aria-hidden", "true");
+    icon.appendChild(createUnblockIcon(safeState));
+
+    const status = document.createElement("span");
+    status.className = "dcb-userblock-unblock-status";
+    status.textContent = labels.status;
+
+    button.append(icon, status);
+
+    if (labels.action) {
+      const divider = document.createElement("span");
+      divider.className = "dcb-userblock-unblock-divider";
+      divider.setAttribute("aria-hidden", "true");
+
+      const action = document.createElement("span");
+      action.className = "dcb-userblock-unblock-action";
+      action.textContent = labels.action;
+      button.append(divider, action);
+    }
+  }
+
+  function findUnblockOwner(writer) {
+    const commentItem = writer.closest?.(
+      "#focus_cmt li, .comment_wrap li, .cmt_list li, .reply_box li, .reply_list li, .dccon_comment_box li, li.ub-content"
+    );
+    if (commentItem && isInsideCommentRoot(commentItem)) return commentItem;
+
+    return (
+      findListContainer(writer) ||
+      writer.closest?.(".gallview_head, .view_head, .writer_info, .user_info") ||
+      writer.closest?.(".cmt_info, .reply_info, .cmt_nickbox") ||
+      writer
+    );
+  }
+
+  function unblockWriterRank(writer) {
+    if (writer.matches?.(".gall_writer, .ub-writer")) return 4;
+    if (writer.querySelector?.(":scope > .gall_writer, :scope > .ub-writer")) return 3;
+    if (writer.closest?.(".gall_writer, .ub-writer")) return 2;
+    if (writer.matches?.(".cmt_info, .reply_info, .cmt_nickbox, .writer_info, .user_info")) return 1;
+    return 0;
+  }
+
+  function getUnblockRenderTarget(writer) {
+    return (
+      (writer.matches?.(".gall_writer, .ub-writer") ? writer : null) ||
+      writer.querySelector?.(":scope > .gall_writer, :scope > .ub-writer") ||
+      writer.querySelector?.(".gall_writer, .ub-writer") ||
+      writer.closest?.(".gall_writer, .ub-writer") ||
+      writer.closest?.(".cmt_info, .reply_info, .cmt_nickbox, .writer_info, .user_info") ||
+      writer
+    );
+  }
+
+  function placeUnblockHost(target, host) {
+    if (!target || !host) return false;
+
+    // Keep the control at the end of the author metadata lane. Inserting it
+    // directly after the nickname can split UID/IP badges and make the chip
+    // look as though it belongs to the comment body.
+    if (target.matches?.(".gall_writer, .ub-writer")) {
+      target.appendChild(host);
+      return true;
+    }
+
+    const addbox = target.querySelector?.(":scope > .addbox");
+    const anchor = target.querySelector?.(
+      ":scope > .dcb-writer-tools, :scope > .addbox > .dcb-writer-tools, " +
+      ":scope > .writer_nikcon, :scope > .nickname, :scope > .nick_name, :scope > .user_nick"
+    );
+
+    if (anchor) anchor.insertAdjacentElement("afterend", host);
+    else if (addbox) addbox.appendChild(host);
+    else {
+      const fallback = target.matches?.("a, button") ? target.parentElement : target;
+      if (!fallback || fallback.matches?.("input, img, area, base, br, col, embed, hr, link, meta, param, source, track, wbr")) {
+        return false;
+      }
+      fallback.appendChild(host);
+    }
+
+    return true;
+  }
+
+  function ensureUnblockControlHost(writer, owner) {
+    const target = getUnblockRenderTarget(writer);
+    if (!target) return null;
+
+    let host = owner?.querySelector?.(`.${UNBLOCK_HOST_CLASS}`) || null;
+    if (!host) {
+      host = document.createElement("span");
+      host.className = UNBLOCK_HOST_CLASS;
+    }
+
+    if (!placeUnblockHost(target, host)) {
+      cleanupUnblockHost(host);
+      return null;
+    }
+
+    return host;
+  }
+
+  function collectUnblockGroups(matcher) {
+    const groups = new Map();
+
+    getCandidateWriters().forEach((writer) => {
+      const tokens = findMatchedBlockedTokens(writer, matcher);
+      if (!tokens.length) return;
+
+      const owner = findUnblockOwner(writer);
+      if (!owner) return;
+
+      let group = groups.get(owner);
+      if (!group) {
+        group = { owner, writer, rank: unblockWriterRank(writer), tokens: new Set() };
+        groups.set(owner, group);
+      } else {
+        const rank = unblockWriterRank(writer);
+        if (rank > group.rank) {
+          group.writer = writer;
+          group.rank = rank;
+        }
+      }
+
+      tokens.forEach((token) => group.tokens.add(token));
+    });
+
+    return [...groups.values()];
+  }
+
+  function applyUnblockControls(matcher) {
+    const activeButtons = new Set();
+
+    if (!matcher.empty) {
+      collectUnblockGroups(matcher).forEach(({ owner, writer, tokens: tokenSet }) => {
+        const tokens = [...tokenSet];
+        if (!tokens.length) return;
+
+        const host = ensureUnblockControlHost(writer, owner);
+        if (!host) return;
+        let button = host.querySelector?.(`:scope > .${UNBLOCK_BUTTON_CLASS}`);
+
+        if (!button) {
+          button = document.createElement("button");
+          button.type = "button";
+          button.className = UNBLOCK_BUTTON_CLASS;
+          host.appendChild(button);
+          setUnblockButtonState(button, "default");
+        }
+
+        button.dataset.token = tokens[0];
+        button.dataset.tokens = JSON.stringify(tokens);
+        button.dataset.defaultLabel = "차단됨 · 해제";
+        button.title = tokens.length > 1
+          ? `${tokens.length}개 차단 조건 모두 해제: ${tokens.join(", ")}`
+          : `${tokens[0]} 차단 해제`;
+        button.setAttribute("aria-label", `차단된 작성자. ${button.title}`);
+
+        if (button.dataset.busy !== "1" && button.dataset.state !== "error") {
+          setUnblockButtonState(button, "default");
+        }
+        activeButtons.add(button);
+      });
+    }
+
+    document.querySelectorAll(`.${UNBLOCK_BUTTON_CLASS}`).forEach((button) => {
+      if (activeButtons.has(button)) return;
+      const host = button.parentElement;
+      button.remove();
+      cleanupUnblockHost(host);
+    });
+
+    document.querySelectorAll(`.${UNBLOCK_HOST_CLASS}`).forEach(cleanupUnblockHost);
   }
 
   function applyDomBlocks(matcher) {
@@ -680,7 +1048,10 @@
     });
   }
 
+  let applyGeneration = 0;
+
   function apply() {
+    const generation = ++applyGeneration;
     chrome.storage.sync.get(DEFAULTS, async (raw) => {
       const conf = migrate(raw);
 
@@ -690,20 +1061,26 @@
         conf.blockedUids = [];
       }
 
+      if (generation !== applyGeneration) return;
+
       ensureStyle().textContent = buildCss(conf);
+
+      const matcher = buildMatcher(conf.blockedUids || []);
 
       if (!conf.userBlockEnabled) {
         clearDomBlocks();
+        applyUnblockControls(matcher);
         return;
       }
 
-      const matcher = buildMatcher(conf.blockedUids || []);
+      clearUnblockControls();
       applyDomBlocks(matcher);
     });
   }
 
   let debounceTimer = null;
   function scheduleApply(delay = 80) {
+    applyGeneration += 1;
     if (debounceTimer) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
       debounceTimer = null;
@@ -716,6 +1093,58 @@
   } else {
     apply();
   }
+
+  function requestUserBlockRemoval(tokens) {
+    return new Promise((resolve, reject) => {
+      chrome.runtime.sendMessage({ type: "dcb.userBlockRemoveMany", tokens }, (res) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message || "확장 프로그램 연결 실패"));
+          return;
+        }
+        resolve(res);
+      });
+    });
+  }
+
+  document.addEventListener("click", async (event) => {
+    const button = event.target?.closest?.(`.${UNBLOCK_BUTTON_CLASS}`);
+    if (!button) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation?.();
+
+    let tokens = [];
+    try {
+      tokens = JSON.parse(button.dataset.tokens || "[]");
+    } catch (_) {
+      tokens = [];
+    }
+    if (!tokens.length && button.dataset.token) tokens = [button.dataset.token];
+    if (!tokens.length || button.dataset.busy === "1") return;
+
+    button.dataset.busy = "1";
+    button.disabled = true;
+    setUnblockButtonState(button, "busy");
+
+    try {
+      const res = await requestUserBlockRemoval(tokens);
+      if (!res?.ok) throw new Error(res?.message || "차단 해제 실패");
+
+      if (button.isConnected) setUnblockButtonState(button, "success");
+      invalidateBlockedUidsCache();
+      scheduleApply(0);
+    } catch (_) {
+      if (button.isConnected) {
+        button.dataset.busy = "0";
+        button.disabled = false;
+        setUnblockButtonState(button, "error");
+        setTimeout(() => {
+          if (button.isConnected) setUnblockButtonState(button, "default");
+        }, 1600);
+      }
+    }
+  }, true);
 
   const mo = new MutationObserver(() => scheduleApply(100));
   const startMO = () => {

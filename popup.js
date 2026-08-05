@@ -45,6 +45,10 @@ const addUidBtn = document.getElementById("addUidBtn");
 const uidListEl = document.getElementById("uidList");
 const uidListCountEl = document.getElementById("uidListCount");
 const clearUidListBtn = document.getElementById("clearUidListBtn");
+const userBlockManageBtn = document.getElementById("userBlockManageBtn");
+const userBlockManager = document.getElementById("userBlockManager");
+const userBlockOffHint = document.getElementById("userBlockOffHint");
+const userBlockStatus = document.getElementById("userBlockStatus");
 
 const toggleHideMain = document.getElementById("toggleHideMain");
 const toggleHideGall = document.getElementById("toggleHideGall");
@@ -159,14 +163,14 @@ function updateUserBlockModeGuide(mode) {
 
   if (userBlockModeGuide) {
     userBlockModeGuide.innerHTML = normalized === "contextMenu"
-      ? '<strong>구 방식:</strong> 작성자 닉네임, 갤로그 아이콘, 메모 버튼 위에서 우클릭한 뒤 브라우저 메뉴의 “이 사용자 차단하기”를 누르면 차단됩니다.'
-      : '<strong>즉시 차단:</strong> 작성자 닉네임, 갤로그 아이콘, 메모 버튼 위에서 우클릭하면 UID/IP를 우선 저장하고, UID/IP가 없을 때 닉네임을 저장합니다.';
+      ? '<strong>메뉴 방식:</strong> 작성자 위에서 우클릭한 뒤 브라우저 메뉴의 “이 사용자 차단/해제”를 누르세요. 같은 대상을 다시 실행하면 해제됩니다.'
+      : '<strong>즉시 전환:</strong> 작성자 닉네임, 갤로그 아이콘, 메모 버튼 위에서 우클릭하면 차단되고, 같은 작성자를 다시 우클릭하면 해제됩니다.';
   }
 
   if (userBlockModeSubGuide) {
     userBlockModeSubGuide.textContent = normalized === "contextMenu"
-      ? '이 방식은 실수 방지를 위해 한 번 더 메뉴를 선택합니다. 닉네임 안내 팝업은 표시하지 않습니다.'
-      : '글 제목, 본문, 댓글 내용 영역에서는 사용자 차단이 실행되지 않습니다. 닉네임은 무갤러 또는 nick:무갤러 형식으로 직접 추가할 수 있고, 포함 매칭으로 차단됩니다.';
+      ? '실수 방지를 위해 메뉴를 한 번 더 선택하는 방식입니다. 사용자 차단이 OFF여도 기존 목록은 아래에서 해제할 수 있습니다.'
+      : '글 제목, 본문, 댓글 내용 영역에서는 실행되지 않습니다. 사용자 차단이 OFF일 때는 차단된 작성자 옆의 “차단됨 · 해제” 버튼도 사용할 수 있습니다.';
   }
 }
 
@@ -227,6 +231,8 @@ function lockUserBlockUI(disabled) {
     el.disabled = !!disabled;
     el.style.opacity = op;
   });
+
+  if (userBlockOffHint) userBlockOffHint.hidden = !disabled;
 
   applyUserBlockHoverHintControl();
 }
@@ -625,6 +631,12 @@ function refreshDcThemeState() {
 }
 
 /* ───────── UID 차단 목록 ───────── */
+function setUserBlockStatus(text, isError = false) {
+  if (!userBlockStatus) return;
+  userBlockStatus.textContent = text || "";
+  userBlockStatus.classList.toggle("is-error", !!isError);
+}
+
 function getUidTokenKind(token) {
   const text = String(token || "").trim();
   if (/^nick\s*[:=]/i.test(text)) return "NICK";
@@ -634,11 +646,27 @@ function getUidTokenKind(token) {
 function renderUidList(list) {
   if (!uidListEl) return;
 
-  uidListEl.innerHTML = "";
   const uids = Array.isArray(list) ? list : [];
+  renderedUidCount = uids.length;
 
   if (uidListCountEl) uidListCountEl.textContent = `${uids.length}개`;
-  if (clearUidListBtn) clearUidListBtn.disabled = !uids.length;
+  if (userBlockManageBtn) userBlockManageBtn.textContent = `차단 목록 · 해제 (${uids.length})`;
+  if (clearUidListBtn) clearUidListBtn.disabled = uidListMutationInFlight || !uids.length;
+
+  const currentTokens = Array.from(uidListEl.querySelectorAll("button[data-token]"), (button) => button.dataset.token || "");
+  const currentButtonsHealthy = Array.from(uidListEl.querySelectorAll("button[data-token]"))
+    .every((button) => !button.disabled && button.textContent === "차단 해제");
+  const alreadyRendered = uidListEl.children.length > 0 && (
+    (uids.length === 0 && !!uidListEl.querySelector(".uid-empty"))
+    || (
+      currentButtonsHealthy
+      && currentTokens.length === uids.length
+      && currentTokens.every((token, index) => token === uids[index])
+    )
+  );
+  if (alreadyRendered) return;
+
+  uidListEl.innerHTML = "";
 
   if (!uids.length) {
     const li = document.createElement("li");
@@ -647,7 +675,7 @@ function renderUidList(list) {
     return;
   }
 
-  uids.forEach((uid, idx) => {
+  uids.forEach((uid) => {
     const li = document.createElement("li");
 
     const left = document.createElement("span");
@@ -663,8 +691,10 @@ function renderUidList(list) {
     const btn = document.createElement("button");
     btn.className = "btn btn-danger";
     btn.type = "button";
-    btn.dataset.idx = String(idx);
-    btn.textContent = "삭제";
+    btn.dataset.token = uid;
+    btn.textContent = "차단 해제";
+    btn.title = `${uid} 차단 해제`;
+    btn.setAttribute("aria-label", `${uid} 차단 해제`);
 
     left.append(kind, code);
     li.append(left, btn);
@@ -673,24 +703,49 @@ function renderUidList(list) {
 }
 
 let uidListRefreshTimer = null;
+let uidListMutationInFlight = false;
+let uidListRefreshPending = false;
+let renderedUidCount = 0;
+
+function finishUidListMutation() {
+  uidListMutationInFlight = false;
+  if (!uidListRefreshPending) return;
+  uidListRefreshPending = false;
+  refreshUidList(80);
+}
 
 async function getStoredUidList() {
   if (globalThis.DCBUserBlockStore?.getAllTokens) {
-    return DCBUserBlockStore.getAllTokens();
+    const reader = DCBUserBlockStore.getAllTokensReadOnly || DCBUserBlockStore.getAllTokens;
+    return reader();
   }
 
   const data = await chrome.storage.local.get({ blockedUids: [] });
   return Array.isArray(data.blockedUids) ? data.blockedUids : [];
 }
 
-async function setStoredUidList(list) {
-  if (globalThis.DCBUserBlockStore?.setAllTokens) {
-    return DCBUserBlockStore.setAllTokens(list);
-  }
+function sendUserBlockMutation(type, payload = {}) {
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage({ type, ...payload }, (result) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message || "확장 프로그램 연결 실패"));
+        return;
+      }
+      resolve(result);
+    });
+  });
+}
 
-  const uniq = Array.from(new Set((Array.isArray(list) ? list : []).map(sanitizeUid).filter(Boolean)));
-  await chrome.storage.local.set({ blockedUids: uniq });
-  return uniq;
+async function addStoredUidToken(token) {
+  return sendUserBlockMutation("dcb.userBlockAdd", { token });
+}
+
+async function removeStoredUidToken(token) {
+  return sendUserBlockMutation("dcb.userBlockRemove", { token });
+}
+
+async function clearStoredUidList() {
+  return sendUserBlockMutation("dcb.userBlockClear");
 }
 
 function refreshUidList(delay = 0) {
@@ -705,19 +760,6 @@ function refreshUidList(delay = 0) {
       console.warn("[DCB] uid list refresh failed", err);
     }
   }, delay);
-}
-
-async function saveUidList(mutator) {
-  try {
-    const list = await getStoredUidList();
-    mutator(list);
-    const uniq = Array.from(new Set(list.map(sanitizeUid).filter(Boolean)));
-    const saved = await setStoredUidList(uniq);
-    renderUidList(saved);
-  } catch (err) {
-    console.warn("[DCB] uid list save failed", err);
-    alert("사용자 차단 목록을 저장하지 못했습니다. 확장 프로그램을 다시 로드한 뒤 시도해 주세요.");
-  }
 }
 
 /* ───────── 키워드 차단 목록 ───────── */
@@ -1287,13 +1329,28 @@ if (userBlockHoverHintEl) {
 }
 
 if (addUidBtn && uidInput) {
-  addUidBtn.onclick = () => {
+  addUidBtn.onclick = async () => {
     const v = sanitizeUid(uidInput.value);
-    if (!v) return;
+    if (!v || uidListMutationInFlight) return;
 
-    saveUidList((list) => list.push(v));
-    uidInput.value = "";
-    uidInput.focus();
+    uidListMutationInFlight = true;
+    addUidBtn.disabled = true;
+
+    try {
+      const result = await addStoredUidToken(v);
+      if (!result?.ok) throw new Error(result?.message || "사용자 차단 추가 실패");
+      renderUidList(await getStoredUidList());
+      setUserBlockStatus(result.added ? `${v} 차단 설정을 저장했습니다.` : `${v}은(는) 이미 차단 목록에 있습니다.`);
+      uidInput.value = "";
+    } catch (err) {
+      console.warn("[DCB] uid list save failed", err);
+      setUserBlockStatus("사용자 차단 목록을 저장하지 못했습니다. 확장 프로그램을 다시 로드한 뒤 시도해 주세요.", true);
+    } finally {
+      finishUidListMutation();
+      addUidBtn.disabled = !userBlockEnabledState;
+      if (clearUidListBtn) clearUidListBtn.disabled = !renderedUidCount;
+      uidInput.focus();
+    }
   };
 
   uidInput.addEventListener("keydown", (e) => {
@@ -1305,29 +1362,67 @@ if (addUidBtn && uidInput) {
 }
 
 if (uidListEl) {
-  uidListEl.addEventListener("click", (e) => {
-    const btn = e.target.closest("button[data-idx]");
-    if (!btn) return;
+  uidListEl.addEventListener("click", async (e) => {
+    const btn = e.target.closest("button[data-token]");
+    if (!btn || uidListMutationInFlight) return;
 
-    const idx = Number(btn.dataset.idx);
-    saveUidList((list) => {
-      list.splice(idx, 1);
-    });
+    const token = btn.dataset.token || "";
+    const buttonIndex = Array.from(uidListEl.querySelectorAll("button[data-token]")).indexOf(btn);
+    uidListMutationInFlight = true;
+    btn.disabled = true;
+    btn.textContent = "해제 중…";
+
+    try {
+      const result = await removeStoredUidToken(token);
+      if (!result?.ok) throw new Error(result?.message || "차단 해제 실패");
+      setUserBlockStatus(result.removed ? `${token} 차단을 해제했습니다.` : `${token}은(는) 이미 해제되어 있습니다.`);
+      renderUidList(await getStoredUidList());
+      const remainingButtons = uidListEl.querySelectorAll("button[data-token]");
+      const nextButton = remainingButtons[Math.min(Math.max(buttonIndex, 0), remainingButtons.length - 1)];
+      if (nextButton) nextButton.focus();
+      else userBlockManager?.focus({ preventScroll: true });
+    } catch (err) {
+      console.warn("[DCB] uid unblock failed", err);
+      btn.disabled = false;
+      btn.textContent = "차단 해제";
+      setUserBlockStatus("차단을 해제하지 못했습니다. 확장 프로그램을 다시 로드한 뒤 시도해 주세요.", true);
+    } finally {
+      finishUidListMutation();
+      if (clearUidListBtn) clearUidListBtn.disabled = !renderedUidCount;
+    }
+  });
+}
+
+if (userBlockManageBtn && userBlockManager) {
+  userBlockManageBtn.addEventListener("click", () => {
+    userBlockManager.scrollIntoView({ behavior: "smooth", block: "start" });
+    userBlockManager.focus({ preventScroll: true });
   });
 }
 
 if (clearUidListBtn) {
   clearUidListBtn.addEventListener("click", async () => {
+    if (uidListMutationInFlight || !renderedUidCount) return;
+    if (!confirm(`사용자 차단 ${renderedUidCount}개를 모두 해제할까요?`)) return;
+
+    uidListMutationInFlight = true;
+    clearUidListBtn.disabled = true;
+    clearUidListBtn.textContent = "해제 중…";
+
     try {
-      if (globalThis.DCBUserBlockStore?.clearAllTokens) {
-        await DCBUserBlockStore.clearAllTokens();
-      } else {
-        await chrome.storage.local.set({ blockedUids: [] });
-      }
+      const result = await clearStoredUidList();
+      if (!result?.ok) throw new Error(result?.message || "전체 해제 실패");
       renderUidList([]);
+      setUserBlockStatus("사용자 차단을 모두 해제했습니다.");
     } catch (err) {
       console.warn("[DCB] uid list clear failed", err);
-      alert("사용자 차단 목록을 초기화하지 못했습니다. 확장 프로그램을 다시 로드한 뒤 시도해 주세요.");
+      setUserBlockStatus("사용자 차단 목록을 초기화하지 못했습니다. 확장 프로그램을 다시 로드한 뒤 시도해 주세요.", true);
+    } finally {
+      finishUidListMutation();
+      clearUidListBtn.textContent = "전체해제";
+      clearUidListBtn.disabled = !renderedUidCount;
+      if (renderedUidCount) clearUidListBtn.focus();
+      else userBlockManager?.focus({ preventScroll: true });
     }
   });
 }
@@ -1499,7 +1594,8 @@ chrome.storage.onChanged.addListener((c, a) => {
   }
 
   if (a === "local" && globalThis.DCBUserBlockStore?.isRelevantChange?.(c)) {
-    refreshUidList(80);
+    if (uidListMutationInFlight) uidListRefreshPending = true;
+    else refreshUidList(80);
   }
 
   if (a === "local" && c.userMemos) {
