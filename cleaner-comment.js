@@ -1,115 +1,84 @@
 /*****************************************************************
-cleaner-comment.js
+ * cleaner-comment.js
+ *
+ * 댓글 목록만 CSS로 숨긴다. 댓글 입력/등록 컨테이너(#focus_cmt)는
+ * 유지하며, 이전 버전이 남긴 inline display:none도 자동 복구한다.
  *****************************************************************/
 (() => {
-  const SELS = [
-    'div#focus_cmt.view_comment[tabindex]',
-    'a.reply_numbox',
-    'span.reply_num',
-    'button.btn_cmt_delete',
-    '.btn_cmt_delete',
-    'input.article_chkbox'
+  "use strict";
+
+  const STYLE_ID = "dcb-hide-comment-style";
+  const COMMENT_ITEM_SELECTORS = [
+    "#focus_cmt li.ub-content",
+    "#focus_cmt li[id^='comment_']",
+    "#focus_cmt li[id^='reply_']",
+    "#focus_cmt .cmt_list > li",
+    ".comment_wrap li.ub-content",
+    ".comment_wrap .cmt_list > li",
+    ".cmt_list > li.ub-content",
+    ".reply_list > li"
   ];
-  const STYLE_ID = 'dcb-hide-comment-style';
-  const CSS_RULE = `${SELS.join(',')}{display:none !important}`;
+  const AUXILIARY_SELECTORS = [
+    "a.reply_numbox",
+    "span.reply_num",
+    "button.btn_cmt_delete",
+    ".btn_cmt_delete",
+    "input.article_chkbox"
+  ];
+  const LEGACY_SELECTORS = [
+    "div#focus_cmt.view_comment[tabindex]",
+    ...AUXILIARY_SELECTORS
+  ];
 
-  let styleNode = null;
   let hideComment = false;
-  let observer = null;
 
-  const addStyle = () => {
-    if (styleNode) return;
-    styleNode = document.createElement('style');
-    styleNode.id = STYLE_ID;
-    styleNode.textContent = CSS_RULE;
-    (document.head || document.documentElement).appendChild(styleNode);
-  };
-  
-  const removeStyle = () => {
-    (styleNode ?? document.getElementById(STYLE_ID))?.remove();
-    styleNode = null;
-  };
-  
-  const apply = (hide) => {
-    hideComment = hide;
-    if (hide) {
-      addStyle();
-      startObserver();
-      // 즉시 숨기기 적용 (DOM에 이미 있는 요소들)
-      hideExistingElements();
-    } else {
-      removeStyle();
-      stopObserver();
-    }
-  };
-  
-  /* ───── 기존 DOM 요소 즉시 숨기기 ───── */
-  const hideExistingElements = () => {
-    SELS.forEach(sel => {
-      document.querySelectorAll(sel).forEach(el => {
-        el.style.cssText = 'display:none !important';
-      });
-    });
-  };
-
-  /* ───── 동적 콘텐츠 대응 ───── */
-  const startObserver = () => {
-    if (observer) return; // 이미 실행 중
-    
-    observer = new MutationObserver(() => {
-      if (hideComment) {
-        addStyle(); // 스타일이 제거되었을 경우 다시 추가
-        hideExistingElements(); // 새로 추가된 요소도 숨기기
-      }
-    });
-    
-    if (document.body) {
-      observer.observe(document.body, { childList: true, subtree: true });
-    } else {
-      document.addEventListener("DOMContentLoaded", () => {
-        if (document.body && hideComment) {
-          observer.observe(document.body, { childList: true, subtree: true });
-        }
-      }, { once: true });
-    }
-  };
-
-  const stopObserver = () => {
-    if (observer) {
-      observer.disconnect();
-      observer = null;
-    }
-  };
-
-  /* ───── 초기 설정 로드 ───── */
-  chrome.storage.sync.get({ hideComment: false }, ({ hideComment }) => {
-    apply(hideComment);
-  });
-
-  /* ───── 설정 변경 감지 ───── */
-  chrome.storage.onChanged.addListener((c, area) => {
-    if (area === 'sync' && c.hideComment) {
-      apply(c.hideComment.newValue);
-    }
-  });
-
-  /* ───── 페이지 로드 완료 후에도 한 번 더 실행 ───── */
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", () => {
-      chrome.storage.sync.get({ hideComment: false }, ({ hideComment }) => {
-        if (hideComment) {
-          addStyle();
-          hideExistingElements();
+  function cleanupLegacyInlineStyles() {
+    LEGACY_SELECTORS.forEach((selector) => {
+      document.querySelectorAll(selector).forEach((el) => {
+        if (el.style.getPropertyValue("display") === "none") {
+          el.style.removeProperty("display");
         }
       });
-    }, { once: true });
+    });
   }
-  
-  /* ───── window.onload 시점에도 한 번 더 확인 ───── */
-  window.addEventListener("load", () => {
-    if (hideComment) {
-      addStyle();
-      hideExistingElements();
+
+  function ensureStyle() {
+    let style = document.getElementById(STYLE_ID);
+    if (!style) {
+      style = document.createElement("style");
+      style.id = STYLE_ID;
+      style.dataset.dcbOwned = "cleaner-comment";
+      (document.head || document.documentElement).appendChild(style);
     }
-  }, { once: true });
+
+    style.textContent = `${[...COMMENT_ITEM_SELECTORS, ...AUXILIARY_SELECTORS].join(",")} { display:none !important; }`;
+    return style;
+  }
+
+  function removeStyle() {
+    document.getElementById(STYLE_ID)?.remove();
+  }
+
+  function apply(hide) {
+    hideComment = hide === true;
+    cleanupLegacyInlineStyles();
+    if (hideComment) ensureStyle();
+    else removeStyle();
+  }
+
+  cleanupLegacyInlineStyles();
+
+  chrome.storage.sync.get({ hideComment: false }, ({ hideComment: value }) => {
+    apply(value);
+  });
+
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === "sync" && changes.hideComment) {
+      apply(changes.hideComment.newValue);
+    }
+  });
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", cleanupLegacyInlineStyles, { once: true });
+  }
 })();

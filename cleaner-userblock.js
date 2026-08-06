@@ -7,7 +7,7 @@
   const OLD_MASKED_CLASS = "dcb-masked";
   const UNBLOCK_BUTTON_CLASS = "dcb-userblock-unblock";
   const UNBLOCK_HOST_CLASS = "dcb-userblock-unblock-host";
-  const CSS_RULE_TOKEN_LIMIT = 500;
+  const CSS_RULE_TOKEN_LIMIT = 80;
 
   let blockedUidsCache = null;
   let blockedUidsCacheRevision = 0;
@@ -768,14 +768,22 @@
     el.classList.add(BLOCKED_CLASS);
   }
 
-  function getCandidateWriters() {
+  function getCandidateWriters(base = document) {
     const seen = new Set();
     const out = [];
     const authorSelector = ".gall_writer, .ub-writer";
     const infoSelector = ".cmt_info, .reply_info, .cmt_nickbox, .writer_info, .user_info";
     const unsafeFallbackSelector = "a, button, input, img, area, base, br, col, embed, hr, link, meta, param, source, track, wbr";
 
-    document.querySelectorAll(WRITER_SELECTOR).forEach((node) => {
+    const candidates = [];
+    if (base === document || base?.nodeType === 9 || base?.nodeType === 11) {
+      base.querySelectorAll?.(WRITER_SELECTOR).forEach((node) => candidates.push(node));
+    } else if (base?.nodeType === 1) {
+      if (base.matches?.(WRITER_SELECTOR)) candidates.push(base);
+      base.querySelectorAll?.(WRITER_SELECTOR).forEach((node) => candidates.push(node));
+    }
+
+    candidates.forEach((node) => {
       const writer =
         (node.matches?.(authorSelector) ? node : null) ||
         node.closest?.(authorSelector) ||
@@ -949,10 +957,10 @@
     return host;
   }
 
-  function collectUnblockGroups(matcher) {
+  function collectUnblockGroups(matcher, base = document) {
     const groups = new Map();
 
-    getCandidateWriters().forEach((writer) => {
+    getCandidateWriters(base).forEach((writer) => {
       const tokens = findMatchedBlockedTokens(writer, matcher);
       if (!tokens.length) return;
 
@@ -977,16 +985,17 @@
     return [...groups.values()];
   }
 
-  function applyUnblockControls(matcher) {
+  function applyUnblockControls(matcher, base = document, cleanup = true) {
     const activeButtons = new Set();
 
     if (!matcher.empty) {
-      collectUnblockGroups(matcher).forEach(({ owner, writer, tokens: tokenSet }) => {
+      collectUnblockGroups(matcher, base).forEach(({ owner, writer, tokens: tokenSet }) => {
         const tokens = [...tokenSet];
         if (!tokens.length) return;
 
         const host = ensureUnblockControlHost(writer, owner);
         if (!host) return;
+        host.dataset.dcbOwned = "userblock";
         let button = host.querySelector?.(`:scope > .${UNBLOCK_BUTTON_CLASS}`);
 
         if (!button) {
@@ -1012,21 +1021,39 @@
       });
     }
 
+    if (!cleanup) return;
+
     document.querySelectorAll(`.${UNBLOCK_BUTTON_CLASS}`).forEach((button) => {
       if (activeButtons.has(button)) return;
       const host = button.parentElement;
       button.remove();
       cleanupUnblockHost(host);
     });
-
     document.querySelectorAll(`.${UNBLOCK_HOST_CLASS}`).forEach(cleanupUnblockHost);
   }
 
-  function applyDomBlocks(matcher) {
-    clearDomBlocks();
+  function clearWriterBlockState(writer) {
+    if (!writer) return;
+    const targets = new Set();
+
+    if (isInsideCommentRoot(writer)) {
+      findCommentTargets(writer).forEach((target) => targets.add(target));
+    } else {
+      const listContainer = findListContainer(writer);
+      const viewContainer = findViewContainer(writer);
+      if (listContainer) targets.add(listContainer);
+      if (viewContainer) targets.add(viewContainer);
+    }
+
+    targets.forEach((target) => target?.classList?.remove(BLOCKED_CLASS));
+  }
+
+  function applyDomBlocks(matcher, base = document, options = {}) {
+    if (options.reset === true) clearDomBlocks();
     if (matcher.empty) return;
 
-    getCandidateWriters().forEach((writer) => {
+    getCandidateWriters(base).forEach((writer) => {
+      if (options.reset !== true) clearWriterBlockState(writer);
       if (!writerMatches(writer, matcher)) return;
 
       const commentTargets = isInsideCommentRoot(writer) ? findCommentTargets(writer) : [];
@@ -1042,13 +1069,16 @@
       }
 
       const viewContainer = findViewContainer(writer);
-      if (viewContainer) {
-        markBlocked(viewContainer);
-      }
+      if (viewContainer) markBlocked(viewContainer);
     });
   }
 
   let applyGeneration = 0;
+  let activeConf = null;
+  let activeMatcher = buildMatcher([]);
+  let debounceTimer = null;
+  let incrementalTimer = null;
+  const pendingRoots = new Set();
 
   function apply() {
     const generation = ++applyGeneration;
@@ -1063,22 +1093,22 @@
 
       if (generation !== applyGeneration) return;
 
+      activeConf = conf;
+      activeMatcher = buildMatcher(conf.blockedUids || []);
       ensureStyle().textContent = buildCss(conf);
-
-      const matcher = buildMatcher(conf.blockedUids || []);
+      pendingRoots.clear();
 
       if (!conf.userBlockEnabled) {
         clearDomBlocks();
-        applyUnblockControls(matcher);
+        applyUnblockControls(activeMatcher, document, true);
         return;
       }
 
       clearUnblockControls();
-      applyDomBlocks(matcher);
+      applyDomBlocks(activeMatcher, document, { reset: true });
     });
   }
 
-  let debounceTimer = null;
   function scheduleApply(delay = 80) {
     applyGeneration += 1;
     if (debounceTimer) clearTimeout(debounceTimer);
@@ -1086,6 +1116,44 @@
       debounceTimer = null;
       apply();
     }, delay);
+  }
+
+  function isInternalUiNode(node) {
+    if (!(node instanceof Element)) return false;
+    return !!node.closest?.(
+      `[data-dcb-owned='userblock'], .${UNBLOCK_HOST_CLASS}, .${UNBLOCK_BUTTON_CLASS}, ` +
+      ".dcibx-actions, .dcibx-notice, .dcibx-overlay, #dcb-area-picker-overlay, #dcb-area-picker-guide"
+    );
+  }
+
+  function flushIncrementalRoots() {
+    incrementalTimer = null;
+    if (!activeConf || !pendingRoots.size) return;
+
+    const roots = Array.from(pendingRoots).filter((root) => root?.isConnected !== false);
+    pendingRoots.clear();
+
+    const minimalRoots = roots.filter((root, index) => {
+      if (!(root instanceof Element)) return true;
+      return !roots.some((other, otherIndex) => (
+        index !== otherIndex && other instanceof Element && other.contains(root)
+      ));
+    });
+
+    minimalRoots.forEach((root) => {
+      if (activeConf.userBlockEnabled) {
+        applyDomBlocks(activeMatcher, root, { reset: false });
+      } else {
+        applyUnblockControls(activeMatcher, root, false);
+      }
+    });
+  }
+
+  function queueIncrementalApply(root) {
+    if (!root || isInternalUiNode(root)) return;
+    pendingRoots.add(root);
+    if (incrementalTimer) return;
+    incrementalTimer = setTimeout(flushIncrementalRoots, 60);
   }
 
   if (document.readyState === "loading") {
@@ -1146,10 +1214,29 @@
     }
   }, true);
 
-  const mo = new MutationObserver(() => scheduleApply(100));
+  const mo = new MutationObserver((records) => {
+    records.forEach((record) => {
+      if (record.type === "attributes") {
+        queueIncrementalApply(record.target);
+        return;
+      }
+      record.addedNodes.forEach((node) => {
+        if (node.nodeType === 1 || node.nodeType === 11) queueIncrementalApply(node);
+      });
+    });
+  });
+
   const startMO = () => {
-    if (document.body) mo.observe(document.body, { childList: true, subtree: true });
-    else document.addEventListener("DOMContentLoaded", startMO, { once: true });
+    if (document.body) {
+      mo.observe(document.body, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ["data-uid", "data-full-uid", "data-ip", "data-nick", "data-memo-uid", "data-memo-ip", "title", "href"]
+      });
+    } else {
+      document.addEventListener("DOMContentLoaded", startMO, { once: true });
+    }
   };
   startMO();
 

@@ -653,6 +653,7 @@
     document.removeEventListener("click", activePicker.onClick, true);
     document.removeEventListener("contextmenu", activePicker.onContextMenu, true);
     document.removeEventListener("keydown", activePicker.onKeyDown, true);
+    if (activePicker.timeoutId) clearTimeout(activePicker.timeoutId);
 
     document.getElementById(OVERLAY_ID)?.remove();
     document.getElementById(GUIDE_ID)?.remove();
@@ -705,7 +706,17 @@
       });
     };
 
-    activePicker = { onMove, onClick, onContextMenu, onKeyDown };
+    const timeoutId = setTimeout(() => {
+      if (!activePicker) return;
+      stopPicker();
+      showToast({
+        title: "영역 선택 자동 취소",
+        desc: "30초 동안 선택하지 않아 클릭 차단을 해제했습니다.",
+        variant: "success"
+      });
+    }, 30000);
+
+    activePicker = { onMove, onClick, onContextMenu, onKeyDown, timeoutId };
 
     document.addEventListener("mousemove", onMove, true);
     document.addEventListener("click", onClick, true);
@@ -722,6 +733,7 @@
   }
 
   document.addEventListener("contextmenu", handleContextMenu, { capture: true });
+  window.addEventListener("pagehide", stopPicker, { once: true });
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message?.type !== "dcb.areaPicker.blockContextTarget" && message?.type !== "dcb.areaPicker.start") {

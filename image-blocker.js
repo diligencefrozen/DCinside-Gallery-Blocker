@@ -35,6 +35,7 @@
   let lastScan = 0;
 
   const fileCache = new WeakMap();
+  const actionState = new WeakMap();
   const $ = (selector, base = document) => base.querySelector(selector);
   const $$ = (selector, base = document) => Array.from(base.querySelectorAll(selector));
   const cleanText = (value) => String(value ?? "").trim();
@@ -612,27 +613,42 @@
       actions?.remove();
       return;
     }
+
     if (!actions) {
       actions = document.createElement("div");
       actions.className = `${UI}-actions`;
+      actions.dataset.dcbOwned = "image-blocker";
+
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = "차단";
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+
+        const state = actionState.get(actions);
+        if (!state?.el || !state?.info) return;
+
+        const { el: currentEl, info: currentInfo, frame: currentFrame } = state;
+        const quickKey = currentInfo.key;
+        const item = writeAliases(quickKey, currentInfo, makeRecord(currentEl, currentInfo, quickKey));
+        delete currentFrame.dataset.ibxPeek;
+        revealNotice(currentFrame, quickKey);
+        void storeLocal(RECORD_KEY, records);
+
+        inspect(currentEl, currentInfo.src).then((full) => {
+          if (!full?.key || full.key === quickKey) return;
+          writeAliases(quickKey, full, { ...item, ...makeRecord(currentEl, full, quickKey), blockedAt: item.blockedAt });
+          if (currentFrame.isConnected) currentFrame.dataset.ibxKey = full.key;
+          void storeLocal(RECORD_KEY, records);
+        }).catch(() => {});
+      });
+
+      actions.appendChild(button);
       frame.appendChild(actions);
     }
-    actions.innerHTML = `<button type="button">차단</button>`;
-    $("button", actions).onclick = (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      const quickKey = info.key;
-      const item = writeAliases(quickKey, info, makeRecord(el, info, quickKey));
-      delete frame.dataset.ibxPeek;
-      revealNotice(frame, quickKey);
-      void storeLocal(RECORD_KEY, records);
-      inspect(el, info.src).then((full) => {
-        if (!full?.key || full.key === quickKey) return;
-        writeAliases(quickKey, full, { ...item, ...makeRecord(el, full, quickKey), blockedAt: item.blockedAt });
-        if (frame.isConnected) frame.dataset.ibxKey = full.key;
-        void storeLocal(RECORD_KEY, records);
-      }).catch(() => {});
-    };
+
+    actionState.set(actions, { frame, el, info });
   }
 
   async function prepare(el) {
@@ -707,31 +723,51 @@
     gatherMedia(authorChanged ? document : base).forEach((el) => void prepare(el));
   }
 
+  function isOwnedUiNode(node) {
+    if (!(node instanceof Element)) return false;
+    return !!node.closest?.(
+      `.${UI}-actions,.${UI}-notice,.${UI}-overlay,[data-dcb-owned='image-blocker']`
+    );
+  }
+
   function watch() {
     observer?.disconnect();
     observer = new MutationObserver((changes) => {
       const now = Date.now();
-      if (now - lastScan < 80) return;
+      if (now - lastScan < 50) return;
       lastScan = now;
+
       for (const item of changes) {
-        if (item.type === "childList") item.addedNodes.forEach((node) => scan(node));
-        if (item.type === "attributes") scan(item.target);
+        if (item.type === "childList") {
+          item.addedNodes.forEach((node) => {
+            if ((node.nodeType === 1 || node.nodeType === 11) && !isOwnedUiNode(node)) scan(node);
+          });
+          continue;
+        }
+
+        if (item.type === "attributes") {
+          const target = item.target;
+          if (isOwnedUiNode(target)) continue;
+          if (item.attributeName === "class" && target.classList?.contains(`${UI}-frame`)) continue;
+          scan(target);
+        }
       }
     });
+
     observer.observe(document.documentElement || document, {
       childList: true,
       subtree: true,
       attributes: true,
-      attributeFilter: ["src", "data-src", "class", "data-uid", "data-full-uid", "data-ip", "data-nick", "title", "href", "onclick"]
+      attributeFilter: ["src", "data-src", "data-uid", "data-full-uid", "data-ip", "data-nick", "title", "href"]
     });
   }
 
   function warmup() {
-    if (pulse) clearInterval(pulse);
-    pulse = setInterval(() => {
-      if (!ready || !config.enabled) return;
-      scan(document);
-    }, 2500);
+    if (pulse) clearTimeout(pulse);
+    pulse = setTimeout(() => {
+      pulse = null;
+      if (ready && config.enabled) scan(document);
+    }, 1200);
   }
 
   function renderPanel(title, count, body) {

@@ -46,6 +46,7 @@
   let observer = null;
   let scanTimer = null;
   let isApplying = false;
+  const pendingRoots = new Set();
 
   function norm(v) {
     return String(v || "").trim().toLowerCase();
@@ -165,31 +166,34 @@
   chrome.storage.onChanged.addListener((chg, area) => {
     if (area !== "sync") return;
 
+    let requiresFullApply = false;
+
     if (chg.galleryBlockEnabled) {
       gBlockEnabled = !!chg.galleryBlockEnabled.newValue;
+      requiresFullApply = true;
     } else if (chg.enabled) {
       gBlockEnabled = !!chg.enabled.newValue;
-    }
-
-    if (chg.blockedIds || chg.builtinDcbestBlockEnabled) {
-      chrome.storage.sync.get(
-        {
-          builtinDcbestBlockEnabled: true,
-          blockedIds: []
-        },
-        ({ builtinDcbestBlockEnabled: builtinDcbestEnabled, blockedIds }) => {
-          builtinDcbestBlockEnabled = builtinDcbestEnabled !== false;
-          blockedSet = normalizeBlockedIds(blockedIds, builtinDcbestBlockEnabled);
-          applyLinkWarnings({ reset: true });
-        }
-      );
+      requiresFullApply = true;
     }
 
     if (chg.linkWarnEnabled) {
       linkWarnEnabled = !!chg.linkWarnEnabled.newValue;
+      requiresFullApply = true;
     }
 
-    applyLinkWarnings({ reset: true });
+    if (chg.blockedIds || chg.builtinDcbestBlockEnabled) {
+      chrome.storage.sync.get(
+        { builtinDcbestBlockEnabled: true, blockedIds: [] },
+        ({ builtinDcbestBlockEnabled: builtinEnabled, blockedIds }) => {
+          builtinDcbestBlockEnabled = builtinEnabled !== false;
+          blockedSet = normalizeBlockedIds(blockedIds, builtinDcbestBlockEnabled);
+          applyLinkWarnings({ reset: true, base: document });
+        }
+      );
+      return;
+    }
+
+    if (requiresFullApply) applyLinkWarnings({ reset: true, base: document });
   });
 
   /* ───── 스타일 주입 ───── */
@@ -226,8 +230,6 @@
     document.querySelectorAll(`a[${LINK_HIDDEN_ATTR}="1"]`).forEach(link => {
       link.removeAttribute(LINK_HIDDEN_ATTR);
       link.classList.remove("dcb-blocked-link", "dcb-blocked-link-clickable");
-      link.style.pointerEvents = "";
-      link.onclick = null;
     });
   }
 
@@ -252,8 +254,6 @@
 
     link.setAttribute(LINK_HIDDEN_ATTR, "1");
     link.classList.remove("dcb-blocked-link", "dcb-blocked-link-clickable");
-    link.style.pointerEvents = "none";
-    link.onclick = null;
   }
 
   /* ───── 숨길 대상 찾기 ───── */
@@ -350,97 +350,87 @@
     return "";
   }
 
+  function queryWithin(base, selector) {
+    if (!base) return [];
+    if (base === document || base.nodeType === 9 || base.nodeType === 11) {
+      return Array.from(base.querySelectorAll(selector));
+    }
+    if (base.nodeType !== 1) return [];
+    const result = base.matches?.(selector) ? [base] : [];
+    return result.concat(Array.from(base.querySelectorAll(selector)));
+  }
+
+  function isExtensionOwnedNode(node) {
+    if (!(node instanceof Element)) return false;
+    return !!node.closest?.(
+      "[data-dcb-owned], .dcibx-actions, .dcibx-notice, .dcibx-overlay, " +
+      ".dcb-userblock-unblock-host, #dcb-area-picker-overlay, #dcb-area-picker-guide"
+    );
+  }
+
   /* ───── 링크/최근방문/부속 UI 차단 ───── */
 
-  function blockGalleryLinks() {
-    const links = document.querySelectorAll("a[href]");
-
-    links.forEach(link => {
+  function blockGalleryLinks(base = document) {
+    queryWithin(base, "a[href]").forEach((link) => {
       const gid = extractGalleryId(link.getAttribute("href"));
       if (!isBlockedGallery(gid)) return;
 
       const hideTarget = getHideTarget(link);
-      if (hideTarget) {
-        hideNode(hideTarget, gid);
-      }
-
+      if (hideTarget) hideNode(hideTarget, gid);
       markLinkBlocked(link);
     });
   }
 
-  function blockRecentVisitItems() {
-    const items = document.querySelectorAll(
-      [
-        ".newvisit_list li",
-        ".visit_bookmark li",
-        "li[class*='lately_gall_']"
-      ].join(",")
-    );
+  function blockRecentVisitItems(base = document) {
+    const selector = [
+      ".newvisit_list li",
+      ".visit_bookmark li",
+      "li[class*='lately_gall_']"
+    ].join(",");
 
-    items.forEach(item => {
+    queryWithin(base, selector).forEach((item) => {
       const gid = getGalleryIdFromElement(item);
-      if (!isBlockedGallery(gid)) return;
-
-      hideNode(item, gid);
+      if (isBlockedGallery(gid)) hideNode(item, gid);
     });
   }
 
-  function blockDataIdElements() {
-    const nodes = document.querySelectorAll(
-      [
-        ".btn_visit_del[data-id]",
-        "button[data-id]",
-        "[data-id][data-gtype]",
-        "[data-id]",
-        "[data-gall-id]",
-        "[data-gallery-id]",
-        "[data-gid]",
-        "[section]",
-        "[depth3]"
-      ].join(",")
-    );
+  function blockDataIdElements(base = document) {
+    const selector = [
+      ".btn_visit_del[data-id]",
+      "button[data-id]",
+      "[data-id][data-gtype]",
+      "[data-gall-id]",
+      "[data-gallery-id]",
+      "[data-gid]",
+      "[section]",
+      "[depth3]"
+    ].join(",");
 
-    nodes.forEach(node => {
+    queryWithin(base, selector).forEach((node) => {
       const gid = getGalleryIdFromElement(node);
       if (!isBlockedGallery(gid)) return;
 
       const hideTarget = getHideTarget(node);
-      if (hideTarget) {
-        hideNode(hideTarget, gid);
-      }
+      if (hideTarget) hideNode(hideTarget, gid);
     });
   }
 
-  function applySpecialBlocks() {
+  function applySpecialBlocks(base = document) {
     for (const gid of blockedSet) {
       const selectors = SPECIAL_BLOCK_RULES[gid];
-
       if (Array.isArray(selectors)) {
-        selectors.forEach(selector => {
+        selectors.forEach((selector) => {
           try {
-            document.querySelectorAll(selector).forEach(el => {
-              hideNode(el, gid);
-            });
-          } catch {
-            /*
-              일부 브라우저/페이지 문맥에서 :has() selector가 실패해도
-              전체 차단 기능이 죽지 않도록 무시한다.
-            */
-          }
+            queryWithin(base, selector).forEach((el) => hideNode(el, gid));
+          } catch (_) {}
         });
       }
 
       const safeGid = escapeCss(gid);
-
-      [
-        `.newvisit_list li.lately_gall_${safeGid}`,
-        `li.lately_gall_${safeGid}`
-      ].forEach(selector => {
+      [`.newvisit_list li.lately_gall_${safeGid}`, `li.lately_gall_${safeGid}`].forEach((selector) => {
         try {
-          document.querySelectorAll(selector).forEach(el => {
-            hideNode(el, gid);
-          });
-        } catch {}
+          queryWithin(base, selector).forEach((el) => hideNode(el, gid));
+        } catch (_) {}
       });
     }
   }
@@ -449,23 +439,21 @@
     if (isApplying) return;
 
     isApplying = true;
-
     try {
       ensureStyle();
+      const base = options.base || document;
 
-      if (options.reset !== false) {
-        resetHiddenState();
-      }
+      if (options.reset === true) resetHiddenState();
 
       if (!gBlockEnabled || !linkWarnEnabled) {
-        resetHiddenState();
+        if (options.reset !== true) resetHiddenState();
         return;
       }
 
-      blockGalleryLinks();
-      blockRecentVisitItems();
-      blockDataIdElements();
-      applySpecialBlocks();
+      blockGalleryLinks(base);
+      blockRecentVisitItems(base);
+      blockDataIdElements(base);
+      applySpecialBlocks(base);
     } finally {
       isApplying = false;
     }
@@ -473,44 +461,48 @@
 
   /* ───── 동적 콘텐츠 대응 ───── */
 
-  function scheduleApplyLinkWarnings() {
-    if (scanTimer) return;
+  function flushPendingRoots() {
+    scanTimer = null;
+    if (!pendingRoots.size || isApplying) return;
 
-    scanTimer = setTimeout(() => {
-      scanTimer = null;
-      applyLinkWarnings({ reset: true });
-    }, 80);
+    const roots = Array.from(pendingRoots).filter((root) => root?.isConnected !== false);
+    pendingRoots.clear();
+
+    const minimalRoots = roots.filter((root, index) => {
+      if (!(root instanceof Element)) return true;
+      return !roots.some((other, otherIndex) => (
+        index !== otherIndex && other instanceof Element && other.contains(root)
+      ));
+    });
+
+    minimalRoots.forEach((root) => applyLinkWarnings({ reset: false, base: root }));
+  }
+
+  function scheduleApplyLinkWarnings(root) {
+    if (root && !isExtensionOwnedNode(root)) pendingRoots.add(root);
+    if (scanTimer) return;
+    scanTimer = setTimeout(flushPendingRoots, 60);
   }
 
   function startObserver() {
-    if (observer) {
-      observer.disconnect();
-      observer = null;
-    }
+    observer?.disconnect();
 
-    observer = new MutationObserver(() => {
-      if (!isApplying) scheduleApplyLinkWarnings();
+    observer = new MutationObserver((records) => {
+      if (isApplying) return;
+      records.forEach((record) => {
+        record.addedNodes.forEach((node) => {
+          if (node.nodeType === 1 || node.nodeType === 11) scheduleApplyLinkWarnings(node);
+        });
+      });
     });
 
-    if (document.body) {
-      observer.observe(document.body, {
-        childList: true,
-        subtree: true
-      });
-    } else {
-      document.addEventListener(
-        "DOMContentLoaded",
-        () => {
-          if (document.body && observer) {
-            observer.observe(document.body, {
-              childList: true,
-              subtree: true
-            });
-          }
-        },
-        { once: true }
-      );
-    }
+    const observe = () => {
+      if (!document.body) return;
+      observer.observe(document.body, { childList: true, subtree: true });
+    };
+
+    if (document.body) observe();
+    else document.addEventListener("DOMContentLoaded", observe, { once: true });
   }
 
   /*
@@ -520,31 +512,24 @@
   window.addEventListener(
     "dcb-access-allow-once",
     () => {
-      applyLinkWarnings({ reset: true });
-      setTimeout(() => applyLinkWarnings({ reset: true }), 0);
-      setTimeout(() => applyLinkWarnings({ reset: true }), 120);
+      applyLinkWarnings({ reset: true, base: document });
+      setTimeout(() => applyLinkWarnings({ reset: false, base: document }), 120);
     },
     true
   );
 
   /* ───── 초기 실행 ───── */
 
-  syncSettings(() => {
-    applyLinkWarnings({ reset: true });
-    startObserver();
-  });
+  function initialize() {
+    syncSettings(() => {
+      applyLinkWarnings({ reset: true, base: document });
+      startObserver();
+    });
+  }
 
   if (document.readyState === "loading") {
-    document.addEventListener(
-      "DOMContentLoaded",
-      () => {
-        applyLinkWarnings({ reset: true });
-        startObserver();
-      },
-      { once: true }
-    );
+    document.addEventListener("DOMContentLoaded", initialize, { once: true });
   } else {
-    applyLinkWarnings({ reset: true });
-    startObserver();
+    initialize();
   }
 })();
