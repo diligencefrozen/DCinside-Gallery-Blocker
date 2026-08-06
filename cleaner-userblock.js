@@ -53,6 +53,16 @@
     ".dccon_comment_box"
   ].join(",");
 
+  const UNBLOCK_FORBIDDEN_HOST_SELECTOR = [
+    ".cmt_txtbox",
+    ".comment_box",
+    ".cmt_txt",
+    ".ub-word",
+    ".usertxt",
+    ".fr",
+    ".cmt_mdf_del"
+  ].join(",");
+
   const cssEscape = (s) => String(s || "").replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 
   function normalizeNick(value) {
@@ -481,6 +491,31 @@
         --dcb-unblock-muted:#b91c1c; --dcb-unblock-action:#b91c1c;
         background:#fff7f7;
       }
+      /* 댓글/답글에서는 작성자 정보 뒤에 아이콘만 표시한다. */
+      .${UNBLOCK_HOST_CLASS}[data-layout="comment-icon"] {
+        display:inline-flex!important; align-items:center; justify-content:center;
+        width:20px; min-width:20px; max-width:20px; height:20px;
+        margin:0 0 0 4px!important; padding:0!important;
+        overflow:visible; white-space:nowrap; vertical-align:middle;
+        line-height:20px; float:none!important; position:static!important;
+        inset:auto!important; z-index:2;
+      }
+      .cmt_nickbox > .${UNBLOCK_HOST_CLASS}[data-layout="comment-icon"] {
+        display:inline-flex!important;
+      }
+      .${UNBLOCK_HOST_CLASS}[data-layout="comment-icon"] .${UNBLOCK_BUTTON_CLASS} {
+        display:inline-flex!important; align-items:center; justify-content:center;
+        width:20px; min-width:20px; max-width:20px; height:20px;
+        padding:0!important; border-radius:5px;
+      }
+      .${UNBLOCK_HOST_CLASS}[data-layout="comment-icon"] .dcb-userblock-unblock-icon {
+        width:14px; height:14px; margin:0!important;
+      }
+      .${UNBLOCK_HOST_CLASS}[data-layout="comment-icon"] .dcb-userblock-unblock-status,
+      .${UNBLOCK_HOST_CLASS}[data-layout="comment-icon"] .dcb-userblock-unblock-divider,
+      .${UNBLOCK_HOST_CLASS}[data-layout="comment-icon"] .dcb-userblock-unblock-action {
+        display:none!important;
+      }
       @keyframes dcb-userblock-spin { to { transform:rotate(360deg); } }
       html[data-theme="dark"] .${UNBLOCK_BUTTON_CLASS},
       body.dark .${UNBLOCK_BUTTON_CLASS},
@@ -898,23 +933,76 @@
     return 0;
   }
 
-  function getUnblockRenderTarget(writer) {
+  function getCommentUnblockContext(writer, owner) {
+    const ownerInfo = owner?.matches?.(".cmt_info, .reply_info") ? owner : null;
+    const info =
+      writer?.closest?.(".cmt_info, .reply_info") ||
+      ownerInfo ||
+      owner?.querySelector?.(":scope > .cmt_info, :scope > .reply_info") ||
+      null;
+
+    const nickbox =
+      writer?.closest?.(".cmt_nickbox") ||
+      info?.querySelector?.(":scope > .addbox > .cmt_nickbox, :scope > .cmt_nickbox") ||
+      owner?.querySelector?.(".cmt_info > .addbox > .cmt_nickbox, .reply_info > .addbox > .cmt_nickbox") ||
+      null;
+
+    if (!nickbox) return null;
+    if (nickbox.closest?.(UNBLOCK_FORBIDDEN_HOST_SELECTOR)) return null;
+
+    const writerAnchor =
+      (writer?.matches?.(".gall_writer, .ub-writer") && nickbox.contains(writer) ? writer : null) ||
+      nickbox.querySelector?.(":scope > .gall_writer, :scope > .ub-writer") ||
+      null;
+
+    return { info, nickbox, writerAnchor };
+  }
+
+  function isCommentUnblockContext(writer, owner) {
+    return !!(
+      writer?.closest?.(".cmt_info, .reply_info, .cmt_nickbox") ||
+      owner?.matches?.(".cmt_info, .reply_info") ||
+      owner?.querySelector?.(":scope > .cmt_info, :scope > .reply_info") ||
+      isInsideCommentRoot(writer)
+    );
+  }
+
+  function getUnblockRenderTarget(writer, owner) {
+    if (isCommentUnblockContext(writer, owner)) {
+      return getCommentUnblockContext(writer, owner)?.nickbox || null;
+    }
+
     return (
       (writer.matches?.(".gall_writer, .ub-writer") ? writer : null) ||
       writer.querySelector?.(":scope > .gall_writer, :scope > .ub-writer") ||
       writer.querySelector?.(".gall_writer, .ub-writer") ||
       writer.closest?.(".gall_writer, .ub-writer") ||
-      writer.closest?.(".cmt_info, .reply_info, .cmt_nickbox, .writer_info, .user_info") ||
+      writer.closest?.(".writer_info, .user_info") ||
       writer
     );
   }
 
-  function placeUnblockHost(target, host) {
+  function placeUnblockHost(target, host, commentContext = null) {
     if (!target || !host) return false;
 
-    // Keep the control at the end of the author metadata lane. Inserting it
-    // directly after the nickname can split UID/IP badges and make the chip
-    // look as though it belongs to the comment body.
+    if (commentContext) {
+      const { nickbox, writerAnchor } = commentContext;
+      if (!nickbox || target !== nickbox || nickbox.closest?.(UNBLOCK_FORBIDDEN_HOST_SELECTOR)) return false;
+
+      // 정확한 위치: .cmt_nickbox 안에서 .gall_writer 바로 다음 형제.
+      if (writerAnchor && writerAnchor.parentElement === nickbox) {
+        writerAnchor.insertAdjacentElement("afterend", host);
+      } else {
+        nickbox.appendChild(host);
+      }
+
+      return (
+        host.parentElement === nickbox &&
+        !host.closest?.(UNBLOCK_FORBIDDEN_HOST_SELECTOR)
+      );
+    }
+
+    // 게시글/목록에서는 기존 설명형 버튼을 유지한다.
     if (target.matches?.(".gall_writer, .ub-writer")) {
       target.appendChild(host);
       return true;
@@ -940,16 +1028,31 @@
   }
 
   function ensureUnblockControlHost(writer, owner) {
-    const target = getUnblockRenderTarget(writer);
+    const commentContext = isCommentUnblockContext(writer, owner)
+      ? getCommentUnblockContext(writer, owner)
+      : null;
+    const target = commentContext?.nickbox || getUnblockRenderTarget(writer, owner);
     if (!target) return null;
 
-    let host = owner?.querySelector?.(`.${UNBLOCK_HOST_CLASS}`) || null;
+    let host = commentContext
+      ? (
+          commentContext.nickbox.querySelector?.(`:scope > .${UNBLOCK_HOST_CLASS}`) ||
+          commentContext.writerAnchor?.querySelector?.(`:scope > .${UNBLOCK_HOST_CLASS}`) ||
+          owner?.querySelector?.(`.${UNBLOCK_HOST_CLASS}`) ||
+          null
+        )
+      : (owner?.querySelector?.(`.${UNBLOCK_HOST_CLASS}`) || null);
+
+    // 이전 삽입 위치(.gall_writer 내부, 댓글 본문, 우측 액션 영역)를 발견하면
+    // 같은 host를 제거하지 않고 정확한 작성자 슬롯으로 이동시킨다.
     if (!host) {
       host = document.createElement("span");
       host.className = UNBLOCK_HOST_CLASS;
     }
 
-    if (!placeUnblockHost(target, host)) {
+    host.dataset.layout = commentContext ? "comment-icon" : "full";
+
+    if (!placeUnblockHost(target, host, commentContext)) {
       cleanupUnblockHost(host);
       return null;
     }

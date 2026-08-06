@@ -735,7 +735,7 @@
 
     const title = "작성자 차단 · 해제";
     const subtitle = "같은 동작을 반복하면 바로 되돌릴 수 있습니다";
-    const body = "이 영역을 <b>우클릭</b>하면 해당 사용자의 차단 상태를 전환합니다.";
+    const body = "댓글에서는 게시글 목록·본문과 달리 차단 아이콘이 표시되지 않습니다. 닉네임을 <b>우클릭</b>하면 차단되고, 다시 우클릭하면 해제됩니다.";
     const action = "차단 / 차단 해제";
 
     const hint = document.createElement("div");
