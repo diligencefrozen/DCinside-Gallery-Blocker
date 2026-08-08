@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="https://github.com/diligencefrozen/DCinside-Gallery-Blocker/blob/main/IntroducingDCB_final.png?raw=true" alt="DCinside Gallery Blocker" width="820">
+<img src="https://github.com/diligencefrozen/DCinside-Gallery-Blocker/blob/main/docs/images/introducing-dcb.png?raw=true" alt="DCinside Gallery Blocker" width="820">
 
 # DCinside Gallery Blocker
 
