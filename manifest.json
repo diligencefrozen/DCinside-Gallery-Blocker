@@ -10,7 +10,7 @@
     "128": "icons/128.png"
   },
   "action": {
-    "default_popup": "popup.html",
+    "default_popup": "src/ui/popup/popup.html",
     "default_title": "디시갤 차단기 – 설정"
   },
   "permissions": [
@@ -32,9 +32,9 @@
     "rule_resources": []
   },
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "src/background/background.js"
   },
-  "options_page": "options.html",
+  "options_page": "src/ui/options/options.html",
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://gall.dcinside.com https://gallog.dcinside.com https://m.dcinside.com https://www.dcinside.com https://search.dcinside.com;"
   },
@@ -52,9 +52,9 @@
         "*://gall.dcinside.com/person/board/view*"
       ],
       "js": [
-        "image-account-filter.js",
-        "account-activity-blocker.js",
-        "image-blocker.js"
+        "src/content/image/image-account-filter.js",
+        "src/content/user/account-activity-blocker.js",
+        "src/content/image/image-blocker.js"
       ],
       "run_at": "document_start",
       "all_frames": false
@@ -66,8 +66,8 @@
         "*://search.dcinside.com/*"
       ],
       "js": [
-        "font-config.js",
-        "font-manager.js"
+        "src/content/appearance/font-config.js",
+        "src/content/appearance/font-manager.js"
       ],
       "run_at": "document_start",
       "all_frames": false
@@ -79,7 +79,7 @@
         "*://search.dcinside.com/*"
       ],
       "js": [
-        "area-picker.js"
+        "src/content/tools/area-picker.js"
       ],
       "run_at": "document_start",
       "all_frames": false
@@ -90,7 +90,7 @@
         "*://www.dcinside.com/*"
       ],
       "js": [
-        "dc-theme-bridge.js"
+        "src/content/appearance/dc-theme-bridge.js"
       ],
       "run_at": "document_end",
       "all_frames": false
@@ -100,7 +100,7 @@
         "*://gall.dcinside.com/*"
       ],
       "js": [
-        "access-guard.js"
+        "src/content/gallery/access-guard.js"
       ],
       "run_at": "document_start",
       "all_frames": false
@@ -110,7 +110,7 @@
         "*://gall.dcinside.com/*"
       ],
       "js": [
-        "gallery-quick-block.js"
+        "src/content/gallery/gallery-quick-block.js"
       ],
       "run_at": "document_end",
       "all_frames": false
@@ -127,7 +127,7 @@
         "*://gall.dcinside.com/person/board/view*"
       ],
       "js": [
-        "content_script.js"
+        "src/content/core/content_script.js"
       ],
       "run_at": "document_start"
     },
@@ -143,7 +143,7 @@
         "*://gall.dcinside.com/person/board/view*"
       ],
       "js": [
-        "keyword-blocker.js"
+        "src/content/keyword/keyword-blocker.js"
       ],
       "run_at": "document_end",
       "all_frames": false
@@ -155,7 +155,7 @@
         "*://search.dcinside.com/*"
       ],
       "js": [
-        "link-blocker.js"
+        "src/content/gallery/link-blocker.js"
       ],
       "run_at": "document_end"
     },
@@ -170,7 +170,7 @@
         "*://gall.dcinside.com/person/board/view*"
       ],
       "js": [
-        "cleaner-gall.js"
+        "src/content/cleaner/cleaner-gall.js"
       ],
       "run_at": "document_start"
     },
@@ -179,7 +179,7 @@
         "*://www.dcinside.com/*"
       ],
       "js": [
-        "cleaner.js"
+        "src/content/cleaner/cleaner.js"
       ],
       "run_at": "document_start"
     },
@@ -189,7 +189,7 @@
         "*://search.dcinside.com/combine/q/*"
       ],
       "js": [
-        "cleaner-search.js"
+        "src/content/cleaner/cleaner-search.js"
       ],
       "run_at": "document_start"
     },
@@ -202,7 +202,7 @@
         "*://gall.dcinside.com/person/board/view*"
       ],
       "js": [
-        "cleaner-comment.js"
+        "src/content/cleaner/cleaner-comment.js"
       ],
       "run_at": "document_start",
       "all_frames": false
@@ -216,7 +216,7 @@
         "*://gall.dcinside.com/person/board/view*"
       ],
       "js": [
-        "cleaner-img-comment.js"
+        "src/content/cleaner/cleaner-img-comment.js"
       ],
       "run_at": "document_start",
       "all_frames": false
@@ -233,9 +233,9 @@
         "*://gall.dcinside.com/mini/board/lists*"
       ],
       "js": [
-        "cleaner-dccon.js",
-        "dccon-block-store.js",
-        "dccon-blocker.js"
+        "src/content/dccon/cleaner-dccon.js",
+        "src/shared/storage/dccon-block-store.js",
+        "src/content/dccon/dccon-blocker.js"
       ],
       "run_at": "document_start",
       "all_frames": false
@@ -245,8 +245,8 @@
         "*://gall.dcinside.com/*"
       ],
       "js": [
-        "user-block-store.js",
-        "cleaner-userblock.js"
+        "src/shared/storage/user-block-store.js",
+        "src/content/user/cleaner-userblock.js"
       ],
       "run_at": "document_start",
       "all_frames": false
@@ -263,7 +263,7 @@
         "*://gall.dcinside.com/person/board/view*"
       ],
       "js": [
-        "cleaner-anonymous.js"
+        "src/content/cleaner/cleaner-anonymous.js"
       ],
       "run_at": "document_start",
       "all_frames": true
@@ -280,7 +280,7 @@
         "*://gall.dcinside.com/person/board/view*"
       ],
       "js": [
-        "cleaner-gamemeca.js"
+        "src/content/cleaner/cleaner-gamemeca.js"
       ],
       "run_at": "document_start",
       "all_frames": true
@@ -297,7 +297,7 @@
         "*://gall.dcinside.com/person/board/view*"
       ],
       "js": [
-        "cleaner-dory.js"
+        "src/content/cleaner/cleaner-dory.js"
       ],
       "run_at": "document_start",
       "all_frames": true
@@ -310,7 +310,7 @@
         "*://gall.dcinside.com/person/board/lists*"
       ],
       "js": [
-        "cleaner-notice.js"
+        "src/content/cleaner/cleaner-notice.js"
       ],
       "run_at": "document_start",
       "all_frames": true
@@ -320,7 +320,7 @@
         "*://gall.dcinside.com/*"
       ],
       "js": [
-        "ctx-probe.js"
+        "src/content/user/ctx-probe.js"
       ],
       "run_at": "document_start",
       "all_frames": true
@@ -330,8 +330,8 @@
         "*://gall.dcinside.com/*"
       ],
       "js": [
-        "uid-badge.js",
-        "member-ip-view.js"
+        "src/content/user/uid-badge.js",
+        "src/content/user/member-ip-view.js"
       ],
       "run_at": "document_end",
       "all_frames": true
@@ -348,7 +348,7 @@
         "*://gall.dcinside.com/person/board/view*"
       ],
       "js": [
-        "user-memo.js"
+        "src/content/user/user-memo.js"
       ],
       "run_at": "document_end",
       "all_frames": false
@@ -365,7 +365,7 @@
         "*://gall.dcinside.com/person/board/view*"
       ],
       "js": [
-        "auto-refresh.js"
+        "src/content/tools/auto-refresh.js"
       ],
       "run_at": "document_end",
       "all_frames": false
@@ -382,7 +382,7 @@
         "*://gall.dcinside.com/person/board/view*"
       ],
       "js": [
-        "keyword-hider.js"
+        "src/content/keyword/keyword-hider.js"
       ],
       "run_at": "document_end",
       "all_frames": false
@@ -395,7 +395,7 @@
         "*://gall.dcinside.com/person/board/lists*"
       ],
       "js": [
-        "compact-list.js"
+        "src/content/appearance/compact-list.js"
       ],
       "run_at": "document_start",
       "all_frames": false
