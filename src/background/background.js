@@ -2,7 +2,7 @@
  * Bootstrap shared modules
  *****************************************************************/
 try {
-  importScripts("user-block-store.js");
+  importScripts("../shared/storage/user-block-store.js");
 } catch (error) {
   console.warn("[DCB] User block store bootstrap failed:", error);
 }
