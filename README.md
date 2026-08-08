@@ -48,21 +48,21 @@ Block unwanted galleries, posts, comments, users, keywords, images, and other di
 
 ## Why I Built It
 
-DCinside moves fast. Posts and comments appear constantly, and content from places you would rather avoid can surface again through search results, sidebars, recent-visit lists, links, and popular-post feeds.
+DCinside is a fast-moving community. Even if you avoid a particular gallery, its posts, users, or links can still show up in search results, sidebars, recently visited lists, and the site's popular posts page.
 
 I originally built this extension for a simple reason: I wanted to decide for myself what I saw while browsing.
 
 A basic gallery blacklist worked at first, but it did not solve the whole problem. Blocking one page did not stop unwanted links, comments, users, images, or newly loaded content from appearing elsewhere.
 
-That small personal tool gradually became a broader content-control extension.
+What started as a small personal blocker gradually grew into a full Chrome extension for filtering and customizing DCinside.
 
-> **Let users choose what deserves their attention.**
+> **Give users more control over what they see.**
 
 ---
 
 ## What You Can Do
 
-Feature names below are tied to the labels used by the current extension UI. The Korean UI label is shown in backticks where it helps map the README directly to the product.
+The names below follow the current extension UI. Korean labels are included in backticks so the README can be matched directly to the product.
 
 ### Gallery blocking
 
@@ -76,7 +76,7 @@ You can also add the gallery you are currently viewing with **Block Current Gall
 
 ### Post and comment controls
 
-The extension exposes separate controls for:
+You can turn the following filters on or off separately:
 
 - **Keyword Block Mode (`키워드 차단 모드`)**
 - **Keyword Hide Mode (`키워드 숨기기 모드`)** — hidden items can be reopened with **Continue Viewing (`계속 보기`)**
@@ -89,11 +89,11 @@ The extension exposes separate controls for:
 - **Hide Dory Ads (`댓글돌이 광고 숨기기`)**
 - **Hide Operator Ads and Surveys (`운영자 광고, 설문 글 숨기기`)**
 
-### Real-Time Best
+### DCinside's popular posts page
 
-**Real-Time Best** is DCinside's popular-post feed: a place where trending posts are collected and users read, comment, and join active discussions.
+DCinside has a dedicated page that collects popular and trending posts from across the site. Users can browse those posts, read the discussions, and join the comments.
 
-**Real-Time Best Blocking (`실시간베스트 차단`)** can be enabled or disabled independently from the user's own gallery block list.
+**Block Popular Posts Page (`실시간베스트 차단`)** can be turned on or off separately from your own gallery block list.
 
 ### Image and DCCon controls
 
@@ -118,11 +118,11 @@ The extension exposes separate controls for:
 
 ## Built with Real User Feedback
 
-This project started as a tool for my own browser, but maintaining it for real users changed how I approached development.
+I built the first version for myself. Once other people started using it, the project became less about adding features and more about maintaining software people actually relied on.
 
-Chrome Web Store reviews have led directly to bug fixes, performance work, storage changes, UI improvements, and new features.
+Chrome Web Store reviews have directly shaped bug fixes, performance improvements, storage changes, UI changes, and new features.
 
-My release cycle gradually became:
+The development loop became:
 
 **Report → Reproduce → Diagnose → Fix → Release**
 
@@ -139,7 +139,7 @@ To keep the portfolio documentation traceable to the product, this table uses th
 | Right-click blocking required too many steps | Added the **Instant Right-click Block/Unblock (`우클릭 즉시 차단/해제`)** flow under **User Blocking Mode (`사용자 차단 방식`)** | `7.3.11.2026` |
 | The right-click blocking prompt appeared across the whole comment area | Restricted **Instant Right-click Block/Unblock (`우클릭 즉시 차단/해제`)** to the intended author area | `7.3.12.2026` |
 | Keyword blocking was too strict when users only wanted content hidden temporarily | Added **Keyword Hide Mode (`키워드 숨기기 모드`)**, with **Continue Viewing (`계속 보기`)** for reopening hidden content | `7.3.14.2026` |
-| Real-Time Best was blocked by default with no separate control | Split out **Real-Time Best Blocking (`실시간베스트 차단`)** as its own setting | `7.3.21.2026` |
+| DCinside's popular posts page was blocked by default with no separate control | Added a separate **Block Popular Posts Page (`실시간베스트 차단`)** setting | `7.3.21.2026` |
 | Right-click blocking returned “Could not find author information” across multiple galleries | Strengthened author lookup for **User Blocking (`사용자 차단`)**, then redesigned UID/IP block-list storage after broader testing | `7.3.22.2026` → `7.3.25.2026` |
 | Users could change IPs or accounts while keeping the same nickname | Extended **User Blocking (`사용자 차단`)** with nickname matching and hiding of replies attached to blocked comments | `7.3.29.2026` |
 | Memo controls made post lists too tall and author/IP information felt too spread out | Refined **User Notes (`이용자 메모`)** and tightened the author-information layout | `7.3.29.2026` |
@@ -150,11 +150,11 @@ To keep the portfolio documentation traceable to the product, this table uses th
 
 ### One bug report led to a storage redesign
 
-A user reported that right-click blocking had stopped working across multiple galleries. The extension kept returning “Could not find author information,” even after testing in regular and Incognito windows with an up-to-date browser and extension.
+One user reported that right-click blocking no longer worked in any of the galleries they tested. The extension kept returning “Could not find author information,” even after testing in regular and Incognito windows with an up-to-date browser and extension.
 
 The first fix focused on finding author information more reliably.
 
-Further testing showed that the problem was broader than author lookup alone. The growing user block list was also running into limits associated with the previous storage approach.
+Further testing showed that author lookup was only part of the problem. As block lists grew, the previous storage design could also run into Chrome Sync limits.
 
 I kept small, frequently changed preferences in Chrome Sync, moved larger UID/IP block data into local extension storage, and split the block list across **256 buckets**.
 
@@ -178,21 +178,21 @@ User block store
 
 Adding or removing a user now updates only the relevant bucket instead of rewriting one large list.
 
-The move to local storage raised the practical capacity for large block lists, while bucketing reduced the amount of data that needed to be rewritten for each change.
+Moving the large block list to local storage gave it much more room to grow, while the bucketed design meant each change only had to rewrite a small part of the data.
 
-What started as a UI bug report ultimately led to a storage architecture change.
+A bug that first looked like a UI issue ended up prompting a redesign of the block-list storage layer.
 
 ### One performance report changed how page updates were handled
 
-Another user reported that the page would sometimes appear to shake while comment input and blocking controls stopped responding.
+Another user reported occasional screen jitter, along with moments when comment input and blocking controls stopped responding.
 
-The problem was not simply an extension conflict. Several filtering features could react to the same comment update and repeatedly process too much of the page, creating unnecessary CPU and memory pressure.
+The issue was inside the extension rather than a simple conflict with another add-on. Several filters could respond to the same comment update and repeatedly process too much of the page, increasing CPU and memory usage.
 
-The update path was changed so the extension focuses on newly added or modified elements instead of repeatedly processing the entire page.
+I changed the update path so filters process newly added or changed elements instead of repeatedly scanning the whole page.
 
 The same release also addressed repeatedly recreated image-block controls and cases where comment input could be affected.
 
-That experience reinforced an important lesson:
+That bug changed how I think about maintenance:
 
 > Once people depend on software, performance, compatibility, recovery, and everyday usability become part of the engineering problem.
 
@@ -200,7 +200,7 @@ That experience reinforced an important lesson:
 
 ## How It Works
 
-A Chrome extension does not run as one single program. Different parts execute in different extension contexts and handle different jobs.
+A Chrome extension is split across several execution contexts, each with a different job.
 
 ```mermaid
 flowchart TD
@@ -220,7 +220,7 @@ flowchart TD
     Content --> Site
 ```
 
-In practical terms:
+In this project:
 
 - **Popup and settings pages** handle user preferences.
 - **Content scripts** watch DCinside pages and hide or modify unwanted content.
@@ -234,11 +234,11 @@ The extension is built with plain JavaScript, HTML, and CSS. There is no framewo
 
 ## Engineering Challenges
 
-### Handling pages that keep changing after load
+### Handling pages that change after they load
 
 DCinside pages can add or modify comments, rows, images, and other elements after the initial page load.
 
-Scanning the entire page after every change would waste CPU time and can make the browser feel sluggish.
+Rescanning the entire page after every update wastes CPU time and can cause noticeable lag.
 
 The extension combines:
 
@@ -248,13 +248,13 @@ The extension combines:
 - short debounce windows
 - scripts that can start at `document_start`
 
-This lets it respond to new content without repeatedly rescanning the entire page.
+This lets the extension react to new content while keeping full-page rescans to a minimum.
 
 ### Blocking the same content in different places
 
-Blocking one gallery page is not enough.
+Blocking the gallery URL alone is not enough.
 
-The same gallery can still show up through direct links, search results, recent-gallery lists, sidebars, Real-Time Best, and dynamically generated links.
+The same gallery can still show up through direct links, search results, recently visited lists, sidebars, DCinside's popular posts page, and links added after the page loads.
 
 The extension therefore handles blocking at several levels:
 
@@ -268,11 +268,11 @@ Links and page content
 Content added later
 ```
 
-That also makes it possible to offer different blocking modes instead of forcing every user into the strictest option.
+Handling these layers separately also lets users choose how strict they want blocking to be.
 
-### Scaling user block-list storage
+### Making large user block lists reliable
 
-The original storage design worked when block lists were small, but larger UID/IP lists could run into practical limits and become increasingly expensive to rewrite.
+The original storage design was fine for small block lists, but larger UID/IP lists could hit Chrome Sync limits and require increasingly large rewrites.
 
 The current approach separates small preferences from larger block data:
 
@@ -283,19 +283,19 @@ The current approach separates small preferences from larger block data:
 - records are distributed across 256 buckets
 - only the affected bucket is updated when a user is added or removed
 
-This gives large block lists more room to grow and avoids rewriting one continuously expanding array for every change.
+The result is a block list with much more practical headroom, without rewriting one growing array every time a user is added or removed.
 
 ### Recognizing blocked images more reliably
 
 Image blocking uses SHA-256 fingerprints so the extension can recognize the same file even when the URL changes.
 
-This makes image blocking less dependent on a single page address.
+That keeps image blocking from depending on a particular image URL.
 
 ### Cross-Context Messaging
 
-Popup pages, options pages, content scripts, and the background service worker run in separate extension contexts.
+The popup, options page, content scripts, and background service worker all run in separate extension contexts.
 
-They cannot safely share functions or state as if they were one page, so the project uses explicit Chrome message passing between contexts.
+Because they do not share one JavaScript runtime, they communicate through Chrome's messaging APIs.
 
 ```text
 Popup / Options
@@ -309,7 +309,7 @@ Chrome Messaging
 Content Scripts
 ```
 
-Preview and account-related network requests are routed through the service worker instead of being handled independently by every content script.
+Post previews and account lookups are routed through the service worker instead of letting each content script make its own request.
 
 The request broker restricts traffic to approved DCinside hosts, supported protocols, allowed HTTP methods, and a limited set of headers.
 
@@ -317,9 +317,9 @@ The request broker restricts traffic to approved DCinside hosts, supported proto
 
 ## Refactoring the Codebase
 
-The extension grew feature by feature. That worked well early on, but the original flat file structure became harder to maintain as the project expanded.
+The project grew one feature at a time. That was manageable early on, but the original flat file structure became harder to work with as the codebase grew.
 
-The current refactoring is moving the code toward responsibility-based modules:
+The current refactor groups code by responsibility:
 
 ```text
 src/
@@ -340,9 +340,9 @@ src/
     └── shared/
 ```
 
-The goal is not cosmetic.
+This is more than a folder cleanup.
 
-The goal is to make it possible to change one feature without forcing unrelated parts of the extension to change at the same time, and to make failures easier to isolate.
+The goal is to make features easier to change in isolation and make bugs easier to trace to the part of the extension that owns them.
 
 ---
 
@@ -412,9 +412,9 @@ No dependency installation or build step is required.
 
 ## What This Project Taught Me
 
-At first, the main question was whether a feature worked.
+At first, I mostly asked whether a feature worked.
 
-Once real users started relying on the extension, the questions became broader:
+Once real users started relying on it, I had to ask different questions:
 
 - Does a change to one feature break another?
 - Do page updates trigger unnecessary repeated work that increases CPU or memory usage and causes lag or temporary UI freezes?
