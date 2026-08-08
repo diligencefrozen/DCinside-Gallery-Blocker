@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="https://github.com/diligencefrozen/DCinside-Gallery-Blocker/blob/main/IntroducingDCB_final.png?raw=true" alt="디시갤 차단기" width="820">
+<img src="https://github.com/diligencefrozen/DCinside-Gallery-Blocker/blob/main/docs/images/introducing-dcb.png?raw=true" alt="디시갤 차단기" width="820">
 
 # 디시갤 차단기
 
