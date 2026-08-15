@@ -181,26 +181,10 @@
     requestAnimationFrame(applyBlock);
   }
 
-  function mutationMayAffectGamemeca(mutation) {
-    const target = mutation.target;
-    if (target instanceof Element && target.closest(".gall_writer, .ub-writer")) return true;
-
-    for (const node of mutation.addedNodes || []) {
-      if (!(node instanceof Element)) continue;
-      if (node.matches(".gall_writer, .ub-writer") || node.querySelector(".gall_writer, .ub-writer")) {
-        return true;
-      }
-    }
-
-    return false;
-  }
-
   function startObserver() {
     if (observer) return;
 
-    observer = new MutationObserver((mutations) => {
-      if (mutations.some(mutationMayAffectGamemeca)) scheduleApply();
-    });
+    observer = new MutationObserver(() => scheduleApply());
 
     const observe = () => {
       if (document.body) {

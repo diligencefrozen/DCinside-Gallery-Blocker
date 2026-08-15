@@ -12,41 +12,21 @@ function ensureStyle(){
   return style;
 }
 
-function removeNow(selectors) {
-  selectors.forEach((sel) => {
-    document.querySelectorAll(sel).forEach((el) => el.remove());
-  });
+function removeNow(selectors){
+  selectors.forEach(sel =>
+    document.querySelectorAll(sel).forEach(el => el.remove())
+  );
 }
 
-/* 새로 추가된 subtree만 검사해 전체 문서 재탐색을 피함 */
-function removeWithin(root, selectors) {
-  if (!root || (root.nodeType !== 1 && root.nodeType !== 11)) return;
-
-  for (const sel of selectors) {
-    if (root.nodeType === 1 && root.matches?.(sel)) {
-      root.remove();
-      return;
-    }
-    root.querySelectorAll?.(sel).forEach((el) => el.remove());
-  }
-}
-
-function startObserver(selectors) {
-  if (observer) observer.disconnect();
-  observer = new MutationObserver((mutations) => {
-    for (const mutation of mutations) {
-      for (const node of mutation.addedNodes || []) {
-        removeWithin(node, selectors);
-      }
-    }
-  });
-
+function startObserver(selectors){
+  if(observer) observer.disconnect();
+  observer = new MutationObserver(() => removeNow(selectors));
   if (document.body) {
-    observer.observe(document.body, { childList: true, subtree: true });
+    observer.observe(document.body, { childList:true, subtree:true });
   } else {
     window.addEventListener("DOMContentLoaded", () => {
-      if (observer) observer.observe(document.body, { childList: true, subtree: true });
-    }, { once: true });
+      if (observer) observer.observe(document.body, { childList:true, subtree:true });
+    }, { once:true });
   }
 }
 

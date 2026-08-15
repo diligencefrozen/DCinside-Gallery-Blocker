@@ -1335,7 +1335,6 @@
     if (!document.body || observer) return;
 
     observer = new MutationObserver((mutations) => {
-      if (!enabled) return;
       if (!shouldReactToMutations(mutations)) return;
       queueRender();
     });

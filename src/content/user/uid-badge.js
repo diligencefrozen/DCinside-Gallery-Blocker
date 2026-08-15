@@ -42,19 +42,15 @@
     return `${s.slice(0, 8)}…`;
   }
 
-  function cleanupWriterTools(writer) {
-    if (!(writer instanceof Element)) return;
-
-    const tools = writer.querySelector(`:scope .${WRITER_TOOLS_CLASS}`);
-    if (tools && !tools.children.length) tools.remove();
-
-    if (!writer.querySelector(`:scope .${WRITER_TOOLS_CLASS}`)) {
-      writer.classList.remove(WRITER_ENHANCED_CLASS);
-    }
-  }
-
   function cleanupEmptyWriterTools() {
-    document.querySelectorAll(`.${WRITER_ENHANCED_CLASS}`).forEach(cleanupWriterTools);
+    document.querySelectorAll(`.${WRITER_TOOLS_CLASS}`).forEach((tools) => {
+      if (!tools.children.length) tools.remove();
+    });
+
+    document.querySelectorAll(`.${WRITER_ENHANCED_CLASS}`).forEach((writer) => {
+      const tools = writer.querySelector(`:scope .${WRITER_TOOLS_CLASS}`);
+      if (!tools) writer.classList.remove(WRITER_ENHANCED_CLASS);
+    });
   }
 
   function removeAllBadges() {
@@ -541,7 +537,7 @@
 
     if (!uid) {
       badges.forEach((el) => el.remove());
-      cleanupWriterTools(writer);
+      cleanupEmptyWriterTools();
       return;
     }
 
@@ -656,7 +652,6 @@
 
   let scheduled = false;
   const mo = new MutationObserver((mutations) => {
-    if (!showEnabled) return;
     if (!shouldReactToMutations(mutations)) return;
     if (scheduled) return;
 

@@ -414,37 +414,15 @@
     autoRefreshOffsetRaf = window.requestAnimationFrame(updateAutoRefreshOverlapOffset);
   }
 
-  function mutationTouchesAutoRefreshCountdown(mutation) {
-    const countdown = document.getElementById(AUTO_REFRESH_COUNTDOWN_ID);
-    const target = mutation.target;
-
-    if (countdown && (target === countdown || target?.closest?.(`#${AUTO_REFRESH_COUNTDOWN_ID}`))) {
-      return true;
-    }
-
-    for (const node of [...(mutation.addedNodes || []), ...(mutation.removedNodes || [])]) {
-      if (!(node instanceof Element)) continue;
-      if (node.id === AUTO_REFRESH_COUNTDOWN_ID || node.querySelector?.(`#${AUTO_REFRESH_COUNTDOWN_ID}`)) {
-        return true;
-      }
-    }
-
-    return false;
-  }
-
   function observeAutoRefreshCountdown() {
     if (autoRefreshOffsetObserver || !document.body) return;
 
-    autoRefreshOffsetObserver = new MutationObserver((mutations) => {
-      if (mutations.some(mutationTouchesAutoRefreshCountdown)) {
-        scheduleAutoRefreshOverlapOffsetUpdate();
-      }
-    });
-
-    // 카운트다운의 생성/내용 변경만 필요하다. body 전체의 class/style 변경 감시는 피한다.
+    autoRefreshOffsetObserver = new MutationObserver(scheduleAutoRefreshOverlapOffsetUpdate);
     autoRefreshOffsetObserver.observe(document.body, {
       childList: true,
-      subtree: true
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["style", "class"]
     });
   }
 

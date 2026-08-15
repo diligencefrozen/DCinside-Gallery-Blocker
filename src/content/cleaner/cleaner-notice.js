@@ -175,27 +175,10 @@
     requestAnimationFrame(applyBlock);
   }
 
-  function mutationMayAffectNotice(mutation) {
-    const relevantSelector =
-      ".gall_list tr, tr.ub-content, tr[data-no], tr.gall_tr, td.gall_subject, .gall_subject";
-    const target = mutation.target;
-
-    if (target instanceof Element && target.closest(relevantSelector)) return true;
-
-    for (const node of mutation.addedNodes || []) {
-      if (!(node instanceof Element)) continue;
-      if (node.matches(relevantSelector) || node.querySelector(relevantSelector)) return true;
-    }
-
-    return false;
-  }
-
   function startObserver() {
     if (observer) return;
 
-    observer = new MutationObserver((mutations) => {
-      if (mutations.some(mutationMayAffectNotice)) scheduleApply();
-    });
+    observer = new MutationObserver(() => scheduleApply());
 
     const observe = () => {
       if (document.body) {

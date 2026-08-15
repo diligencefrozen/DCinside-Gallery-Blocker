@@ -177,28 +177,10 @@
     requestAnimationFrame(applyBlock);
   }
 
-  function mutationMayAffectDory(mutation) {
-    const target = mutation.target;
-    if (target instanceof Element) {
-      const candidate = target.closest(
-        '.dory, .comment_dory, .dory_txt, .nickname.cmtboy, .issuefeed, [class*="issuefeed"], [id*="issuefeed"], .gall_writer, .ub-writer'
-      );
-      if (candidate && nodeLooksLikeDory(candidate)) return true;
-    }
-
-    for (const node of mutation.addedNodes || []) {
-      if (node instanceof Element && nodeLooksLikeDory(node)) return true;
-    }
-
-    return false;
-  }
-
   function startObserver() {
     if (observer) return;
 
-    observer = new MutationObserver((mutations) => {
-      if (mutations.some(mutationMayAffectDory)) scheduleApply();
-    });
+    observer = new MutationObserver(() => scheduleApply());
 
     const observe = () => {
       if (document.documentElement) {

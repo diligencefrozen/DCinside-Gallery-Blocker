@@ -18,38 +18,19 @@ function ensureStyle() {
 
 /* 현재 DOM 에 존재하는 노드 즉시 제거 */
 function removeNow(selectors) {
-  selectors.forEach((sel) => {
-    document.querySelectorAll(sel).forEach((el) => el.remove());
-  });
-}
-
-/* 새로 추가된 subtree만 검사해 전체 문서 재탐색을 피함 */
-function removeWithin(root, selectors) {
-  if (!root || (root.nodeType !== 1 && root.nodeType !== 11)) return;
-
-  for (const sel of selectors) {
-    if (root.nodeType === 1 && root.matches?.(sel)) {
-      root.remove();
-      return;
-    }
-    root.querySelectorAll?.(sel).forEach((el) => el.remove());
-  }
+  selectors.forEach(sel =>
+    document.querySelectorAll(sel).forEach(el => el.remove())
+  );
 }
 
 /* MutationObserver – 동적 로딩 대응 */
 function startObserver(selectors) {
   if (observer) observer.disconnect();
-  observer = new MutationObserver((mutations) => {
-    for (const mutation of mutations) {
-      for (const node of mutation.addedNodes || []) {
-        removeWithin(node, selectors);
-      }
-    }
-  });
-
+  observer = new MutationObserver(() => removeNow(selectors));
   if (document.body) {
     observer.observe(document.body, { childList: true, subtree: true });
   } else {
+    // 드물게 body가 아직 없을 수 있음
     window.addEventListener("DOMContentLoaded", () => {
       if (observer) observer.observe(document.body, { childList: true, subtree: true });
     }, { once: true });
