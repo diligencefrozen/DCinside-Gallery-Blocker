@@ -10,7 +10,21 @@
   const ITEM_ID_ATTR = "data-dcb-keyword-soft-id";
   const MATCH_ATTR = "data-dcb-keyword-soft-match";
   const EXTRA_FOR_ATTR = "data-dcb-keyword-soft-extra-for";
+  const ANONYMOUS_HIDDEN_CLASS = "dcb-anonymous-hidden";
+  const ANONYMOUS_REVEAL_ATTR = "data-dcb-anonymous-reveal";
   const ALLOW_SESSION_KEY = `dcb-keyword-soft-allow:${location.pathname}${location.search}`;
+  const LIST_ITEM_SELECTOR = [
+    ".gall_list tr.ub-content",
+    ".gall_list tr[data-no]",
+    ".gall_list tr.gall_tr",
+    "tr.ub-content",
+    "tr[data-no]",
+    "tr.gall_tr",
+    ".gall_list li.ub-content",
+    ".gall_list li.gall_item",
+    "li.gall_item",
+    ".gall_item"
+  ].join(",");
 
   const DEFAULTS = {
     keywordHideEnabled: false,
@@ -220,14 +234,24 @@
   }
 
   function getListRows() {
-    return Array.from(document.querySelectorAll("tr.ub-content"))
+    return Array.from(document.querySelectorAll(LIST_ITEM_SELECTOR))
+      .filter((row, index, rows) => rows.indexOf(row) === index)
       .filter((row) => !row.hasAttribute(PLACEHOLDER_ATTR));
   }
 
   function getListRowText(row) {
-    const title = row.querySelector(".gall_tit")?.innerText || "";
-    const subject = row.querySelector(".gall_subject")?.innerText || "";
-    return `${subject} ${title}`;
+    const selectors = [
+      ".gall_tit",
+      ".gall_subject",
+      ".subject",
+      ".title",
+      "a[href*='/view']"
+    ];
+    const text = selectors
+      .map((selector) => row.querySelector(selector)?.innerText || "")
+      .filter(Boolean)
+      .join(" ");
+    return text || row.innerText || "";
   }
 
   function getListKey(row, keyword) {
@@ -244,19 +268,21 @@
     const id = getSoftId(row);
     if (document.querySelector(`[${PLACEHOLDER_ATTR}="1"][data-dcb-soft-for="${cssEscape(id)}"]`)) return;
 
+    const tableRow = row.tagName === "TR";
     const colSpan = Math.max(row.children.length || 1, 1);
-    const placeholder = document.createElement("tr");
-    placeholder.className = "dcb-keyword-soft-row";
+    const placeholder = document.createElement(tableRow ? "tr" : row.tagName === "LI" ? "li" : "div");
+    placeholder.className = tableRow
+      ? "dcb-keyword-soft-row"
+      : "dcb-keyword-soft-box dcb-keyword-soft-list-item";
     placeholder.setAttribute(PLACEHOLDER_ATTR, "1");
     placeholder.dataset.dcbSoftFor = id;
     placeholder.dataset.dcbSoftKey = key;
-    placeholder.innerHTML = `
-      <td colspan="${colSpan}">
+    const content = `
         <span class="dcb-keyword-soft-title">차단 키워드가 포함된 게시글</span>
         <span class="dcb-keyword-soft-chip" title="${escapeHtml(keyword.label)}">${escapeHtml(keyword.label)}</span>
         <button type="button" class="dcb-keyword-soft-btn" data-dcb-soft-action="show">계속 보기</button>
-      </td>
     `;
+    placeholder.innerHTML = tableRow ? `<td colspan="${colSpan}">${content}</td>` : content;
 
     row.parentNode?.insertBefore(placeholder, row);
   }
@@ -491,6 +517,9 @@
         if (target) {
           target.removeAttribute(HIDDEN_ATTR);
           target.removeAttribute(MATCH_ATTR);
+          const itemNo = target.getAttribute("data-no");
+          target.setAttribute(ANONYMOUS_REVEAL_ATTR, itemNo ? `no:${itemNo}` : "1");
+          target.classList.remove(ANONYMOUS_HIDDEN_CLASS);
         }
 
         document.querySelectorAll(`[${EXTRA_FOR_ATTR}="${cssEscape(id)}"]`).forEach((extra) => {

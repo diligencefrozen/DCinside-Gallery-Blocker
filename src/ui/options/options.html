@@ -1149,7 +1149,7 @@
 
   <section class="card stack">
     <h2>🔄 자동 새로고침</h2>
-    <p class="note">갤러리 목록을 일정 간격으로 새로고침합니다. 본문/댓글을 읽는 중에는 방해를 줄이도록 일시중지됩니다.</p>
+    <p class="note">갤러리 목록을 일정 간격으로 새로고침합니다. 본문/댓글·백그라운드에서는 일시중지하고, 접속 제한 응답이나 반복 실패가 감지되면 자동으로 끕니다.</p>
 
     <div class="setting-row">
       <div class="setting-copy">
@@ -1163,10 +1163,10 @@
     </div>
 
     <div class="range-row">
-      <input type="number" id="autoRefreshIntervalNum" min="10" max="600" step="10" title="새로고침 간격 초">
-      <input type="range" id="autoRefreshIntervalRange" min="10" max="600" step="10" title="새로고침 간격 슬라이더">
+      <input type="number" id="autoRefreshIntervalNum" min="60" max="600" step="30" title="새로고침 간격 초">
+      <input type="range" id="autoRefreshIntervalRange" min="60" max="600" step="30" title="새로고침 간격 슬라이더">
     </div>
-    <p class="note">최소 10초, 최대 600초(10분)까지 설정 가능합니다.</p>
+    <p class="note">서버 요청 보호를 위해 최소 60초, 최대 600초(10분)까지 설정 가능합니다.</p>
   </section>
 
   <section class="card stack">
@@ -1638,14 +1638,14 @@
     <div class="image-block-head">
       <div class="image-block-copy">
         <h2>🛡️ 깡계 차단하기</h2>
-        <p class="note">신규·저활동 회원을 판정해 해당 회원의 게시글과 댓글을 이미지 차단과 별도로 숨깁니다.</p>
+        <p class="note">작성 글·댓글 수를 제한적으로 확인해 저활동 회원의 콘텐츠를 숨깁니다.</p>
       </div>
-      <span class="image-block-pill">회원 UID</span>
+      <span class="image-block-pill">안전 조회</span>
     </div>
 
     <div class="image-risk-panel" data-account-activity-settings aria-label="신규 저활동 회원 차단 설정">
       <div class="image-risk-head">
-        <div><strong>신규·저활동 회원 자동 차단</strong><span>공개 활동 기간과 작성 글·댓글 수를 기준으로 콘텐츠를 숨깁니다.</span></div>
+        <div><strong>저활동 회원 자동 차단</strong><span>전 탭 공통 요청 제한과 장기 캐시를 적용합니다.</span></div>
         <label class="switch" title="깡계 차단"><input type="checkbox" data-account-field="enabled"><span class="slider"></span></label>
       </div>
       <div class="image-risk-grid">
@@ -1656,10 +1656,6 @@
         <label class="image-risk-rule">
           <span>댓글 차단</span>
           <input type="checkbox" data-account-field="blockComments" data-account-dependent>
-        </label>
-        <label class="image-risk-rule">
-          <span><input type="checkbox" data-account-field="ageRuleEnabled" data-account-dependent>최초 공개 활동</span>
-          <span><input type="number" min="0" max="3650" data-account-field="maxPublicAgeDays" data-account-dependent>일 이하</span>
         </label>
         <label class="image-risk-rule">
           <span><input type="checkbox" data-account-field="postRuleEnabled" data-account-dependent>작성 글</span>
@@ -1676,12 +1672,8 @@
             <option value="any">하나만 미달해도</option>
           </select>
         </label>
-        <label class="image-risk-rule">
-          <span>확인 중 콘텐츠 숨기기</span>
-          <input type="checkbox" data-account-field="holdWhileChecking" data-account-dependent>
-        </label>
       </div>
-      <p class="image-risk-note">회원 UID에만 적용됩니다. 실제 회원가입일 대신 갤로그의 가장 오래된 공개 글·댓글 날짜를 ‘최초 공개 활동일’로 사용합니다. 확인할 수 없는 조건은 건너뛰며, 기준값 0은 해당 조건을 비활성화합니다.</p>
+      <p class="image-risk-note">회원 UID에만 적용됩니다. 갤로그 페이지를 추가로 조회하지 않으며, 페이지당 신규 UID 12개만 확인합니다. 모든 탭을 합쳐 10분당 최대 12회로 제한하고 결과를 최소 72시간 캐시합니다. 한도 초과·오류 항목은 숨기지 않습니다.</p>
       <div class="image-risk-actions">
         <button type="button" data-account-clear-cache>판정 캐시 초기화</button>
         <span class="image-risk-status" data-account-status></span>

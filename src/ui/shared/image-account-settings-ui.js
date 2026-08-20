@@ -7,15 +7,15 @@
     enabled: false,
     blockPosts: true,
     blockComments: true,
-    ageRuleEnabled: true,
+    ageRuleEnabled: false,
     maxPublicAgeDays: 30,
     postRuleEnabled: true,
     minPostCount: 5,
     commentRuleEnabled: true,
     minCommentCount: 10,
     activityMatchMode: "both",
-    holdWhileChecking: true,
-    cacheHours: 24
+    holdWhileChecking: false,
+    cacheHours: 72
   });
 
   const roots = Array.from(document.querySelectorAll("[data-account-activity-settings],[data-image-account-settings]"));
@@ -33,15 +33,15 @@
       enabled: source.enabled === true,
       blockPosts: source.blockPosts !== false,
       blockComments: source.blockComments !== false,
-      ageRuleEnabled: source.ageRuleEnabled !== false,
+      ageRuleEnabled: false,
       maxPublicAgeDays: integer(source.maxPublicAgeDays, DEFAULTS.maxPublicAgeDays, 0, 3650),
       postRuleEnabled: source.postRuleEnabled !== false,
       minPostCount: integer(source.minPostCount, DEFAULTS.minPostCount, 0, 1_000_000),
       commentRuleEnabled: source.commentRuleEnabled !== false,
       minCommentCount: integer(source.minCommentCount, DEFAULTS.minCommentCount, 0, 1_000_000),
       activityMatchMode: source.activityMatchMode === "any" ? "any" : "both",
-      holdWhileChecking: source.holdWhileChecking !== false,
-      cacheHours: integer(source.cacheHours, DEFAULTS.cacheHours, 1, 168)
+      holdWhileChecking: false,
+      cacheHours: integer(source.cacheHours, DEFAULTS.cacheHours, 24, 168)
     };
   }
 
@@ -112,7 +112,7 @@
       }
       render(root, next);
       const mode = next.activityMatchMode === "any" ? "하나만 미달해도" : "글·댓글 모두 미달할 때";
-      status(root, next.enabled ? `깡계 차단 저장 완료 · ${mode}` : "깡계 차단을 껐어요.");
+      status(root, next.enabled ? `안전 모드 저장 완료 · ${mode}` : "깡계 차단을 껐어요.");
     });
   }
 
@@ -137,7 +137,7 @@
     roots.forEach((root) => {
       const settings = normalize(data[STORAGE_KEY]);
       render(root, settings);
-      status(root, settings.enabled ? "깡계 차단 사용 중" : "깡계 차단은 꺼져 있어요.");
+      status(root, settings.enabled ? "깡계 차단 안전 모드 사용 중" : "깡계 차단은 꺼져 있어요.");
     });
   });
 

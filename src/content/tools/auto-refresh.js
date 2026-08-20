@@ -15,10 +15,14 @@
   let countdownElement = null;
   let lastHref = location.href;
   let lastStatus = "대기 중";
+  let consecutiveFailures = 0;
 
-  const MIN_INTERVAL = 10;
+  const MIN_INTERVAL = 60;
   const MAX_INTERVAL = 600;
   const MAX_IMPORT_ROWS = 50;
+  const REQUEST_TIMEOUT_MS = 12_000;
+  const FAILURE_LIMIT = 3;
+  const THROTTLE_STATUSES = new Set([403, 429, 503]);
   const COUNTDOWN_ID = "dcb-auto-refresh-countdown";
   const ANIMATION_ID = "dcb-countdown-animation";
 
@@ -201,7 +205,7 @@
 
   function listUrl(){
     const url = new URL(location.href);
-    url.searchParams.set("_dcb_auto_refresh", Date.now().toString(36));
+    url.searchParams.delete("_dcb_auto_refresh");
     return url.href;
   }
 
@@ -215,19 +219,48 @@
     refreshing = true;
     lastStatus = "자동 실행 중";
     updateCountdown();
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
     try {
-      const response = await fetch(listUrl(), { credentials: "include", cache: "no-store" });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const response = await fetch(listUrl(), {
+        credentials: "include",
+        cache: "no-store",
+        signal: controller.signal
+      });
+      if (!response.ok) {
+        const error = new Error(`HTTP ${response.status}`);
+        error.status = response.status;
+        throw error;
+      }
       const html = await response.text();
       const fetchedDoc = new DOMParser().parseFromString(html, "text/html");
       const result = mergeFreshRows(fetchedDoc);
+      consecutiveFailures = 0;
       lastStatus = result.message;
     } catch (error) {
-      lastStatus = `갱신 실패: ${error?.message || error}`;
+      consecutiveFailures += 1;
+      const throttled = THROTTLE_STATUSES.has(Number(error?.status));
+      const timedOut = error?.name === "AbortError";
+      const shouldStop = throttled || consecutiveFailures >= FAILURE_LIMIT;
+
+      if (shouldStop) {
+        lastStatus = throttled
+          ? `HTTP ${error.status} 감지 · 안전을 위해 자동 중지`
+          : `${consecutiveFailures}회 연속 실패 · 안전을 위해 자동 중지`;
+        autoRefreshEnabled = false;
+        console.warn(`[DCB] ${lastStatus}`);
+        await chrome.storage.sync.set({ autoRefreshEnabled: false });
+      } else {
+        lastStatus = timedOut
+          ? `갱신 시간 초과 (${consecutiveFailures}/${FAILURE_LIMIT})`
+          : `갱신 실패 (${consecutiveFailures}/${FAILURE_LIMIT}): ${error?.message || error}`;
+      }
     } finally {
+      clearTimeout(timeoutId);
       refreshing = false;
-      resetCountdown();
+      if (autoRefreshEnabled) resetCountdown();
+      else stopCountdown();
     }
   }
 
@@ -260,6 +293,7 @@
     autoRefreshEnabled = !!enabled;
     refreshInterval = clampInterval(interval);
     remainingSeconds = refreshInterval;
+    consecutiveFailures = 0;
     lastStatus = autoRefreshEnabled ? "대기 중" : "OFF";
 
     if (autoRefreshEnabled) startAutoRefresh();

@@ -78,15 +78,15 @@ const IMAGE_ACCOUNT_RULE_DEFAULT = {
   enabled: false,
   blockPosts: true,
   blockComments: true,
-  ageRuleEnabled: true,
+  ageRuleEnabled: false,
   maxPublicAgeDays: 30,
   postRuleEnabled: true,
   minPostCount: 5,
   commentRuleEnabled: true,
   minCommentCount: 10,
   activityMatchMode: "both",
-  holdWhileChecking: true,
-  cacheHours: 24
+  holdWhileChecking: false,
+  cacheHours: 72
 };
 
 const BACKUP_KEYS = [
@@ -554,7 +554,7 @@ function updateDelay(value) {
 }
 
 function updateAutoRefreshInterval(value) {
-  const num = Math.round(clampNumber(value, 10, 600, 60) / 10) * 10;
+  const num = Math.round(clampNumber(value, 60, 600, 60) / 30) * 30;
   setValue(autoRefreshIntervalNumEl, num);
   setValue(autoRefreshIntervalRangeEl, num);
   chrome.storage.sync.set({ autoRefreshInterval: num });
@@ -646,15 +646,15 @@ function normalizeImageAccountRules(value) {
     enabled: source.enabled === true,
     blockPosts: source.blockPosts !== false,
     blockComments: source.blockComments !== false,
-    ageRuleEnabled: source.ageRuleEnabled !== false,
+    ageRuleEnabled: false,
     maxPublicAgeDays: int(source.maxPublicAgeDays, IMAGE_ACCOUNT_RULE_DEFAULT.maxPublicAgeDays, 0, 3650),
     postRuleEnabled: source.postRuleEnabled !== false,
     minPostCount: int(source.minPostCount, IMAGE_ACCOUNT_RULE_DEFAULT.minPostCount, 0, 1_000_000),
     commentRuleEnabled: source.commentRuleEnabled !== false,
     minCommentCount: int(source.minCommentCount, IMAGE_ACCOUNT_RULE_DEFAULT.minCommentCount, 0, 1_000_000),
     activityMatchMode: source.activityMatchMode === "any" ? "any" : "both",
-    holdWhileChecking: source.holdWhileChecking !== false,
-    cacheHours: int(source.cacheHours, IMAGE_ACCOUNT_RULE_DEFAULT.cacheHours, 1, 168)
+    holdWhileChecking: false,
+    cacheHours: int(source.cacheHours, IMAGE_ACCOUNT_RULE_DEFAULT.cacheHours, 24, 168)
   };
 }
 

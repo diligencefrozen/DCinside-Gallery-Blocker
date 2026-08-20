@@ -686,35 +686,9 @@
     frame.style.display = "";
     drawActions(frame, el, quickInfo);
 
-    // 개별 이미지 차단 기록이 없으면 파일 다운로드/해시 계산을 생략한다.
-    // 작성자 필터와 차단 버튼은 이 경로에서 이미 즉시 동작한다.
-    if (!Object.keys(records).length) return;
-
-    let info = quickInfo;
-    try {
-      info = await inspect(el, src);
-    } catch (_) {}
-    if (!frame.isConnected) return;
-
-    if (records[info.key] && frame.dataset.ibxPeek !== "1") {
-      frame.dataset.ibxKey = info.key;
-      revealNotice(frame, info.key);
-      return;
-    }
-
-    if (records[quickKey]) {
-      writeAliases(quickKey, info, { ...records[quickKey], upgradedFrom: quickKey });
-      frame.dataset.ibxKey = info.key;
-      if (frame.dataset.ibxPeek !== "1") revealNotice(frame, info.key);
-      void storeLocal(RECORD_KEY, records);
-      return;
-    }
-
-    frame.dataset.ibxKey = info.key;
-    dropNotice(frame);
-    frame.style.display = "";
-    drawActions(frame, el, info);
-    frame.classList.remove(`${UI}-blur`);
+    // 페이지를 훑는 동안 원본 파일을 다시 내려받지 않는다.
+    // 파일 해시는 사용자가 '차단' 버튼을 누른 한 건에 한해 위 클릭 처리에서 만든다.
+    // 자동 판정은 저장된 원본 URL의 quickKey만 사용해 DCinside 서버 추가 요청을 만들지 않는다.
   }
 
   function scan(base = document) {

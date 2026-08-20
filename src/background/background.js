@@ -33,6 +33,18 @@ const DCCON_BLOCK_GROUP_MENU_ID = "dcb-dccon-block-group";
 const IMAGE_BLOCK_CONFIG_KEY = "dcbImageBlockConfig";
 const LOW_ACTIVITY_RULE_KEY = "dcbImageAccountRules";
 const DEFAULT_OFF_MIGRATION_KEY = "dcbDefaultOffMigration742";
+const ACCOUNT_SAFETY_MIGRATION_KEY = "dcbAccountSafetyMigration739";
+const ACCOUNT_SIGNAL_GUARD_KEY = "dcbAccountRequestGuardV1";
+const ACCOUNT_SIGNAL_ENDPOINT = "https://gall.dcinside.com/api/gallog_user_layer/gallog_content_reple/";
+const ACCOUNT_SIGNAL_MIN_INTERVAL_MS = 3_000;
+const ACCOUNT_SIGNAL_WINDOW_MS = 10 * 60 * 1000;
+const ACCOUNT_SIGNAL_WINDOW_LIMIT = 12;
+const ACCOUNT_SIGNAL_TIMEOUT_MS = 8_000;
+const ACCOUNT_SIGNAL_COOLDOWN_MS = 60 * 60 * 1000;
+const DCB_FETCH_TIMEOUT_MS = 12_000;
+const IMAGE_BYTES_TIMEOUT_MS = 12_000;
+const IMAGE_BYTES_MAX_SIZE = 25 * 1024 * 1024;
+const IMAGE_BYTES_MAX_CONCURRENCY = 2;
 const IMAGE_BLOCK_INSTALL_DEFAULT = Object.freeze({
   enabled: false,
   hideMemberImages: true,
@@ -42,15 +54,15 @@ const LOW_ACTIVITY_INSTALL_DEFAULT = Object.freeze({
   enabled: false,
   blockPosts: true,
   blockComments: true,
-  ageRuleEnabled: true,
+  ageRuleEnabled: false,
   maxPublicAgeDays: 30,
   postRuleEnabled: true,
   minPostCount: 5,
   commentRuleEnabled: true,
   minCommentCount: 10,
   activityMatchMode: "both",
-  holdWhileChecking: true,
-  cacheHours: 24
+  holdWhileChecking: false,
+  cacheHours: 72
 });
 
 /* ───── 유틸 ───── */
@@ -405,6 +417,62 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
     }
   }
 
+  /*
+    7.3.39 안전 마이그레이션
+    - 기존 버전에서 켜 둔 자동 활동 조회를 업데이트 직후 한 번 끈다.
+    - 갤로그 마지막 페이지를 훑던 연령 판정과 확인 중 선숨김을 비활성화한다.
+    - 사용자가 다시 켜더라도 성공 판정은 오래 캐시해 반복 조회를 줄인다.
+    - 기존 자동 새로고침 간격이 60초 미만이면 안전 최솟값으로 올린다.
+  */
+  if (reason === "install" || reason === "update") {
+    try {
+      const safetySeed = await chrome.storage.sync.get({
+        [LOW_ACTIVITY_RULE_KEY]: LOW_ACTIVITY_INSTALL_DEFAULT,
+        [ACCOUNT_SAFETY_MIGRATION_KEY]: false,
+        autoRefreshInterval: 60
+      });
+      const safetyPatch = {};
+      const safeAutoRefreshInterval = Math.min(
+        600,
+        Math.max(60, Number.parseInt(safetySeed.autoRefreshInterval, 10) || 60)
+      );
+
+      if (safeAutoRefreshInterval !== safetySeed.autoRefreshInterval) {
+        safetyPatch.autoRefreshInterval = safeAutoRefreshInterval;
+      }
+
+      if (safetySeed[ACCOUNT_SAFETY_MIGRATION_KEY] !== true) {
+        const current = safetySeed[LOW_ACTIVITY_RULE_KEY]
+          && typeof safetySeed[LOW_ACTIVITY_RULE_KEY] === "object"
+          ? safetySeed[LOW_ACTIVITY_RULE_KEY]
+          : LOW_ACTIVITY_INSTALL_DEFAULT;
+
+        safetyPatch[LOW_ACTIVITY_RULE_KEY] = {
+          ...current,
+          enabled: false,
+          ageRuleEnabled: false,
+          holdWhileChecking: false,
+          cacheHours: Math.max(72, Number.parseInt(current.cacheHours, 10) || 0)
+        };
+        safetyPatch[ACCOUNT_SAFETY_MIGRATION_KEY] = true;
+        await chrome.storage.local.set({
+          dcbImageAccountSignalCache: {},
+          [ACCOUNT_SIGNAL_GUARD_KEY]: {
+            requestTimes: [],
+            cooldownUntil: 0,
+            consecutiveFailures: 0
+          }
+        });
+      }
+
+      if (Object.keys(safetyPatch).length) {
+        await chrome.storage.sync.set(safetyPatch);
+      }
+    } catch (_) {
+      // 안전 마이그레이션 실패가 다른 설치 작업을 막지 않도록 한다.
+    }
+  }
+
   syncRules();
 });
 
@@ -531,6 +599,288 @@ chrome.storage.onChanged.addListener((c, area) => {
 
 
 
+/* ───── 깡계 활동량 조회: 전 탭 공통 속도 제한·중복 제거·회로 차단 ───── */
+const accountSignalQueue = [];
+const accountSignalInflight = new Map();
+let accountSignalQueueActive = false;
+let accountSignalLastRequestAt = 0;
+let accountSignalGuard = {
+  requestTimes: [],
+  cooldownUntil: 0,
+  consecutiveFailures: 0
+};
+
+const accountSignalGuardReady = (async () => {
+  try {
+    const stored = await chrome.storage.local.get({
+      [ACCOUNT_SIGNAL_GUARD_KEY]: accountSignalGuard
+    });
+    const value = stored[ACCOUNT_SIGNAL_GUARD_KEY];
+    if (value && typeof value === "object") {
+      accountSignalGuard = {
+        requestTimes: Array.isArray(value.requestTimes)
+          ? value.requestTimes.map(Number).filter(Number.isFinite)
+          : [],
+        cooldownUntil: Math.max(0, Number(value.cooldownUntil) || 0),
+        consecutiveFailures: Math.max(0, Number.parseInt(value.consecutiveFailures, 10) || 0)
+      };
+    }
+  } catch (_) {
+    accountSignalGuard = {
+      requestTimes: [],
+      cooldownUntil: 0,
+      consecutiveFailures: 0
+    };
+  }
+})();
+
+function accountSignalDelay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
+}
+
+function normalizeAccountSignalUid(value) {
+  const uid = String(value || "").trim();
+  return /^[A-Za-z0-9._-]{2,64}$/.test(uid) ? uid : "";
+}
+
+function normalizeAccountSignalToken(value) {
+  const token = String(value || "").trim();
+  return token && token.length <= 2048 ? token : "";
+}
+
+function accountSignalSenderAllowed(sender) {
+  try {
+    const source = new URL(String(sender?.url || sender?.tab?.url || ""));
+    return source.protocol === "https:" && source.hostname === "gall.dcinside.com";
+  } catch (_) {
+    return false;
+  }
+}
+
+function pruneAccountSignalWindow(now = Date.now()) {
+  accountSignalGuard.requestTimes = accountSignalGuard.requestTimes
+    .map(Number)
+    .filter((stamp) => Number.isFinite(stamp) && now - stamp < ACCOUNT_SIGNAL_WINDOW_MS)
+    .sort((a, b) => a - b);
+}
+
+function persistAccountSignalGuard() {
+  const snapshot = {
+    requestTimes: [...accountSignalGuard.requestTimes],
+    cooldownUntil: accountSignalGuard.cooldownUntil,
+    consecutiveFailures: accountSignalGuard.consecutiveFailures
+  };
+  void chrome.storage.local.set({ [ACCOUNT_SIGNAL_GUARD_KEY]: snapshot });
+}
+
+function accountSignalRetryAfterMs(response) {
+  const raw = String(response?.headers?.get?.("retry-after") || "").trim();
+  if (!raw) return 0;
+  if (/^\d+$/.test(raw)) return Math.max(0, Number(raw) * 1000);
+  const stamp = Date.parse(raw);
+  return Number.isFinite(stamp) ? Math.max(0, stamp - Date.now()) : 0;
+}
+
+function parseAccountSignalCounts(text) {
+  const match = String(text || "").trim().match(/^(\d+)\s*,\s*(\d+)/);
+  if (!match) return null;
+  const posts = Number(match[1]);
+  const comments = Number(match[2]);
+  if (!Number.isSafeInteger(posts) || !Number.isSafeInteger(comments)) return null;
+  return { posts, comments };
+}
+
+function tripAccountSignalCircuit(durationMs = ACCOUNT_SIGNAL_COOLDOWN_MS) {
+  accountSignalGuard.cooldownUntil = Math.max(
+    accountSignalGuard.cooldownUntil,
+    Date.now() + Math.max(60_000, Number(durationMs) || ACCOUNT_SIGNAL_COOLDOWN_MS)
+  );
+  persistAccountSignalGuard();
+}
+
+function accountSignalFailure(reason, status = 0, retryAfterMs = 0) {
+  accountSignalGuard.consecutiveFailures += 1;
+  if ([403, 429, 503].includes(status)) {
+    tripAccountSignalCircuit(Math.max(ACCOUNT_SIGNAL_COOLDOWN_MS, retryAfterMs));
+  } else if (accountSignalGuard.consecutiveFailures >= 3) {
+    tripAccountSignalCircuit(ACCOUNT_SIGNAL_COOLDOWN_MS);
+  } else {
+    persistAccountSignalGuard();
+  }
+  return {
+    ok: false,
+    status,
+    reason,
+    retryAfterMs: Math.max(
+      retryAfterMs,
+      accountSignalGuard.cooldownUntil - Date.now(),
+      60 * 60 * 1000
+    )
+  };
+}
+
+async function performAccountSignalRequest(uid, token) {
+  await accountSignalGuardReady;
+
+  let now = Date.now();
+  pruneAccountSignalWindow(now);
+
+  if (accountSignalGuard.cooldownUntil > now) {
+    return {
+      ok: false,
+      status: 0,
+      reason: "COOLDOWN",
+      retryAfterMs: accountSignalGuard.cooldownUntil - now
+    };
+  }
+
+  if (accountSignalGuard.requestTimes.length >= ACCOUNT_SIGNAL_WINDOW_LIMIT) {
+    const availableAt = accountSignalGuard.requestTimes[0] + ACCOUNT_SIGNAL_WINDOW_MS;
+    accountSignalGuard.cooldownUntil = Math.max(accountSignalGuard.cooldownUntil, availableAt);
+    persistAccountSignalGuard();
+    return {
+      ok: false,
+      status: 0,
+      reason: "BUDGET",
+      retryAfterMs: Math.max(60_000, availableAt - now)
+    };
+  }
+
+  const spacing = ACCOUNT_SIGNAL_MIN_INTERVAL_MS - (now - accountSignalLastRequestAt);
+  if (spacing > 0) await accountSignalDelay(spacing);
+
+  now = Date.now();
+  pruneAccountSignalWindow(now);
+  if (accountSignalGuard.cooldownUntil > now) {
+    return {
+      ok: false,
+      status: 0,
+      reason: "COOLDOWN",
+      retryAfterMs: accountSignalGuard.cooldownUntil - now
+    };
+  }
+  if (accountSignalGuard.requestTimes.length >= ACCOUNT_SIGNAL_WINDOW_LIMIT) {
+    const availableAt = accountSignalGuard.requestTimes[0] + ACCOUNT_SIGNAL_WINDOW_MS;
+    accountSignalGuard.cooldownUntil = Math.max(accountSignalGuard.cooldownUntil, availableAt);
+    persistAccountSignalGuard();
+    return {
+      ok: false,
+      status: 0,
+      reason: "BUDGET",
+      retryAfterMs: Math.max(60_000, availableAt - now)
+    };
+  }
+
+  accountSignalLastRequestAt = now;
+  accountSignalGuard.requestTimes.push(now);
+  persistAccountSignalGuard();
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), ACCOUNT_SIGNAL_TIMEOUT_MS);
+
+  try {
+    const body = new URLSearchParams({ ci_t: token, user_id: uid });
+    const response = await fetch(ACCOUNT_SIGNAL_ENDPOINT, {
+      method: "POST",
+      credentials: "include",
+      cache: "no-store",
+      redirect: "follow",
+      headers: {
+        "Accept": "text/plain,*/*;q=0.8",
+        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+        "X-Requested-With": "XMLHttpRequest"
+      },
+      body: body.toString(),
+      signal: controller.signal
+    });
+
+    const retryAfterMs = accountSignalRetryAfterMs(response);
+    if (!response.ok) {
+      return accountSignalFailure("HTTP", response.status, retryAfterMs);
+    }
+
+    const counts = parseAccountSignalCounts(await response.text());
+    if (!counts) return accountSignalFailure("INVALID_RESPONSE", response.status);
+
+    accountSignalGuard.consecutiveFailures = 0;
+    accountSignalGuard.cooldownUntil = 0;
+    persistAccountSignalGuard();
+    return {
+      ok: true,
+      status: response.status,
+      posts: counts.posts,
+      comments: counts.comments,
+      checkedAt: Date.now()
+    };
+  } catch (error) {
+    return accountSignalFailure(
+      error?.name === "AbortError" ? "TIMEOUT" : "NETWORK",
+      0
+    );
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function drainAccountSignalQueue() {
+  if (accountSignalQueueActive) return;
+  accountSignalQueueActive = true;
+
+  void (async () => {
+    while (accountSignalQueue.length) {
+      const item = accountSignalQueue.shift();
+      let result;
+      try {
+        result = await performAccountSignalRequest(item.uid, item.token);
+      } catch (error) {
+        result = accountSignalFailure(error?.message || "REQUEST", 0);
+      }
+      item.resolve(result);
+    }
+    accountSignalQueueActive = false;
+  })();
+}
+
+function enqueueAccountSignal(uid, token) {
+  const key = uid.toLowerCase();
+  if (accountSignalInflight.has(key)) return accountSignalInflight.get(key);
+
+  const queued = new Promise((resolve) => {
+    accountSignalQueue.push({ uid, token, resolve });
+    drainAccountSignalQueue();
+  });
+  const tracked = queued.finally(() => accountSignalInflight.delete(key));
+  accountSignalInflight.set(key, tracked);
+  return tracked;
+}
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type !== "dcb.accountSignal") return;
+
+  const uid = normalizeAccountSignalUid(message.uid);
+  const token = normalizeAccountSignalToken(message.token);
+  if (!uid || !token || !accountSignalSenderAllowed(sender)) {
+    sendResponse({
+      ok: false,
+      status: 0,
+      reason: "INVALID_REQUEST",
+      retryAfterMs: 60 * 60 * 1000
+    });
+    return;
+  }
+
+  enqueueAccountSignal(uid, token)
+    .then((result) => sendResponse(result))
+    .catch((error) => sendResponse({
+      ok: false,
+      status: 0,
+      reason: error?.message || "REQUEST",
+      retryAfterMs: 60 * 60 * 1000
+    }));
+
+  return true;
+});
+
 /* ───── 공통 HTML fetch 브릿지: 미리보기에서 모바일 글/댓글 HTML을 가져오기 위함 ───── */
 const DCB_FETCH_ALLOWED_HOSTS = new Set([
   "gall.dcinside.com",
@@ -579,6 +929,9 @@ async function dcbFetchDcinsideHtml(rawUrl, options = {}) {
     redirect: "follow",
     headers
   };
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), DCB_FETCH_TIMEOUT_MS);
+  requestInit.signal = controller.signal;
 
   if (method === "POST") requestInit.body = String(options.body || "");
   if (options.referrer) {
@@ -599,7 +952,9 @@ async function dcbFetchDcinsideHtml(rawUrl, options = {}) {
       error: response.ok ? "" : `HTTP ${response.status}`
     };
   } catch (error) {
-    const message = error?.message || String(error);
+    const message = error?.name === "AbortError"
+      ? "DCinside 응답 시간이 초과되었습니다."
+      : (error?.message || String(error));
     return {
       ok: false,
       status: 0,
@@ -608,11 +963,18 @@ async function dcbFetchDcinsideHtml(rawUrl, options = {}) {
         : message,
       text: ""
     };
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg?.type !== "dcb.fetchText") return;
+
+  if (!accountSignalSenderAllowed(sender)) {
+    sendResponse({ ok: false, status: 0, error: "허용되지 않은 요청 출처입니다.", text: "" });
+    return;
+  }
 
   dcbFetchDcinsideHtml(msg.url, {
     cache: msg.cache,
@@ -956,25 +1318,111 @@ function encodeImageBlockPayload(buffer) {
   return btoa(binary);
 }
 
+const imageByteInflight = new Map();
+const imageByteQueue = [];
+let imageByteActive = 0;
+
+function normalizeImageBlockUrl(rawUrl) {
+  try {
+    const target = new URL(String(rawUrl || ""));
+    const host = target.hostname.toLowerCase();
+    const allowedHost = host === "dcinside.com"
+      || host.endsWith(".dcinside.com")
+      || host === "dcinside.co.kr"
+      || host.endsWith(".dcinside.co.kr");
+    return target.protocol === "https:" && allowedHost ? target.href : "";
+  } catch (_) {
+    return "";
+  }
+}
+
+async function fetchImageBlockPayload(url) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), IMAGE_BYTES_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(url, {
+      credentials: "include",
+      cache: "force-cache",
+      signal: controller.signal
+    });
+    if (!response.ok) {
+      return { success: false, error: `HTTP ${response.status}` };
+    }
+
+    const declaredSize = Number(response.headers.get("content-length"));
+    if (Number.isFinite(declaredSize) && declaredSize > IMAGE_BYTES_MAX_SIZE) {
+      return { success: false, error: "파일이 이미지 차단 확인 한도(25MB)를 초과했습니다." };
+    }
+
+    const contentType = String(response.headers.get("content-type") || "").toLowerCase();
+    const allowedType = !contentType
+      || contentType.startsWith("image/")
+      || contentType.startsWith("video/")
+      || contentType.startsWith("application/octet-stream");
+    if (!allowedType) {
+      return { success: false, error: "지원하지 않는 미디어 형식입니다." };
+    }
+
+    const buffer = await response.arrayBuffer();
+    if (buffer.byteLength > IMAGE_BYTES_MAX_SIZE) {
+      return { success: false, error: "파일이 이미지 차단 확인 한도(25MB)를 초과했습니다." };
+    }
+
+    return {
+      success: true,
+      data: encodeImageBlockPayload(buffer),
+      contentType: contentType || "application/octet-stream"
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error?.name === "AbortError"
+        ? "이미지 확인 시간이 초과되었습니다."
+        : (error?.message || String(error))
+    };
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+function drainImageByteQueue() {
+  while (imageByteActive < IMAGE_BYTES_MAX_CONCURRENCY && imageByteQueue.length) {
+    const item = imageByteQueue.shift();
+    imageByteActive += 1;
+    fetchImageBlockPayload(item.url)
+      .then(item.resolve)
+      .catch((error) => item.resolve({ success: false, error: error?.message || String(error) }))
+      .finally(() => {
+        imageByteActive -= 1;
+        drainImageByteQueue();
+      });
+  }
+}
+
+function enqueueImageBlockPayload(url) {
+  const existing = imageByteInflight.get(url);
+  if (existing) return existing;
+
+  const task = new Promise((resolve) => {
+    imageByteQueue.push({ url, resolve });
+    drainImageByteQueue();
+  });
+  imageByteInflight.set(url, task);
+  void task.finally(() => imageByteInflight.delete(url));
+  return task;
+}
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type !== "dcb.imageBytes") return;
 
-  fetch(message.url, { credentials: "include", cache: "force-cache" })
-    .then(async (response) => {
-      if (!response.ok) {
-        sendResponse({ success: false, error: `HTTP ${response.status}` });
-        return;
-      }
-      const buffer = await response.arrayBuffer();
-      sendResponse({
-        success: true,
-        data: encodeImageBlockPayload(buffer),
-        contentType: response.headers.get("content-type") || "application/octet-stream"
-      });
-    })
-    .catch((error) => {
-      sendResponse({ success: false, error: error?.message || String(error) });
-    });
+  const url = normalizeImageBlockUrl(message.url);
+  if (!url || !accountSignalSenderAllowed(sender)) {
+    sendResponse({ success: false, error: "허용되지 않은 이미지 요청입니다." });
+    return;
+  }
+
+  enqueueImageBlockPayload(url).then(sendResponse);
 
   return true;
 });

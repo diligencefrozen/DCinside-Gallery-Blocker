@@ -3,27 +3,29 @@
 
   if (globalThis.DCBAccountActivityFilter) return;
 
-  // 기존 설치의 설정을 유지하기 위해 저장 키는 그대로 사용한다.
+  // 기존 설치의 설정·캐시 키는 호환성을 위해 유지한다.
   const SETTINGS_KEY = "dcbImageAccountRules";
   const CACHE_KEY = "dcbImageAccountSignalCache";
-  const DAY_MS = 24 * 60 * 60 * 1000;
-  const NEGATIVE_CACHE_MS = 10 * 60 * 1000;
-  const MAX_CACHE_ENTRIES = 300;
-  const PUBLIC_ITEMS_PER_PAGE = 20;
+  const NEGATIVE_CACHE_MS = 60 * 60 * 1000;
+  const MAX_CACHE_ENTRIES = 1_000;
+  // 전역 큐에서 요청 간격을 두므로 한 페이지의 마지막 판정까지 기다릴 수 있게 한다.
+  const CONTENT_TIMEOUT_MS = 120_000;
 
   const DEFAULT_SETTINGS = Object.freeze({
     enabled: false,
     blockPosts: true,
     blockComments: true,
-    ageRuleEnabled: true,
+    // 갤로그 게시글·댓글 페이지 추가 조회를 없애기 위해 연령 판정은 중단한다.
+    ageRuleEnabled: false,
     maxPublicAgeDays: 30,
     postRuleEnabled: true,
     minPostCount: 5,
     commentRuleEnabled: true,
     minCommentCount: 10,
     activityMatchMode: "both",
-    holdWhileChecking: true,
-    cacheHours: 24
+    // 조회가 밀려도 화면이 빈 것처럼 보이지 않게 선숨김을 사용하지 않는다.
+    holdWhileChecking: false,
+    cacheHours: 72
   });
 
   const cleanText = (value) => String(value ?? "").trim();
@@ -40,15 +42,15 @@
       enabled: source.enabled === true,
       blockPosts: source.blockPosts !== false,
       blockComments: source.blockComments !== false,
-      ageRuleEnabled: source.ageRuleEnabled !== false,
+      ageRuleEnabled: false,
       maxPublicAgeDays: boundedInteger(source.maxPublicAgeDays, DEFAULT_SETTINGS.maxPublicAgeDays, 0, 3650),
       postRuleEnabled: source.postRuleEnabled !== false,
       minPostCount: boundedInteger(source.minPostCount, DEFAULT_SETTINGS.minPostCount, 0, 1_000_000),
       commentRuleEnabled: source.commentRuleEnabled !== false,
       minCommentCount: boundedInteger(source.minCommentCount, DEFAULT_SETTINGS.minCommentCount, 0, 1_000_000),
       activityMatchMode: source.activityMatchMode === "any" ? "any" : "both",
-      holdWhileChecking: source.holdWhileChecking !== false,
-      cacheHours: boundedInteger(source.cacheHours, DEFAULT_SETTINGS.cacheHours, 1, 168)
+      holdWhileChecking: false,
+      cacheHours: boundedInteger(source.cacheHours, DEFAULT_SETTINGS.cacheHours, 24, 168)
     };
   }
 
@@ -66,14 +68,19 @@
     return "";
   }
 
-  function requestText(payload, timeoutMs = 8000) {
+  function requestAccountSignal(payload) {
     return new Promise((resolve) => {
       let settled = false;
       const timer = setTimeout(() => {
         if (settled) return;
         settled = true;
-        resolve({ ok: false, status: 0, text: "", error: "timeout" });
-      }, timeoutMs);
+        resolve({
+          ok: false,
+          status: 0,
+          reason: "CONTENT_TIMEOUT",
+          retryAfterMs: NEGATIVE_CACHE_MS
+        });
+      }, CONTENT_TIMEOUT_MS);
 
       try {
         chrome.runtime.sendMessage(payload, (response) => {
@@ -81,57 +88,44 @@
           settled = true;
           clearTimeout(timer);
           if (chrome.runtime.lastError) {
-            resolve({ ok: false, status: 0, text: "", error: chrome.runtime.lastError.message || "runtime" });
+            resolve({
+              ok: false,
+              status: 0,
+              reason: "RUNTIME",
+              retryAfterMs: NEGATIVE_CACHE_MS
+            });
             return;
           }
           resolve(response && typeof response === "object"
             ? response
-            : { ok: false, status: 0, text: "", error: "empty" });
+            : {
+                ok: false,
+                status: 0,
+                reason: "EMPTY",
+                retryAfterMs: NEGATIVE_CACHE_MS
+              });
         });
-      } catch (error) {
+      } catch (_) {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
-        resolve({ ok: false, status: 0, text: "", error: error?.message || String(error) });
+        resolve({
+          ok: false,
+          status: 0,
+          reason: "RUNTIME",
+          retryAfterMs: NEGATIVE_CACHE_MS
+        });
       }
     });
   }
 
-  function parseActivityCounts(text) {
-    const match = cleanText(text).match(/^(\d+)\s*,\s*(\d+)/);
-    if (!match) return null;
-    const posts = Number(match[1]);
-    const comments = Number(match[2]);
-    if (!Number.isSafeInteger(posts) || !Number.isSafeInteger(comments)) return null;
-    return { posts, comments };
-  }
-
-  function utcDateValue(year, month, day) {
-    const stamp = Date.UTC(Number(year), Number(month) - 1, Number(day));
-    return Number.isFinite(stamp) ? stamp : 0;
-  }
-
-  function extractPublicActivityDates(html) {
-    const dates = [];
-    const spanPattern = /<span\b[^>]*class=["'][^"']*\bdate\b[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi;
-    let spanMatch;
-    while ((spanMatch = spanPattern.exec(String(html || "")))) {
-      const dateMatch = spanMatch[1].match(/(20\d{2})[.\/-](\d{1,2})[.\/-](\d{1,2})/);
-      if (!dateMatch) continue;
-      const stamp = utcDateValue(dateMatch[1], dateMatch[2], dateMatch[3]);
-      if (stamp) dates.push(stamp);
-    }
-    return dates;
-  }
-
-  function earliestValue(values) {
-    const valid = values.filter((value) => Number.isFinite(value) && value > 0);
-    return valid.length ? Math.min(...valid) : 0;
-  }
-
   function activityDecision(posts, comments, settings) {
-    const lowPost = settings.postRuleEnabled && settings.minPostCount > 0 && posts < settings.minPostCount;
-    const lowComment = settings.commentRuleEnabled && settings.minCommentCount > 0 && comments < settings.minCommentCount;
+    const lowPost = settings.postRuleEnabled
+      && settings.minPostCount > 0
+      && posts < settings.minPostCount;
+    const lowComment = settings.commentRuleEnabled
+      && settings.minCommentCount > 0
+      && comments < settings.minCommentCount;
     const checks = [];
     if (settings.postRuleEnabled && settings.minPostCount > 0) checks.push(lowPost);
     if (settings.commentRuleEnabled && settings.minCommentCount > 0) checks.push(lowComment);
@@ -141,34 +135,12 @@
     return { hit, lowPost, lowComment };
   }
 
-  class RequestGate {
-    constructor(limit = 3) {
-      this.limit = limit;
-      this.active = 0;
-      this.waiting = [];
+  function unavailableSummary(reason) {
+    if (reason === "COOLDOWN" || reason === "BUDGET") {
+      return "안전 요청 한도에 따라 이번 조회를 건너뛰었습니다.";
     }
-
-    run(task) {
-      return new Promise((resolve) => {
-        this.waiting.push({ task, resolve });
-        this.drain();
-      });
-    }
-
-    drain() {
-      while (this.active < this.limit && this.waiting.length) {
-        const item = this.waiting.shift();
-        this.active += 1;
-        Promise.resolve()
-          .then(item.task)
-          .catch(() => null)
-          .then(item.resolve)
-          .finally(() => {
-            this.active -= 1;
-            this.drain();
-          });
-      }
-    }
+    if (reason === "NO_TOKEN") return "로그인 세션 정보를 확인하지 못했습니다.";
+    return "작성자 활동 정보를 안전하게 확인하지 못했습니다.";
   }
 
   class AccountSignalService {
@@ -176,7 +148,6 @@
       this.settings = { ...DEFAULT_SETTINGS };
       this.cache = {};
       this.inflight = new Map();
-      this.gate = new RequestGate(3);
       this.cacheWriteTimer = null;
       this.readyPromise = this.initialize();
     }
@@ -218,74 +189,50 @@
 
     cacheFresh(entry) {
       if (!entry || !Number(entry.checkedAt)) return false;
-      if (!entry.unavailable
-        && this.settings.ageRuleEnabled
-        && this.settings.maxPublicAgeDays > 0
-        && entry.ageChecked !== true
-        && !activityDecision(Number(entry.posts) || 0, Number(entry.comments) || 0, this.settings).hit) return false;
-      const ttl = entry.unavailable
-        ? NEGATIVE_CACHE_MS
-        : this.settings.cacheHours * 60 * 60 * 1000;
+      if (entry.unavailable) {
+        const expiresAt = Number(entry.expiresAt) || (Number(entry.checkedAt) + NEGATIVE_CACHE_MS);
+        return Date.now() < expiresAt;
+      }
+      const ttl = this.settings.cacheHours * 60 * 60 * 1000;
       return Date.now() - Number(entry.checkedAt) < ttl;
     }
 
-    async fetchCounts(uid) {
-      const token = readCookie(["ci_c", "ci_t"]);
-      if (!token) return null;
-      const endpoint = new URL("/api/gallog_user_layer/gallog_content_reple/", location.origin).href;
-      const result = await requestText({
-        type: "dcb.fetchText",
-        url: endpoint,
-        method: "POST",
-        body: `ci_t=${encodeURIComponent(token)}&user_id=${encodeURIComponent(uid)}`,
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-          "X-Requested-With": "XMLHttpRequest"
-        },
-        accept: "text/plain,*/*;q=0.8"
-      });
-      return result?.ok ? parseActivityCounts(result.text) : null;
-    }
-
-    async fetchLastPublicDate(uid, section, count) {
-      if (!count) return 0;
-      const lastPage = Math.max(1, Math.ceil(count / PUBLIC_ITEMS_PER_PAGE));
-      const url = `https://gallog.dcinside.com/${encodeURIComponent(uid)}/${section}?p=${lastPage}`;
-      const result = await requestText({
-        type: "dcb.fetchText",
-        url,
-        method: "GET",
-        accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.7"
-      });
-      if (!result?.ok) return 0;
-      return earliestValue(extractPublicActivityDates(result.text));
-    }
-
     async fetchSignal(uid) {
-      const counts = await this.fetchCounts(uid);
-      if (!counts) {
-        return { checkedAt: Date.now(), unavailable: true };
+      const token = readCookie(["ci_c", "ci_t"]);
+      if (!token) {
+        return {
+          checkedAt: Date.now(),
+          expiresAt: Date.now() + NEGATIVE_CACHE_MS,
+          unavailable: true,
+          reason: "NO_TOKEN"
+        };
       }
 
-      let firstPublicActivityAt = 0;
-      const activity = activityDecision(counts.posts, counts.comments, this.settings);
-      const ageChecked = this.settings.ageRuleEnabled
-        && this.settings.maxPublicAgeDays > 0
-        && !activity.hit;
-      if (ageChecked) {
-        const [postDate, commentDate] = await Promise.all([
-          this.fetchLastPublicDate(uid, "posting", counts.posts),
-          this.fetchLastPublicDate(uid, "comment", counts.comments)
-        ]);
-        firstPublicActivityAt = earliestValue([postDate, commentDate]);
+      const result = await requestAccountSignal({
+        type: "dcb.accountSignal",
+        uid,
+        token
+      });
+
+      if (!result?.ok) {
+        const retryAfterMs = boundedInteger(
+          result?.retryAfterMs,
+          NEGATIVE_CACHE_MS,
+          NEGATIVE_CACHE_MS,
+          24 * 60 * 60 * 1000
+        );
+        return {
+          checkedAt: Date.now(),
+          expiresAt: Date.now() + retryAfterMs,
+          unavailable: true,
+          reason: cleanText(result?.reason) || "UNAVAILABLE"
+        };
       }
 
       return {
-        checkedAt: Date.now(),
-        posts: counts.posts,
-        comments: counts.comments,
-        firstPublicActivityAt,
-        ageChecked,
+        checkedAt: Number(result.checkedAt) || Date.now(),
+        posts: Math.max(0, Number(result.posts) || 0),
+        comments: Math.max(0, Number(result.comments) || 0),
         unavailable: false
       };
     }
@@ -297,41 +244,24 @@
           available: false,
           shouldHide: false,
           reasons: [],
-          summary: "작성자 활동 정보를 확인하지 못했습니다."
+          summary: unavailableSummary(entry?.reason)
         };
       }
 
       const posts = Math.max(0, Number(entry.posts) || 0);
       const comments = Math.max(0, Number(entry.comments) || 0);
-      const activity = activityDecision(posts, comments, this.settings);
-      const { hit: activityHit, lowPost, lowComment } = activity;
-
-      const firstPublicActivityAt = Number(entry.firstPublicActivityAt) || 0;
-      const publicAgeDays = firstPublicActivityAt
-        ? Math.max(0, Math.floor((Date.now() - firstPublicActivityAt) / DAY_MS))
-        : null;
-      const ageHit = this.settings.ageRuleEnabled
-        && this.settings.maxPublicAgeDays > 0
-        && publicAgeDays !== null
-        && publicAgeDays <= this.settings.maxPublicAgeDays;
-
+      const { hit, lowPost, lowComment } = activityDecision(posts, comments, this.settings);
       const reasons = [];
-      if (ageHit) reasons.push(`최초 공개 활동 ${publicAgeDays}일`);
-      if (activityHit && lowPost) reasons.push(`작성 글 ${posts}개`);
-      if (activityHit && lowComment) reasons.push(`작성 댓글 ${comments}개`);
+      if (hit && lowPost) reasons.push(`작성 글 ${posts}개`);
+      if (hit && lowComment) reasons.push(`작성 댓글 ${comments}개`);
 
       return {
         uid,
         available: true,
-        shouldHide: ageHit || activityHit,
+        shouldHide: hit,
         reasons,
         summary: reasons.length ? reasons.join(" · ") : `작성 글 ${posts}개 · 댓글 ${comments}개`,
-        stats: {
-          posts,
-          comments,
-          firstPublicActivityAt: firstPublicActivityAt || null,
-          publicAgeDays
-        },
+        stats: { posts, comments },
         checkedAt: Number(entry.checkedAt) || Date.now()
       };
     }
@@ -340,21 +270,36 @@
       await this.readyPromise;
       const uid = normalizeUid(rawUid);
       if (!uid || !this.settings.enabled) {
-        return { uid, available: false, shouldHide: false, reasons: [], summary: "깡계 차단 비활성화" };
+        return {
+          uid,
+          available: false,
+          shouldHide: false,
+          reasons: [],
+          summary: "깡계 차단 비활성화"
+        };
       }
 
-      const cached = this.cache[uid.toLowerCase()];
+      const key = uid.toLowerCase();
+      const cached = this.cache[key];
       if (this.cacheFresh(cached)) return this.judge(uid, cached);
-      if (this.inflight.has(uid.toLowerCase())) return this.inflight.get(uid.toLowerCase());
+      if (this.inflight.has(key)) return this.inflight.get(key);
 
-      const request = this.gate.run(async () => {
-        const entry = await this.fetchSignal(uid);
-        this.cache[uid.toLowerCase()] = entry;
-        this.scheduleCacheWrite();
-        return this.judge(uid, entry);
-      }).finally(() => this.inflight.delete(uid.toLowerCase()));
+      const request = this.fetchSignal(uid)
+        .then((entry) => {
+          this.cache[key] = entry;
+          this.scheduleCacheWrite();
+          return this.judge(uid, entry);
+        })
+        .catch(() => ({
+          uid,
+          available: false,
+          shouldHide: false,
+          reasons: [],
+          summary: "작성자 활동 정보를 안전하게 확인하지 못했습니다."
+        }))
+        .finally(() => this.inflight.delete(key));
 
-      this.inflight.set(uid.toLowerCase(), request);
+      this.inflight.set(key, request);
       return request;
     }
 

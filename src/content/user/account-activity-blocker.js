@@ -6,6 +6,7 @@
   const HIDDEN_CLASS = "dcb-account-activity-hidden";
   const PENDING_CLASS = "dcb-account-activity-pending";
   const NOTICE_CLASS = "dcb-account-activity-notice";
+  const MAX_UNCACHED_UIDS_PER_PAGE = 12;
   const WRITER_SELECTOR = [
     ".gall_writer",
     ".ub-writer",
@@ -18,6 +19,7 @@
   let observer = null;
   let scanTimer = null;
   let rulesEpoch = 0;
+  const attemptedUids = new Set();
 
   const cleanText = (value) => String(value ?? "").trim();
 
@@ -213,6 +215,15 @@
       return;
     }
 
+    const attemptKey = uid.toLowerCase();
+    if (!attemptedUids.has(attemptKey)) {
+      if (attemptedUids.size >= MAX_UNCACHED_UIDS_PER_PAGE) {
+        clearTarget(target, uid);
+        return;
+      }
+      attemptedUids.add(attemptKey);
+    }
+
     if (settings.holdWhileChecking) setState(info, uid, "pending");
     else {
       target.dataset.dcbAccountActivityUid = uid;
@@ -247,6 +258,7 @@
       clearAll();
       return;
     }
+    if (document.visibilityState === "hidden") return;
 
     const epoch = rulesEpoch;
     const seen = new Set();
@@ -279,8 +291,12 @@
 
   window.addEventListener("dcb:account-activity-rules-changed", () => {
     rulesEpoch += 1;
+    attemptedUids.clear();
     clearAll(true);
     scheduleScan(0);
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "hidden") scheduleScan(0);
   });
   document.addEventListener("dcb-preview-state", (event) => {
     if (!event?.detail?.open) return;

@@ -1141,14 +1141,14 @@
     <div class="media-essentials-head">
       <div class="media-essentials-copy">
         <strong>깡계 차단하기</strong>
-        <span>신규·저활동 회원을 판정해 해당 회원의 글과 댓글을 숨깁니다.</span>
+        <span>제한된 활동량 조회로 저활동 회원의 글과 댓글을 숨깁니다.</span>
       </div>
       <span class="media-pill">Account</span>
     </div>
 
     <div class="media-risk-panel" data-account-activity-settings aria-label="신규 저활동 회원 차단 설정">
       <div class="media-risk-head">
-        <strong>신규·저활동 회원 자동 차단</strong>
+        <strong>저활동 회원 안전 차단</strong>
         <label class="switch" title="깡계 차단"><input type="checkbox" data-account-field="enabled"><span class="slider"></span></label>
       </div>
       <div class="media-risk-grid">
@@ -1159,10 +1159,6 @@
         <label class="media-risk-rule">
           <span>댓글 차단</span>
           <input type="checkbox" data-account-field="blockComments" data-account-dependent>
-        </label>
-        <label class="media-risk-rule">
-          <span><input type="checkbox" data-account-field="ageRuleEnabled" data-account-dependent>최초 공개 활동</span>
-          <span><input type="number" min="0" max="3650" data-account-field="maxPublicAgeDays" data-account-dependent>일 이하</span>
         </label>
         <label class="media-risk-rule">
           <span><input type="checkbox" data-account-field="postRuleEnabled" data-account-dependent>작성 글</span>
@@ -1179,12 +1175,8 @@
             <option value="any">하나만 미달해도</option>
           </select>
         </label>
-        <label class="media-risk-rule">
-          <span>확인 중 콘텐츠 숨기기</span>
-          <input type="checkbox" data-account-field="holdWhileChecking" data-account-dependent>
-        </label>
       </div>
-      <p class="media-risk-note">회원 UID에만 적용됩니다. 실제 가입일 대신 갤로그의 최초 공개 활동일을 신규 여부의 근사치로 사용합니다. 확인할 수 없는 조건은 건너뛰며, 기준값 0은 해당 조건을 끕니다.</p>
+      <p class="media-risk-note">회원 UID만 대상으로 하며 갤로그 페이지는 조회하지 않습니다. 전 탭 요청 한도를 넘거나 오류가 발생하면 해당 콘텐츠를 그대로 표시합니다.</p>
       <div class="media-risk-actions">
         <button type="button" data-account-clear-cache title="판정 캐시 초기화" aria-label="판정 캐시 초기화">초기화</button>
         <span class="media-risk-status" data-account-status></span>
@@ -1443,10 +1435,10 @@
 
   <label class="row">
     <span style="min-width:110px;">새로고침 간격 (초)</span>
-    <input type="number" id="autoRefreshIntervalNum" min="10" max="600" step="10">
+    <input type="number" id="autoRefreshIntervalNum" min="60" max="600" step="30">
   </label>
-  <p class="hint">최소 10초, 최대 600초(10분)까지 설정 가능합니다.</p>
-  <input type="range" id="autoRefreshIntervalRange" min="10" max="600" step="10">
+  <p class="hint">서버 요청 보호를 위해 최소 60초이며, 제한 응답이나 반복 실패 시 자동으로 꺼집니다.</p>
+  <input type="range" id="autoRefreshIntervalRange" min="60" max="600" step="30">
 
   <hr class="divider">
 

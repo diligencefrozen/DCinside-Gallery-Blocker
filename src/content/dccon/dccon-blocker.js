@@ -111,7 +111,8 @@
   const TOAST_ID = "dcb-selective-dccon-toast";
   const CONTEXT_TTL = 15_000;
   const PACKAGE_TIMEOUT = 10_000;
-  const INTEGRITY_SCAN_INTERVAL = 1_200;
+  const PACKAGE_CACHE_TTL = 30 * 60 * 1000;
+  const INTEGRITY_SCAN_INTERVAL = 4_000;
   const HIDDEN_SELECTOR = `.${HIDDEN_CLASS},[${HIDDEN_ATTR}="true"]`;
 
   let currentState = Store.emptyState();
@@ -125,6 +126,10 @@
   let lastContextAt = 0;
   let renderedStyleSignature = "";
   let renderedStyleText = "";
+  let packageRequestQueue = Promise.resolve();
+  let blockOperationActive = false;
+  const packageCache = new Map();
+  const packageInflight = new Map();
   const previousInlineDisplay = new WeakMap();
 
   function blockedCodeCss() {
@@ -594,7 +599,7 @@
     return match ? decodeURIComponent(match[1]) : "";
   }
 
-  async function fetchPackage(code, packageIdx = "") {
+  async function fetchPackageUncached(code, packageIdx = "") {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), PACKAGE_TIMEOUT);
     const form = new URLSearchParams();
@@ -618,6 +623,9 @@
         signal: controller.signal
       });
 
+      if ([403, 429, 503].includes(response.status)) {
+        throw new Error("디시 서버가 요청을 제한했습니다. 잠시 후 다시 시도해 주세요.");
+      }
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const text = await response.text();
       if (!text || text === "error") throw new Error("디시콘 정보가 반환되지 않았습니다.");
@@ -651,6 +659,34 @@
     }
   }
 
+  function packageRequestKey(code, packageIdx = "") {
+    return /^\d+$/.test(packageIdx) ? `package:${packageIdx}` : `code:${code}`;
+  }
+
+  function fetchPackage(code, packageIdx = "") {
+    const key = packageRequestKey(code, packageIdx);
+    const cached = packageCache.get(key);
+    if (cached && Date.now() - cached.checkedAt < PACKAGE_CACHE_TTL) {
+      return Promise.resolve(cached.value);
+    }
+    if (packageInflight.has(key)) return packageInflight.get(key);
+
+    const request = packageRequestQueue
+      .then(() => fetchPackageUncached(code, packageIdx))
+      .then((value) => {
+        const entry = { checkedAt: Date.now(), value };
+        packageCache.set(key, entry);
+        packageCache.set(`package:${value.packageIdx}`, entry);
+        value.paths.forEach((path) => packageCache.set(`code:${path}`, entry));
+        return value;
+      })
+      .finally(() => packageInflight.delete(key));
+
+    packageRequestQueue = request.catch(() => {});
+    packageInflight.set(key, request);
+    return request;
+  }
+
   function freshContextTarget() {
     const fresh = lastContextTarget
       && document.documentElement.contains(lastContextTarget)
@@ -659,25 +695,6 @@
     if (!fresh) return null;
     const code = codeFromNode(lastContextTarget) || lastContextCode;
     return code ? { node: lastContextTarget, code } : null;
-  }
-
-  async function enrichItem(code, node) {
-    try {
-      const details = await fetchPackage(code, packageIdxFromNode(node));
-      const latest = await Store.getState();
-      if (!latest.items[code]) return;
-
-      const next = await Store.addItem({
-        ...latest.items[code],
-        code,
-        label: details.itemTitle,
-        packageIdx: details.packageIdx,
-        packageTitle: details.title
-      });
-      applyState(next);
-    } catch (_) {
-      // 메타데이터 보강 실패는 이미 완료된 개별 차단에 영향을 주지 않는다.
-    }
   }
 
   async function blockIndividual(node, code) {
@@ -698,7 +715,6 @@
 
     applyState(state);
     showToast("개별 디시콘 차단 완료", "팝업이나 설정에서 언제든 해제할 수 있습니다.");
-    void enrichItem(code, node);
     return { ok: true, mode: "item", code };
   }
 
@@ -748,6 +764,12 @@
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message?.type !== "dcb.dcconBlockContext") return;
 
+    if (blockOperationActive) {
+      showToast("디시콘 차단 처리 중", "현재 작업이 끝난 뒤 다시 시도해 주세요.", "error");
+      sendResponse?.({ ok: false, reason: "BUSY" });
+      return;
+    }
+
     const target = freshContextTarget();
     if (!target) {
       showToast("디시콘을 찾지 못했습니다", "차단할 디시콘 이미지나 영상을 다시 우클릭해 주세요.", "error");
@@ -755,6 +777,7 @@
       return;
     }
 
+    blockOperationActive = true;
     const operation = message.mode === "group"
       ? blockGroup(target.node, target.code)
       : blockIndividual(target.node, target.code);
@@ -768,6 +791,9 @@
           reason: "ERROR",
           message: error?.message || String(error)
         });
+      })
+      .finally(() => {
+        blockOperationActive = false;
       });
 
     return true;
