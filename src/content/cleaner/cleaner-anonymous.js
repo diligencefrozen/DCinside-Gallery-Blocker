@@ -3,8 +3,60 @@
  *****************************************************************/
 (() => {
   const STYLE_ID = "dcb-anonymous-clean-style";
+  const HIDDEN_CLASS = "dcb-anonymous-hidden";
+  const WRITER_SELECTOR = [
+    ".gall_writer",
+    ".ub-writer",
+    ".writer_info[data-ip]",
+    ".writer_info[data-memo-ip]",
+    ".user_info[data-ip]",
+    ".user_info[data-memo-ip]",
+    ".cmt_nickbox[data-ip]",
+    ".cmt_nickbox[data-memo-ip]",
+    "[data-loc='list'][data-ip]",
+    "[data-loc='list'][data-memo-ip]",
+    "[data-loc='view'][data-ip]",
+    "[data-loc='view'][data-memo-ip]"
+  ].join(",");
+  const MEMBER_MARKER_SELECTOR = [
+    ".writer_nikcon",
+    "[onclick*='gallog']",
+    "[href*='gallog']",
+    "[title*='갤로그']"
+  ].join(",");
+  const COMMENT_ROOT_SELECTOR = [
+    "#focus_cmt",
+    ".comment_wrap",
+    ".cmt_list",
+    ".reply_box",
+    ".reply_list",
+    ".dccon_comment_box"
+  ].join(",");
+  const COMMENT_ITEM_SELECTOR = [
+    "#focus_cmt li",
+    ".comment_wrap li",
+    ".cmt_list li",
+    ".reply_box li",
+    ".reply_list li",
+    ".dccon_comment_box li",
+    "li.ub-content"
+  ].join(",");
+  const LIST_ITEM_SELECTOR = [
+    ".gall_list tr.ub-content",
+    ".gall_list tr[data-no]",
+    ".gall_list tr.gall_tr",
+    "tr.ub-content",
+    "tr[data-no]",
+    "tr.gall_tr",
+    ".gall_list li.ub-content",
+    ".gall_list li.gall_item",
+    "li.gall_item",
+    ".gall_item"
+  ].join(",");
+
   let hideEnabled = false;
   let observer = null;
+  let scanFrame = 0;
 
   /* <style> 보장 */
   function ensureStyle() {
@@ -14,108 +66,162 @@
       style.id = STYLE_ID;
       (document.head || document.documentElement).appendChild(style);
     }
+    const css = `.${HIDDEN_CLASS}{display:none!important}`;
+    if (style.textContent !== css) style.textContent = css;
     return style;
+  }
+
+  function readIdentityAttribute(writer, names) {
+    for (const name of names) {
+      const own = writer.getAttribute?.(name);
+      if (own && String(own).trim()) return String(own).trim();
+
+      const child = writer.querySelector?.(`[${name}]`);
+      const nested = child?.getAttribute?.(name);
+      if (nested && String(nested).trim()) return String(nested).trim();
+    }
+    return "";
+  }
+
+  function containsIp(value) {
+    return /(?:^|[^\d])\d{1,3}(?:\.\d{1,3}){1,3}(?:[^\d]|$)/.test(
+      String(value || "").trim()
+    );
+  }
+
+  function hasMemberMarker(writer) {
+    if (writer.matches?.(MEMBER_MARKER_SELECTOR)) return true;
+    if (writer.querySelector?.(MEMBER_MARKER_SELECTOR)) return true;
+
+    return !!readIdentityAttribute(writer, [
+      "data-full-uid",
+      "data-uid",
+      "data-memo-uid",
+      "data-user-id",
+      "data-userid",
+      "data-user_id"
+    ]);
+  }
+
+  function hasAnonymousIp(writer) {
+    const attrIp = readIdentityAttribute(writer, ["data-ip", "data-memo-ip"]);
+    if (containsIp(attrIp)) return true;
+
+    const ipBadge = writer.matches?.(".ip,.writer_ip,.refresherUserData.ip")
+      ? writer
+      : writer.querySelector?.(".ip,.writer_ip,.refresherUserData.ip");
+
+    return containsIp(ipBadge?.textContent || "");
   }
 
   /* 작성자가 비회원(갤로그 링크 없음)인지 판단 */
   function isAnonymous(writer) {
     if (!writer) return false;
 
-    // 갤로그 링크 감지: .writer_nikcon 클래스가 있으면 회원
-    // (.writer_nikcon 요소가 있으면 갤로그 딱지가 있다는 뜻)
-    const gallogLink = writer.querySelector('.writer_nikcon');
-    if (gallogLink) return false; // 회원
+    // UID 또는 갤로그 표식이 있으면 회원이다.
+    if (hasMemberMarker(writer)) return false;
 
-    // 추가 확인: onclick이나 href에 gallog URL이 있으면 회원
-    const gallogUrl = writer.querySelector('[onclick*="gallog"], [href*="gallog"]');
-    if (gallogUrl) return false; // 회원
+    // 비회원은 span.ip뿐 아니라 data-ip/data-memo-ip로도 표시된다.
+    return hasAnonymousIp(writer);
+  }
 
-    // IP 뱃지 확인: span.ip가 없으면 필터링하지 않음 (익명 회원/비회원 구분 불가)
-    const ipBadge = writer.querySelector('span.ip');
-    if (!ipBadge) return false; // IP 뱃지 없음 = 필터링 스킵
+  function findCommentItem(writer) {
+    if (!writer.closest?.(COMMENT_ROOT_SELECTOR)) return null;
+    return writer.closest?.(COMMENT_ITEM_SELECTOR) || null;
+  }
 
-    // IP 뱃지가 있으면 비회원
-    return true;
+  function findViewContainer(writer) {
+    const isViewWriter =
+      writer.getAttribute?.("data-loc") === "view" ||
+      !!writer.closest?.(".gallview_head,.view_head,.view_content_wrap");
+
+    if (!isViewWriter) return null;
+
+    return (
+      writer.closest?.(".view_content_wrap") ||
+      document.querySelector?.(".view_content_wrap") ||
+      writer.closest?.(".view_wrap,.gallview,article,.gallview_head,.view_head") ||
+      null
+    );
+  }
+
+  function findAnonymousTarget(writer) {
+    const commentItem = findCommentItem(writer);
+    if (commentItem) return commentItem;
+
+    const listItem = writer.closest?.(LIST_ITEM_SELECTOR);
+    if (listItem) return listItem;
+
+    return findViewContainer(writer);
   }
 
   /* 비회원 글/댓글을 숨기기 위한 selector 수집 */
   function getAnonymousElements() {
-    const anonymousElements = [];
+    const anonymousElements = new Set();
 
-    // 1) 글 목록/보기 – .gall_writer (작성자 블록)
-    document.querySelectorAll(".gall_writer").forEach((writer) => {
-      if (isAnonymous(writer)) {
-        // 글의 경우: 상위 .gall_tr 또는 .gall_item 등 전체 행 숨기기
-        const row = writer.closest(".gall_tr, .gall_item, tr[data-no]");
-        if (row) anonymousElements.push(row);
-      }
+    document.querySelectorAll(WRITER_SELECTOR).forEach((writer) => {
+      if (!isAnonymous(writer)) return;
+      const target = findAnonymousTarget(writer);
+      if (target) anonymousElements.add(target);
     });
 
-    // 2) 댓글 – .cmt_info 내부의 .gall_writer만 검사 (정확한 탐색)
-    document.querySelectorAll(".cmt_info .gall_writer").forEach((writer) => {
-      if (isAnonymous(writer)) {
-        // .cmt_info의 부모 li만 숨기기 (대댓글은 보존)
-        const commentItem = writer.closest(".cmt_info")?.parentElement;
-        if (commentItem && commentItem.tagName === "LI") {
-          anonymousElements.push(commentItem);
-        }
-      }
-    });
+    return Array.from(anonymousElements);
+  }
 
-    // 3) 대댓글 – .reply_info 내부의 .gall_writer 검사
-    document.querySelectorAll(".reply_info .gall_writer").forEach((writer) => {
-      if (isAnonymous(writer)) {
-        // 대댓글의 경우: 해당 대댓글 li만 숨기기
-        const replyItem = writer.closest(".reply_info")?.parentElement;
-        if (replyItem && replyItem.tagName === "LI") {
-          anonymousElements.push(replyItem);
-        }
-      }
+  function clearHiddenElements() {
+    document.querySelectorAll(`.${HIDDEN_CLASS}`).forEach((element) => {
+      element.classList.remove(HIDDEN_CLASS);
     });
-
-    return anonymousElements;
   }
 
   /* 현재 DOM에 존재하는 비회원 요소 즉시 숨기기 */
   function hideNow() {
     if (!hideEnabled) return;
-    const style = ensureStyle();
+    ensureStyle();
+    clearHiddenElements();
     const elements = getAnonymousElements();
-    
-    // CSS로 숨기기
-    elements.forEach((el) => {
-      el.style.display = "none !important";
-    });
 
-    // 추가: display:none을 클래스로도 설정해 CSS 우선순위 강제
-    style.textContent = elements
-      .map((el, idx) => {
-        const selector = `[data-dcb-anon-hide="${idx}"]`;
-        el.setAttribute("data-dcb-anon-hide", idx.toString());
-        return `${selector}{display:none!important}`;
-      })
-      .join("\n");
+    elements.forEach((el) => {
+      el.classList.add(HIDDEN_CLASS);
+    });
+  }
+
+  function scheduleHideNow() {
+    if (scanFrame) return;
+    scanFrame = requestAnimationFrame(() => {
+      scanFrame = 0;
+      hideNow();
+    });
   }
 
   /* MutationObserver – 동적 로딩(리스트 리프레셔, 댓글 새로고침) 대응 */
   function startObserver() {
     if (observer) observer.disconnect();
-    observer = new MutationObserver(() => {
-      // debounce: requestAnimationFrame 사용
-      requestAnimationFrame(() => hideNow());
-    });
-    if (document.body) {
-      observer.observe(document.body, { childList: true, subtree: true });
-    } else {
-      window.addEventListener(
-        "DOMContentLoaded",
-        () => {
-          if (observer)
-            observer.observe(document.body, { childList: true, subtree: true });
-        },
-        { once: true }
+    observer = new MutationObserver((records) => {
+      const shouldScan = records.some((record) =>
+        record.type === "attributes" || record.addedNodes.length || record.removedNodes.length
       );
-    }
+      if (shouldScan) scheduleHideNow();
+    });
+
+    observer.observe(document.documentElement || document, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: [
+        "data-ip",
+        "data-memo-ip",
+        "data-full-uid",
+        "data-uid",
+        "data-memo-uid",
+        "data-user-id",
+        "data-userid",
+        "data-user_id",
+        "href",
+        "onclick",
+        "title"
+      ]
+    });
   }
 
   function stopObserver() {
@@ -123,8 +229,13 @@
       observer.disconnect();
       observer = null;
     }
+    if (scanFrame) {
+      cancelAnimationFrame(scanFrame);
+      scanFrame = 0;
+    }
+    clearHiddenElements();
     const style = document.getElementById(STYLE_ID);
-    if (style) style.textContent = "";
+    if (style) style.remove();
   }
 
   /* 설정값 읽어 적용 */
