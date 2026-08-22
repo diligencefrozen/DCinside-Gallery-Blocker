@@ -78,6 +78,7 @@ const DEFAULTS = {
   builtinDcbestBlockEnabled: true,
   blockMode: "smart",
   quickBlockButtonPosition: "right-top",
+  quickBlockButtonPositionSavedAt: 0,
   hideComment: false,
   hideImgComment: false,
   hideDccon: false,
@@ -188,10 +189,64 @@ const QUICK_BLOCK_POSITION_VALUES = new Set([
   "left-middle",
   "left-bottom"
 ]);
+const QUICK_BLOCK_POSITION_KEY = "quickBlockButtonPosition";
+const QUICK_BLOCK_POSITION_SAVED_AT_KEY = "quickBlockButtonPositionSavedAt";
 
 function normalizeQuickBlockPosition(value) {
   const key = String(value || "").trim().toLowerCase();
   return QUICK_BLOCK_POSITION_VALUES.has(key) ? key : "right-top";
+}
+
+function quickBlockPositionTimestamp(value) {
+  const timestamp = Number(value || 0);
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function pickQuickBlockPosition(syncConf = {}, localConf = {}) {
+  const syncPosition = normalizeQuickBlockPosition(syncConf[QUICK_BLOCK_POSITION_KEY]);
+  const localRaw = String(localConf[QUICK_BLOCK_POSITION_KEY] || "").trim().toLowerCase();
+  const localPosition = QUICK_BLOCK_POSITION_VALUES.has(localRaw)
+    ? normalizeQuickBlockPosition(localRaw)
+    : "";
+  const syncSavedAt = quickBlockPositionTimestamp(syncConf[QUICK_BLOCK_POSITION_SAVED_AT_KEY]);
+  const localSavedAt = quickBlockPositionTimestamp(localConf[QUICK_BLOCK_POSITION_SAVED_AT_KEY]);
+
+  return localPosition && localSavedAt > syncSavedAt
+    ? localPosition
+    : (syncPosition || localPosition || "right-top");
+}
+
+function refreshQuickBlockButtonPositionControl() {
+  if (!quickBlockButtonPositionSel) return;
+
+  chrome.storage.sync.get({
+    [QUICK_BLOCK_POSITION_KEY]: "right-top",
+    [QUICK_BLOCK_POSITION_SAVED_AT_KEY]: 0
+  }, (syncConf = {}) => {
+    if (!chrome.storage.local) {
+      setValue(quickBlockButtonPositionSel, normalizeQuickBlockPosition(syncConf[QUICK_BLOCK_POSITION_KEY]));
+      return;
+    }
+
+    chrome.storage.local.get({
+      [QUICK_BLOCK_POSITION_KEY]: "",
+      [QUICK_BLOCK_POSITION_SAVED_AT_KEY]: 0
+    }, (localConf = {}) => {
+      setValue(quickBlockButtonPositionSel, pickQuickBlockPosition(syncConf, localConf));
+    });
+  });
+}
+
+function saveQuickBlockButtonPosition(value) {
+  const position = normalizeQuickBlockPosition(value);
+  const patch = {
+    [QUICK_BLOCK_POSITION_KEY]: position,
+    [QUICK_BLOCK_POSITION_SAVED_AT_KEY]: Date.now()
+  };
+
+  setValue(quickBlockButtonPositionSel, position);
+  chrome.storage.sync.set(patch);
+  if (chrome.storage.local) chrome.storage.local.set(patch);
 }
 
 function lockDelay(disabled) {
@@ -1074,6 +1129,7 @@ chrome.storage.sync.get(DEFAULTS, (conf) => {
   setChecked(builtinDcbestBlockToggle, builtinDcbestBlockEnabled !== false);
   setValue(blockModeSel, blockMode);
   setValue(quickBlockButtonPositionSel, normalizeQuickBlockPosition(quickBlockButtonPosition));
+  refreshQuickBlockButtonPositionControl();
   updateBlockModeHint(blockMode);
 
   setChecked(hideCmtToggle, hideComment);
@@ -1198,9 +1254,7 @@ if (blockModeSel) {
 
 if (quickBlockButtonPositionSel) {
   quickBlockButtonPositionSel.onchange = (e) => {
-    chrome.storage.sync.set({
-      quickBlockButtonPosition: normalizeQuickBlockPosition(e.target.value)
-    });
+    saveQuickBlockButtonPosition(e.target.value);
   };
 }
 
@@ -1539,8 +1593,8 @@ chrome.storage.onChanged.addListener((c, a) => {
       setValue(blockModeSel, c.blockMode.newValue);
       updateBlockModeHint(c.blockMode.newValue);
     }
-    if (c.quickBlockButtonPosition) {
-      setValue(quickBlockButtonPositionSel, normalizeQuickBlockPosition(c.quickBlockButtonPosition.newValue));
+    if (c.quickBlockButtonPosition || c.quickBlockButtonPositionSavedAt) {
+      refreshQuickBlockButtonPositionControl();
     }
     if (c.hideComment) setChecked(hideCmtToggle, c.hideComment.newValue);
     if (c.hideImgComment) setChecked(hideImgCmtToggle, c.hideImgComment.newValue);
@@ -1591,6 +1645,10 @@ chrome.storage.onChanged.addListener((c, a) => {
     if (c.noticeBlockEnabled) setChecked(noticeBlockToggle, c.noticeBlockEnabled.newValue);
     if (c.userMemoEnabled) setChecked(userMemoEnabledToggle, c.userMemoEnabled.newValue);
     if (c.compactListEnabled) setChecked(compactListToggle, c.compactListEnabled.newValue);
+  }
+
+  if (a === "local" && (c.quickBlockButtonPosition || c.quickBlockButtonPositionSavedAt)) {
+    refreshQuickBlockButtonPositionControl();
   }
 
   if (a === "local" && globalThis.DCBUserBlockStore?.isRelevantChange?.(c)) {
