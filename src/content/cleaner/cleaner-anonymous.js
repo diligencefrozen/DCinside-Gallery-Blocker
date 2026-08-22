@@ -4,7 +4,6 @@
 (() => {
   const STYLE_ID = "dcb-anonymous-clean-style";
   const HIDDEN_CLASS = "dcb-anonymous-hidden";
-  const REVEAL_ATTR = "data-dcb-anonymous-reveal";
   const WRITER_SELECTOR = [
     ".gall_writer",
     ".ub-writer",
@@ -156,14 +155,6 @@
     return findViewContainer(writer);
   }
 
-  function isTemporarilyRevealed(target) {
-    const token = String(target?.getAttribute?.(REVEAL_ATTR) || "").trim();
-    if (!token) return false;
-    if (token === "1") return true;
-    const itemNo = String(target?.getAttribute?.("data-no") || "").trim();
-    return !!itemNo && token === `no:${itemNo}`;
-  }
-
   /* 비회원 글/댓글을 숨기기 위한 selector 수집 */
   function getAnonymousElements() {
     const anonymousElements = new Set();
@@ -171,7 +162,7 @@
     document.querySelectorAll(WRITER_SELECTOR).forEach((writer) => {
       if (!isAnonymous(writer)) return;
       const target = findAnonymousTarget(writer);
-      if (target && !isTemporarilyRevealed(target)) anonymousElements.add(target);
+      if (target) anonymousElements.add(target);
     });
 
     return Array.from(anonymousElements);
@@ -187,11 +178,14 @@
   function hideNow() {
     if (!hideEnabled) return;
     ensureStyle();
-    clearHiddenElements();
-    const elements = getAnonymousElements();
+    const elements = new Set(getAnonymousElements());
 
-    elements.forEach((el) => {
-      el.classList.add(HIDDEN_CLASS);
+    document.querySelectorAll(`.${HIDDEN_CLASS}`).forEach((element) => {
+      if (!elements.has(element)) element.classList.remove(HIDDEN_CLASS);
+    });
+
+    elements.forEach((element) => {
+      if (!element.classList.contains(HIDDEN_CLASS)) element.classList.add(HIDDEN_CLASS);
     });
   }
 
@@ -227,7 +221,6 @@
         "data-userid",
         "data-user_id",
         "data-no",
-        REVEAL_ATTR,
         "href",
         "onclick",
         "title"
@@ -245,9 +238,6 @@
       scanFrame = 0;
     }
     clearHiddenElements();
-    document.querySelectorAll(`[${REVEAL_ATTR}]`).forEach((element) => {
-      element.removeAttribute(REVEAL_ATTR);
-    });
     const style = document.getElementById(STYLE_ID);
     if (style) style.remove();
   }

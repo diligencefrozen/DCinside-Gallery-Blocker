@@ -11,7 +11,6 @@
   const MATCH_ATTR = "data-dcb-keyword-soft-match";
   const EXTRA_FOR_ATTR = "data-dcb-keyword-soft-extra-for";
   const ANONYMOUS_HIDDEN_CLASS = "dcb-anonymous-hidden";
-  const ANONYMOUS_REVEAL_ATTR = "data-dcb-anonymous-reveal";
   const ALLOW_SESSION_KEY = `dcb-keyword-soft-allow:${location.pathname}${location.search}`;
   const LIST_ITEM_SELECTOR = [
     ".gall_list tr.ub-content",
@@ -225,6 +224,10 @@
     return id;
   }
 
+  function isBlockedByAnonymousFilter(element) {
+    return !!element?.closest?.(`.${ANONYMOUS_HIDDEN_CLASS}`);
+  }
+
   function getPostNoFromUrl() {
     try {
       return new URLSearchParams(location.search).get("no") || "";
@@ -288,7 +291,7 @@
   }
 
   function hideElementWithBox(element, keyword, key, label, extraElements = []) {
-    if (!element || allowedKeys.has(key)) return;
+    if (!element || allowedKeys.has(key) || isBlockedByAnonymousFilter(element)) return;
 
     const id = getSoftId(element);
     if (document.querySelector(`[${PLACEHOLDER_ATTR}="1"][data-dcb-soft-for="${cssEscape(id)}"]`)) {
@@ -330,6 +333,8 @@
     if (!targets.listTitle) return;
 
     getListRows().forEach((row) => {
+      if (isBlockedByAnonymousFilter(row)) return;
+
       const keyword = findKeyword(getListRowText(row));
       if (!keyword) return;
 
@@ -505,21 +510,20 @@
 
     const key = placeholder.dataset.dcbSoftKey || "";
     const id = placeholder.dataset.dcbSoftFor || "";
+    const target = id
+      ? document.querySelector(`[${ITEM_ID_ATTR}="${cssEscape(id)}"]`)
+      : null;
 
-    if (key) {
+    if (key && target && !isBlockedByAnonymousFilter(target)) {
       allowedKeys.add(key);
       saveAllowedKeys();
     }
 
     runWithoutObserver(() => {
       if (id) {
-        const target = document.querySelector(`[${ITEM_ID_ATTR}="${cssEscape(id)}"]`);
         if (target) {
           target.removeAttribute(HIDDEN_ATTR);
           target.removeAttribute(MATCH_ATTR);
-          const itemNo = target.getAttribute("data-no");
-          target.setAttribute(ANONYMOUS_REVEAL_ATTR, itemNo ? `no:${itemNo}` : "1");
-          target.classList.remove(ANONYMOUS_HIDDEN_CLASS);
         }
 
         document.querySelectorAll(`[${EXTRA_FOR_ATTR}="${cssEscape(id)}"]`).forEach((extra) => {
@@ -553,8 +557,18 @@
     if (observer) return;
 
     observer = new MutationObserver((mutations) => {
-      if (suppressObserver) return;
-      if (mutationBelongsToSoftUi(mutations)) return;
+      const anonymousVisibilityChanged = mutations.some((mutation) => {
+        if (mutation.type !== "attributes" || mutation.attributeName !== "class") return false;
+        const current = mutation.target?.classList?.contains(ANONYMOUS_HIDDEN_CLASS);
+        const previous = String(mutation.oldValue || "").split(/\s+/).includes(ANONYMOUS_HIDDEN_CLASS);
+        return current !== previous;
+      });
+      if (suppressObserver && !anonymousVisibilityChanged) return;
+
+      const contentMutations = mutations.filter((mutation) => mutation.type !== "attributes");
+      if (!anonymousVisibilityChanged) {
+        if (!contentMutations.length || mutationBelongsToSoftUi(contentMutations)) return;
+      }
 
       scheduleApply();
     });
@@ -565,7 +579,10 @@
       observer.observe(document.body, {
         childList: true,
         subtree: true,
-        characterData: true
+        characterData: true,
+        attributes: true,
+        attributeOldValue: true,
+        attributeFilter: ["class"]
       });
     };
 
