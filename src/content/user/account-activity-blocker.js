@@ -161,7 +161,7 @@
     const notice = document.createElement("div");
     notice.className = NOTICE_CLASS;
     notice.dataset.pending = pending ? "1" : "0";
-    const title = pending ? "작성자 활동 정보를 확인하고 있어요" : "깡계 기준에 해당하는 게시글을 숨겼어요";
+    const title = pending ? "작성자 활동 정보를 확인하고 있어요" : "활동이 적은 회원의 게시글을 숨겼어요";
     const detail = pending ? `UID ${uid} · 확인하는 동안 먼저 접어 둡니다` : `UID ${uid} · ${verdict?.summary || "설정한 활동 기준 미달"}`;
     notice.innerHTML = `<span><strong>${escapeHtml(title)}</strong><small>${escapeHtml(detail)}</small></span><button type="button">게시글 보기</button>`;
     notice.querySelector("button").addEventListener("click", () => revealTemporarily(target, uid));

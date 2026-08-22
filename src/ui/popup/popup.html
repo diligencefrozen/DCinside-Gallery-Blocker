@@ -1137,19 +1137,19 @@
     <div class="media-status" id="imageBlockStatus"></div>
   </section>
 
-  <section class="media-essentials-card" aria-label="깡계 차단 옵션">
+  <section class="media-essentials-card" aria-label="활동이 적은 회원 차단 옵션">
     <div class="media-essentials-head">
       <div class="media-essentials-copy">
-        <strong>깡계 차단하기</strong>
-        <span>제한된 활동량 조회로 저활동 회원의 글과 댓글을 숨깁니다.</span>
+        <strong>활동이 적은 회원 차단</strong>
+        <span>작성 글·댓글 수가 설정한 기준보다 적은 회원의 게시글과 댓글을 숨깁니다.</span>
       </div>
-      <span class="media-pill">Account</span>
+      <span class="media-pill">회원 UID</span>
     </div>
 
-    <div class="media-risk-panel" data-account-activity-settings aria-label="신규 저활동 회원 차단 설정">
+    <div class="media-risk-panel" data-account-activity-settings aria-label="활동이 적은 회원 차단 설정">
       <div class="media-risk-head">
-        <strong>저활동 회원 안전 차단</strong>
-        <label class="switch" title="깡계 차단"><input type="checkbox" data-account-field="enabled"><span class="slider"></span></label>
+        <strong>판정 기준</strong>
+        <label class="switch" title="활동이 적은 회원 차단"><input type="checkbox" data-account-field="enabled"><span class="slider"></span></label>
       </div>
       <div class="media-risk-grid">
         <label class="media-risk-rule">
@@ -1435,10 +1435,10 @@
 
   <label class="row">
     <span style="min-width:110px;">새로고침 간격 (초)</span>
-    <input type="number" id="autoRefreshIntervalNum" min="60" max="600" step="30">
+    <input type="number" id="autoRefreshIntervalNum" min="10" max="600" step="10">
   </label>
-  <p class="hint">서버 요청 보호를 위해 최소 60초이며, 제한 응답이나 반복 실패 시 자동으로 꺼집니다.</p>
-  <input type="range" id="autoRefreshIntervalRange" min="60" max="600" step="30">
+  <p class="hint">최소 10초입니다. 여러 창의 요청은 순서대로 조정되며, 제한 응답이나 반복 실패 시 자동으로 꺼집니다.</p>
+  <input type="range" id="autoRefreshIntervalRange" min="10" max="600" step="10">
 
   <hr class="divider">
 

@@ -41,6 +41,8 @@ const ACCOUNT_SIGNAL_WINDOW_MS = 10 * 60 * 1000;
 const ACCOUNT_SIGNAL_WINDOW_LIMIT = 12;
 const ACCOUNT_SIGNAL_TIMEOUT_MS = 8_000;
 const ACCOUNT_SIGNAL_COOLDOWN_MS = 60 * 60 * 1000;
+const AUTO_REFRESH_GUARD_KEY = "dcbAutoRefreshLastRequestAt";
+const AUTO_REFRESH_MIN_INTERVAL_MS = 10_000;
 const DCB_FETCH_TIMEOUT_MS = 12_000;
 const IMAGE_BYTES_TIMEOUT_MS = 12_000;
 const IMAGE_BYTES_MAX_SIZE = 25 * 1024 * 1024;
@@ -422,24 +424,14 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
     - 기존 버전에서 켜 둔 자동 활동 조회를 업데이트 직후 한 번 끈다.
     - 갤로그 마지막 페이지를 훑던 연령 판정과 확인 중 선숨김을 비활성화한다.
     - 사용자가 다시 켜더라도 성공 판정은 오래 캐시해 반복 조회를 줄인다.
-    - 기존 자동 새로고침 간격이 60초 미만이면 안전 최솟값으로 올린다.
   */
   if (reason === "install" || reason === "update") {
     try {
       const safetySeed = await chrome.storage.sync.get({
         [LOW_ACTIVITY_RULE_KEY]: LOW_ACTIVITY_INSTALL_DEFAULT,
-        [ACCOUNT_SAFETY_MIGRATION_KEY]: false,
-        autoRefreshInterval: 60
+        [ACCOUNT_SAFETY_MIGRATION_KEY]: false
       });
       const safetyPatch = {};
-      const safeAutoRefreshInterval = Math.min(
-        600,
-        Math.max(60, Number.parseInt(safetySeed.autoRefreshInterval, 10) || 60)
-      );
-
-      if (safeAutoRefreshInterval !== safetySeed.autoRefreshInterval) {
-        safetyPatch.autoRefreshInterval = safeAutoRefreshInterval;
-      }
 
       if (safetySeed[ACCOUNT_SAFETY_MIGRATION_KEY] !== true) {
         const current = safetySeed[LOW_ACTIVITY_RULE_KEY]
@@ -599,7 +591,7 @@ chrome.storage.onChanged.addListener((c, area) => {
 
 
 
-/* ───── 깡계 활동량 조회: 전 탭 공통 속도 제한·중복 제거·회로 차단 ───── */
+/* ───── 회원 활동량 조회: 전 탭 공통 속도 제한·중복 제거·회로 차단 ───── */
 const accountSignalQueue = [];
 const accountSignalInflight = new Map();
 let accountSignalQueueActive = false;
@@ -876,6 +868,85 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       status: 0,
       reason: error?.message || "REQUEST",
       retryAfterMs: 60 * 60 * 1000
+    }));
+
+  return true;
+});
+
+/* ───── 자동 새로고침: 모든 창·탭의 요청 시작 간격 조정 ───── */
+let autoRefreshLastRequestAt = 0;
+let autoRefreshPermitQueue = Promise.resolve();
+
+const autoRefreshGuardReady = (async () => {
+  try {
+    const stored = await chrome.storage.session.get({
+      [AUTO_REFRESH_GUARD_KEY]: 0
+    });
+    const storedAt = Math.max(0, Number(stored[AUTO_REFRESH_GUARD_KEY]) || 0);
+    autoRefreshLastRequestAt = storedAt <= Date.now() ? storedAt : 0;
+  } catch (_) {
+    autoRefreshLastRequestAt = 0;
+  }
+})();
+
+function autoRefreshSenderAllowed(sender) {
+  try {
+    const source = new URL(String(sender?.url || sender?.tab?.url || ""));
+    return /^https?:$/.test(source.protocol)
+      && source.hostname === "gall.dcinside.com"
+      && /^\/(?:board|mgallery\/board|mini\/board|person\/board)\/lists(?:\/|$)/.test(source.pathname)
+      && !!source.searchParams.get("id");
+  } catch (_) {
+    return false;
+  }
+}
+
+async function grantAutoRefreshPermit() {
+  await autoRefreshGuardReady;
+
+  const now = Date.now();
+  if (autoRefreshLastRequestAt > now) autoRefreshLastRequestAt = 0;
+  const retryAfterMs = AUTO_REFRESH_MIN_INTERVAL_MS - (now - autoRefreshLastRequestAt);
+  if (retryAfterMs > 0) {
+    return {
+      ok: true,
+      granted: false,
+      retryAfterMs
+    };
+  }
+
+  autoRefreshLastRequestAt = now;
+  try {
+    await chrome.storage.session.set({ [AUTO_REFRESH_GUARD_KEY]: now });
+  } catch (_) {
+    // 현재 서비스 워커의 메모리 값으로 요청 간격을 계속 지킨다.
+  }
+  return {
+    ok: true,
+    granted: true,
+    grantedAt: now
+  };
+}
+
+function enqueueAutoRefreshPermit() {
+  const task = autoRefreshPermitQueue.then(grantAutoRefreshPermit, grantAutoRefreshPermit);
+  autoRefreshPermitQueue = task.catch(() => {});
+  return task;
+}
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type !== "dcb.autoRefreshPermit") return;
+
+  if (!autoRefreshSenderAllowed(sender)) {
+    sendResponse({ ok: false, reason: "INVALID_REQUEST" });
+    return;
+  }
+
+  enqueueAutoRefreshPermit()
+    .then(sendResponse)
+    .catch((error) => sendResponse({
+      ok: false,
+      reason: error?.message || "REQUEST"
     }));
 
   return true;

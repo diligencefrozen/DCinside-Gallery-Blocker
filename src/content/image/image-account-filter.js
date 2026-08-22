@@ -275,7 +275,7 @@
           available: false,
           shouldHide: false,
           reasons: [],
-          summary: "깡계 차단 비활성화"
+          summary: "활동이 적은 회원 차단 비활성화"
         };
       }
 

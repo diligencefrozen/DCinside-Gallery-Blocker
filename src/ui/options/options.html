@@ -1163,10 +1163,10 @@
     </div>
 
     <div class="range-row">
-      <input type="number" id="autoRefreshIntervalNum" min="60" max="600" step="30" title="새로고침 간격 초">
-      <input type="range" id="autoRefreshIntervalRange" min="60" max="600" step="30" title="새로고침 간격 슬라이더">
+      <input type="number" id="autoRefreshIntervalNum" min="10" max="600" step="10" title="새로고침 간격 초">
+      <input type="range" id="autoRefreshIntervalRange" min="10" max="600" step="10" title="새로고침 간격 슬라이더">
     </div>
-    <p class="note">서버 요청 보호를 위해 최소 60초, 최대 600초(10분)까지 설정 가능합니다.</p>
+    <p class="note">최소 10초, 최대 600초(10분)까지 설정할 수 있습니다. 여러 창·탭의 요청은 순서대로 간격을 조정하며, 접속 제한 응답이나 반복 실패가 감지되면 자동으로 꺼집니다.</p>
   </section>
 
   <section class="card stack">
@@ -1634,19 +1634,19 @@
     <div class="image-block-status" id="mediaShieldStatus"></div>
   </section>
 
-  <section class="card image-block-card" aria-label="깡계 차단 옵션">
+  <section class="card image-block-card" aria-label="활동이 적은 회원 차단 옵션">
     <div class="image-block-head">
       <div class="image-block-copy">
-        <h2>🛡️ 깡계 차단하기</h2>
-        <p class="note">작성 글·댓글 수를 제한적으로 확인해 저활동 회원의 콘텐츠를 숨깁니다.</p>
+        <h2>🛡️ 활동이 적은 회원 차단</h2>
+        <p class="note">작성 글·댓글 수가 설정한 기준보다 적은 회원의 게시글과 댓글을 숨깁니다.</p>
       </div>
       <span class="image-block-pill">안전 조회</span>
     </div>
 
-    <div class="image-risk-panel" data-account-activity-settings aria-label="신규 저활동 회원 차단 설정">
+    <div class="image-risk-panel" data-account-activity-settings aria-label="활동이 적은 회원 차단 설정">
       <div class="image-risk-head">
-        <div><strong>저활동 회원 자동 차단</strong><span>전 탭 공통 요청 제한과 장기 캐시를 적용합니다.</span></div>
-        <label class="switch" title="깡계 차단"><input type="checkbox" data-account-field="enabled"><span class="slider"></span></label>
+        <div><strong>판정 기준</strong><span>작성 글·댓글 수를 확인하며, 전 탭 공통 요청 제한과 장기 캐시를 적용합니다.</span></div>
+        <label class="switch" title="활동이 적은 회원 차단"><input type="checkbox" data-account-field="enabled"><span class="slider"></span></label>
       </div>
       <div class="image-risk-grid">
         <label class="image-risk-rule">
@@ -1673,7 +1673,7 @@
           </select>
         </label>
       </div>
-      <p class="image-risk-note">회원 UID에만 적용됩니다. 갤로그 페이지를 추가로 조회하지 않으며, 페이지당 신규 UID 12개만 확인합니다. 모든 탭을 합쳐 10분당 최대 12회로 제한하고 결과를 최소 72시간 캐시합니다. 한도 초과·오류 항목은 숨기지 않습니다.</p>
+      <p class="image-risk-note">회원 UID에만 적용됩니다. 갤로그 페이지를 추가로 조회하지 않으며, 페이지당 캐시에 없는 UID를 최대 12개까지 확인합니다. 모든 탭을 합쳐 10분당 최대 12회로 제한하고 결과를 최소 72시간 캐시합니다. 한도 초과·오류 항목은 숨기지 않습니다.</p>
       <div class="image-risk-actions">
         <button type="button" data-account-clear-cache>판정 캐시 초기화</button>
         <span class="image-risk-status" data-account-status></span>

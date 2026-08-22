@@ -1330,7 +1330,7 @@ if (autoRefreshToggle) {
 }
 
 function updateAutoRefreshInterval(v) {
-  const num = Math.round(Math.max(60, Math.min(600, parseInt(v, 10) || 60)) / 30) * 30;
+  const num = Math.round(Math.max(10, Math.min(600, parseInt(v, 10) || 60)) / 10) * 10;
   setValue(autoRefreshIntervalNum, num);
   setValue(autoRefreshIntervalRange, num);
   chrome.storage.sync.set({ autoRefreshInterval: num });

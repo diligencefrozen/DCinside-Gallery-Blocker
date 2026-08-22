@@ -17,10 +17,13 @@
   let lastStatus = "대기 중";
   let consecutiveFailures = 0;
 
-  const MIN_INTERVAL = 60;
+  const MIN_INTERVAL = 10;
   const MAX_INTERVAL = 600;
   const MAX_IMPORT_ROWS = 50;
   const REQUEST_TIMEOUT_MS = 12_000;
+  const PERMIT_MESSAGE_TIMEOUT_MS = 3_000;
+  const PERMIT_MAX_WAIT_MS = 30_000;
+  const PERMIT_FRESHNESS_MS = 1_000;
   const FAILURE_LIMIT = 3;
   const THROTTLE_STATUSES = new Set([403, 429, 503]);
   const COUNTDOWN_ID = "dcb-auto-refresh-countdown";
@@ -182,7 +185,12 @@
   function mergeFreshRows(fetchedDoc){
     const liveBody = $(".gall_list tbody");
     const fetchedBody = $(".gall_list tbody", fetchedDoc);
-    if (!liveBody || !fetchedBody) return { added: 0, message: "목록 테이블 없음" };
+    if (!liveBody) throw new Error("현재 목록 테이블을 찾지 못했습니다.");
+    if (!fetchedBody) {
+      const error = new Error("목록 형식이 아닌 응답입니다.");
+      error.code = "INVALID_LIST_RESPONSE";
+      throw error;
+    }
 
     const exists = currentNumbers();
     const freshRows = $$("tr.ub-content", fetchedBody)
@@ -209,21 +217,122 @@
     return url.href;
   }
 
+  function isExpectedListResponse(rawUrl, requestedUrl = listUrl()){
+    try {
+      const expected = new URL(requestedUrl);
+      const actual = new URL(String(rawUrl || ""));
+      return /^https?:$/.test(actual.protocol)
+        && actual.hostname === expected.hostname
+        && /\/board\/lists(?:\/|$)/.test(actual.pathname)
+        && actual.searchParams.get("id") === expected.searchParams.get("id");
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function delayWhileActive(ms){
+    const deadline = Date.now() + Math.max(0, ms);
+    return new Promise((resolve) => {
+      const check = () => {
+        if (!autoRefreshEnabled || shouldPause()) {
+          resolve(false);
+          return;
+        }
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) {
+          resolve(true);
+          return;
+        }
+        setTimeout(check, Math.min(250, remaining));
+      };
+      check();
+    });
+  }
+
+  async function requestAutoRefreshPermit(){
+    const deadline = Date.now() + PERMIT_MAX_WAIT_MS;
+
+    while (autoRefreshEnabled && !shouldPause() && Date.now() < deadline) {
+      let timeoutId = null;
+      try {
+        const permit = await Promise.race([
+          chrome.runtime.sendMessage({ type: "dcb.autoRefreshPermit" }),
+          new Promise((_, reject) => {
+            timeoutId = setTimeout(
+              () => reject(new Error("새로고침 요청 조정 시간 초과")),
+              PERMIT_MESSAGE_TIMEOUT_MS
+            );
+          })
+        ]);
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+          timeoutId = null;
+        }
+
+        if (!permit?.ok) return false;
+        if (permit.granted) {
+          const grantAgeMs = Date.now() - Number(permit.grantedAt);
+          if (grantAgeMs >= 0 && grantAgeMs <= PERMIT_FRESHNESS_MS) return true;
+          continue;
+        }
+
+        const remainingBudget = deadline - Date.now();
+        const retryAfterMs = Math.min(
+          remainingBudget,
+          Math.max(250, Number(permit.retryAfterMs) || 250)
+        );
+        if (retryAfterMs <= 0) return false;
+        lastStatus = "다른 창의 새로고침과 간격 조정 중";
+        updateCountdown();
+        if (!await delayWhileActive(retryAfterMs)) return false;
+      } catch (_) {
+        return false;
+      } finally {
+        if (timeoutId) clearTimeout(timeoutId);
+      }
+    }
+
+    return false;
+  }
+
   async function performAutoRefresh(){
     if (refreshing || !autoRefreshEnabled) return;
     if (shouldPause()) {
       resetCountdown();
       return;
     }
+    if (!$(".gall_list tbody")) {
+      lastStatus = "목록 테이블을 찾지 못해 자동 중지";
+      autoRefreshEnabled = false;
+      console.warn(`[DCB] ${lastStatus}`);
+      await chrome.storage.sync.set({ autoRefreshEnabled: false });
+      stopCountdown();
+      return;
+    }
 
     refreshing = true;
     lastStatus = "자동 실행 중";
     updateCountdown();
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    let timeoutId = null;
 
     try {
-      const response = await fetch(listUrl(), {
+      const permitted = await requestAutoRefreshPermit();
+      if (!permitted) {
+        lastStatus = autoRefreshEnabled && !shouldPause()
+          ? "다른 창에서 새로고침 중 · 다음 주기에 재시도"
+          : "일시중지";
+        return;
+      }
+      if (!autoRefreshEnabled || shouldPause()) {
+        lastStatus = "일시중지";
+        return;
+      }
+
+      const controller = new AbortController();
+      timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+      const requestHref = location.href;
+      const requestUrl = listUrl();
+      const response = await fetch(requestUrl, {
         credentials: "include",
         cache: "no-store",
         signal: controller.signal
@@ -233,7 +342,20 @@
         error.status = response.status;
         throw error;
       }
+      if (!isExpectedListResponse(response.url, requestUrl)) {
+        const error = new Error("예상한 목록 주소가 아닌 응답입니다.");
+        error.code = "INVALID_LIST_RESPONSE";
+        throw error;
+      }
+      if (location.href !== requestHref || !autoRefreshEnabled || shouldPause()) {
+        lastStatus = "주소 변경 감지 · 이전 응답 건너뜀";
+        return;
+      }
       const html = await response.text();
+      if (location.href !== requestHref || !autoRefreshEnabled || shouldPause()) {
+        lastStatus = "주소 변경 감지 · 이전 응답 건너뜀";
+        return;
+      }
       const fetchedDoc = new DOMParser().parseFromString(html, "text/html");
       const result = mergeFreshRows(fetchedDoc);
       consecutiveFailures = 0;
@@ -241,13 +363,16 @@
     } catch (error) {
       consecutiveFailures += 1;
       const throttled = THROTTLE_STATUSES.has(Number(error?.status));
+      const invalidResponse = error?.code === "INVALID_LIST_RESPONSE";
       const timedOut = error?.name === "AbortError";
-      const shouldStop = throttled || consecutiveFailures >= FAILURE_LIMIT;
+      const shouldStop = throttled || invalidResponse || consecutiveFailures >= FAILURE_LIMIT;
 
       if (shouldStop) {
-        lastStatus = throttled
-          ? `HTTP ${error.status} 감지 · 안전을 위해 자동 중지`
-          : `${consecutiveFailures}회 연속 실패 · 안전을 위해 자동 중지`;
+        lastStatus = invalidResponse
+          ? "목록이 아닌 응답 감지 · 안전을 위해 자동 중지"
+          : (throttled
+            ? `HTTP ${error.status} 감지 · 안전을 위해 자동 중지`
+            : `${consecutiveFailures}회 연속 실패 · 안전을 위해 자동 중지`);
         autoRefreshEnabled = false;
         console.warn(`[DCB] ${lastStatus}`);
         await chrome.storage.sync.set({ autoRefreshEnabled: false });
@@ -257,7 +382,7 @@
           : `갱신 실패 (${consecutiveFailures}/${FAILURE_LIMIT}): ${error?.message || error}`;
       }
     } finally {
-      clearTimeout(timeoutId);
+      if (timeoutId) clearTimeout(timeoutId);
       refreshing = false;
       if (autoRefreshEnabled) resetCountdown();
       else stopCountdown();

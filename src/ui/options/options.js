@@ -554,7 +554,7 @@ function updateDelay(value) {
 }
 
 function updateAutoRefreshInterval(value) {
-  const num = Math.round(clampNumber(value, 60, 600, 60) / 30) * 30;
+  const num = Math.round(clampNumber(value, 10, 600, 60) / 10) * 10;
   setValue(autoRefreshIntervalNumEl, num);
   setValue(autoRefreshIntervalRangeEl, num);
   chrome.storage.sync.set({ autoRefreshInterval: num });

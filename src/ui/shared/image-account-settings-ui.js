@@ -107,12 +107,12 @@
     const next = read(root);
     chrome.storage.sync.set({ [STORAGE_KEY]: next }, () => {
       if (chrome.runtime.lastError) {
-        status(root, "깡계 차단 기준을 저장하지 못했어요.", true);
+        status(root, "활동이 적은 회원 차단 기준을 저장하지 못했어요.", true);
         return;
       }
       render(root, next);
       const mode = next.activityMatchMode === "any" ? "하나만 미달해도" : "글·댓글 모두 미달할 때";
-      status(root, next.enabled ? `안전 모드 저장 완료 · ${mode}` : "깡계 차단을 껐어요.");
+      status(root, next.enabled ? `활동이 적은 회원 차단 기준 저장 완료 · ${mode}` : "활동이 적은 회원 차단을 껐어요.");
     });
   }
 
@@ -137,7 +137,7 @@
     roots.forEach((root) => {
       const settings = normalize(data[STORAGE_KEY]);
       render(root, settings);
-      status(root, settings.enabled ? "깡계 차단 안전 모드 사용 중" : "깡계 차단은 꺼져 있어요.");
+      status(root, settings.enabled ? "활동이 적은 회원 차단 사용 중" : "활동이 적은 회원 차단은 꺼져 있어요.");
     });
   });
 

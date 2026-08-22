@@ -99,13 +99,13 @@ DCinside has a dedicated page that collects popular and trending posts from acro
 
 - **Image Blocking (`이미지 차단`)** — collapses post images and lets the user reveal them with **View Image (`이미지 보기`)**
 - **Individual Image Block List (`개별 이미지 차단 목록`)**
-- **Block New/Low-Activity Accounts (`깡계 차단하기`)** — uses public activity age and post/comment counts to filter new or low-activity member accounts
+- **Block Members with Little Activity (`활동이 적은 회원 차단`)** — checks post/comment counts and hides posts and comments from member IDs below the configured thresholds; it does not infer account age
 - **Choose DCCons to Hide (`숨길 디시콘 선택하기`)** — supports **Block This DCCon Only (`이 디시콘만 차단`)** and **Block This Entire DCCon Group (`이 디시콘 그룹 전체 차단`)**
 
 ### Other browsing tools
 
 - **User Notes (`이용자 메모`)**
-- **Auto Refresh (`자동 새로고침`)**
+- **Auto Refresh (`자동 새로고침`)** — defaults to 60 seconds and can be adjusted from 10 seconds to 10 minutes
 - **Compact Mode (`컴팩트 모드`)**
 - **Show Member ID Next to Nickname (`닉네임 옆 회원 ID 표시`)**
 - **Font Settings (`글꼴 설정`)**
@@ -143,7 +143,7 @@ To keep the portfolio documentation traceable to the product, this table uses th
 | Right-click blocking returned “Could not find author information” across multiple galleries | Strengthened author lookup for **User Blocking (`사용자 차단`)**, then redesigned UID/IP block-list storage after broader testing | `7.3.22.2026` → `7.3.25.2026` |
 | Users could change IPs or accounts while keeping the same nickname | Extended **User Blocking (`사용자 차단`)** with nickname matching and hiding of replies attached to blocked comments | `7.3.29.2026` |
 | Memo controls made post lists too tall and author/IP information felt too spread out | Refined **User Notes (`이용자 메모`)** and tightened the author-information layout | `7.3.29.2026` |
-| Image blocking sometimes appeared to do nothing | Changed **Image Blocking (`이미지 차단`)** to collapse blocked images and strengthened **Block New/Low-Activity Accounts (`깡계 차단하기`)** | `7.3.32.2026` |
+| Image blocking sometimes appeared to do nothing | Changed **Image Blocking (`이미지 차단`)** to collapse blocked images and strengthened **Block Members with Little Activity (`활동이 적은 회원 차단`)** | `7.3.32.2026` |
 | Users wanted to block one DCCon or an entire DCCon pack | Added **Choose DCCons to Hide (`숨길 디시콘 선택하기`)** with **Block This DCCon Only (`이 디시콘만 차단`)** and **Block This Entire DCCon Group (`이 디시콘 그룹 전체 차단`)** | `7.3.35.2026` |
 | Unblocking a user required going back into settings | Added in-place unblocking through **Instant Right-click Block/Unblock (`우클릭 즉시 차단/해제`)** and **Blocked · Unblock (`차단됨 · 해제`)** | `7.3.36.2026` |
 | Comment pages sometimes jittered and controls stopped responding | Reduced repeated full-page processing during comment updates, cutting duplicate work around **User Blocking (`사용자 차단`)**, **Image Blocking (`이미지 차단`)**, and related filters | `7.3.37.2026` |
