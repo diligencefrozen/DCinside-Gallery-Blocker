@@ -91,7 +91,7 @@ const IMAGE_ACCOUNT_RULE_DEFAULT = {
 
 const BACKUP_KEYS = [
   "blockedIds", "removeSelectors", "removeSelectorsGall", "removeSelectorsSearch",
-  "userBlockEnabled", "userBlockTriggerMode", "userBlockHoverHintEnabled", "blockedUids", "hideComment", "hideImgComment", "hideDccon",
+  "userBlockEnabled", "userBlockTriggerMode", "userBlockHoverHintEnabled", "blockedUids", "hideComment", "hideImgComment", "hideDccon", "hideTextCon",
   "hideMainEnabled", "hideGallEnabled", "hideSearchEnabled",
   "enabled", "galleryBlockEnabled", "builtinDcbestBlockEnabled", "blockMode", "quickBlockButtonPosition", "quickBlockButtonPositionSavedAt", "autoRefreshEnabled",
   "autoRefreshInterval", "delay", "showUidBadge", "showMemberIpInfo", "linkWarnEnabled", "hideDCGray",
@@ -116,6 +116,7 @@ const BACKUP_DEFAULTS = {
   hideComment: false,
   hideImgComment: false,
   hideDccon: false,
+  hideTextCon: false,
   hideMainEnabled: true,
   hideGallEnabled: true,
   hideSearchEnabled: true,
@@ -157,6 +158,19 @@ const BACKUP_DEFAULTS = {
   dcbApplyFontToDc: false,
   dcbTextDetection: { enabled: false, posts: true, comments: true, sensitivity: "careful" }
 };
+
+const PERSISTENT_LOCAL_BACKUP_KEYS = [
+  "quickBlockButtonPosition",
+  "quickBlockButtonPositionSavedAt",
+  "userMemos",
+  IMAGE_BLOCK_CONFIG_KEY,
+  IMAGE_BLOCK_RECORD_KEY,
+  IMAGE_BLOCK_AUTHOR_TARGET_KEY,
+  DCCON_BLOCK_STATE_KEY
+];
+
+const UI_SETTINGS_CACHE = globalThis.DCBUiSettingsCache;
+
 
 /* ───── DOM 캐시 ───── */
 const newIdInput = document.getElementById("newId");
@@ -215,6 +229,7 @@ const previewEnabledEl = document.getElementById("previewEnabled");
 const hideCommentEl = document.getElementById("hideComment");
 const hideImgCommentEl = document.getElementById("hideImgComment");
 const hideDcconEl = document.getElementById("hideDccon");
+const hideTextConEl = document.getElementById("hideTextCon");
 const hideAnonymousEl = document.getElementById("hideAnonymousEnabled");
 const gamemecaBlockEnabledEl = document.getElementById("gamemecaBlockEnabled");
 const doryBlockEnabledEl = document.getElementById("doryBlockEnabled");
@@ -733,37 +748,47 @@ function buildBackupSnapshot(syncSnapshot = {}, localSnapshot = {}) {
 
 async function exportSettings() {
   try {
-    const syncSnapshot = await chrome.storage.sync.get(BACKUP_DEFAULTS);
-    const localSnapshot = chrome.storage.local
-      ? await chrome.storage.local.get({
-          [QUICK_BLOCK_POSITION_KEY]: "",
-          [QUICK_BLOCK_POSITION_SAVED_AT_KEY]: 0,
-          userMemos: {},
-          [IMAGE_BLOCK_CONFIG_KEY]: null,
-          [IMAGE_BLOCK_RECORD_KEY]: {},
-          [IMAGE_BLOCK_AUTHOR_TARGET_KEY]: [],
-          [DCCON_BLOCK_STATE_KEY]: DCCON_BLOCK_STATE_DEFAULT
-        })
-      : {};
+    const userBlockReader = globalThis.DCBUserBlockStore?.getAllTokensReadOnly
+      || globalThis.DCBUserBlockStore?.getAllTokens;
 
-    const blockedUids = globalThis.DCBUserBlockStore?.getAllTokens
-      ? await (DCBUserBlockStore.getAllTokensReadOnly || DCBUserBlockStore.getAllTokens)()
-      : [];
+    const [syncSnapshot, localSnapshot, blockedUids] = await Promise.all([
+      chrome.storage.sync.get(null),
+      chrome.storage.local ? chrome.storage.local.get(PERSISTENT_LOCAL_BACKUP_KEYS) : Promise.resolve({}),
+      userBlockReader ? userBlockReader.call(DCBUserBlockStore) : Promise.resolve([])
+    ]);
 
-    const snapshot = buildBackupSnapshot(syncSnapshot, localSnapshot);
-    snapshot.blockedUids = blockedUids;
-    snapshot.userMemos = normalizeImportedMemoObject(localSnapshot.userMemos || {});
-    snapshot[IMAGE_BLOCK_CONFIG_KEY] = normalizeImageBlockConfig(
-      localSnapshot[IMAGE_BLOCK_CONFIG_KEY] || syncSnapshot[IMAGE_BLOCK_CONFIG_KEY]
-    );
-    snapshot[IMAGE_BLOCK_RECORD_KEY] = normalizeImageBlockRecords(localSnapshot[IMAGE_BLOCK_RECORD_KEY]);
-    snapshot[IMAGE_BLOCK_AUTHOR_TARGET_KEY] = normalizeImageAuthorTargets(localSnapshot[IMAGE_BLOCK_AUTHOR_TARGET_KEY]);
-    snapshot[DCCON_BLOCK_STATE_KEY] = normalizeDcconBlockState(localSnapshot[DCCON_BLOCK_STATE_KEY]);
+    const sync = { ...BACKUP_DEFAULTS, ...(syncSnapshot && typeof syncSnapshot === "object" ? syncSnapshot : {}) };
+    [
+      "blockedUids",
+      "userMemos",
+      IMAGE_BLOCK_RECORD_KEY,
+      IMAGE_BLOCK_AUTHOR_TARGET_KEY,
+      DCCON_BLOCK_STATE_KEY
+    ].forEach((key) => delete sync[key]);
+
+    const local = { ...localSnapshot };
+    if (!Object.prototype.hasOwnProperty.call(local, QUICK_BLOCK_POSITION_KEY)) {
+      local[QUICK_BLOCK_POSITION_KEY] = normalizeQuickBlockPosition(sync[QUICK_BLOCK_POSITION_KEY]);
+      local[QUICK_BLOCK_POSITION_SAVED_AT_KEY] = quickBlockPositionTimestamp(sync[QUICK_BLOCK_POSITION_SAVED_AT_KEY]);
+    } else {
+      local[QUICK_BLOCK_POSITION_KEY] = normalizeQuickBlockPosition(local[QUICK_BLOCK_POSITION_KEY]);
+      local[QUICK_BLOCK_POSITION_SAVED_AT_KEY] = quickBlockPositionTimestamp(local[QUICK_BLOCK_POSITION_SAVED_AT_KEY])
+        || quickBlockPositionTimestamp(sync[QUICK_BLOCK_POSITION_SAVED_AT_KEY]);
+    }
+    local.userMemos = normalizeImportedMemoObject(local.userMemos || {});
+    local[IMAGE_BLOCK_CONFIG_KEY] = normalizeImageBlockConfig(local[IMAGE_BLOCK_CONFIG_KEY] || syncSnapshot[IMAGE_BLOCK_CONFIG_KEY]);
+    local[IMAGE_BLOCK_RECORD_KEY] = normalizeImageBlockRecords(local[IMAGE_BLOCK_RECORD_KEY]);
+    local[IMAGE_BLOCK_AUTHOR_TARGET_KEY] = normalizeImageAuthorTargets(local[IMAGE_BLOCK_AUTHOR_TARGET_KEY]);
+    local[DCCON_BLOCK_STATE_KEY] = normalizeDcconBlockState(local[DCCON_BLOCK_STATE_KEY]);
+    local.blockedUids = Array.isArray(blockedUids) ? blockedUids : [];
 
     const payload = {
-      version: 7,
+      version: 8,
       exportedAt: new Date().toISOString(),
-      data: snapshot
+      storage: {
+        sync,
+        local
+      }
     };
 
     const ts = new Date().toISOString().replace(/[:.]/g, "-");
@@ -774,6 +799,107 @@ async function exportSettings() {
   }
 }
 
+function parseBackupPayload(raw) {
+  if (!raw || typeof raw !== "object") throw new Error("invalid");
+
+  if (Number(raw.version) >= 8 && raw.storage && typeof raw.storage === "object") {
+    const sync = raw.storage.sync && typeof raw.storage.sync === "object" && !Array.isArray(raw.storage.sync)
+      ? { ...raw.storage.sync }
+      : {};
+    [
+      "blockedUids",
+      "userMemos",
+      IMAGE_BLOCK_RECORD_KEY,
+      IMAGE_BLOCK_AUTHOR_TARGET_KEY,
+      DCCON_BLOCK_STATE_KEY
+    ].forEach((key) => delete sync[key]);
+    if (Object.prototype.hasOwnProperty.call(sync, IMAGE_BLOCK_CONFIG_KEY)) {
+      sync[IMAGE_BLOCK_CONFIG_KEY] = normalizeImageBlockConfig(sync[IMAGE_BLOCK_CONFIG_KEY]);
+    }
+    if (Object.prototype.hasOwnProperty.call(sync, IMAGE_ACCOUNT_RULE_KEY)) {
+      sync[IMAGE_ACCOUNT_RULE_KEY] = normalizeImageAccountRules(sync[IMAGE_ACCOUNT_RULE_KEY]);
+    }
+    const localSource = raw.storage.local && typeof raw.storage.local === "object" && !Array.isArray(raw.storage.local)
+      ? raw.storage.local
+      : {};
+    const local = {};
+
+    PERSISTENT_LOCAL_BACKUP_KEYS.forEach((key) => {
+      if (Object.prototype.hasOwnProperty.call(localSource, key)) local[key] = localSource[key];
+    });
+
+    if (Object.prototype.hasOwnProperty.call(local, QUICK_BLOCK_POSITION_KEY)) {
+      local[QUICK_BLOCK_POSITION_KEY] = normalizeQuickBlockPosition(local[QUICK_BLOCK_POSITION_KEY]);
+      local[QUICK_BLOCK_POSITION_SAVED_AT_KEY] = quickBlockPositionTimestamp(local[QUICK_BLOCK_POSITION_SAVED_AT_KEY]) || Date.now();
+    } else if (Object.prototype.hasOwnProperty.call(sync, QUICK_BLOCK_POSITION_KEY)) {
+      local[QUICK_BLOCK_POSITION_KEY] = normalizeQuickBlockPosition(sync[QUICK_BLOCK_POSITION_KEY]);
+      local[QUICK_BLOCK_POSITION_SAVED_AT_KEY] = quickBlockPositionTimestamp(sync[QUICK_BLOCK_POSITION_SAVED_AT_KEY]);
+    }
+    if (Object.prototype.hasOwnProperty.call(local, "userMemos")) {
+      local.userMemos = normalizeImportedMemoObject(local.userMemos || {});
+    }
+    if (Object.prototype.hasOwnProperty.call(local, IMAGE_BLOCK_CONFIG_KEY)) {
+      local[IMAGE_BLOCK_CONFIG_KEY] = normalizeImageBlockConfig(local[IMAGE_BLOCK_CONFIG_KEY]);
+    }
+    if (Object.prototype.hasOwnProperty.call(local, IMAGE_BLOCK_RECORD_KEY)) {
+      local[IMAGE_BLOCK_RECORD_KEY] = normalizeImageBlockRecords(local[IMAGE_BLOCK_RECORD_KEY]);
+    }
+    if (Object.prototype.hasOwnProperty.call(local, IMAGE_BLOCK_AUTHOR_TARGET_KEY)) {
+      local[IMAGE_BLOCK_AUTHOR_TARGET_KEY] = normalizeImageAuthorTargets(local[IMAGE_BLOCK_AUTHOR_TARGET_KEY]);
+    }
+    if (Object.prototype.hasOwnProperty.call(local, DCCON_BLOCK_STATE_KEY)) {
+      local[DCCON_BLOCK_STATE_KEY] = normalizeDcconBlockState(local[DCCON_BLOCK_STATE_KEY]);
+    }
+
+    const blockedUids = Object.prototype.hasOwnProperty.call(localSource, "blockedUids")
+      ? localSource.blockedUids
+      : null;
+    if (blockedUids !== null && (!Array.isArray(blockedUids) || !blockedUids.every((value) => typeof value === "string"))) {
+      throw new Error("invalid blockedUids");
+    }
+
+    if (!Object.keys(sync).length && !Object.keys(local).length && !blockedUids?.length) throw new Error("empty");
+    return { sync, local, blockedUids };
+  }
+
+  // 7.3.38 이하 백업 파일도 그대로 불러올 수 있게 유지한다.
+  const legacy = sanitizeImport(raw);
+  const local = {};
+  const sync = { ...legacy };
+  const blockedUids = Object.prototype.hasOwnProperty.call(sync, "blockedUids") ? sync.blockedUids : null;
+
+  if (blockedUids !== null && (!Array.isArray(blockedUids) || !blockedUids.every((value) => typeof value === "string"))) {
+    throw new Error("invalid blockedUids");
+  }
+
+  ["blockedUids", "userMemos", IMAGE_BLOCK_RECORD_KEY, IMAGE_BLOCK_AUTHOR_TARGET_KEY, DCCON_BLOCK_STATE_KEY].forEach((key) => delete sync[key]);
+  if (Object.prototype.hasOwnProperty.call(sync, IMAGE_BLOCK_CONFIG_KEY)) {
+    sync[IMAGE_BLOCK_CONFIG_KEY] = normalizeImageBlockConfig(sync[IMAGE_BLOCK_CONFIG_KEY]);
+  }
+  if (Object.prototype.hasOwnProperty.call(sync, IMAGE_ACCOUNT_RULE_KEY)) {
+    sync[IMAGE_ACCOUNT_RULE_KEY] = normalizeImageAccountRules(sync[IMAGE_ACCOUNT_RULE_KEY]);
+  }
+  if (Object.prototype.hasOwnProperty.call(legacy, "userMemos")) local.userMemos = normalizeImportedMemoObject(legacy.userMemos || {});
+  if (Object.prototype.hasOwnProperty.call(legacy, IMAGE_BLOCK_CONFIG_KEY)) local[IMAGE_BLOCK_CONFIG_KEY] = normalizeImageBlockConfig(legacy[IMAGE_BLOCK_CONFIG_KEY]);
+  if (Object.prototype.hasOwnProperty.call(legacy, IMAGE_BLOCK_RECORD_KEY)) local[IMAGE_BLOCK_RECORD_KEY] = normalizeImageBlockRecords(legacy[IMAGE_BLOCK_RECORD_KEY]);
+  if (Object.prototype.hasOwnProperty.call(legacy, IMAGE_BLOCK_AUTHOR_TARGET_KEY)) local[IMAGE_BLOCK_AUTHOR_TARGET_KEY] = normalizeImageAuthorTargets(legacy[IMAGE_BLOCK_AUTHOR_TARGET_KEY]);
+  if (Object.prototype.hasOwnProperty.call(legacy, DCCON_BLOCK_STATE_KEY)) local[DCCON_BLOCK_STATE_KEY] = normalizeDcconBlockState(legacy[DCCON_BLOCK_STATE_KEY]);
+
+  if (Object.prototype.hasOwnProperty.call(legacy, QUICK_BLOCK_POSITION_KEY)) {
+    const stamp = quickBlockPositionTimestamp(legacy[QUICK_BLOCK_POSITION_SAVED_AT_KEY]) || Date.now();
+    local[QUICK_BLOCK_POSITION_KEY] = normalizeQuickBlockPosition(legacy[QUICK_BLOCK_POSITION_KEY]);
+    local[QUICK_BLOCK_POSITION_SAVED_AT_KEY] = stamp;
+  }
+
+  return { sync, local, blockedUids };
+}
+
+async function restoreUserBlockTokens(tokens) {
+  if (tokens === null) return [];
+  if (globalThis.DCBUserBlockStore?.setAllTokens) return DCBUserBlockStore.setAllTokens(tokens || []);
+  return setStoredUidList(tokens || []);
+}
+
 function importSettingsFromFile(file) {
   if (!file) return;
 
@@ -782,98 +908,30 @@ function importSettingsFromFile(file) {
   reader.onload = async () => {
     try {
       const parsed = JSON.parse(reader.result);
-      const patch = sanitizeImport(parsed);
-      const quickBlockPatch = {};
-      const hasBlockedUids = Object.prototype.hasOwnProperty.call(patch, "blockedUids");
-      if (
-        hasBlockedUids
-        && (!Array.isArray(patch.blockedUids) || !patch.blockedUids.every((value) => typeof value === "string"))
-      ) {
-        throw new Error("invalid blockedUids");
-      }
-      const blockedUidsPatch = hasBlockedUids ? patch.blockedUids : null;
-      const hasUserMemos = Object.prototype.hasOwnProperty.call(patch, "userMemos");
-      const userMemosPatch = hasUserMemos
-        ? normalizeImportedMemoObject(patch.userMemos || {})
-        : null;
-      const hasImageBlockConfig = Object.prototype.hasOwnProperty.call(patch, IMAGE_BLOCK_CONFIG_KEY);
-      const imageBlockConfigPatch = hasImageBlockConfig
-        ? normalizeImageBlockConfig(patch[IMAGE_BLOCK_CONFIG_KEY])
-        : null;
-      const hasImageBlockRecords = Object.prototype.hasOwnProperty.call(patch, IMAGE_BLOCK_RECORD_KEY);
-      const imageBlockRecordsPatch = hasImageBlockRecords
-        ? normalizeImageBlockRecords(patch[IMAGE_BLOCK_RECORD_KEY])
-        : null;
-      const hasImageBlockAuthorTargets = Object.prototype.hasOwnProperty.call(patch, IMAGE_BLOCK_AUTHOR_TARGET_KEY);
-      const imageBlockAuthorTargetsPatch = hasImageBlockAuthorTargets
-        ? normalizeImageAuthorTargets(patch[IMAGE_BLOCK_AUTHOR_TARGET_KEY])
-        : null;
-      const hasImageAccountRules = Object.prototype.hasOwnProperty.call(patch, IMAGE_ACCOUNT_RULE_KEY);
-      if (hasImageAccountRules) {
-        patch[IMAGE_ACCOUNT_RULE_KEY] = normalizeImageAccountRules(patch[IMAGE_ACCOUNT_RULE_KEY]);
-      }
-      const hasDcconBlockState = Object.prototype.hasOwnProperty.call(patch, DCCON_BLOCK_STATE_KEY);
-      const dcconBlockStatePatch = hasDcconBlockState
-        ? normalizeDcconBlockState(patch[DCCON_BLOCK_STATE_KEY])
-        : null;
+      const { sync, local, blockedUids } = parseBackupPayload(parsed);
 
-      // 백그라운드 연결/차단 목록 저장 실패는 다른 설정을 쓰기 전에 확인한다.
-      if (hasBlockedUids) {
-        await setStoredUidList(blockedUidsPatch);
+      // 저장 완료를 기다리기 전에 화면을 먼저 바꾼다. 강제 새로고침도 하지 않는다.
+      UI_SETTINGS_CACHE?.replace?.(sync);
+      applyOptionsSettings({ ...BACKUP_DEFAULTS, ...sync }, { refreshAsync: false });
+
+      const jobs = [];
+      if (Object.keys(sync).length) jobs.push(chrome.storage.sync.set(sync));
+      if (chrome.storage.local && Object.keys(local).length) jobs.push(chrome.storage.local.set(local));
+      if (blockedUids !== null) jobs.push(restoreUserBlockTokens(blockedUids));
+
+      await Promise.all(jobs);
+
+      if (local[QUICK_BLOCK_POSITION_KEY]) {
+        broadcastQuickBlockPosition(local[QUICK_BLOCK_POSITION_KEY]);
       }
 
-      delete patch.blockedUids;
-      delete patch.userMemos;
-      delete patch[IMAGE_BLOCK_RECORD_KEY];
-      delete patch[IMAGE_BLOCK_AUTHOR_TARGET_KEY];
-      delete patch[DCCON_BLOCK_STATE_KEY];
-      if (hasImageBlockConfig) patch[IMAGE_BLOCK_CONFIG_KEY] = imageBlockConfigPatch;
-
-      if (Object.prototype.hasOwnProperty.call(patch, QUICK_BLOCK_POSITION_KEY)) {
-        quickBlockPatch[QUICK_BLOCK_POSITION_KEY] = patch[QUICK_BLOCK_POSITION_KEY];
-        quickBlockPatch[QUICK_BLOCK_POSITION_SAVED_AT_KEY] = quickBlockPositionTimestamp(
-          patch[QUICK_BLOCK_POSITION_SAVED_AT_KEY]
-        ) || Date.now();
-      }
-
-      const syncKeys = Object.keys(patch);
-      if (syncKeys.length) {
-        await chrome.storage.sync.set(patch);
-      }
-
-      if (chrome.storage.local && Object.keys(quickBlockPatch).length) {
-        await chrome.storage.local.set(quickBlockPatch);
-      }
-
-      if (hasUserMemos && chrome.storage.local) {
-        await chrome.storage.local.set({ userMemos: userMemosPatch || {} });
-      }
-
-      if (hasImageBlockConfig && chrome.storage.local) {
-        await chrome.storage.local.set({ [IMAGE_BLOCK_CONFIG_KEY]: imageBlockConfigPatch || IMAGE_BLOCK_CONFIG_DEFAULT });
-      }
-
-      if (hasImageBlockRecords && chrome.storage.local) {
-        await chrome.storage.local.set({ [IMAGE_BLOCK_RECORD_KEY]: imageBlockRecordsPatch || {} });
-      }
-
-      if (hasImageBlockAuthorTargets && chrome.storage.local) {
-        await chrome.storage.local.set({ [IMAGE_BLOCK_AUTHOR_TARGET_KEY]: imageBlockAuthorTargetsPatch || [] });
-      }
-
-      if (hasDcconBlockState && chrome.storage.local) {
-        await chrome.storage.local.set({ [DCCON_BLOCK_STATE_KEY]: dcconBlockStatePatch || DCCON_BLOCK_STATE_DEFAULT });
-      }
-
-      if (quickBlockPatch[QUICK_BLOCK_POSITION_KEY]) {
-        broadcastQuickBlockPosition(quickBlockPatch[QUICK_BLOCK_POSITION_KEY]);
-      }
-
-      alert("백업을 불러왔습니다. 페이지를 새로고침합니다.");
-      location.reload();
+      refreshUidList(0);
+      renderMemoList();
+      document.dispatchEvent(new CustomEvent("dcb:keyword-hide-ui-refresh"));
+      alert("백업을 불러왔습니다.");
     } catch (err) {
       console.error("[DCB] backup import failed", err);
-      alert("백업 파일을 모두 불러오지 못했습니다. JSON 형식을 확인하세요. 저장 중 오류였다면 일부 설정은 이미 적용됐을 수 있습니다.");
+      alert("백업 파일을 불러오지 못했습니다. JSON 형식을 확인해 주세요.");
     }
   };
 
@@ -1855,6 +1913,12 @@ if (hideDcconEl) {
   });
 }
 
+if (hideTextConEl) {
+  hideTextConEl.addEventListener("change", e => {
+    chrome.storage.sync.set({ hideTextCon: !!e.target.checked });
+  });
+}
+
 if (previewEnabledEl) {
   previewEnabledEl.addEventListener("change", e => {
     chrome.storage.sync.set({ previewEnabled: !!e.target.checked });
@@ -1997,153 +2061,128 @@ if (importUserMemoBtn && importUserMemoFile) {
 }
 
 /* ───── 초기 로드 ───── */
-chrome.storage.sync.get(
-  {
-    blockedIds: [],
-    removeSelectors: [],
-    removeSelectorsGall: [],
-    removeSelectorsSearch: [],
-    userBlockEnabled: true,
-    userBlockTriggerMode: "instant",
-    userBlockHoverHintEnabled: true,
-    blockedUids: [],
-    enabled: true,
-    galleryBlockEnabled: undefined,
-    builtinDcbestBlockEnabled: true,
-    blockMode: "smart",
-    quickBlockButtonPosition: "right-top",
-    quickBlockButtonPositionSavedAt: 0,
-    autoRefreshEnabled: false,
-    autoRefreshInterval: 60,
-    delay: 5,
-    hideMainEnabled: true,
-    hideGallEnabled: true,
-    hideSearchEnabled: true,
-    showUidBadge: false,
-    showMemberIpInfo: true,
-    compactListEnabled: false,
-    userMemoEnabled: false,
-    hideComment: false,
-    hideImgComment: false,
-    hideDccon: false,
-    previewEnabled: true,
-    hideAnonymousEnabled: false,
-    gamemecaBlockEnabled: true,
-    doryBlockEnabled: true,
-    noticeBlockEnabled: true,
-    hideDCGray: undefined,
-
-    keywordBlockEnabled: false,
-    blockedKeywords: [],
-    keywordBlockTargets: KEYWORD_DEFAULT_TARGETS,
-    dcbFontFamily: "Noto Sans KR",
-    dcbFontCustomFamily: "",
-    dcbApplyFontToDc: false
-  },
-  ({
-    blockedIds,
-    removeSelectors,
-    removeSelectorsGall,
-    removeSelectorsSearch,
-    userBlockEnabled,
-    userBlockTriggerMode,
-    userBlockHoverHintEnabled,
-    blockedUids,
-    enabled,
+function applyOptionsSettings(conf = {}, { refreshAsync = true } = {}) {
+  let {
+    blockedIds = [],
+    removeSelectors = [],
+    removeSelectorsGall = [],
+    removeSelectorsSearch = [],
+    userBlockEnabled = true,
+    userBlockTriggerMode = "instant",
+    userBlockHoverHintEnabled = true,
+    enabled = true,
     galleryBlockEnabled,
-    builtinDcbestBlockEnabled,
-    blockMode,
-    quickBlockButtonPosition,
-    autoRefreshEnabled,
-    autoRefreshInterval,
-    delay,
-    hideMainEnabled,
-    hideGallEnabled,
-    hideSearchEnabled,
-    showUidBadge,
-    showMemberIpInfo,
-    compactListEnabled,
-    userMemoEnabled,
-    hideComment,
-    hideImgComment,
-    hideDccon,
-    previewEnabled,
-    hideAnonymousEnabled,
-    gamemecaBlockEnabled,
-    doryBlockEnabled,
-    noticeBlockEnabled,
+    builtinDcbestBlockEnabled = true,
+    blockMode = "smart",
+    quickBlockButtonPosition = "right-top",
+    autoRefreshEnabled = false,
+    autoRefreshInterval = 60,
+    delay = 5,
+    hideMainEnabled = true,
+    hideGallEnabled = true,
+    hideSearchEnabled = true,
+    showUidBadge = false,
+    showMemberIpInfo = true,
+    compactListEnabled = false,
+    userMemoEnabled = false,
+    hideComment = false,
+    hideImgComment = false,
+    hideDccon = false,
+    hideTextCon = false,
+    previewEnabled = true,
+    hideAnonymousEnabled = false,
+    gamemecaBlockEnabled = true,
+    doryBlockEnabled = true,
+    noticeBlockEnabled = true,
     hideDCGray,
+    keywordBlockEnabled = false,
+    blockedKeywords = [],
+    keywordBlockTargets = KEYWORD_DEFAULT_TARGETS
+  } = conf;
 
-    keywordBlockEnabled,
-    blockedKeywords,
-    keywordBlockTargets
-  }) => {
-    if (typeof userBlockEnabled !== "boolean" && typeof hideDCGray === "boolean") {
-      userBlockEnabled = hideDCGray;
-      chrome.storage.sync.set({ userBlockEnabled });
-    }
+  if (typeof userBlockEnabled !== "boolean" && typeof hideDCGray === "boolean") {
+    userBlockEnabled = hideDCGray;
+  }
 
-    renderUser((blockedIds || []).map(norm));
-    renderRec((blockedIds || []).map(norm));
-    renderSel(removeSelectors || [], selList, "removeSelectors");
-    renderSel(removeSelectorsGall || [], gallSelList, "removeSelectorsGall");
-    renderSel(removeSelectorsSearch || [], searchSelList, "removeSelectorsSearch");
+  renderUser((blockedIds || []).map(norm));
+  renderRec((blockedIds || []).map(norm));
+  renderSel(removeSelectors || [], selList, "removeSelectors");
+  renderSel(removeSelectorsGall || [], gallSelList, "removeSelectorsGall");
+  renderSel(removeSelectorsSearch || [], searchSelList, "removeSelectorsSearch");
 
-    userBlockEnabledState = userBlockEnabled !== false;
-    userBlockTriggerModeState = normalizeUserBlockTriggerMode(userBlockTriggerMode);
-    userBlockHoverHintEnabledState = userBlockHoverHintEnabled !== false;
+  userBlockEnabledState = userBlockEnabled !== false;
+  userBlockTriggerModeState = normalizeUserBlockTriggerMode(userBlockTriggerMode);
+  userBlockHoverHintEnabledState = userBlockHoverHintEnabled !== false;
 
-    if (userBlockEl) {
-      userBlockEl.checked = userBlockEnabledState;
-    }
+  if (userBlockEl) userBlockEl.checked = userBlockEnabledState;
+  if (userBlockTriggerModeEl) userBlockTriggerModeEl.value = userBlockTriggerModeState;
+  updateOptionUserBlockModeGuide(userBlockTriggerModeState);
+  lockUserBlockUI(!userBlockEnabledState);
 
-    if (userBlockTriggerModeEl) {
-      userBlockTriggerModeEl.value = userBlockTriggerModeState;
-    }
+  setChecked(galleryBlockEnabledEl, getGalleryBlockEnabled({ galleryBlockEnabled, enabled }));
+  setChecked(builtinDcbestBlockEnabledEl, builtinDcbestBlockEnabled !== false);
+  setValue(blockModeEl, blockMode || "smart");
+  setValue(quickBlockButtonPositionEl, normalizeQuickBlockPosition(quickBlockButtonPosition));
+  updateBlockModeHint(blockMode || "smart");
+  setChecked(autoRefreshEnabledEl, autoRefreshEnabled);
+  setValue(autoRefreshIntervalNumEl, autoRefreshInterval);
+  setValue(autoRefreshIntervalRangeEl, autoRefreshInterval);
+  setValue(delayNumEl, delay);
+  setValue(delayRangeEl, delay);
+  setChecked(toggleHideMainEl, hideMainEnabled);
+  setChecked(toggleHideGallEl, hideGallEnabled);
+  setChecked(toggleHideSearchEl, hideSearchEnabled);
+  setChecked(toggleUidBadgeEl, showUidBadge);
+  setChecked(showMemberIpInfoEl, showMemberIpInfo);
+  setChecked(compactListEnabledEl, compactListEnabled);
+  setChecked(userMemoEnabledEl, userMemoEnabled);
 
-    updateOptionUserBlockModeGuide(userBlockTriggerModeState);
-    lockUserBlockUI(!userBlockEnabledState);
+  if (hideCommentEl) hideCommentEl.checked = !!hideComment;
+  if (hideImgCommentEl) hideImgCommentEl.checked = !!hideImgComment;
+  if (hideDcconEl) hideDcconEl.checked = !!hideDccon;
+  if (hideTextConEl) hideTextConEl.checked = !!hideTextCon;
+  if (previewEnabledEl) previewEnabledEl.checked = !!previewEnabled;
+  if (hideAnonymousEl) hideAnonymousEl.checked = !!hideAnonymousEnabled;
+  if (gamemecaBlockEnabledEl) gamemecaBlockEnabledEl.checked = gamemecaBlockEnabled !== false;
+  if (doryBlockEnabledEl) doryBlockEnabledEl.checked = doryBlockEnabled !== false;
+  if (noticeBlockEnabledEl) noticeBlockEnabledEl.checked = noticeBlockEnabled !== false;
 
+  if (optionKeywordBlockEnabled) {
+    optionKeywordBlockEnabled.checked = !!keywordBlockEnabled;
+    lockKeywordOptionUI(!keywordBlockEnabled);
+  }
+
+  renderKeywordTargets(keywordBlockTargets || KEYWORD_DEFAULT_TARGETS);
+  renderKeywordList(blockedKeywords || []);
+
+  if (refreshAsync) {
     refreshUidList();
-
-    setChecked(galleryBlockEnabledEl, getGalleryBlockEnabled({ galleryBlockEnabled, enabled }));
-    setChecked(builtinDcbestBlockEnabledEl, builtinDcbestBlockEnabled !== false);
-    setValue(blockModeEl, blockMode || "smart");
-    setValue(quickBlockButtonPositionEl, normalizeQuickBlockPosition(quickBlockButtonPosition));
     refreshQuickBlockButtonPositionControl();
-    updateBlockModeHint(blockMode || "smart");
-    setChecked(autoRefreshEnabledEl, autoRefreshEnabled);
-    setValue(autoRefreshIntervalNumEl, autoRefreshInterval);
-    setValue(autoRefreshIntervalRangeEl, autoRefreshInterval);
-    setValue(delayNumEl, delay);
-    setValue(delayRangeEl, delay);
-    setChecked(toggleHideMainEl, hideMainEnabled);
-    setChecked(toggleHideGallEl, hideGallEnabled);
-    setChecked(toggleHideSearchEl, hideSearchEnabled);
-    setChecked(toggleUidBadgeEl, showUidBadge);
-    setChecked(showMemberIpInfoEl, showMemberIpInfo);
-    setChecked(compactListEnabledEl, compactListEnabled);
-    setChecked(userMemoEnabledEl, userMemoEnabled);
-
-    if (hideCommentEl) hideCommentEl.checked = !!hideComment;
-    if (hideImgCommentEl) hideImgCommentEl.checked = !!hideImgComment;
-    if (hideDcconEl) hideDcconEl.checked = !!hideDccon;
-    if (previewEnabledEl) previewEnabledEl.checked = !!previewEnabled;
-    if (hideAnonymousEl) hideAnonymousEl.checked = !!hideAnonymousEnabled;
-    if (gamemecaBlockEnabledEl) gamemecaBlockEnabledEl.checked = gamemecaBlockEnabled !== false;
-    if (doryBlockEnabledEl) doryBlockEnabledEl.checked = doryBlockEnabled !== false;
-    if (noticeBlockEnabledEl) noticeBlockEnabledEl.checked = noticeBlockEnabled !== false;
-
-    if (optionKeywordBlockEnabled) {
-      optionKeywordBlockEnabled.checked = !!keywordBlockEnabled;
-      lockKeywordOptionUI(!keywordBlockEnabled);
-    }
-
-    renderKeywordTargets(keywordBlockTargets || KEYWORD_DEFAULT_TARGETS);
-    renderKeywordList(blockedKeywords || []);
     refreshOptionDcThemeState();
   }
-);
+}
+
+const instantSettings = UI_SETTINGS_CACHE?.read?.(BACKUP_DEFAULTS) || BACKUP_DEFAULTS;
+applyOptionsSettings(instantSettings, { refreshAsync: false });
+
+function finishInitialSettingsLoad(conf = {}) {
+  const merged = { ...BACKUP_DEFAULTS, ...(conf || {}) };
+  if (typeof merged.userBlockEnabled !== "boolean" && typeof merged.hideDCGray === "boolean") {
+    merged.userBlockEnabled = merged.hideDCGray;
+    chrome.storage.sync.set({ userBlockEnabled: merged.userBlockEnabled });
+  }
+
+  UI_SETTINGS_CACHE?.merge?.(merged);
+  applyOptionsSettings(merged, { refreshAsync: true });
+}
+
+if (UI_SETTINGS_CACHE?.ready) {
+  UI_SETTINGS_CACHE.ready.then(finishInitialSettingsLoad).catch(() => {
+    applyOptionsSettings(instantSettings, { refreshAsync: true });
+  });
+} else {
+  chrome.storage.sync.get(BACKUP_DEFAULTS, finishInitialSettingsLoad);
+}
 
 renderMemoList();
 
@@ -2250,6 +2289,10 @@ chrome.storage.onChanged.addListener((changes, area) => {
       hideDcconEl.checked = !!changes.hideDccon.newValue;
     }
 
+    if (changes.hideTextCon && hideTextConEl) {
+      hideTextConEl.checked = !!changes.hideTextCon.newValue;
+    }
+
     if (changes.previewEnabled && previewEnabledEl) {
       previewEnabledEl.checked = changes.previewEnabled.newValue !== false;
     }
@@ -2296,6 +2339,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 (() => {
   const CONFIG_KEY = "dcbImageBlockConfig";
+  const UI_CACHE = globalThis.DCBUiSettingsCache;
   const DEFAULTS = Object.freeze({
     enabled: false,
     hideMemberImages: true,
@@ -2365,6 +2409,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
   const save = () => {
     const next = current();
+    UI_CACHE?.merge?.({ [CONFIG_KEY]: next });
     chrome.storage.sync.set({ [CONFIG_KEY]: next }, () => {
       if (chrome.runtime.lastError) {
         notice("저장하지 못했어요. 확장 프로그램을 새로고침한 뒤 다시 시도해 주세요.", true);
@@ -2378,16 +2423,23 @@ chrome.storage.onChanged.addListener((changes, area) => {
     });
   };
 
+  const showState = (value) => {
+    const state = applyOneClick(value || DEFAULTS);
+    render(state);
+    notice(state.enabled
+      ? "이미지 숨김 사용 중 · 회원·비회원·익명 모드 전체"
+      : "이미지 숨기기는 꺼져 있어요.");
+  };
+
   const load = () => {
-    chrome.storage.sync.get({ [CONFIG_KEY]: null }, (syncData) => {
-      chrome.storage.local.get({ [CONFIG_KEY]: null }, (localData) => {
-        const state = applyOneClick(syncData[CONFIG_KEY] || localData[CONFIG_KEY] || DEFAULTS);
-        render(state);
-        notice(state.enabled
-          ? "이미지 숨김 사용 중 · 회원·비회원·익명 모드 전체"
-          : "이미지 숨기기는 꺼져 있어요.");
-      });
-    });
+    showState((UI_CACHE?.read?.({ [CONFIG_KEY]: null }) || {})[CONFIG_KEY]);
+
+    const syncRead = UI_CACHE?.ready
+      ? UI_CACHE.ready
+      : chrome.storage.sync.get({ [CONFIG_KEY]: null });
+    Promise.all([syncRead, chrome.storage.local.get({ [CONFIG_KEY]: null })])
+      .then(([syncData, localData]) => showState(syncData?.[CONFIG_KEY] || localData?.[CONFIG_KEY] || DEFAULTS))
+      .catch(() => {});
   };
 
   const findPage = (done) => {

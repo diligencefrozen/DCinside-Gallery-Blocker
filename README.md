@@ -83,7 +83,8 @@ You can turn the following filters on or off separately:
 - **User Blocking (`사용자 차단`)** — supports UID, IP, and nickname-based entries
 - **Hide Regular Comments (`일반 댓글 숨기기`)**
 - **Hide Image Comments (`이미지 댓글 숨기기`)**
-- **Hide DCCons (`디시콘 숨기기`)**
+- **Hide DCCons (`디시콘 숨기기`)** — hides all DCCons, including image, GIF, video, and text-based DCCons.
+- **Hide text-cons (`텍스트콘 숨기기`)** — hides only text-based DCCons while leaving other DCCons visible. Off by default.
 - **Hide Non-member Posts and Comments (`비회원 게시물과 댓글 숨기기`)**
 - **Hide GameMeca Posts/Comments (`게임메카 글/댓글 숨기기`)**
 - **Hide Dory Ads (`댓글돌이 광고 숨기기`)**

@@ -337,6 +337,7 @@ syncSettings(handleUrl);
   let previewFilterRerenderTimer = 0;
   const previewMediaSettleTimers = new WeakMap();
   const previewMovieRequests = new Set();
+  const previewPollRequests = new Set();
   let previewRequestVersion = 0;
   let previewReturnFocus = null;
   let previewScrollLock = null;
@@ -469,6 +470,7 @@ syncSettings(handleUrl);
       #${OVERLAY_ID} .dcbpv-html img,#${OVERLAY_ID} .dcbpv-html video{display:block;margin:10px auto;border-radius:10px}
       #${OVERLAY_ID} .dcbpv-html img.dcbpv-img-broken{min-height:80px;background:repeating-linear-gradient(45deg,#f8fafc,#f8fafc 8px,#eef2f7 8px,#eef2f7 16px);border:1px dashed #cbd5e1}
       #${OVERLAY_ID} .dcbpv-html iframe{display:block;width:min(100%,720px)!important;aspect-ratio:16/9;min-height:0;margin:10px auto;border-radius:10px;background:#000}
+      #${OVERLAY_ID} .dcbpv-html iframe.dcbpv-poll-frame{width:min(100%,var(--dcbpv-poll-width,459px))!important;height:min(var(--dcbpv-poll-height,437px),75dvh)!important;min-height:min(var(--dcbpv-poll-height,437px),75dvh)!important;aspect-ratio:auto!important;margin:10px auto;border:1px solid #e5e7eb;border-radius:10px;background:#fff;overflow:auto}
       #${OVERLAY_ID} .dcbpv-pum-card{margin:0;overflow:hidden;border:1px solid #dbe2ea;border-radius:14px;background:#fff;color:#334155;box-shadow:0 5px 18px rgba(15,23,42,.06)}
       #${OVERLAY_ID} .dcbpv-pum-card .gallview_head{display:block;position:static;min-height:0;margin:0;padding:13px 15px;border:0;border-bottom:1px solid #e5e7eb;background:#f8fafc}
       #${OVERLAY_ID} .dcbpv-pum-card .gallview_head>a{display:inline-block;color:#2563eb;text-decoration:none}
@@ -568,6 +570,8 @@ syncSettings(handleUrl);
     stopPreviewDcconObserver();
     previewMovieRequests.forEach((controller) => controller.abort());
     previewMovieRequests.clear();
+    previewPollRequests.forEach((controller) => controller.abort());
+    previewPollRequests.clear();
     if (previewFilterRerenderTimer) {
       clearTimeout(previewFilterRerenderTimer);
       previewFilterRerenderTimer = 0;
@@ -861,7 +865,117 @@ syncSettings(handleUrl);
     }
   }
 
+  function dcPollFrameUrl(iframe, baseUrl){
+    for (const attr of ["src", "data-src", "data-original"]) {
+      const raw = iframe?.getAttribute?.(attr);
+      if (!raw) continue;
+      try {
+        const url = new URL(decodeMediaUrl(raw), baseUrl || location.href);
+        if (url.hostname !== "gall.dcinside.com" || !/^https?:$/.test(url.protocol)) continue;
+        if (url.pathname !== "/board/poll/vote") continue;
+        if (!/^\d+$/.test(url.searchParams.get("no") || "")) continue;
+        url.protocol = "https:";
+        return url;
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  function normalizePreviewPollFrame(iframe, baseUrl){
+    const pollUrl = dcPollFrameUrl(iframe, baseUrl);
+    if (!pollUrl) return null;
+
+    const width = Math.min(720, Math.max(280, Number.parseInt(iframe.getAttribute("width") || "459", 10) || 459));
+    const height = Math.min(900, Math.max(280, Number.parseInt(iframe.getAttribute("height") || "437", 10) || 437));
+    if (iframe.src !== pollUrl.href) iframe.src = pollUrl.href;
+    iframe.classList.add("dcbpv-poll-frame");
+    iframe.dataset.dcbpvPollUrl = pollUrl.href;
+    iframe.title = iframe.title || "디시인사이드 투표";
+    iframe.referrerPolicy = "unsafe-url";
+    iframe.loading = "eager";
+    if (iframe.getAttribute("scrolling") !== "auto") iframe.setAttribute("scrolling", "auto");
+    const widthValue = `${width}px`;
+    const heightValue = `${height}px`;
+    if (iframe.style.getPropertyValue("--dcbpv-poll-width") !== widthValue) iframe.style.setProperty("--dcbpv-poll-width", widthValue);
+    if (iframe.style.getPropertyValue("--dcbpv-poll-height") !== heightValue) iframe.style.setProperty("--dcbpv-poll-height", heightValue);
+    return pollUrl;
+  }
+
+  function waitForPreviewPollLoad(iframe, timeout = 8000){
+    try {
+      const doc = iframe.contentDocument;
+      const href = iframe.contentWindow?.location?.href || "";
+      if (doc?.readyState === "complete" && href && href !== "about:blank") return Promise.resolve(true);
+    } catch (_) {}
+
+    return new Promise((resolve) => {
+      let done = false;
+      const finish = (value) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        iframe.removeEventListener("load", onLoad);
+        resolve(value);
+      };
+      const onLoad = () => finish(true);
+      const timer = setTimeout(() => finish(false), timeout);
+      iframe.addEventListener("load", onLoad, { once: true });
+    });
+  }
+
+  async function loadPreviewPoll(iframe, articleUrl){
+    if (!iframe || iframe.dataset.dcbpvPollRequested === "1" || iframe.dataset.dcbpvPollHydrated === "1") return;
+    const pollUrl = dcPollFrameUrl(iframe, articleUrl || location.href);
+    if (!pollUrl) return;
+
+    let referrer;
+    try {
+      referrer = new URL(articleUrl || location.href, location.href);
+      if (pollUrl.origin !== location.origin || referrer.origin !== location.origin) return;
+    } catch (_) { return; }
+
+    iframe.dataset.dcbpvPollRequested = "1";
+    const controller = new AbortController();
+    previewPollRequests.add(controller);
+    const timer = setTimeout(() => controller.abort(), 10000);
+    try {
+      const [response, loaded] = await Promise.all([
+        fetch(pollUrl.href, {
+          credentials: "include",
+          referrer: referrer.href,
+          referrerPolicy: "unsafe-url",
+          cache: "no-store",
+          signal: controller.signal
+        }),
+        waitForPreviewPollLoad(iframe)
+      ]);
+      if (!loaded || !response.ok || !iframe.isConnected || controller.signal.aborted) return;
+      const html = await response.text();
+      if (!html || !iframe.isConnected || controller.signal.aborted) return;
+
+      // The native poll page builds vote tokens from the article request context. Rehydrate the
+      // already loaded same-origin frame with HTML fetched using the original article as Referer.
+      const doc = iframe.contentDocument;
+      if (!doc) return;
+      iframe.dataset.dcbpvPollHydrating = "1";
+      doc.open("text/html", "replace");
+      doc.write(html);
+      doc.close();
+      iframe.dataset.dcbpvPollHydrated = "1";
+    } catch (_) {
+      // Keep DCInside's directly loaded poll iframe as the fallback.
+    } finally {
+      delete iframe.dataset.dcbpvPollHydrating;
+      clearTimeout(timer);
+      previewPollRequests.delete(controller);
+    }
+  }
+
   function normalizeDcMedia(root, baseUrl){
+    root.querySelectorAll('iframe[src*="/board/poll/vote"],iframe[data-src*="/board/poll/vote"]').forEach((iframe) => {
+      normalizePreviewPollFrame(iframe, baseUrl);
+    });
+
     root.querySelectorAll('iframe[id^="movie_iframe"],iframe[id^="movieIcon"],iframe[src*="movie_view"],iframe[src*="share_movie"],iframe[data-src*="movie_view"]').forEach((iframe) => {
       if (iframe.closest(".dcbpv-movie-wrap")) return;
       const playerUrl = dcMoviePlayerUrl(iframe, baseUrl);
@@ -2816,6 +2930,9 @@ syncSettings(handleUrl);
         if (link) link.href = articleUrl;
         loadPreviewMovie(wrapper, articleUrl);
       });
+      root.querySelectorAll("iframe.dcbpv-poll-frame").forEach((iframe) => {
+        loadPreviewPoll(iframe, articleUrl);
+      });
     };
 
     run();
@@ -2830,6 +2947,7 @@ syncSettings(handleUrl);
     hideComment: false,
     hideImgComment: false,
     hideDccon: false,
+    hideTextCon: false,
     showUidBadge: false,
     showMemberIpInfo: true,
     hideAnonymousEnabled: false,
@@ -3014,15 +3132,18 @@ syncSettings(handleUrl);
     });
   }
 
-  const PREVIEW_DCCON_CANDIDATE_SELECTOR = [
-    ".dcbpv-dccon",
-    ".written_dccon",
-    ".comment_dccon",
-    ".dccon_img",
-    ".coment_dccon_img",
+  const PREVIEW_TEXTCON_SELECTOR = [
     ".coment_dccon_txt",
     ".comment_dccon_txt",
-    ".txtcon_txt",
+    ".txtcon_txt"
+  ].join(",");
+
+  const PREVIEW_DCCON_CANDIDATE_SELECTOR = [
+    ".dcbpv-dccon:not(.coment_dccon_txt):not(.comment_dccon_txt):not(.txtcon_txt):not(:has(.coment_dccon_txt,.comment_dccon_txt,.txtcon_txt))",
+    ".written_dccon",
+    ".comment_dccon:not(:has(.coment_dccon_txt,.comment_dccon_txt,.txtcon_txt))",
+    ".dccon_img",
+    ".coment_dccon_img",
     "img[src*='dccon']",
     "img[data-src*='dccon']",
     "img[data-original*='dccon']",
@@ -3032,50 +3153,102 @@ syncSettings(handleUrl);
     "video[data-src*='dccon']",
     "video[data-mp4*='dccon']",
     "source[src*='dccon']",
-    "[reqpath*='dccon']",
-    "[class*='dccon']"
+    "[reqpath*='dccon']"
   ].join(",");
 
-  function previewNodeHasDcconSignature(node){
+  function previewIsTextConNode(node){
     if (!(node instanceof Element)) return false;
-    const attrBlob = Array.from(node.attributes || []).map((attr) => `${attr.name}=${attr.value}`).join(" ");
-    return /(?:dcbpv-dccon|written_dccon|comment_dccon|dccon_img|coment_dccon_img|coment_dccon_txt|comment_dccon_txt|txtcon_txt|\bdccon\b|dccon\.php|reqpath=['\"]?\/dccon)/i.test(`${node.className || ""} ${attrBlob}`);
+    return !!node.matches?.(PREVIEW_TEXTCON_SELECTOR)
+      || !!node.closest?.(".coment_dccon_txt,.comment_dccon_txt");
   }
 
-  function markPreviewDcconNode(node){
-    if (!(node instanceof Element) || !previewNodeHasDcconSignature(node)) return false;
-    if (node.dataset.dcbpvDcconProcessed !== "1") {
-      node.dataset.dcbpvDcconProcessed = "1";
-      node.classList.add("dcbpv-dccon", "dcbpv-dccon-hidden", "dcb-dccon-content-hidden");
-      node.setAttribute("data-dcb-dccon-hidden", "true");
+  function previewIsTextConFamily(node){
+    if (!(node instanceof Element)) return false;
+    return previewIsTextConNode(node) || !!node.querySelector?.(PREVIEW_TEXTCON_SELECTOR);
+  }
+
+  function previewNodeHasDcconSignature(node){
+    if (!(node instanceof Element) || previewIsTextConFamily(node)) return false;
+    const attrBlob = Array.from(node.attributes || []).map((attr) => `${attr.name}=${attr.value}`).join(" ");
+    return /(?:dcbpv-dccon|written_dccon|comment_dccon|dccon_img|coment_dccon_img|dccon\.php|reqpath=['"]?\/dccon)/i.test(`${node.className || ""} ${attrBlob}`);
+  }
+
+  function markPreviewHiddenNode(node, reason){
+    if (!(node instanceof Element)) return false;
+    let changed = false;
+
+    if (reason === "textcon") {
+      if (!previewIsTextConNode(node)) return false;
+      if (node.dataset.dcbpvTextConProcessed !== "1") {
+        node.dataset.dcbpvTextConProcessed = "1";
+        node.classList.add("dcbpv-textcon-hidden", "dcb-textcon-content-hidden");
+        node.setAttribute("data-dcb-dccon-hidden", "true");
+        changed = true;
+      }
+    } else {
+      if (!previewNodeHasDcconSignature(node)) return false;
+      if (node.dataset.dcbpvDcconProcessed !== "1") {
+        node.dataset.dcbpvDcconProcessed = "1";
+        node.classList.add("dcbpv-dccon", "dcbpv-dccon-hidden", "dcb-dccon-content-hidden");
+        node.setAttribute("data-dcb-dccon-hidden", "true");
+        changed = true;
+      }
     }
+
     const row = node.closest(".dcbpv-comment-item");
-    if (row && row.dataset.dcbpvBlockedReason !== "dccon") {
-      row.classList.add("dcbpv-filter-hidden");
-      row.dataset.dcbpvBlockedReason = "dccon";
+    if (row) {
+      if (!row.classList.contains("dcbpv-filter-hidden")) {
+        row.classList.add("dcbpv-filter-hidden");
+        changed = true;
+      }
+      if (!row.dataset.dcbpvBlockedReason) row.dataset.dcbpvBlockedReason = reason;
     }
-    return true;
+    return changed;
   }
 
   function applyDcconFilter(scope){
     const root = scope || document.getElementById(OVERLAY_ID);
-    if (!root) return;
+    if (!root) return false;
+    let changed = false;
 
     if (root instanceof Element && root.matches?.(PREVIEW_DCCON_CANDIDATE_SELECTOR)) {
-      markPreviewDcconNode(root);
+      changed = markPreviewHiddenNode(root, "dccon") || changed;
     }
 
     root.querySelectorAll?.(PREVIEW_DCCON_CANDIDATE_SELECTOR).forEach((node) => {
-      markPreviewDcconNode(node);
+      changed = markPreviewHiddenNode(node, "dccon") || changed;
     });
+    return changed;
   }
 
-  function previewMutationMayContainDccon(node){
+  function applyTextConFilter(scope){
+    const root = scope || document.getElementById(OVERLAY_ID);
+    if (!root) return false;
+    let changed = false;
+
+    if (root instanceof Element && root.matches?.(PREVIEW_TEXTCON_SELECTOR)) {
+      changed = markPreviewHiddenNode(root, "textcon") || changed;
+    }
+
+    root.querySelectorAll?.(PREVIEW_TEXTCON_SELECTOR).forEach((node) => {
+      changed = markPreviewHiddenNode(node, "textcon") || changed;
+    });
+    return changed;
+  }
+
+  function previewMutationMayContainDccon(node, includeDccon, includeTextCon){
     if (!(node instanceof Element)) return false;
-    if (node.dataset?.dcbpvDcconProcessed === "1") return false;
-    return node.matches?.(PREVIEW_DCCON_CANDIDATE_SELECTOR)
+    if (includeTextCon && (
+      node.matches?.(PREVIEW_TEXTCON_SELECTOR)
+      || previewIsTextConNode(node)
+      || !!node.querySelector?.(PREVIEW_TEXTCON_SELECTOR)
+    )) return true;
+    if (includeDccon && !previewIsTextConFamily(node) && (
+      node.matches?.(PREVIEW_DCCON_CANDIDATE_SELECTOR)
       || previewNodeHasDcconSignature(node)
-      || !!node.querySelector?.(PREVIEW_DCCON_CANDIDATE_SELECTOR);
+      || !!node.querySelector?.(PREVIEW_DCCON_CANDIDATE_SELECTOR)
+    )) return true;
+    return false;
   }
 
   function applyCommentUiFilter(overlay){
@@ -3125,27 +3298,69 @@ syncSettings(handleUrl);
   function summarizeHiddenComments(overlay){
     const list = overlay.querySelector(".dcbpv-comment-list");
     if (!list) return;
-    list.querySelectorAll(".dcbpv-filter-summary").forEach((node) => node.remove());
+    const existing = list.querySelector(":scope > .dcbpv-filter-summary");
     const hidden = list.querySelectorAll(":scope > .dcbpv-comment-item.dcbpv-filter-hidden").length;
-    if (!hidden) return;
+    if (!hidden) {
+      existing?.remove();
+      return;
+    }
+
+    const text = `차단 설정에 따라 댓글 ${hidden}개를 숨겼습니다.`;
+    if (existing) {
+      if (existing.textContent !== text) existing.textContent = text;
+      return;
+    }
+
     const note = document.createElement("div");
     note.className = "dcbpv-filter-note dcbpv-filter-summary";
-    note.textContent = `차단 설정에 따라 댓글 ${hidden}개를 숨겼습니다.`;
+    note.textContent = text;
     list.prepend(note);
   }
 
-  function startPreviewDcconObserver(overlay, data){
+  function startPreviewDcconObserver(overlay, settings){
     if (!overlay || previewDcconObserver) return;
+    const includeDccon = settings?.hideDccon === true;
+    const includeTextCon = includeDccon || settings?.hideTextCon === true;
     const pendingScopes = new Set();
+    const commentRoot = overlay.querySelector(".dcbpv-comment-html");
+    const articleRoot = overlay.querySelector(".dcbpv-article");
+    const observedRoots = [articleRoot, commentRoot].filter(Boolean);
+    if (!observedRoots.length) return;
+
+    const queueScope = (node) => {
+      if (!(node instanceof Element)) return;
+      const scope = node.closest?.(".dcbpv-comment-item,.dcbpv-article") || node;
+      for (const pending of pendingScopes) {
+        if (pending === scope || pending.contains?.(scope)) return;
+        if (scope.contains?.(pending)) pendingScopes.delete(pending);
+      }
+      pendingScopes.add(scope);
+
+      // A single comment refresh may append many media nodes. At that point one bounded
+      // comment/article pass is cheaper than hundreds of tiny selector walks.
+      if (pendingScopes.size > 48) {
+        pendingScopes.clear();
+        if (articleRoot) pendingScopes.add(articleRoot);
+        if (commentRoot) pendingScopes.add(commentRoot);
+      }
+    };
+
     const rerun = () => {
       if (previewDcconTimer) return;
       previewDcconTimer = setTimeout(() => {
         previewDcconTimer = 0;
         if (!document.documentElement.contains(overlay)) return stopPreviewDcconObserver();
-        const scopes = pendingScopes.size ? Array.from(pendingScopes) : [overlay];
+        const scopes = pendingScopes.size ? Array.from(pendingScopes) : observedRoots;
         pendingScopes.clear();
-        scopes.forEach((scope) => applyDcconFilter(scope));
-        summarizeHiddenComments(overlay);
+        let changed = false;
+        scopes.forEach((scope) => {
+          if (includeDccon) changed = applyDcconFilter(scope) || changed;
+          if (includeTextCon) changed = applyTextConFilter(scope) || changed;
+        });
+        if (changed) {
+          cascadePreviewBlockedReplies(overlay);
+          summarizeHiddenComments(overlay);
+        }
       }, 120);
     };
 
@@ -3153,23 +3368,34 @@ syncSettings(handleUrl);
       for (const mutation of mutations) {
         if (mutation.type === "childList") {
           for (const node of mutation.addedNodes || []) {
-            if (previewMutationMayContainDccon(node)) pendingScopes.add(node);
+            if (previewMutationMayContainDccon(node, includeDccon, includeTextCon)) queueScope(node);
           }
-        } else if (mutation.type === "attributes") {
+          continue;
+        }
+
+        if (mutation.type === "attributes") {
           const target = mutation.target;
-          if (previewMutationMayContainDccon(target)) pendingScopes.add(target);
+          if (!(target instanceof Element)) continue;
+          if (mutation.attributeName === "class" && (
+            target.dataset.dcbpvDcconProcessed === "1"
+            || target.dataset.dcbpvTextConProcessed === "1"
+            || target.classList.contains("dcbpv-filter-summary")
+            || target.classList.contains("dcbpv-comment-item") && !!target.dataset.dcbpvBlockedReason
+          )) continue;
+          if (previewMutationMayContainDccon(target, includeDccon, includeTextCon)) queueScope(target);
         }
       }
       if (pendingScopes.size) rerun();
     });
 
-    previewDcconObserver.observe(overlay, {
+    observedRoots.forEach((root) => previewDcconObserver.observe(root, {
       childList: true,
       subtree: true,
       attributes: true,
       attributeFilter: ["src", "class", "data-src", "data-original", "data-gif", "data-mp4", "reqpath"]
-    });
+    }));
   }
+
 
 
   function refreshPreviewMemberIpBadges(root){
@@ -3206,9 +3432,10 @@ syncSettings(handleUrl);
     refreshPreviewUserMemos(overlay);
     if (conf.hideComment) applyCommentUiFilter(overlay);
     if (conf.hideImgComment) applyImageCommentFilter(overlay);
-    if (conf.hideDccon) {
-      applyDcconFilter(overlay);
-      startPreviewDcconObserver(overlay, data);
+    if (conf.hideDccon) applyDcconFilter(overlay);
+    if (conf.hideDccon || conf.hideTextCon) applyTextConFilter(overlay);
+    if (conf.hideDccon || conf.hideTextCon) {
+      startPreviewDcconObserver(overlay, { hideDccon: conf.hideDccon, hideTextCon: conf.hideTextCon });
     } else {
       stopPreviewDcconObserver();
     }
@@ -3459,7 +3686,7 @@ syncSettings(handleUrl);
   chrome.storage.onChanged.addListener((changes, area) => {
     if (!currentPreviewData || area !== "sync" && area !== "local") return;
     const keys = new Set([
-      "userBlockEnabled", "includeGray", "hideDCGray", "blockedUids", "hideComment", "hideImgComment", "hideDccon",
+      "userBlockEnabled", "includeGray", "hideDCGray", "blockedUids", "hideComment", "hideImgComment", "hideDccon", "hideTextCon",
       "showUidBadge", "hideAnonymousEnabled", "doryBlockEnabled", "keywordBlockEnabled", "blockedKeywords", "keywordBlockTargets",
       "keywordHideEnabled", "hiddenKeywords", "keywordHideTargets"
     ]);

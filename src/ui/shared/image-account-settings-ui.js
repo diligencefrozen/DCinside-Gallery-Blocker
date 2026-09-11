@@ -19,6 +19,7 @@
   });
 
   const roots = Array.from(document.querySelectorAll("[data-account-activity-settings],[data-image-account-settings]"));
+  const uiCache = globalThis.DCBUiSettingsCache;
   if (!roots.length) return;
 
   function integer(value, fallback, min, max) {
@@ -105,6 +106,7 @@
 
   function save(root) {
     const next = read(root);
+    uiCache?.merge?.({ [STORAGE_KEY]: next });
     chrome.storage.sync.set({ [STORAGE_KEY]: next }, () => {
       if (chrome.runtime.lastError) {
         status(root, "활동이 적은 회원 차단 기준을 저장하지 못했어요.", true);
@@ -133,13 +135,21 @@
     });
   });
 
-  chrome.storage.sync.get({ [STORAGE_KEY]: DEFAULTS }, (data) => {
+  const cachedSettings = normalize((uiCache?.read?.({ [STORAGE_KEY]: DEFAULTS }) || {})[STORAGE_KEY]);
+  roots.forEach((root) => {
+    render(root, cachedSettings);
+    status(root, cachedSettings.enabled ? "활동이 적은 회원 차단 사용 중" : "활동이 적은 회원 차단은 꺼져 있어요.");
+  });
+
+  const applyStoredSettings = (data) => {
     roots.forEach((root) => {
-      const settings = normalize(data[STORAGE_KEY]);
+      const settings = normalize((data || {})[STORAGE_KEY]);
       render(root, settings);
       status(root, settings.enabled ? "활동이 적은 회원 차단 사용 중" : "활동이 적은 회원 차단은 꺼져 있어요.");
     });
-  });
+  };
+  if (uiCache?.ready) uiCache.ready.then(applyStoredSettings).catch(() => {});
+  else chrome.storage.sync.get({ [STORAGE_KEY]: DEFAULTS }, applyStoredSettings);
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "sync" || !changes[STORAGE_KEY]) return;

@@ -1,18 +1,37 @@
 /*****************************************************************
-cleaner-dccon.js - 디시콘(DCcon) 숨기기
+cleaner-dccon.js - 디시콘 / 텍스트콘 숨기기
  *****************************************************************/
 (() => {
-  const TEXTCON_SEL = '.coment_dccon_txt, .comment_dccon_txt, .txtcon_txt';
-  const COMMENT_DCCON_SEL = `.comment_dccon, .coment_dccon_img, .dcbpv-dccon, [reqpath*="dccon"], ${TEXTCON_SEL}`;
+  const TEXTCON_WRAPPER_SEL = '.coment_dccon_txt, .comment_dccon_txt';
+  const TEXTCON_SEL = `${TEXTCON_WRAPPER_SEL}, .txtcon_txt`;
+
+  // 디시콘 숨기기는 모든 디시콘을 숨기고, 텍스트콘 숨기기는 텍스트콘만 따로 숨길 때 사용합니다.
+// 아래 목록은 이미지·움짤·영상 디시콘만 찾기 위한 선택자입니다.
+  const COMMENT_MEDIA_DCCON_SEL = [
+    '.comment_dccon:not(:has(.coment_dccon_txt,.comment_dccon_txt,.txtcon_txt))',
+    '.coment_dccon_img',
+    '.dcbpv-dccon:not(.coment_dccon_txt):not(.comment_dccon_txt):not(.txtcon_txt):not(:has(.coment_dccon_txt,.comment_dccon_txt,.txtcon_txt))',
+    '[reqpath*="dccon"]'
+  ].join(',');
+
+  const MEDIA_DCCON_SELS = [
+    'video.written_dccon',
+    'img.written_dccon',
+    '.written_dccon',
+    '.dcbpv-dccon:not(.coment_dccon_txt):not(.comment_dccon_txt):not(.txtcon_txt):not(:has(.coment_dccon_txt,.comment_dccon_txt,.txtcon_txt))',
+    'img[src*="dccon.php"]',
+    'video[src*="dccon"]',
+    'source[src*="dccon"]',
+    'img[class*="dccon"]',
+    'video[class*="dccon"]'
+  ];
+
   const LEGACY_PLACEHOLDER_SEL = '.dcb-dccon-blocked[data-dcb-replaced="true"], .dcb-dccon-blocked';
   const COMMENT_ROW_SEL = [
-    // DCInside 댓글 최상위 래퍼. 디시콘 댓글 제거의 1순위 타깃입니다.
     'div.cmt_info[data-no]',
     'div.cmt_info[data-article-no]',
     'div.cmt_info.clear',
     '.cmt_info',
-
-    // 다른 갤러리/모바일/구형 DOM 대응
     'li.ub-content',
     'li[id^="comment_li_"]',
     'li[id^="reply_"]',
@@ -25,68 +44,66 @@ cleaner-dccon.js - 디시콘(DCcon) 숨기기
     '.dcbpv-comment-item'
   ].join(',');
 
-  const CONTENT_DCCON_SELS = [
-    'video.written_dccon',           // 본문 속 디시콘 (video)
-    'img.written_dccon',             // 본문 속 디시콘 (img)
-    '.written_dccon',                // 모든 written_dccon 클래스
-    '.dcbpv-dccon',                  // 미리보기에서 정규화한 디시콘
-    TEXTCON_SEL,
-    'img[src*=\"dccon.php\"]',
-    'video[src*=\"dccon\"]',
-    'source[src*=\"dccon\"]',
-    'img[class*=\"dccon\"]',
-    'video[class*=\"dccon\"]'
-  ];
-
-  const STYLE_ID = 'dcb-hide-dccon-style';
-  const COMMENT_HIDDEN_CLASS = 'dcb-dccon-comment-hidden';
-  const CONTENT_HIDDEN_CLASS = 'dcb-dccon-content-hidden';
+  const MEDIA_STYLE_ID = 'dcb-hide-dccon-style';
+  const TEXT_STYLE_ID = 'dcb-hide-textcon-style';
+  const MEDIA_COMMENT_HIDDEN_CLASS = 'dcb-cleaner-dccon-comment-hidden';
+  const TEXT_COMMENT_HIDDEN_CLASS = 'dcb-cleaner-textcon-comment-hidden';
+  const MEDIA_CONTENT_HIDDEN_CLASS = 'dcb-cleaner-dccon-content-hidden';
+  const TEXT_CONTENT_HIDDEN_CLASS = 'dcb-cleaner-textcon-content-hidden';
   const SELECTIVE_HIDDEN_SEL = '.dcb-selective-dccon-hidden, [data-dcb-selective-dccon-hidden="true"]';
-  const CSS_RULE = `
-    /* Chrome 계열에서는 :has()로 디시콘 댓글 행을 CSS 단계에서 먼저 숨깁니다. */
-    :is(${COMMENT_ROW_SEL}):has(:is(${COMMENT_DCCON_SEL}, ${CONTENT_DCCON_SELS.join(',')})),
-    .${COMMENT_HIDDEN_CLASS},
-    .${CONTENT_HIDDEN_CLASS},
+
+  const MEDIA_CANDIDATE_SEL = [COMMENT_MEDIA_DCCON_SEL, ...MEDIA_DCCON_SELS].join(',');
+
+  const MEDIA_CSS_RULE = `
+    :is(${COMMENT_ROW_SEL}):has(:is(${COMMENT_MEDIA_DCCON_SEL}, ${MEDIA_DCCON_SELS.join(',')})),
+    .${MEDIA_COMMENT_HIDDEN_CLASS},
+    .${MEDIA_CONTENT_HIDDEN_CLASS},
     ${LEGACY_PLACEHOLDER_SEL} {
       display: none !important;
     }
 
-    ${CONTENT_DCCON_SELS.map(s => `${s}{display:none !important}`).join('\n')}
+    ${MEDIA_DCCON_SELS.map((s) => `${s}{display:none !important}`).join('\n')}
   `;
 
-  let styleNode = null;
-  let hideDccon = false;
-  let observer = null;
-  let debounceTimer = null;
-  let processedCommentDccons = new WeakSet();
-
-  const addStyle = () => {
-    if (styleNode || document.getElementById(STYLE_ID)) {
-      styleNode = document.getElementById(STYLE_ID);
-      return;
+  const TEXT_CSS_RULE = `
+    :is(${COMMENT_ROW_SEL}):has(:is(${TEXTCON_SEL})),
+    .${TEXT_COMMENT_HIDDEN_CLASS},
+    .${TEXT_CONTENT_HIDDEN_CLASS} {
+      display: none !important;
     }
 
-    styleNode = document.createElement('style');
-    styleNode.id = STYLE_ID;
-    styleNode.textContent = CSS_RULE;
-    (document.head || document.documentElement).appendChild(styleNode);
+    ${TEXTCON_SEL}{display:none !important}
+  `;
+
+  let mediaStyleNode = null;
+  let textStyleNode = null;
+  let hideDccon = false;
+  let hideTextCon = false;
+  let observer = null;
+  let debounceTimer = null;
+
+  const ensureStyle = (id, css, currentNode) => {
+    if (currentNode?.isConnected) return currentNode;
+    const existing = document.getElementById(id);
+    if (existing) return existing;
+    const style = document.createElement('style');
+    style.id = id;
+    style.textContent = css;
+    (document.head || document.documentElement).appendChild(style);
+    return style;
   };
 
-  const removeStyle = () => {
-    (styleNode ?? document.getElementById(STYLE_ID))?.remove();
-    styleNode = null;
-  };
+  const syncStyles = () => {
+    if (hideDccon) mediaStyleNode = ensureStyle(MEDIA_STYLE_ID, MEDIA_CSS_RULE, mediaStyleNode);
+    else {
+      (mediaStyleNode ?? document.getElementById(MEDIA_STYLE_ID))?.remove();
+      mediaStyleNode = null;
+    }
 
-  const apply = (hide) => {
-    hideDccon = hide;
-    if (hide) {
-      addStyle();
-      startObserver();
-      hideExistingElements();
-    } else {
-      removeStyle();
-      stopObserver();
-      restoreDccons();
+    if (hideDccon || hideTextCon) textStyleNode = ensureStyle(TEXT_STYLE_ID, TEXT_CSS_RULE, textStyleNode);
+    else {
+      (textStyleNode ?? document.getElementById(TEXT_STYLE_ID))?.remove();
+      textStyleNode = null;
     }
   };
 
@@ -95,120 +112,146 @@ cleaner-dccon.js - 디시콘(DCcon) 숨기기
     return node.closest(COMMENT_ROW_SEL);
   };
 
-  const removeLegacyPlaceholders = (scope = document) => {
-    scope.querySelectorAll?.(LEGACY_PLACEHOLDER_SEL).forEach(el => el.remove());
+  const isTextConNode = (node) => {
+    if (!(node instanceof Element)) return false;
+    return !!node.matches?.(TEXTCON_SEL) || !!node.closest?.(TEXTCON_WRAPPER_SEL);
   };
 
-  /* ───── 댓글 디시콘이 포함된 댓글 행 자체를 최우선 숨김 ───── */
-  const hideCommentDcconRow = (dcconNode) => {
-    if (!dcconNode || processedCommentDccons.has(dcconNode)) return;
-    processedCommentDccons.add(dcconNode);
+  const isTextConFamily = (node) => {
+    if (!(node instanceof Element)) return false;
+    return isTextConNode(node) || !!node.querySelector?.(TEXTCON_SEL);
+  };
 
-    const row = findCommentRow(dcconNode);
-    const target = row || dcconNode;
+  const removeLegacyPlaceholders = (scope = document) => {
+    scope.querySelectorAll?.(LEGACY_PLACEHOLDER_SEL).forEach((el) => el.remove());
+  };
 
-    // 이전 버전에서 삽입된 "차단된 디시콘입니다" 문구가 남아 있으면 먼저 제거합니다.
-    removeLegacyPlaceholders(target);
-
-    target.classList.add(COMMENT_HIDDEN_CLASS);
+  const addHiddenKind = (target, kind) => {
+    const kinds = new Set(String(target.getAttribute('data-dcb-dccon-kind') || '').split(',').filter(Boolean));
+    kinds.add(kind);
+    target.setAttribute('data-dcb-dccon-kind', Array.from(kinds).join(','));
+    target.setAttribute('data-dcb-cleaner-hidden', 'true');
     target.setAttribute('data-dcb-dccon-hidden', 'true');
   };
 
-  const hideLegacyPlaceholderRow = (placeholder) => {
-    const row = findCommentRow(placeholder);
-    if (row) {
-      hideCommentDcconRow(row.querySelector(COMMENT_DCCON_SEL) || placeholder);
+  const hideCommentRow = (node, kind) => {
+    if (!node) return;
+    const row = findCommentRow(node);
+    const target = row || node;
+    if (kind === 'textcon') target.classList.add(TEXT_COMMENT_HIDDEN_CLASS);
+    else target.classList.add(MEDIA_COMMENT_HIDDEN_CLASS);
+    addHiddenKind(target, kind);
+  };
+
+  const hideContentNode = (node, kind) => {
+    if (!(node instanceof Element)) return;
+    if (findCommentRow(node)) {
+      hideCommentRow(node, kind);
       return;
     }
-    placeholder.remove();
+    if (kind === 'textcon') node.classList.add(TEXT_CONTENT_HIDDEN_CLASS);
+    else node.classList.add(MEDIA_CONTENT_HIDDEN_CLASS);
+    addHiddenKind(node, kind);
   };
 
   const restoreInlineDisplay = () => {
-    // 이전 버전이 직접 넣은 inline display:none 흔적을 가능한 범위에서 복원합니다.
-    document.querySelectorAll(`${COMMENT_DCCON_SEL}, ${CONTENT_DCCON_SELS.join(',')}`).forEach(el => {
+    document.querySelectorAll(`${MEDIA_CANDIDATE_SEL}, ${TEXTCON_SEL}`).forEach((el) => {
       if (el.matches?.(SELECTIVE_HIDDEN_SEL) || el.closest?.(SELECTIVE_HIDDEN_SEL)) return;
-      if (el.style?.display === 'none') {
-        el.style.removeProperty('display');
-      }
+      if (el.style?.display === 'none') el.style.removeProperty('display');
     });
   };
 
-  /* ───── 디시콘 복원 ───── */
-  const restoreDccons = () => {
-    document.querySelectorAll('[data-dcb-dccon-hidden="true"]').forEach(el => {
-      el.classList.remove(COMMENT_HIDDEN_CLASS, CONTENT_HIDDEN_CLASS);
+  const restoreOwnHiddenState = () => {
+    document.querySelectorAll('[data-dcb-cleaner-hidden="true"]').forEach((el) => {
+      el.classList.remove(
+        MEDIA_COMMENT_HIDDEN_CLASS,
+        TEXT_COMMENT_HIDDEN_CLASS,
+        MEDIA_CONTENT_HIDDEN_CLASS,
+        TEXT_CONTENT_HIDDEN_CLASS
+      );
+      el.removeAttribute('data-dcb-dccon-kind');
+      el.removeAttribute('data-dcb-cleaner-hidden');
       el.removeAttribute('data-dcb-dccon-hidden');
     });
-
     restoreInlineDisplay();
-    processedCommentDccons = new WeakSet();
   };
 
-  /* ───── 기존 DOM 요소 즉시 숨기기 ───── */
+  const hideMediaInScope = (scope) => {
+    if (!hideDccon || !scope?.querySelectorAll) return;
+
+    scope.querySelectorAll(LEGACY_PLACEHOLDER_SEL).forEach((el) => {
+      const row = findCommentRow(el);
+      if (row) hideCommentRow(row.querySelector(COMMENT_MEDIA_DCCON_SEL) || el, 'media');
+      else el.remove();
+    });
+
+    const handle = (el) => {
+      if (!(el instanceof Element) || isTextConFamily(el)) return;
+      hideContentNode(el, 'media');
+    };
+
+    if (scope instanceof Element && scope.matches?.(MEDIA_CANDIDATE_SEL)) handle(scope);
+    scope.querySelectorAll(MEDIA_CANDIDATE_SEL).forEach(handle);
+  };
+
+  const hideTextConsInScope = (scope) => {
+    if ((!hideDccon && !hideTextCon) || !scope?.querySelectorAll) return;
+    const handle = (el) => hideContentNode(el, 'textcon');
+    if (scope instanceof Element && scope.matches?.(TEXTCON_SEL)) handle(scope);
+    scope.querySelectorAll(TEXTCON_SEL).forEach(handle);
+  };
+
   const hideExistingElements = (scope = document) => {
-    if (!scope?.querySelectorAll) return;
-
-    // 1순위: 이미 삽입된 구버전 안내 문구가 있으면 문구가 아니라 댓글 행 전체를 숨깁니다.
-    scope.querySelectorAll(LEGACY_PLACEHOLDER_SEL).forEach(el => {
-      hideLegacyPlaceholderRow(el);
-    });
-
-    // 2순위: 댓글 디시콘 컨테이너가 보이면 댓글 행 전체를 숨깁니다.
-    if (scope instanceof Element && scope.matches?.(COMMENT_DCCON_SEL)) hideCommentDcconRow(scope);
-    scope.querySelectorAll(COMMENT_DCCON_SEL).forEach(el => {
-      hideCommentDcconRow(el);
-    });
-
-    // 3순위: 본문/기타 영역의 디시콘은 기존처럼 해당 디시콘 요소만 숨깁니다.
-    CONTENT_DCCON_SELS.forEach(sel => {
-      if (scope instanceof Element && scope.matches?.(sel)) {
-        if (findCommentRow(scope)) hideCommentDcconRow(scope);
-        else {
-          scope.classList.add(CONTENT_HIDDEN_CLASS);
-          scope.setAttribute('data-dcb-dccon-hidden', 'true');
-        }
-      }
-      scope.querySelectorAll(sel).forEach(el => {
-        if (findCommentRow(el)) {
-          hideCommentDcconRow(el);
-          return;
-        }
-
-        el.classList.add(CONTENT_HIDDEN_CLASS);
-        el.setAttribute('data-dcb-dccon-hidden', 'true');
-      });
-    });
+    hideMediaInScope(scope);
+    hideTextConsInScope(scope);
   };
 
-  const mutationMayContainDccon = (node) => {
+  const mutationMayContainRelevantContent = (node) => {
     if (!(node instanceof Element)) return false;
-    if (node.getAttribute?.('data-dcb-dccon-hidden') === 'true') return false;
-    const blob = `${node.className || ''} ${node.getAttribute?.('src') || ''} ${node.getAttribute?.('data-src') || ''} ${node.getAttribute?.('data-original') || ''} ${node.getAttribute?.('data-gif') || ''} ${node.getAttribute?.('data-mp4') || ''} ${node.getAttribute?.('reqpath') || ''}`;
-    return /dccon/i.test(blob) || node.matches?.(`${COMMENT_DCCON_SEL},${CONTENT_DCCON_SELS.join(',')},${LEGACY_PLACEHOLDER_SEL}`) || !!node.querySelector?.(`${COMMENT_DCCON_SEL},${CONTENT_DCCON_SELS.join(',')},${LEGACY_PLACEHOLDER_SEL}`);
+
+    if ((hideDccon || hideTextCon) && (
+      node.matches?.(TEXTCON_SEL)
+      || isTextConNode(node)
+      || !!node.querySelector?.(TEXTCON_SEL)
+    )) return true;
+
+    if (hideDccon && !isTextConFamily(node) && (
+      node.matches?.(MEDIA_CANDIDATE_SEL)
+      || !!node.querySelector?.(MEDIA_CANDIDATE_SEL)
+      || node.matches?.(LEGACY_PLACEHOLDER_SEL)
+      || !!node.querySelector?.(LEGACY_PLACEHOLDER_SEL)
+    )) return true;
+
+    return false;
   };
 
-  /* ───── 동적 콘텐츠 대응 ───── */
+  const stopObserver = () => {
+    observer?.disconnect();
+    observer = null;
+    if (debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = null;
+  };
+
   const startObserver = () => {
-    if (observer) return;
+    if (observer || (!hideDccon && !hideTextCon)) return;
 
     const pendingScopes = new Set();
     const flush = () => {
       debounceTimer = null;
-      if (!hideDccon) return;
-      addStyle();
+      if (!hideDccon && !hideTextCon) return;
+      syncStyles();
       const scopes = pendingScopes.size ? Array.from(pendingScopes) : [document];
       pendingScopes.clear();
-      scopes.forEach(scope => hideExistingElements(scope));
+      scopes.forEach((scope) => hideExistingElements(scope));
     };
 
     observer = new MutationObserver((mutations) => {
-      if (!hideDccon) return;
       for (const mutation of mutations) {
         if (mutation.type === 'childList') {
           for (const node of mutation.addedNodes || []) {
-            if (mutationMayContainDccon(node)) pendingScopes.add(node);
+            if (mutationMayContainRelevantContent(node)) pendingScopes.add(node);
           }
-        } else if (mutation.type === 'attributes' && mutationMayContainDccon(mutation.target)) {
+        } else if (mutation.type === 'attributes' && mutationMayContainRelevantContent(mutation.target)) {
           pendingScopes.add(mutation.target);
         }
       }
@@ -219,57 +262,52 @@ cleaner-dccon.js - 디시콘(DCcon) 숨기기
 
     const observeRoot = document.documentElement || document.body;
     if (observeRoot) {
-      observer.observe(observeRoot, { childList: true, subtree: true, attributes: true, attributeFilter: ["src", "class", "data-src", "data-original", "data-gif", "data-mp4", "reqpath"] });
-    } else {
-      document.addEventListener("DOMContentLoaded", () => {
-        const lateRoot = document.documentElement || document.body;
-        if (lateRoot && hideDccon) {
-          observer.observe(lateRoot, { childList: true, subtree: true, attributes: true, attributeFilter: ["src", "class", "data-src", "data-original", "data-gif", "data-mp4", "reqpath"] });
-        }
-      }, { once: true });
-    }
-  };
-
-  const stopObserver = () => {
-    if (observer) {
-      observer.disconnect();
-      observer = null;
-    }
-    if (debounceTimer) {
-      clearTimeout(debounceTimer);
-      debounceTimer = null;
-    }
-  };
-
-  /* ───── 초기 설정 로드 ───── */
-  chrome.storage.sync.get({ hideDccon: false }, ({ hideDccon }) => {
-    apply(hideDccon);
-  });
-
-  /* ───── 설정 변경 감지 ───── */
-  chrome.storage.onChanged.addListener((c, area) => {
-    if (area === 'sync' && c.hideDccon) {
-      apply(c.hideDccon.newValue);
-    }
-  });
-
-  /* ───── 페이지 로드 완료 후에도 한 번 더 실행 ───── */
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", () => {
-      chrome.storage.sync.get({ hideDccon: false }, ({ hideDccon }) => {
-        if (hideDccon) {
-          addStyle();
-          hideExistingElements();
-        }
+      observer.observe(observeRoot, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['src', 'class', 'data-src', 'data-original', 'data-gif', 'data-mp4', 'reqpath']
       });
+    }
+  };
+
+  const applySettings = (next = {}) => {
+    if (Object.prototype.hasOwnProperty.call(next, 'hideDccon')) hideDccon = next.hideDccon === true;
+    if (Object.prototype.hasOwnProperty.call(next, 'hideTextCon')) hideTextCon = next.hideTextCon === true;
+
+    stopObserver();
+    restoreOwnHiddenState();
+    syncStyles();
+
+    if (hideDccon || hideTextCon) {
+      hideExistingElements();
+      startObserver();
+    }
+  };
+
+  chrome.storage.sync.get({ hideDccon: false, hideTextCon: false }, (settings) => {
+    applySettings(settings);
+  });
+
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'sync') return;
+    const next = {};
+    if (changes.hideDccon) next.hideDccon = changes.hideDccon.newValue;
+    if (changes.hideTextCon) next.hideTextCon = changes.hideTextCon.newValue;
+    if (Object.keys(next).length) applySettings(next);
+  });
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+      if (hideDccon || hideTextCon) {
+        syncStyles();
+        hideExistingElements();
+        startObserver();
+      }
     }, { once: true });
   }
 
-  /* ───── window.onload 시점에도 한 번 더 확인 ───── */
-  window.addEventListener("load", () => {
-    if (hideDccon) {
-      addStyle();
-      hideExistingElements();
-    }
+  window.addEventListener('load', () => {
+    if (hideDccon || hideTextCon) hideExistingElements();
   }, { once: true });
 })();

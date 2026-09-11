@@ -3,9 +3,6 @@
 <head>
 <meta charset="utf-8" />
 <title>디시갤 차단기 - 설정</title>
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400&display=swap" rel="stylesheet" />
 <style>
   :root{
     --accent:#4f7cff;
@@ -16,7 +13,7 @@
   *{box-sizing:border-box;margin:0;padding:0}
   html,body{height:100%}
   body{
-    font-family:'Noto Sans KR',system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+    font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
     background:var(--bg-1); color:var(--fg);
     display:flex; justify-content:center; align-items:flex-start;
     padding:40px 0;
@@ -1009,66 +1006,35 @@
       <strong>공격적 표현 감지</strong>
       <label class="switch" aria-label="공격적 표현 감지 사용"><input type="checkbox" data-detection-field="enabled"><span class="slider"></span></label>
     </div>
-    <p>불쾌감을 줄 수 있는 공격적인 표현을 기기 안에서 찾아 자동으로 가립니다. 필요하면 “이번만 보기”로 열 수 있습니다. 글과 댓글은 외부로 보내지 않습니다.</p>
+    <p>
+      불쾌감을 줄 수 있는 공격적인 표현을 기기 안에서 찾아 가립니다.
+      필요하면 “이번만 보기”로 다시 볼 수 있습니다.
+      글과 댓글은 외부로 보내지 않습니다.
+    </p>
     <div class="dcb-detection-options">
       <label><input type="checkbox" data-detection-field="comments">댓글</label>
-      <label><input type="checkbox" data-detection-field="posts">게시글 본문 · 실험</label>
+      <label><input type="checkbox" data-detection-field="posts">게시글 본문 · 시험 기능</label>
     </div>
-    <label class="dcb-detection-sensitivity">감지 범위<select data-detection-field="sensitivity"><option value="careful">낮게 · 확실한 경우 위주</option><option value="balanced">보통</option><option value="sensitive">높게 · 더 넓게 감지</option></select></label>
-    <section class="dcb-detection-card" data-text-detection-settings aria-label="공격적 표현 감지 설정">
-  <div class="dcb-detection-heading">
-    <strong>공격적 표현 감지</strong>
-    <label class="switch" aria-label="공격적 표현 감지 사용">
-      <input type="checkbox" data-detection-field="enabled">
-      <span class="slider"></span>
+    <label class="dcb-detection-sensitivity">
+      감지 수준
+      <select data-detection-field="sensitivity">
+        <option value="careful">낮음 · 확실한 표현만</option>
+        <option value="balanced">보통</option>
+        <option value="sensitive">높음 · 더 넓게 감지</option>
+      </select>
     </label>
-  </div>
-
-  <p>
-    불쾌감을 줄 수 있는 공격적인 표현을 기기 안에서 찾아 가립니다.
-    필요하면 “이번만 보기”로 다시 볼 수 있습니다.
-    글과 댓글은 외부로 보내지 않습니다.
-  </p>
-
-  <div class="dcb-detection-options">
-    <label>
-      <input type="checkbox" data-detection-field="comments">
-      댓글
-    </label>
-    <label>
-      <input type="checkbox" data-detection-field="posts">
-      게시글 본문 · 시험 기능
-    </label>
-  </div>
-
-  <label class="dcb-detection-sensitivity">
-    감지 수준
-    <select data-detection-field="sensitivity">
-      <option value="careful">낮음 · 확실한 표현만</option>
-      <option value="balanced">보통</option>
-      <option value="sensitive">높음 · 더 넓게 감지</option>
-    </select>
-  </label>
-
-  <details>
-    <summary>알아두세요</summary>
-    <p>
-      감지 결과가 항상 정확한 것은 아닙니다.
-      이 표시만으로 작성자의 성향이나 글을 쓴 의도를 단정할 수는 없습니다.
-      이 기능은 댓글을 기준으로 만들었으며, 게시글 본문 감지는 아직 시험 중입니다.
-      글이 길면 앞부분만 검사할 수 있습니다.
-    </p>
-    <p>
-      <a href="../../../docs/text-detection.html" target="_blank" rel="noopener">
-        자세한 사용 안내
-      </a>
-    </p>
-  </details>
-
-  <p data-detection-status role="status" aria-live="polite">
-    설정을 불러오는 중입니다.
-  </p>
-</section>
+    <details>
+      <summary>알아두세요</summary>
+      <p>
+        감지 결과가 항상 정확한 것은 아닙니다.
+        이 표시만으로 작성자의 성향이나 글을 쓴 의도를 단정할 수는 없습니다.
+        이 기능은 댓글을 기준으로 만들었으며, 게시글 본문 감지는 아직 시험 중입니다.
+        글이 길면 앞부분만 검사할 수 있습니다.
+      </p>
+      <p><a href="../../../docs/text-detection.html" target="_blank" rel="noopener">자세한 사용 안내</a></p>
+    </details>
+    <p data-detection-status role="status" aria-live="polite">설정을 불러오는 중입니다.</p>
+  </section>
 
   <section class="card stack font-card">
     <div class="font-hero">
@@ -1630,16 +1596,24 @@
         <span class="slider"></span>
       </label>
     </div>
-    <div class="row" style="justify-content:space-between">
+    <div class="row" style="justify-content:space-between;margin-bottom:12px">
       <span>디시콘 숨기기</span>
       <label class="switch" title="디시콘 숨기기">
         <input type="checkbox" id="hideDccon">
         <span class="slider"></span>
       </label>
     </div>
+    <div class="row" style="justify-content:space-between">
+      <span>텍스트콘 숨기기</span>
+      <label class="switch" title="텍스트콘 숨기기">
+        <input type="checkbox" id="hideTextCon">
+        <span class="slider"></span>
+      </label>
+    </div>
     <p class="note" style="margin-top:12px">* 일반 댓글: 게시글 하단의 댓글 영역<br>
     * 이미지 댓글: 이미지에 달린 댓글 영역만 숨김<br>
-    * 디시콘: 본문과 댓글의 디시콘 숨김</p>
+    * 디시콘: 본문과 댓글의 모든 디시콘 숨김<br>
+    * 텍스트콘: 이미지·움짤 디시콘은 두고 글자로 된 디시콘만 숨김 · 기본 꺼짐</p>
   </section>
 
   <section class="card dccon-block-manager" id="dcconBlockManager" aria-label="숨길 디시콘 선택하기">
@@ -1773,6 +1747,7 @@
   </section>
 </main>
 
+<script src="../shared/ui-settings-cache.js"></script>
 <script src="../../content/appearance/font-config.js"></script>
 <script src="../shared/font-ui.js"></script>
 <script src="../../shared/storage/user-block-store.js"></script>

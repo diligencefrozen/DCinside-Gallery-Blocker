@@ -9,6 +9,7 @@ const blockModeHint = document.getElementById("blockModeHint");
 const hideCmtToggle = document.getElementById("hideComment");
 const hideImgCmtToggle = document.getElementById("hideImgComment");
 const hideDcconToggle = document.getElementById("hideDccon");
+const hideTextConToggle = document.getElementById("hideTextCon");
 const previewToggle = document.getElementById("previewEnabled");
 const autoRefreshToggle = document.getElementById("autoRefreshEnabled");
 const autoRefreshIntervalNum = document.getElementById("autoRefreshIntervalNum");
@@ -23,6 +24,12 @@ const quickGalleryPanel = document.getElementById("quickGalleryPanel");
 const currentGalleryIdEl = document.getElementById("currentGalleryId");
 const blockCurrentGalleryBtn = document.getElementById("blockCurrentGalleryBtn");
 const blockCurrentGalleryStatus = document.getElementById("blockCurrentGalleryStatus");
+const blockStatsVersionEl = document.getElementById("blockStatsVersion");
+const blockStatsPageTotalEl = document.getElementById("blockStatsPageTotal");
+const blockStatsCumulativeTotalEl = document.getElementById("blockStatsCumulativeTotal");
+const blockStatsBreakdownEl = document.getElementById("blockStatsBreakdown");
+const updateNoticeEl = document.getElementById("updateNotice");
+const updateNoticeTitleEl = document.getElementById("updateNoticeTitle");
 
 const keywordBlockToggle = document.getElementById("keywordBlockEnabled");
 const keywordInput = document.getElementById("keywordInput");
@@ -82,6 +89,7 @@ const DEFAULTS = {
   hideComment: false,
   hideImgComment: false,
   hideDccon: false,
+  hideTextCon: false,
   previewEnabled: true,
 
   keywordBlockEnabled: false,
@@ -125,9 +133,122 @@ const DEFAULTS = {
   dcbApplyFontToDc: false
 };
 
+const UI_SETTINGS_CACHE = globalThis.DCBUiSettingsCache;
+
 let userBlockEnabledState = true;
 let userBlockTriggerModeState = "instant";
 let userBlockHoverHintEnabledState = true;
+
+const BLOCK_STATS_LABELS = Object.freeze({
+  comments: "댓글",
+  imageComments: "이미지 댓글",
+  dccon: "디시콘",
+  textcon: "텍스트콘",
+  users: "이용자",
+  anonymous: "비회원",
+  keywords: "키워드",
+  images: "이미지",
+  aggressive: "공격적 표현",
+  lowActivity: "활동 적은 회원",
+  ads: "댓글돌이",
+  notices: "운영자 글",
+  automated: "게임메카",
+  pageElements: "페이지 요소",
+  other: "기타"
+});
+
+function formatBlockCount(value) {
+  return new Intl.NumberFormat("ko-KR").format(Math.max(0, Number.parseInt(value, 10) || 0));
+}
+
+function renderBlockBreakdown(stats = {}) {
+  if (!blockStatsBreakdownEl) return;
+  const items = Object.entries(stats.byCategory || {})
+    .map(([key, count]) => [key, Math.max(0, Number.parseInt(count, 10) || 0)])
+    .filter(([, count]) => count > 0)
+    .sort((a, b) => b[1] - a[1]);
+
+  blockStatsBreakdownEl.replaceChildren();
+  if (!items.length) {
+    const empty = document.createElement("span");
+    empty.className = "block-breakdown-empty";
+    empty.textContent = "현재 페이지에서 차단된 요소가 없습니다.";
+    blockStatsBreakdownEl.appendChild(empty);
+    return;
+  }
+
+  items.slice(0, 6).forEach(([key, count]) => {
+    const chip = document.createElement("span");
+    chip.className = "block-breakdown-chip";
+    chip.textContent = `${BLOCK_STATS_LABELS[key] || "기타"} ${formatBlockCount(count)}`;
+    blockStatsBreakdownEl.appendChild(chip);
+  });
+}
+
+let updateNoticeTimer = null;
+
+function hideUpdateNoticeSoon() {
+  if (!updateNoticeEl) return;
+  if (updateNoticeTimer) clearTimeout(updateNoticeTimer);
+  updateNoticeTimer = setTimeout(() => {
+    updateNoticeEl.classList.add("is-leaving");
+    setTimeout(() => {
+      updateNoticeEl.hidden = true;
+      updateNoticeEl.classList.remove("is-leaving");
+    }, 180);
+  }, 4000);
+}
+
+function renderPublishedVersion(version) {
+  if (!blockStatsVersionEl) return;
+  const value = String(version || "").trim();
+  blockStatsVersionEl.textContent = value;
+  blockStatsVersionEl.hidden = !value;
+}
+
+function renderUpdateNotice(notice) {
+  if (!updateNoticeEl || !updateNoticeTitleEl) return;
+  const publishedVersion = String(notice?.version || "").trim();
+  if (!notice || !publishedVersion) {
+    updateNoticeEl.hidden = true;
+    return;
+  }
+
+  // 먼저 이 버전을 확인한 것으로 저장한다. 저장에 성공한 단 하나의 Popup만 알림을 보여 준다.
+  chrome.runtime.sendMessage(
+    { type: "dcb.updateNotice.consume", version: publishedVersion },
+    (result) => {
+      if (chrome.runtime.lastError || !result?.ok || result.show !== true) return;
+      updateNoticeTitleEl.textContent = `${publishedVersion}으로 업데이트되었습니다.`;
+      updateNoticeEl.classList.remove("is-leaving");
+      updateNoticeEl.hidden = false;
+      hideUpdateNoticeSoon();
+    }
+  );
+}
+
+function loadReleaseStatus() {
+  chrome.runtime.sendMessage({ type: "dcb.release.status" }, (result) => {
+    if (chrome.runtime.lastError || !result?.ok) return;
+    renderPublishedVersion(result.publishedVersion);
+    renderUpdateNotice(result.updateNotice);
+  });
+}
+
+function loadBlockSummary() {
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    const tabId = Number.isInteger(tabs?.[0]?.id) ? tabs[0].id : null;
+    chrome.runtime.sendMessage({ type: "dcb.stats.get", tabId }, (result) => {
+      if (chrome.runtime.lastError || !result?.ok) return;
+      if (blockStatsPageTotalEl) blockStatsPageTotalEl.textContent = formatBlockCount(result.page?.total);
+      if (blockStatsCumulativeTotalEl) blockStatsCumulativeTotalEl.textContent = formatBlockCount(result.cumulative?.total);
+      renderBlockBreakdown(result.page || {});
+      renderPublishedVersion(result.publishedVersion);
+    });
+  });
+  // GitHub 조회는 차단 현황 렌더링과 분리해 팝업 첫 화면을 기다리게 하지 않는다.
+  loadReleaseStatus();
+}
 
 /* ───────── util ───────── */
 function setChecked(el, value) {
@@ -1086,7 +1207,7 @@ async function renderPopupMemoList() {
 }
 
 /* ───────── 초기 로드 ───────── */
-chrome.storage.sync.get(DEFAULTS, (conf) => {
+function applyPopupSettings(conf = {}, { refreshAsync = true } = {}) {
   if (typeof conf.userBlockEnabled !== "boolean" && typeof conf.hideDCGray === "boolean") {
     conf.userBlockEnabled = conf.hideDCGray;
     chrome.storage.sync.set({ userBlockEnabled: conf.userBlockEnabled });
@@ -1101,6 +1222,7 @@ chrome.storage.sync.get(DEFAULTS, (conf) => {
     hideComment,
     hideImgComment,
     hideDccon,
+    hideTextCon,
     previewEnabled,
     keywordBlockEnabled,
     blockedKeywords,
@@ -1129,19 +1251,20 @@ chrome.storage.sync.get(DEFAULTS, (conf) => {
   setChecked(builtinDcbestBlockToggle, builtinDcbestBlockEnabled !== false);
   setValue(blockModeSel, blockMode);
   setValue(quickBlockButtonPositionSel, normalizeQuickBlockPosition(quickBlockButtonPosition));
-  refreshQuickBlockButtonPositionControl();
+  if (refreshAsync) refreshQuickBlockButtonPositionControl();
   updateBlockModeHint(blockMode);
 
   setChecked(hideCmtToggle, hideComment);
   setChecked(hideImgCmtToggle, hideImgComment);
   setChecked(hideDcconToggle, hideDccon);
+  setChecked(hideTextConToggle, hideTextCon);
   setChecked(previewToggle, previewEnabled);
 
   setChecked(keywordBlockToggle, keywordBlockEnabled);
   renderKeywordTargets(keywordBlockTargets);
   lockKeywordBlockUI(!keywordBlockEnabled);
   renderKeywordList(blockedKeywords);
-  refreshKeywordBlockState();
+  if (refreshAsync) refreshKeywordBlockState();
 
   setChecked(autoRefreshToggle, autoRefreshEnabled);
   setValue(autoRefreshIntervalNum, autoRefreshInterval);
@@ -1157,7 +1280,7 @@ chrome.storage.sync.get(DEFAULTS, (conf) => {
   setValue(userBlockTriggerModeEl, userBlockTriggerModeState);
   updateUserBlockModeGuide(userBlockTriggerModeState);
   lockUserBlockUI(!userBlockEnabledState);
-  refreshUidList();
+  if (refreshAsync) refreshUidList();
 
   setChecked(toggleHideMain, hideMainEnabled);
   setChecked(toggleHideGall, hideGallEnabled);
@@ -1172,9 +1295,29 @@ chrome.storage.sync.get(DEFAULTS, (conf) => {
   setChecked(compactListToggle, compactListEnabled);
   setChecked(dcDarkModeToggle, false);
   clearLegacyDcThemePreference();
-  refreshDcThemeState();
-  refreshQuickGalleryState();
-});
+  if (refreshAsync) {
+    refreshDcThemeState();
+    refreshQuickGalleryState();
+  }
+
+}
+
+const instantPopupSettings = UI_SETTINGS_CACHE?.read?.(DEFAULTS) || DEFAULTS;
+applyPopupSettings(instantPopupSettings, { refreshAsync: false });
+
+function finishPopupSettingsLoad(conf = {}) {
+  const merged = { ...DEFAULTS, ...(conf || {}) };
+  UI_SETTINGS_CACHE?.merge?.(merged);
+  applyPopupSettings(merged, { refreshAsync: true });
+}
+
+if (UI_SETTINGS_CACHE?.ready) {
+  UI_SETTINGS_CACHE.ready.then(finishPopupSettingsLoad).catch(() => {
+    applyPopupSettings(instantPopupSettings, { refreshAsync: true });
+  });
+} else {
+  chrome.storage.sync.get(DEFAULTS, finishPopupSettingsLoad);
+}
 
 /* ───────── 이벤트 바인딩 ───────── */
 if (toggle) {
@@ -1268,6 +1411,10 @@ if (hideImgCmtToggle) {
 
 if (hideDcconToggle) {
   hideDcconToggle.onchange = (e) => chrome.storage.sync.set({ hideDccon: !!e.target.checked });
+}
+
+if (hideTextConToggle) {
+  hideTextConToggle.onchange = (e) => chrome.storage.sync.set({ hideTextCon: !!e.target.checked });
 }
 
 if (previewToggle) {
@@ -1599,6 +1746,7 @@ chrome.storage.onChanged.addListener((c, a) => {
     if (c.hideComment) setChecked(hideCmtToggle, c.hideComment.newValue);
     if (c.hideImgComment) setChecked(hideImgCmtToggle, c.hideImgComment.newValue);
     if (c.hideDccon) setChecked(hideDcconToggle, c.hideDccon.newValue);
+    if (c.hideTextCon) setChecked(hideTextConToggle, c.hideTextCon.newValue);
     if (c.previewEnabled) setChecked(previewToggle, c.previewEnabled.newValue !== false);
 
     if (c.keywordBlockEnabled) {
@@ -1664,6 +1812,7 @@ chrome.storage.onChanged.addListener((c, a) => {
 });
 
 renderPopupMemoList();
+loadBlockSummary();
 
 if (openOptionsBtn) {
   openOptionsBtn.onclick = () => chrome.runtime.openOptionsPage();

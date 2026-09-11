@@ -3,9 +3,6 @@
 <head>
 <meta charset="utf-8" />
 <title>디시갤 차단기</title>
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400&display=swap" rel="stylesheet" />
 <style>
   :root{
     --neon:#4f7cff;
@@ -25,7 +22,7 @@
     overflow-y:auto;
     overflow-x:hidden;
     background:var(--dark);color:var(--light);
-    font-family:"Noto Sans KR",system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
     display:flex;flex-direction:column;gap:18px;
   }
   h1{font-size:18px;letter-spacing:.5px;text-shadow:0 0 6px var(--neon)}
@@ -183,6 +180,33 @@
   .user-block-status{min-height:16px;color:#9dd6a5;font-size:11px;font-weight:700;line-height:1.4}
   .user-block-status.is-error{color:#ff9b9b}
   .divider{height:1px;background:#1f2630;border:0;margin-top:-6px}
+
+  .block-summary-card{
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+    padding:13px;
+    border:1px solid rgba(79,124,255,.38);
+    border-radius:15px;
+    background:linear-gradient(145deg,rgba(79,124,255,.17),rgba(15,23,42,.76));
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.04);
+  }
+  .block-summary-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .block-summary-head strong{font-size:13px;font-weight:900;color:#f8fbff}
+  .block-version{font-size:10px;font-weight:800;color:#a9c2ff;background:#18233a;border:1px solid rgba(79,124,255,.24);border-radius:999px;padding:3px 7px}
+  .block-summary-numbers{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .block-stat{padding:9px 10px;border:1px solid rgba(148,163,184,.13);border-radius:11px;background:rgba(7,12,22,.48)}
+  .block-stat span{display:block;color:#91a4bf;font-size:10px;font-weight:700;margin-bottom:2px}
+  .block-stat strong{display:block;color:#fff;font-size:21px;line-height:1.1;font-weight:900;font-variant-numeric:tabular-nums}
+  .block-breakdown{display:flex;flex-wrap:wrap;gap:5px;min-height:20px}
+  .block-breakdown-chip{display:inline-flex;align-items:center;gap:4px;padding:3px 7px;border-radius:999px;background:#172033;color:#c8d7ef;font-size:10px;font-weight:750}
+  .block-breakdown-empty{color:#8190a7;font-size:10px;line-height:20px}
+  .update-notice{display:flex;align-items:flex-start;gap:9px;padding:9px 10px;border:1px solid rgba(74,222,128,.24);border-radius:11px;background:rgba(34,197,94,.08);opacity:1;transform:translateY(0);transition:opacity .18s ease,transform .18s ease}
+  .update-notice[hidden]{display:none!important}
+  .update-notice-copy{flex:1 1 auto;min-width:0}
+  .update-notice-copy strong{display:block;color:#d9ffe5;font-size:11px;line-height:1.4}
+  .update-notice-copy span{display:block;margin-top:2px;color:#9fd6af;font-size:10px;line-height:1.35}
+  .update-notice.is-leaving{opacity:0;transform:translateY(-4px)}
 
   .quick-gallery-panel{
     display:flex;
@@ -1043,6 +1067,26 @@
 <body>
   <h1>디시갤 차단기</h1>
 
+  <section class="block-summary-card" aria-label="차단 현황">
+    <div class="block-summary-head">
+      <strong>차단 현황</strong>
+      <span class="block-version" id="blockStatsVersion" hidden></span>
+    </div>
+    <div class="block-summary-numbers">
+      <div class="block-stat"><span>현재 페이지</span><strong id="blockStatsPageTotal">0</strong></div>
+      <div class="block-stat"><span>누적 차단</span><strong id="blockStatsCumulativeTotal">0</strong></div>
+    </div>
+    <div class="block-breakdown" id="blockStatsBreakdown" aria-label="현재 페이지 차단 종류">
+      <span class="block-breakdown-empty">현재 페이지에서 차단된 요소가 없습니다.</span>
+    </div>
+    <div class="update-notice" id="updateNotice" hidden>
+      <div class="update-notice-copy">
+        <strong id="updateNoticeTitle"></strong>
+        <span>현재 최신 버전입니다.</span>
+      </div>
+    </div>
+  </section>
+
   <section class="donation-card" aria-label="개발자 후원">
     <div class="donation-head">
       <div class="donation-copy">
@@ -1294,7 +1338,15 @@
       <span class="slider"></span>
     </label>
   </label>
-  <p class="hint" style="margin-top:-10px">특정 디시콘이나 그룹만 차단하려면 해당 디시콘을 우클릭하세요. 차단 해제는 아래 목록이나 설정 메뉴에서 할 수 있습니다.</p>
+
+  <label class="row">
+    <span style="min-width:110px;">텍스트콘 숨기기</span>
+    <label class="switch">
+      <input type="checkbox" id="hideTextCon">
+      <span class="slider"></span>
+    </label>
+  </label>
+  <p class="hint" style="margin-top:-10px">디시콘 숨기기는 모든 디시콘을 숨깁니다. 텍스트콘만 따로 숨기려면 텍스트콘 숨기기를 켜세요. 기본값은 꺼짐입니다.</p>
 
   <section class="dccon-block-manager" id="dcconBlockManager" aria-label="숨길 디시콘 선택하기">
     <div class="dccon-block-manager-head">
@@ -1629,7 +1681,8 @@
 
   <button id="openOptions">설정 메뉴 열기</button>
 
-  <script src="../../content/appearance/font-config.js"></script>
+  <script src="../shared/ui-settings-cache.js"></script>
+<script src="../../content/appearance/font-config.js"></script>
   <script src="../shared/font-ui.js"></script>
   <script src="../../shared/storage/user-block-store.js"></script>
   <script src="../../shared/storage/dccon-block-store.js"></script>

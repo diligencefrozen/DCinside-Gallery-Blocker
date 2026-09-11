@@ -53,6 +53,7 @@
 
   const IME_FINALIZE_GRACE_MS = 80;
 
+  const uiCache = globalThis.DCBUiSettingsCache;
   let activeContext = null;
   let state = {
     keywordHideEnabled: DEFAULTS.keywordHideEnabled,
@@ -142,27 +143,42 @@
     }
   }
 
+  function applyStoredState(config = {}) {
+    const srcTargets = config.keywordHideTargets && typeof config.keywordHideTargets === "object"
+      ? config.keywordHideTargets
+      : {};
+
+    state = {
+      keywordHideEnabled: Boolean(config.keywordHideEnabled),
+      hiddenKeywords: normalizeKeywordList(config.hiddenKeywords),
+      keywordHideTargets: {
+        listTitle: typeof srcTargets.listTitle === "boolean" ? srcTargets.listTitle : DEFAULTS.keywordHideTargets.listTitle,
+        viewTitle: typeof srcTargets.viewTitle === "boolean" ? srcTargets.viewTitle : DEFAULTS.keywordHideTargets.viewTitle,
+        viewBody: typeof srcTargets.viewBody === "boolean" ? srcTargets.viewBody : DEFAULTS.keywordHideTargets.viewBody,
+        comments: typeof srcTargets.comments === "boolean" ? srcTargets.comments : DEFAULTS.keywordHideTargets.comments
+      }
+    };
+  }
+
   function loadState(callback) {
     if (!hasChromeStorage()) return;
 
-    chrome.storage.sync.get(DEFAULTS, (config) => {
-      const srcTargets = config.keywordHideTargets && typeof config.keywordHideTargets === "object"
-        ? config.keywordHideTargets
-        : {};
-
-      state = {
-        keywordHideEnabled: Boolean(config.keywordHideEnabled),
-        hiddenKeywords: normalizeKeywordList(config.hiddenKeywords),
-        keywordHideTargets: {
-          listTitle: typeof srcTargets.listTitle === "boolean" ? srcTargets.listTitle : DEFAULTS.keywordHideTargets.listTitle,
-          viewTitle: typeof srcTargets.viewTitle === "boolean" ? srcTargets.viewTitle : DEFAULTS.keywordHideTargets.viewTitle,
-          viewBody: typeof srcTargets.viewBody === "boolean" ? srcTargets.viewBody : DEFAULTS.keywordHideTargets.viewBody,
-          comments: typeof srcTargets.comments === "boolean" ? srcTargets.comments : DEFAULTS.keywordHideTargets.comments
-        }
-      };
-
+    const cached = uiCache?.read?.(DEFAULTS);
+    if (cached) {
+      applyStoredState(cached);
       callback();
-    });
+    }
+
+    const finish = (config) => {
+      applyStoredState({ ...DEFAULTS, ...(config || {}) });
+      callback();
+    };
+
+    if (uiCache?.ready) {
+      uiCache.ready.then(finish).catch(() => {});
+    } else {
+      chrome.storage.sync.get(DEFAULTS, finish);
+    }
   }
 
   function saveState(partial, message) {
@@ -183,6 +199,7 @@
       }
     };
 
+    uiCache?.merge?.(nextPartial);
     chrome.storage.sync.set(nextPartial, () => {
       render();
       setStatus(message || "저장되었습니다.");
@@ -489,9 +506,13 @@
     activeContext = detectContext();
     if (!activeContext) return;
 
+    let bound = false;
     loadState(() => {
       render();
-      bind();
+      if (!bound) {
+        bound = true;
+        bind();
+      }
     });
   }
 

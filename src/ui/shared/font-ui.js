@@ -15,6 +15,7 @@
 
   let saveTimer = null;
   let requestVersion = 0;
+  const uiCache = globalThis.DCBUiSettingsCache;
 
   function ensureNode(id, tag) {
     let node = document.getElementById(id);
@@ -92,6 +93,7 @@
 
   function persist(patch) {
     saveTimer = null;
+    uiCache?.merge?.(patch);
     chrome.storage.sync.set(patch, () => {
       if (chrome.runtime?.lastError && fontHint) {
         fontHint.textContent = "글꼴 설정을 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.";
@@ -112,6 +114,12 @@
 
   function loadControls() {
     const version = ++requestVersion;
+    if (uiCache?.ready) {
+      uiCache.ready.then((conf) => {
+        if (version === requestVersion) renderControls({ ...DCBFont.STORAGE_DEFAULTS, ...(conf || {}) });
+      }).catch(() => {});
+      return;
+    }
     chrome.storage.sync.get(DCBFont.STORAGE_DEFAULTS, (conf) => {
       if (version === requestVersion && !chrome.runtime?.lastError) renderControls(conf);
     });
@@ -136,8 +144,16 @@
     persist(defaults);
   });
 
+  renderControls(uiCache?.read?.(DCBFont.STORAGE_DEFAULTS) || DCBFont.STORAGE_DEFAULTS, { force: true });
+
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === "sync" && Object.keys(DCBFont.STORAGE_DEFAULTS).some((key) => key in changes)) loadControls();
+    if (area !== "sync" || !Object.keys(DCBFont.STORAGE_DEFAULTS).some((key) => key in changes)) return;
+    const patch = {};
+    Object.keys(DCBFont.STORAGE_DEFAULTS).forEach((key) => {
+      if (changes[key] && changes[key].newValue !== undefined) patch[key] = changes[key].newValue;
+    });
+    uiCache?.merge?.(patch);
+    renderControls(uiCache?.read?.(DCBFont.STORAGE_DEFAULTS) || { ...DCBFont.STORAGE_DEFAULTS, ...patch });
   });
   loadControls();
 })();
