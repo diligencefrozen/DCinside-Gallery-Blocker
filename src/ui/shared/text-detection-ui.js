@@ -18,13 +18,13 @@
       const output = root.querySelector("[data-detection-status]");
       if (!output) continue;
       output.dataset.error = String(settings.enabled && status.state === "error");
-      output.textContent = !settings.enabled ? "꺼짐 · 켜면 화면에 보이는 문장부터 분석합니다."
-        : !settings.posts && !settings.comments ? "분석할 게시글 또는 댓글을 선택해 주세요."
-        : status.state === "error" ? "분석을 시작하지 못했습니다. 감지 기능을 껐다 켜서 다시 시도해 주세요. 계속 실패하면 확장과 페이지를 새로고침해 주세요."
-        : status.state === "loading" ? "기기 내 모델을 준비하고 있습니다. 처음에는 시간이 걸릴 수 있어요."
-        : status.state === "analyzing" ? "현재 기기에서 문장을 분석하고 있습니다."
-        : status.state === "ready" ? "분석 준비 완료 · 표시가 없어도 정상 판정을 뜻하지 않습니다."
-        : "사용 중 · 디시 게시글이나 미리보기를 열면 분석합니다.";
+      output.textContent = !settings.enabled ? "꺼짐 · 켜면 화면에 보이는 글과 댓글부터 확인합니다."
+        : !settings.posts && !settings.comments ? "확인할 게시글 또는 댓글을 선택해 주세요."
+        : status.state === "error" ? "감지 기능을 시작하지 못했습니다. 기능을 껐다 켜서 다시 시도해 주세요. 계속 안 되면 확장 프로그램과 페이지를 새로고침해 주세요."
+        : status.state === "loading" ? "기기 안에서 감지 기능을 준비하고 있습니다. 처음에는 시간이 조금 걸릴 수 있습니다."
+        : status.state === "analyzing" ? "현재 기기에서 공격적인 표현을 확인하고 있습니다."
+        : status.state === "ready" ? "준비 완료 · 감지 결과가 항상 정확한 것은 아닙니다."
+        : "사용 중 · 글이나 미리보기를 열면 확인합니다.";
     }
   }
 

@@ -84,9 +84,10 @@ async function until(check, description, timeout = 30_000) {
     if (value.dcbDetectionStatus?.state === 'error') throw new Error(`Actual extension inference failed: ${JSON.stringify(value)}`);
     return value.dcbDetectionStatus?.state === 'ready';
   }, 'visible page inference ready', 90_000);
-  await dc.locator('[data-dcb-text-detection-badge="comment"]').waitFor({ timeout: 10_000 });
-  const badgeCount = await dc.locator('[data-dcb-text-detection-badge]').count();
-  assert.ok(badgeCount > 0);
+  await dc.locator('[data-dcb-text-detection-placeholder]').waitFor({ timeout: 10_000 });
+  const hiddenCount = await dc.locator('[data-dcb-text-detection-hidden="1"]').count();
+  assert.ok(hiddenCount > 0);
+  assert.equal(await dc.locator('[data-dcb-text-detection-placeholder]').first().getAttribute('data-dcb-text-detection-label'), '공격적 표현이 있는 댓글을 가렸습니다');
   assert.equal(await worker.evaluate(() => chrome.offscreen.hasDocument()), true);
 
   const cdp = await context.newCDPSession(dc);
@@ -121,7 +122,8 @@ async function until(check, description, timeout = 30_000) {
   await options.locator('[data-text-detection-settings]').screenshot({ path: path.join(resultsDir, 'extension-options-detection.png') });
   await popup.locator('[data-text-detection-settings] label.switch').click();
   await until(async () => (await worker.evaluate(() => chrome.storage.sync.get('dcbTextDetection'))).dcbTextDetection?.enabled === false, 'popup toggle storage update');
-  await until(async () => await dc.locator('[data-dcb-text-detection-badge]').count() === 0, 'badges removed on OFF');
+  await until(async () => await dc.locator('[data-dcb-text-detection-placeholder]').count() === 0, 'detected-content placeholders removed on OFF');
+  assert.equal(await dc.locator('[data-dcb-text-detection-hidden="1"]').count(), 0);
   await until(async () => !(await worker.evaluate(() => chrome.offscreen.hasDocument())), 'offscreen released on OFF');
   await options.locator('[data-detection-status]').filter({ hasText: '꺼짐' }).waitFor();
   const disabled = await cdp.send('Runtime.evaluate', {

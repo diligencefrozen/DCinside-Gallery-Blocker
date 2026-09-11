@@ -55,7 +55,7 @@ async function respond(page, index, score = 0.95) {
   }, { index, score });
 }
 
-const badgeSelector = '[data-dcb-text-detection-badge]';
+const placeholderSelector = '[data-dcb-text-detection-placeholder]';
 
 test('is opt in and sends only bounded text from post and comment bodies', async () => {
   const page = await fixture(`
@@ -85,12 +85,14 @@ test('is opt in and sends only bounded text from post and comment bodies', async
       assert.ok(!payload.includes(omitted), `Unexpected model input: ${omitted}`);
     }
     await respond(page, 0);
-    await page.waitForFunction((selector) => document.querySelectorAll(selector).length === 2, badgeSelector);
-    assert.equal(await page.locator(`${badgeSelector}[data-dcb-text-detection-badge="post"]`).innerText(), '갈등 표현 참고');
-    assert.equal(await page.locator(`${badgeSelector}[data-dcb-text-detection-badge="comment"]`).innerText(), '갈등 표현 주의');
-    assert.match(await page.locator(badgeSelector).first().getAttribute('title'), /확률을 뜻하지 않습니다/);
-    assert.match(await page.locator(badgeSelector).first().getAttribute('title'), /댓글용 모델/);
+    await page.waitForFunction((selector) => document.querySelectorAll(selector).length === 2, placeholderSelector);
+    assert.deepEqual(await page.locator(placeholderSelector).evaluateAll(nodes => nodes.map(node => node.dataset.dcbTextDetectionLabel).sort()),
+      ['공격적 표현이 있는 게시글을 가렸습니다', '공격적 표현이 있는 댓글을 가렸습니다'].sort());
+    assert.equal(await page.locator('#comment').getAttribute('data-dcb-text-detection-hidden'), '1');
+    assert.equal(await page.locator('#comment').evaluate((node) => getComputedStyle(node).display), 'none');
+    await page.locator(`${placeholderSelector} button`).last().click();
     assert.notEqual(await page.locator('#comment').evaluate((node) => getComputedStyle(node).display), 'none');
+    assert.equal(await page.locator(placeholderSelector).count(), 1);
 
     await page.evaluate(() => {
       document.querySelector('.title_subject').textContent = '제'.repeat(800);
@@ -110,24 +112,24 @@ test('rejects stale text and settings results and removes an existing badge on t
     await page.evaluate(() => { document.querySelector('#body').textContent = '새롭게 수정된 댓글 본문입니다.'; });
     await respond(page, 0);
     const messages = await waitRequests(page, 2);
-    assert.equal(await page.locator(badgeSelector).count(), 0);
+    assert.equal(await page.locator(placeholderSelector).count(), 0);
     assert.equal(messages[1].items[0].body, '새롭게 수정된 댓글 본문입니다.');
     await respond(page, 1);
-    await page.waitForSelector(badgeSelector);
+    await page.waitForSelector(placeholderSelector);
     await page.evaluate(() => { document.querySelector('#body').textContent = '세 번째로 변경한 댓글 내용입니다.'; });
-    assert.equal(await page.locator(badgeSelector).count(), 0);
+    assert.equal(await page.locator(placeholderSelector).count(), 0);
     await waitRequests(page, 3);
     await page.evaluate(() => window.setDetection({ enabled: false }));
     await respond(page, 2);
     await page.waitForTimeout(260);
-    assert.equal(await page.locator(badgeSelector).count(), 0);
+    assert.equal(await page.locator(placeholderSelector).count(), 0);
     assert.equal(await page.evaluate(() => window.requests.length), 3);
     await page.evaluate(() => window.setDetection({ enabled: true }));
     await waitRequests(page, 4);
     await respond(page, 3);
-    await page.waitForSelector(badgeSelector);
+    await page.waitForSelector(placeholderSelector);
     await page.evaluate(() => window.setDetection({ comments: false }));
-    assert.equal(await page.locator(badgeSelector).count(), 0);
+    assert.equal(await page.locator(placeholderSelector).count(), 0);
   } finally { await page.close(); }
 });
 
@@ -149,7 +151,7 @@ test('discovers dynamic preview comments with the preview title and waits for of
     assert.equal(messages[0].items[0].kind, 'comment');
     assert.equal(messages[0].items[0].body, '동적으로 삽입된 미리보기 댓글입니다.');
     await respond(page, 0);
-    await page.waitForSelector(`#dcb-preview-overlay ${badgeSelector}`);
+    await page.waitForSelector(`#dcb-preview-overlay ${placeholderSelector}`);
     await page.locator('#far').scrollIntoViewIfNeeded();
     const later = await waitRequests(page, 2);
     assert.equal(later[1].items.length, 1);
@@ -166,7 +168,7 @@ test('bounds batches, caches repeat text, and does not reclassify its own badges
       assert.equal(messages[index].items.length, index === 2 ? 2 : 4);
       await respond(page, index);
     }
-    await page.waitForFunction((selector) => document.querySelectorAll(selector).length === 10, badgeSelector);
+    await page.waitForFunction((selector) => document.querySelectorAll(selector).length === 10, placeholderSelector);
     await page.waitForTimeout(350);
     assert.equal(await page.evaluate(() => window.requests.length), 3);
     await page.evaluate(() => {
@@ -176,10 +178,32 @@ test('bounds batches, caches repeat text, and does not reclassify its own badges
       replacement.textContent = '서로 다른 댓글 본문을 테스트합니다 0.';
       document.querySelector('#comment-0').replaceWith(replacement);
     });
-    await page.waitForSelector(`#replacement ${badgeSelector}`);
+    await page.waitForFunction((selector) => document.querySelectorAll(selector).length === 10, placeholderSelector);
     assert.equal(await page.evaluate(() => window.requests.length), 3);
     await page.evaluate(() => window.setDetection({ enabled: false }));
-    assert.equal(await page.locator(badgeSelector).count(), 0);
+    assert.equal(await page.locator(placeholderSelector).count(), 0);
+  } finally { await page.close(); }
+});
+
+test('keeps 1000-comment pages lazy and keeps the warning box inside the native comment column', async () => {
+  const rows = Array.from({ length: 1000 }, (_, index) => `<li class="ub-content"><div class="cmt_info" style="height:28px"><div class="cmt_nickbox" style="float:left;width:150px">작성자${index}</div><div class="cmt_txtbox" style="float:left;width:700px"><p class="usertxt">대량 댓글 성능 확인을 위한 충분히 긴 댓글 본문 ${index} 입니다.</p></div></div></li>`).join('');
+  const page = await fixture(`<ul class="cmt_list">${rows}</ul>`, { enabled: true, posts: false, comments: true });
+  try {
+    const messages = await waitRequests(page, 1);
+    assert.ok(messages[0].items.length <= 4, 'only one bounded viewport batch starts immediately');
+    await page.waitForTimeout(350);
+    assert.equal(await page.evaluate(() => window.requests.length), 1, 'offscreen comments are not eagerly queued while the first batch is pending');
+    await respond(page, 0);
+    await page.waitForSelector(placeholderSelector);
+    const bounds = await page.locator(placeholderSelector).first().evaluate(node => {
+      const box = node.getBoundingClientRect();
+      const textBox = node.closest('.cmt_txtbox').getBoundingClientRect();
+      const author = node.closest('.cmt_info').querySelector('.cmt_nickbox').getBoundingClientRect();
+      return { box: { left: box.left, right: box.right }, textBox: { left: textBox.left, right: textBox.right }, author: { right: author.right } };
+    });
+    assert.ok(bounds.box.left >= bounds.textBox.left - 1 && bounds.box.right <= bounds.textBox.right + 1,
+      'soft warning stays inside the comment text column');
+    assert.ok(bounds.author.right <= bounds.textBox.left + 1, 'warning does not push or overlap the author column');
   } finally { await page.close(); }
 });
 
@@ -197,7 +221,7 @@ test('pauses unavailable or malformed inference rather than repeatedly sending r
       });
       await page.waitForTimeout(400);
       assert.equal(await page.evaluate(() => window.requests.length), 1);
-      assert.equal(await page.locator(badgeSelector).count(), 0);
+      assert.equal(await page.locator(placeholderSelector).count(), 0);
     } finally { await page.close(); }
   }
 });

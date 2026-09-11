@@ -1004,20 +1004,71 @@
     </div>
   </section>
 
-  <section class="dcb-detection-card" data-text-detection-settings aria-label="문장 분석 설정">
+  <section class="dcb-detection-card" data-text-detection-settings aria-label="공격적 표현 감지 설정">
     <div class="dcb-detection-heading">
-      <strong>갈등 표현 감지</strong>
-      <label class="switch" aria-label="갈등 표현 감지 사용"><input type="checkbox" data-detection-field="enabled"><span class="slider"></span></label>
+      <strong>공격적 표현 감지</strong>
+      <label class="switch" aria-label="공격적 표현 감지 사용"><input type="checkbox" data-detection-field="enabled"><span class="slider"></span></label>
     </div>
-    <p>보고 있는 문장을 기기 안에서 분석해 참고 표시를 붙입니다. 본문과 댓글은 외부로 전송하지 않습니다.</p>
+    <p>불쾌감을 줄 수 있는 공격적인 표현을 기기 안에서 찾아 자동으로 가립니다. 필요하면 “이번만 보기”로 열 수 있습니다. 글과 댓글은 외부로 보내지 않습니다.</p>
     <div class="dcb-detection-options">
       <label><input type="checkbox" data-detection-field="comments">댓글</label>
       <label><input type="checkbox" data-detection-field="posts">게시글 본문 · 실험</label>
     </div>
-    <label class="dcb-detection-sensitivity">탐지 기준<select data-detection-field="sensitivity"><option value="careful">신중 · 의심 표시 적게</option><option value="balanced">보통</option><option value="sensitive">민감 · 더 넓게 표시</option></select></label>
-    <details><summary>결과를 읽는 방법</summary><p>사람이나 계정의 정체·의도를 판정하지 않습니다. 오탐이 있으며 자동으로 차단하지 않습니다. 댓글용 모델이라 게시글의 정확도는 검증되지 않았고, 긴 글은 앞부분을 중심으로 분석합니다.</p><p><a href="../../../docs/text-detection.html" target="_blank" rel="noopener">자세한 사용 안내</a></p></details>
-    <p data-detection-status role="status" aria-live="polite">설정을 불러오는 중입니다.</p>
-  </section>
+    <label class="dcb-detection-sensitivity">감지 범위<select data-detection-field="sensitivity"><option value="careful">낮게 · 확실한 경우 위주</option><option value="balanced">보통</option><option value="sensitive">높게 · 더 넓게 감지</option></select></label>
+    <section class="dcb-detection-card" data-text-detection-settings aria-label="공격적 표현 감지 설정">
+  <div class="dcb-detection-heading">
+    <strong>공격적 표현 감지</strong>
+    <label class="switch" aria-label="공격적 표현 감지 사용">
+      <input type="checkbox" data-detection-field="enabled">
+      <span class="slider"></span>
+    </label>
+  </div>
+
+  <p>
+    불쾌감을 줄 수 있는 공격적인 표현을 기기 안에서 찾아 가립니다.
+    필요하면 “이번만 보기”로 다시 볼 수 있습니다.
+    글과 댓글은 외부로 보내지 않습니다.
+  </p>
+
+  <div class="dcb-detection-options">
+    <label>
+      <input type="checkbox" data-detection-field="comments">
+      댓글
+    </label>
+    <label>
+      <input type="checkbox" data-detection-field="posts">
+      게시글 본문 · 시험 기능
+    </label>
+  </div>
+
+  <label class="dcb-detection-sensitivity">
+    감지 수준
+    <select data-detection-field="sensitivity">
+      <option value="careful">낮음 · 확실한 표현만</option>
+      <option value="balanced">보통</option>
+      <option value="sensitive">높음 · 더 넓게 감지</option>
+    </select>
+  </label>
+
+  <details>
+    <summary>알아두세요</summary>
+    <p>
+      감지 결과가 항상 정확한 것은 아닙니다.
+      이 표시만으로 작성자의 성향이나 글을 쓴 의도를 단정할 수는 없습니다.
+      이 기능은 댓글을 기준으로 만들었으며, 게시글 본문 감지는 아직 시험 중입니다.
+      글이 길면 앞부분만 검사할 수 있습니다.
+    </p>
+    <p>
+      <a href="../../../docs/text-detection.html" target="_blank" rel="noopener">
+        자세한 사용 안내
+      </a>
+    </p>
+  </details>
+
+  <p data-detection-status role="status" aria-live="polite">
+    설정을 불러오는 중입니다.
+  </p>
+</section>
 
   <section class="card stack font-card">
     <div class="font-hero">
