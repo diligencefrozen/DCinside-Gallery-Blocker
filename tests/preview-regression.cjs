@@ -7,7 +7,8 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const source = fs.readFileSync(path.join(__dirname, '../src/content/core/content_script.js'), 'utf8');
 const previewSource = source.slice(source.indexOf('(function dcBlockPostPreview(){')).replace(/\}\)\(\);\s*$/, `
   window.previewTest = { renderPreview, normalizeDcMedia, stripUnsafe, dcMoviePlayerUrl, dcMovieMediaUrl,
-    loadPreviewMovie, renderLoading, closePreview, openPreview, isWeakPreviewData, mergePreviewData };
+    loadPreviewMovie, renderLoading, closePreview, openPreview, isWeakPreviewData, mergePreviewData,
+    buildCommentsHTML, commentRecordsToHtml };
 })();`);
 const articleUrl = 'https://gall.dcinside.com/board/view/?id=fixture&no=10';
 const listUrl = 'https://gall.dcinside.com/board/lists/?id=fixture';
@@ -205,6 +206,20 @@ const listUrl = 'https://gall.dcinside.com/board/lists/?id=fixture';
   assert.equal(nativePlayerRequest?.referer, articleUrl, 'the browser sends the original article referrer on native player fetch');
   assert.deepEqual(missingMediaFallback, { originalPlayer: true, fabricatedVideo: false }, 'an empty player response keeps the original iframe');
 
+  const packageMetadata = await page.evaluate((base) => {
+    const doc = new DOMParser().parseFromString(`<div id="root"><div class="cmt_info" data-package-idx="8877"><div class="gall_writer" data-nick="tester"></div><div class="date_time">09.11 19:00:00</div><div class="cmt_txtbox"><div class="coment_dccon_txt cbg_3b4890"><p class="txtcon_txt ctxt_ffffff">텍스트콘</p></div></div></div></div>`, 'text/html');
+    const fromDom = window.previewTest.buildCommentsHTML(doc, doc.querySelector('#root'), base);
+    const fromRecord = window.previewTest.commentRecordsToHtml([{
+      name: 'tester',
+      reg_date: '09.11 19:00:00',
+      dccon_package_idx: '9988',
+      memo: '<div class="coment_dccon_txt"><p class="txtcon_txt">레코드 텍스트콘</p></div>'
+    }], base);
+    return { fromDom, fromRecord };
+  }, articleUrl);
+  assert.match(packageMetadata.fromDom, /data-package-idx="8877"/, 'preview preserves DOM dccon package metadata for selective group blocking');
+  assert.match(packageMetadata.fromRecord, /data-package-idx="9988"/, 'preview preserves comment-record dccon package metadata for selective group blocking');
+
   const textconData = { ...data, commentsHTML: '<div class="dcbpv-comment-item"><div class="dcbpv-comment-body"><div class="coment_dccon_txt cbg_3b4890"><p class="txtcon_txt ctxt_ffffff">탄약까지 사라진다면</p></div></div></div>' };
   await page.evaluate((fixture) => { window.testSettings.hideDccon = true; window.previewTest.renderPreview(fixture); }, textconData);
   await page.waitForTimeout(50);
@@ -215,6 +230,17 @@ const listUrl = 'https://gall.dcinside.com/board/lists/?id=fixture';
   });
   await page.waitForTimeout(100);
   assert.equal(await page.locator('.dcbpv-comment-item').isVisible(), true, 'turning hideDccon off restores textcon');
+  const textconLayout = await page.evaluate(() => {
+    const body = document.querySelector('.dcbpv-comment-body');
+    const textcon = body?.querySelector('.coment_dccon_txt');
+    if (!body || !textcon) return null;
+    const bodyRect = body.getBoundingClientRect();
+    const textconRect = textcon.getBoundingClientRect();
+    return { bodyWidth: bodyRect.width, textconWidth: textconRect.width, display: getComputedStyle(textcon).display };
+  });
+  assert.ok(textconLayout, 'textcon remains in the preview DOM');
+  assert.equal(textconLayout.display, 'inline-block', 'preview keeps textcon shrink-wrapped instead of stretching it like a block');
+  assert.ok(textconLayout.textconWidth < textconLayout.bodyWidth * 0.75, 'short textcon does not expand across the comment row');
 
   await page.evaluate(() => { window.previewTest.closePreview(); document.querySelector('#origin').focus(); window.previewTest.renderLoading(); });
   assert.equal(await page.evaluate(() => document.documentElement.style.overflow), 'hidden');

@@ -250,7 +250,7 @@ function resetContextMenus() {
         chrome.contextMenus.create({
           id: DCCON_BLOCK_CONTEXT_MENU_ID,
           title: "🧩 디시콘 차단",
-          contexts: ["image", "video"],
+          contexts: ["page", "image", "video"],
           documentUrlPatterns: [
             "*://gall.dcinside.com/*"
           ]
@@ -260,7 +260,7 @@ function resetContextMenus() {
           id: DCCON_BLOCK_ITEM_MENU_ID,
           parentId: DCCON_BLOCK_CONTEXT_MENU_ID,
           title: "이 디시콘만 차단",
-          contexts: ["image", "video"],
+          contexts: ["page", "image", "video"],
           documentUrlPatterns: [
             "*://gall.dcinside.com/*"
           ]
@@ -270,7 +270,7 @@ function resetContextMenus() {
           id: DCCON_BLOCK_GROUP_MENU_ID,
           parentId: DCCON_BLOCK_CONTEXT_MENU_ID,
           title: "이 디시콘 그룹 전체 차단",
-          contexts: ["image", "video"],
+          contexts: ["page", "image", "video"],
           documentUrlPatterns: [
             "*://gall.dcinside.com/*"
           ]

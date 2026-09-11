@@ -498,6 +498,8 @@ syncSettings(handleUrl);
       #${OVERLAY_ID} .dcbpv-comment-meta strong{color:#0f172a;font-size:13px}
       #${OVERLAY_ID} .dcbpv-comment-body{min-width:0;max-width:100%;font-size:14px;line-height:1.75;color:#273449;word-break:normal;overflow-wrap:anywhere;white-space:normal!important}
       #${OVERLAY_ID} .dcbpv-comment-body :is(div,p,span,a,em,strong,blockquote,pre,ul,ol,li){float:none!important;position:static!important;width:auto!important;min-width:0!important;max-width:100%!important;height:auto!important;max-height:none!important;white-space:pre-wrap!important;overflow:visible!important;text-overflow:clip!important;overflow-wrap:anywhere!important;word-break:normal!important;font-size:inherit;line-height:inherit}
+      #${OVERLAY_ID} .dcbpv-comment-body :is(.coment_dccon_txt,.comment_dccon_txt){display:inline-block!important;width:fit-content!important;min-width:0!important;max-width:100%!important;height:auto!important;vertical-align:top!important;white-space:normal!important;overflow:hidden!important}
+      #${OVERLAY_ID} .dcbpv-comment-body :is(.coment_dccon_txt,.comment_dccon_txt) .txtcon_txt{display:block!important;width:auto!important;min-width:0!important;max-width:100%!important;margin:0!important;white-space:pre-wrap!important;overflow-wrap:anywhere!important}
       #${OVERLAY_ID} .dcbpv-comment-body p{margin:0}
       #${OVERLAY_ID} .dcbpv-legacy-vote,#${OVERLAY_ID} .dcbpv-vote{margin:14px 0;padding:10px 12px;border:1px solid #e5e7eb;border-radius:12px;background:#f8fafc;color:#334155;font-size:13px;font-weight:700}
       #${OVERLAY_ID} .dcbpv-empty{padding:22px;text-align:center;border:1px dashed #cbd5e1;border-radius:12px;color:#64748b;background:#f8fafc}
@@ -1687,6 +1689,49 @@ syncSettings(handleUrl);
     return item.querySelector(".date_time,.gall_date,.date,.regdate,.time")?.textContent?.replace(/\s+/g, " ").trim() || "";
   }
 
+  const PREVIEW_DCCON_PACKAGE_ATTRS = [
+    "package_idx", "data-package-idx", "data-package_idx", "data-package",
+    "data-dccon-package", "data-dccon-package-idx", "data-package-no"
+  ];
+
+  function previewDcconPackageIdxFromValue(value){
+    const raw = String(value || "").trim();
+    if (/^\d+$/.test(raw)) return raw;
+    return raw.match(/(?:package[_-]?idx|packageIdx|package[_-]?no)[=:?&\s"']+(\d+)/i)?.[1] || "";
+  }
+
+  function previewDcconPackageIdxFromElement(node){
+    if (!(node instanceof Element)) return "";
+    const candidates = [node, ...node.querySelectorAll?.(`[${PREVIEW_DCCON_PACKAGE_ATTRS.join(`],[`)}]`) || []];
+    for (const candidate of candidates) {
+      for (const name of PREVIEW_DCCON_PACKAGE_ATTRS) {
+        const found = previewDcconPackageIdxFromValue(candidate.getAttribute?.(name));
+        if (found) return found;
+      }
+      for (const attr of candidate.attributes || []) {
+        const found = previewDcconPackageIdxFromValue(`${attr.name}=${attr.value}`);
+        if (found) return found;
+      }
+    }
+    return previewDcconPackageIdxFromValue(node.outerHTML?.slice(0, 12000));
+  }
+
+  function previewDcconPackageIdxFromRecord(record){
+    const direct = recordText(record, [
+      "package_idx", "packageIdx", "package_id", "packageId", "package_no", "packageNo",
+      "dccon_package_idx", "dcconPackageIdx", "dccon_package", "dcconPackage",
+      "dccon_package_no", "dcconPackageNo"
+    ]);
+    const found = previewDcconPackageIdxFromValue(direct);
+    if (found) return found;
+    const raw = recordText(record, ["memo", "contents", "content", "comment", "comment_memo", "text", "body"]);
+    return previewDcconPackageIdxFromValue(raw);
+  }
+
+  function previewDcconPackageAttr(packageIdx){
+    return /^\d+$/.test(String(packageIdx || "")) ? ` data-package-idx="${escapeText(packageIdx)}"` : "";
+  }
+
   function commentBodyHTML(item, baseUrl){
     const body = item.querySelector(".usertxt.ub-word,.usertxt,.cmt_txtbox,.comment_txt,.reply_txt,.comment_dccon,.txt") || item;
     const clone = body.cloneNode(true);
@@ -1739,7 +1784,8 @@ syncSettings(handleUrl);
         const depthClass = item.classList?.contains("reply") || item.classList?.contains("reply_line") || item.querySelector?.(".reply_info") ? " reply" : "";
         const deletedClass = /삭제된 댓글|운영자에 의해/.test(plain) ? " deleted" : "";
         const doryClass = commentLooksAutomated(item, { ...meta, nick }) ? " dory" : "";
-        return `<div class="dcbpv-comment-item${depthClass}${deletedClass}${doryClass}" data-dcbpv-comment="1" data-nick="${escapeText(nick)}" data-uid="${escapeText(meta.uid)}" data-ip="${escapeText(meta.ip)}"><div class="dcbpv-comment-meta">${previewWriterBadge({ nick, uid: meta.uid, ip: meta.ip, loc: "preview-comment" })}${date ? `<span>${escapeText(date)}</span>` : ""}</div><div class="dcbpv-comment-body">${body}</div></div>`;
+        const packageAttr = previewDcconPackageAttr(previewDcconPackageIdxFromElement(item));
+        return `<div class="dcbpv-comment-item${depthClass}${deletedClass}${doryClass}" data-dcbpv-comment="1" data-nick="${escapeText(nick)}" data-uid="${escapeText(meta.uid)}" data-ip="${escapeText(meta.ip)}"${packageAttr}><div class="dcbpv-comment-meta">${previewWriterBadge({ nick, uid: meta.uid, ip: meta.ip, loc: "preview-comment" })}${date ? `<span>${escapeText(date)}</span>` : ""}</div><div class="dcbpv-comment-body">${body}</div></div>`;
       }).filter(Boolean);
       if (rows.length) return `<div class="dcbpv-comment-list">${rows.join("")}</div>`;
     }
@@ -2205,7 +2251,8 @@ syncSettings(handleUrl);
       const replyClass = String(record.depth || record.c_depth || record.reply || "") !== "0" && String(record.depth || record.c_depth || record.reply || "") !== "" ? " reply" : "";
       const deletedClass = /삭제|차단|운영자/.test(plain) || /Y/i.test(String(record.del_yn || record.is_delete || "")) ? " deleted" : "";
       const doryClass = commentRecordLooksAutomated(record, { ...meta, nick }) ? " dory" : "";
-      return `<div class="dcbpv-comment-item${replyClass}${deletedClass}${doryClass}" data-dcbpv-comment="1" data-nick="${escapeText(nick)}" data-uid="${escapeText(meta.uid)}" data-ip="${escapeText(meta.ip)}"><div class="dcbpv-comment-meta">${previewWriterBadge({ nick, uid: meta.uid, ip: meta.ip, loc: "preview-comment" })}${date ? `<span>${escapeText(date)}</span>` : ""}</div><div class="dcbpv-comment-body">${body}</div></div>`;
+      const packageAttr = previewDcconPackageAttr(previewDcconPackageIdxFromRecord(record));
+      return `<div class="dcbpv-comment-item${replyClass}${deletedClass}${doryClass}" data-dcbpv-comment="1" data-nick="${escapeText(nick)}" data-uid="${escapeText(meta.uid)}" data-ip="${escapeText(meta.ip)}"${packageAttr}><div class="dcbpv-comment-meta">${previewWriterBadge({ nick, uid: meta.uid, ip: meta.ip, loc: "preview-comment" })}${date ? `<span>${escapeText(date)}</span>` : ""}</div><div class="dcbpv-comment-body">${body}</div></div>`;
     }).filter(Boolean);
     return rows.length ? `<div class="dcbpv-comment-list">${rows.join("")}</div>` : "";
   }

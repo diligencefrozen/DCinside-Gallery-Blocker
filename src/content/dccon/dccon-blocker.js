@@ -15,6 +15,9 @@
     ".dcbpv-dccon",
     ".comment_dccon",
     ".coment_dccon_img",
+    ".coment_dccon_txt",
+    ".comment_dccon_txt",
+    ".txtcon_txt",
     "img[src*='dccon.php']",
     "video[src*='dccon.php']",
     "source[src*='dccon.php']",
@@ -117,6 +120,7 @@
 
   let currentState = Store.emptyState();
   let blockedCodes = new Set();
+  let blockedPackageIdxs = new Set();
   let observer = null;
   let observerAttached = false;
   let observerReadyHandler = null;
@@ -134,7 +138,7 @@
 
   function blockedCodeCss() {
     const rowSelector = `:is(${COMMENT_ROW_SELECTORS.join(",")})`;
-    const parentSelector = ":is(video,picture,.written_dccon,.dcbpv-dccon,.comment_dccon,.coment_dccon_img,.dccon_area,.dccon_layer,.dccon_over_box)";
+    const parentSelector = ":is(video,picture,.written_dccon,.dcbpv-dccon,.comment_dccon,.coment_dccon_img,.coment_dccon_txt,.comment_dccon_txt,.dccon_area,.dccon_layer,.dccon_over_box)";
 
     return Array.from(blockedCodes)
       .sort()
@@ -270,7 +274,7 @@
       : target.closest?.(DCCON_SELECTOR);
 
     if (!node) {
-      const wrapper = target.closest?.(".comment_dccon,.coment_dccon_img,.dccon_area,.dccon_layer,.dccon_over_box,.dcbpv-comment-item");
+      const wrapper = target.closest?.(".comment_dccon,.coment_dccon_img,.coment_dccon_txt,.comment_dccon_txt,.dccon_area,.dccon_layer,.dccon_over_box,.dcbpv-comment-item");
       node = wrapper?.querySelector?.(DCCON_SELECTOR) || null;
     }
 
@@ -320,21 +324,112 @@
       if (code) return code;
     }
 
+    if (isTextconNode(node)) return textconCodeFromNode(node);
     return "";
   }
 
-  function packageIdxFromNode(node) {
+  const TEXTCON_SELECTOR = ".coment_dccon_txt,.comment_dccon_txt,.txtcon_txt";
+  const PACKAGE_ATTRIBUTES = [
+    "package_idx",
+    "data-package-idx",
+    "data-package_idx",
+    "data-package",
+    "data-dccon-package",
+    "data-dccon-package-idx",
+    "data-package-no"
+  ];
+
+  function isTextconNode(node) {
+    if (!(node instanceof Element)) return false;
+    return !!(node.matches?.(TEXTCON_SELECTOR) || node.closest?.(TEXTCON_SELECTOR));
+  }
+
+  function normalizedTextconRoot(node) {
+    if (!(node instanceof Element)) return null;
+    return node.matches?.(".coment_dccon_txt,.comment_dccon_txt")
+      ? node
+      : node.closest?.(".coment_dccon_txt,.comment_dccon_txt") || node.closest?.(".txtcon_txt");
+  }
+
+  function hashText(value) {
+    let hash = 0x811c9dc5;
+    const text = String(value || "");
+    for (let i = 0; i < text.length; i += 1) {
+      hash ^= text.charCodeAt(i);
+      hash = Math.imul(hash, 0x01000193);
+    }
+    return (hash >>> 0).toString(36).padStart(7, "0");
+  }
+
+  function textconCodeFromNode(node) {
+    const root = normalizedTextconRoot(node);
+    if (!root) return "";
+    const text = String(root.textContent || "").normalize("NFKC").replace(/\s+/g, " ").trim();
+    const styleClasses = Array.from(root.classList || [])
+      .filter((name) => /^(?:cbg|ctxt)_[0-9a-f]{3,8}$/i.test(name))
+      .sort()
+      .join("_");
+    const childClasses = Array.from(root.querySelector?.(".txtcon_txt")?.classList || [])
+      .filter((name) => /^(?:cbg|ctxt)_[0-9a-f]{3,8}$/i.test(name))
+      .sort()
+      .join("_");
+    const packageIdx = packageIdxFromNode(root);
+    if (!text && !styleClasses && !childClasses) return "";
+    const fingerprint = `${packageIdx}\n${text}\n${styleClasses}\n${childClasses}`;
+    return `textcon_${hashText(fingerprint)}_${hashText(fingerprint.split("").reverse().join(""))}`;
+  }
+
+  function packageIdxFromValue(value) {
+    const raw = String(value || "").trim();
+    if (/^\d+$/.test(raw)) return raw;
+    const match = raw.match(/(?:package[_-]?idx|packageIdx|package[_-]?no)[=:?&\s"']+(\d+)/i);
+    return match?.[1] || "";
+  }
+
+  function packageIdxFromNode(node, deep = false) {
     if (!(node instanceof Element)) return "";
-    const owner = node.closest?.("[package_idx],[data-package-idx],[data-package_idx]");
-    const value = owner?.getAttribute("package_idx")
-      || owner?.getAttribute("data-package-idx")
-      || owner?.getAttribute("data-package_idx")
-      || "";
-    return /^\d+$/.test(value) ? value : "";
+
+    const row = node.closest?.(COMMENT_ROW_SELECTOR);
+    const boundary = row || node.closest?.(".dccon_area,.dccon_layer,.dccon_over_box") || node.parentElement;
+    let cursor = node;
+    let depth = 0;
+
+    while (cursor instanceof Element && depth < 8) {
+      for (const name of PACKAGE_ATTRIBUTES) {
+        const found = packageIdxFromValue(cursor.getAttribute(name));
+        if (found) return found;
+      }
+      for (const attr of cursor.attributes || []) {
+        const found = packageIdxFromValue(`${attr.name}=${attr.value}`);
+        if (found) return found;
+      }
+      if (cursor === boundary) break;
+      cursor = cursor.parentElement;
+      depth += 1;
+    }
+
+    if (!deep) return "";
+
+    const searchRoot = boundary instanceof Element ? boundary : node;
+    for (const candidate of searchRoot.querySelectorAll?.(`[${PACKAGE_ATTRIBUTES.join(`],[`)}]`) || []) {
+      for (const name of PACKAGE_ATTRIBUTES) {
+        const found = packageIdxFromValue(candidate.getAttribute(name));
+        if (found) return found;
+      }
+    }
+
+    return packageIdxFromValue(searchRoot.outerHTML?.slice(0, 12000));
   }
 
   function friendlyNodeLabel(node) {
     if (!(node instanceof Element)) return "개별 디시콘";
+    if (isTextconNode(node)) {
+      const text = String(normalizedTextconRoot(node)?.textContent || "")
+        .normalize("NFKC")
+        .replace(/\s+/g, " ")
+        .trim();
+      return text ? `텍스트콘 · ${text.slice(0, 80)}` : "텍스트콘";
+    }
     const values = [node.getAttribute("data-title"), node.getAttribute("alt"), node.getAttribute("title")];
 
     for (const value of values) {
@@ -389,11 +484,16 @@
   }
 
   function hideNode(node, code = codeFromNode(node)) {
-    if (!node || !code || !blockedCodes.has(code)) return false;
+    if (!node) return false;
+    const packageIdx = packageIdxFromNode(node);
+    const blockedByCode = !!code && blockedCodes.has(code);
+    const blockedByPackage = !!packageIdx && blockedPackageIdxs.has(packageIdx);
+    if (!blockedByCode && !blockedByPackage) return false;
+
     const target = hideTargetFor(node);
     if (!target) return false;
 
-    forceHidden(target, code);
+    forceHidden(target, code || `package_${packageIdx}`);
     return true;
   }
 
@@ -419,7 +519,10 @@
     if (!(target instanceof Element)) return codes;
 
     const collect = (candidate) => {
-      identityCodesFromNode(mediaNode(candidate)).forEach((code) => codes.add(code));
+      const node = mediaNode(candidate);
+      identityCodesFromNode(node).forEach((code) => codes.add(code));
+      const resolved = codeFromNode(node);
+      if (resolved) codes.add(resolved);
     };
 
     if (target.matches?.(DCCON_SELECTOR)) collect(target);
@@ -429,6 +532,12 @@
 
   function reconcileTarget(target) {
     if (!(target instanceof Element) || !target.matches?.(HIDDEN_SELECTOR)) return;
+
+    const livePackageIdx = packageIdxFromNode(target);
+    if (livePackageIdx && blockedPackageIdxs.has(livePackageIdx)) {
+      forceHidden(target, target.getAttribute(HIDDEN_CODE_ATTR) || `package_${livePackageIdx}`);
+      return;
+    }
 
     const liveCodes = liveIdentityCodes(target);
     const liveBlockedCode = Array.from(liveCodes).find((code) => blockedCodes.has(code));
@@ -496,6 +605,13 @@
         "con_alt",
         "alt",
         "title",
+        "package_idx",
+        "data-package-idx",
+        "data-package_idx",
+        "data-package",
+        "data-dccon-package",
+        "data-dccon-package-idx",
+        "data-package-no",
         HIDDEN_ATTR,
         HIDDEN_CODE_ATTR
       ]
@@ -505,10 +621,10 @@
   }
 
   function startObserver() {
-    if (observer || !blockedCodes.size) return;
+    if (observer || (!blockedCodes.size && !blockedPackageIdxs.size)) return;
 
     observer = new MutationObserver((mutations) => {
-      if (!blockedCodes.size) return;
+      if (!blockedCodes.size && !blockedPackageIdxs.size) return;
 
       const scopes = new Set();
 
@@ -551,9 +667,9 @@
   }
 
   function startIntegrityScan() {
-    if (integrityTimer || !blockedCodes.size) return;
+    if (integrityTimer || (!blockedCodes.size && !blockedPackageIdxs.size)) return;
     integrityTimer = setInterval(() => {
-      if (!blockedCodes.size || document.visibilityState === "hidden") return;
+      if ((!blockedCodes.size && !blockedPackageIdxs.size) || document.visibilityState === "hidden") return;
       ensureStyle();
       reconcileHidden(document);
       scan(document);
@@ -569,9 +685,10 @@
   function applyState(value) {
     currentState = Store.normalizeState(value);
     blockedCodes = Store.blockedCodeSet(currentState);
+    blockedPackageIdxs = new Set(Object.keys(currentState.groups || {}));
     ensureStyle();
 
-    if (blockedCodes.size) {
+    if (blockedCodes.size || blockedPackageIdxs.size) {
       startObserver();
       startIntegrityScan();
       reconcileHidden(document);
@@ -705,7 +822,7 @@
       state = await Store.addItem({
         code,
         label: friendlyNodeLabel(node),
-        packageIdx: packageIdxFromNode(node),
+        packageIdx: packageIdxFromNode(node, true),
         blockedAt: Date.now()
       });
     } catch (error) {
@@ -719,17 +836,38 @@
   }
 
   async function blockGroup(node, code) {
+    const packageIdx = packageIdxFromNode(node, true);
+    const textcon = isTextconNode(node);
+
+    if (textcon && !packageIdx) {
+      throw new Error("이 텍스트콘의 그룹 정보를 찾지 못했습니다. ‘이 디시콘만 차단’을 사용해 주세요.");
+    }
+
     showToast("디시콘 그룹 확인 중", "그룹에 포함된 디시콘 목록을 불러오고 있습니다.", "success", 0);
-    const details = await fetchPackage(code, packageIdxFromNode(node));
-    primeBlock(details.paths, node);
+
+    let details;
+    try {
+      details = await fetchPackage(code, packageIdx);
+    } catch (error) {
+      if (!packageIdx) throw error;
+      details = {
+        packageIdx,
+        title: `디시콘 그룹 ${packageIdx}`,
+        paths: code ? [code] : [],
+        iconCount: 0
+      };
+    }
+
+    const paths = Store.uniqueCodes([...(details.paths || []), code]);
+    if (paths.length) primeBlock(paths, node);
 
     let state;
     try {
       state = await Store.addGroup({
-        packageIdx: details.packageIdx,
+        packageIdx: details.packageIdx || packageIdx,
         title: details.title,
-        paths: details.paths,
-        iconCount: details.iconCount,
+        paths,
+        iconCount: Math.max(details.iconCount || 0, paths.length),
         blockedAt: Date.now()
       });
     } catch (error) {
@@ -738,17 +876,14 @@
     }
 
     applyState(state);
-    showToast(
-      "디시콘 그룹 차단 완료",
-      `${details.title} · ${details.paths.length}개 디시콘`,
-      "success",
-      3200
-    );
+    hideNode(node, code);
+    const countText = details.iconCount > 0 ? ` · ${details.iconCount}개 디시콘` : "";
+    showToast("디시콘 그룹 차단 완료", `${details.title}${countText}`, "success", 3200);
     return {
       ok: true,
       mode: "group",
-      packageIdx: details.packageIdx,
-      count: details.paths.length
+      packageIdx: details.packageIdx || packageIdx,
+      count: details.iconCount || paths.length
     };
   }
 
@@ -772,7 +907,7 @@
 
     const target = freshContextTarget();
     if (!target) {
-      showToast("디시콘을 찾지 못했습니다", "차단할 디시콘 이미지나 영상을 다시 우클릭해 주세요.", "error");
+      showToast("디시콘을 찾지 못했습니다", "차단할 디시콘을 다시 우클릭해 주세요.", "error");
       sendResponse?.({ ok: false, reason: "NO_TARGET" });
       return;
     }
