@@ -7,8 +7,8 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const source = fs.readFileSync(path.join(__dirname, '../src/content/core/content_script.js'), 'utf8');
 const previewSource = source.slice(source.indexOf('(function dcBlockPostPreview(){')).replace(/\}\)\(\);\s*$/, `
   window.previewTest = { renderPreview, normalizeDcMedia, stripUnsafe, dcMoviePlayerUrl, dcMovieMediaUrl,
-    loadPreviewMovie, renderLoading, closePreview, openPreview, isWeakPreviewData, mergePreviewData,
-    buildCommentsHTML, commentRecordsToHtml };
+    loadPreviewMovie, dcPollFrameUrl, normalizePreviewPollFrame, loadPreviewPoll, renderLoading, closePreview, openPreview,
+    previewUrlFromTarget, isWeakPreviewData, mergePreviewData, buildCommentsHTML, commentRecordsToHtml, summarizeHiddenComments };
 })();`);
 const articleUrl = 'https://gall.dcinside.com/board/view/?id=fixture&no=10';
 const listUrl = 'https://gall.dcinside.com/board/lists/?id=fixture';
@@ -34,6 +34,36 @@ const listUrl = 'https://gall.dcinside.com/board/lists/?id=fixture';
   });
   await page.addScriptTag({ content: previewSource });
   await page.addStyleTag({ content: '.usertxt { width:1500px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; } .comment_wrap p { height:20px; }' });
+  const previewContextTargets = await page.evaluate(() => {
+    const row = document.createElement('table');
+    row.innerHTML = `<tbody><tr class="ub-content">
+      <td class="gall_tit"><a class="preview-title" href="/board/view/?id=fixture&no=77">테스트 글</a></td>
+      <td class="gall_writer ub-writer" data-nick="안도노" data-uid="sunblock6891" data-ip="" data-loc="list">
+        <div class="addbox"><span class="nickname in" title="안도노"><em>안도노</em></span><a class="writer_nikcon"><img title="sunblock68** : 갤로그로 이동합니다."></a></div>
+      </td>
+      <td class="gall_date">09.12</td>
+    </tr></tbody>`;
+    document.body.appendChild(row);
+    const title = row.querySelector('.preview-title');
+    const writer = row.querySelector('.gall_writer');
+    const nickname = row.querySelector('.nickname em');
+    const nikcon = row.querySelector('.writer_nikcon img');
+    const date = row.querySelector('.gall_date');
+    const result = {
+      title: window.previewTest.previewUrlFromTarget(title),
+      writer: window.previewTest.previewUrlFromTarget(writer),
+      nickname: window.previewTest.previewUrlFromTarget(nickname),
+      nikcon: window.previewTest.previewUrlFromTarget(nikcon),
+      date: window.previewTest.previewUrlFromTarget(date)
+    };
+    row.remove();
+    return result;
+  });
+  assert.equal(previewContextTargets.title, 'https://gall.dcinside.com/board/view/?id=fixture&no=77', 'title right-click still resolves the preview URL');
+  assert.equal(previewContextTargets.date, 'https://gall.dcinside.com/board/view/?id=fixture&no=77', 'non-author list cells can still open the preview');
+  assert.equal(previewContextTargets.writer, '', 'writer cell is reserved for user-block actions');
+  assert.equal(previewContextTargets.nickname, '', 'writer nickname does not trigger page preview');
+  assert.equal(previewContextTargets.nikcon, '', 'gallog icon inside writer cell does not trigger page preview');
   const sanitized = await page.evaluate((base) => {
     const doc = new DOMParser().parseFromString('<div class="sanitizer-fixture"></div>', 'text/html');
     const root = doc.querySelector('.sanitizer-fixture');
@@ -206,6 +236,56 @@ const listUrl = 'https://gall.dcinside.com/board/lists/?id=fixture';
   assert.equal(nativePlayerRequest?.referer, articleUrl, 'the browser sends the original article referrer on native player fetch');
   assert.deepEqual(missingMediaFallback, { originalPlayer: true, fabricatedVideo: false }, 'an empty player response keeps the original iframe');
 
+  const pollData = {
+    ...data,
+    title: '투표 iframe 미리보기 검증',
+    articleHTML: '<p><iframe name="pollFrame" width="459" height="437" src="https://gall.dcinside.com/board/poll/vote?no=2337944" referrerpolicy="unsafe-url" scrolling="no"></iframe></p>',
+    commentsHTML: '<div class="dcbpv-comment-list"></div>'
+  };
+  const pollResult = await page.evaluate(async ({ fixture, article }) => {
+    const realFetch = window.fetch;
+    const requests = [];
+    window.fetch = async (url, options = {}) => {
+      requests.push({ url: String(url), referrer: options.referrer || '' });
+      return new Response(`<!doctype html><html><body><div class="vote"><button id="poll-hydrated" type="button">투표하기</button></div><script>document.body.dataset.pollScript = 'ready';</script></body></html>`, {
+        status: 200,
+        headers: { 'content-type': 'text/html' }
+      });
+    };
+    window.previewTest.renderPreview(fixture);
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    const frame = document.querySelector('#dcb-preview-overlay iframe.dcbpv-poll-frame');
+    const rect = frame?.getBoundingClientRect();
+    let innerReady = false;
+    let scriptReady = false;
+    try {
+      innerReady = !!frame?.contentDocument?.querySelector('#poll-hydrated');
+      scriptReady = frame?.contentDocument?.body?.dataset?.pollScript === 'ready';
+    } catch (_) {}
+    const result = {
+      requests,
+      scrolling: frame?.getAttribute('scrolling') || '',
+      referrerPolicy: frame?.referrerPolicy || '',
+      hydrated: frame?.dataset?.dcbpvPollHydrated === '1',
+      width: rect?.width || 0,
+      height: rect?.height || 0,
+      aspectRatio: frame ? getComputedStyle(frame).aspectRatio : '',
+      innerReady,
+      scriptReady
+    };
+    window.fetch = realFetch;
+    return result;
+  }, { fixture: pollData, article: articleUrl });
+  assert.equal(pollResult.requests[0]?.referrer, articleUrl, 'poll HTML is fetched with the original article as Referer');
+  assert.match(pollResult.requests[0]?.url || '', /\/board\/poll\/vote\?no=2337944/);
+  assert.equal(pollResult.scrolling, 'auto', 'poll iframe keeps controls reachable instead of clipping a fixed no-scroll frame');
+  assert.equal(pollResult.referrerPolicy, 'unsafe-url');
+  assert.equal(pollResult.hydrated, true, 'poll iframe is rehydrated with the article-referrer response');
+  assert.equal(pollResult.innerReady, true, 'rehydrated poll content remains interactive HTML');
+  assert.equal(pollResult.scriptReady, true, 'the native poll script context executes inside the same-origin frame');
+  assert.ok(pollResult.height > pollResult.width * 0.7, 'poll iframe preserves its tall vote layout instead of being forced to 16:9');
+  assert.equal(pollResult.aspectRatio, 'auto', 'poll iframe opts out of generic media aspect ratio');
+
   const packageMetadata = await page.evaluate((base) => {
     const doc = new DOMParser().parseFromString(`<div id="root"><div class="cmt_info" data-package-idx="8877"><div class="gall_writer" data-nick="tester"></div><div class="date_time">09.11 19:00:00</div><div class="cmt_txtbox"><div class="coment_dccon_txt cbg_3b4890"><p class="txtcon_txt ctxt_ffffff">텍스트콘</p></div></div></div></div>`, 'text/html');
     const fromDom = window.previewTest.buildCommentsHTML(doc, doc.querySelector('#root'), base);
@@ -221,15 +301,29 @@ const listUrl = 'https://gall.dcinside.com/board/lists/?id=fixture';
   assert.match(packageMetadata.fromRecord, /data-package-idx="9988"/, 'preview preserves comment-record dccon package metadata for selective group blocking');
 
   const textconData = { ...data, commentsHTML: '<div class="dcbpv-comment-item"><div class="dcbpv-comment-body"><div class="coment_dccon_txt cbg_3b4890"><p class="txtcon_txt ctxt_ffffff">탄약까지 사라진다면</p></div></div></div>' };
-  await page.evaluate((fixture) => { window.testSettings.hideDccon = true; window.previewTest.renderPreview(fixture); }, textconData);
+  await page.evaluate((fixture) => {
+    window.testSettings.hideDccon = true;
+    window.testSettings.hideTextCon = false;
+    window.previewTest.renderPreview(fixture);
+  }, textconData);
   await page.waitForTimeout(50);
-  assert.equal(await page.locator('.dcbpv-comment-item').isVisible(), false, 'hideDccon hides textcon');
+  assert.equal(await page.locator('.dcbpv-comment-item').isVisible(), false, 'hideDccon hides textcon as part of all DCCons');
   await page.evaluate(() => {
     window.testSettings.hideDccon = false;
-    window.settingListeners.forEach((listener) => listener({ hideDccon: { newValue: false, oldValue: true } }, 'sync'));
+    window.testSettings.hideTextCon = true;
+    window.settingListeners.forEach((listener) => listener({
+      hideDccon: { newValue: false, oldValue: true },
+      hideTextCon: { newValue: true, oldValue: false }
+    }, 'sync'));
   });
   await page.waitForTimeout(100);
-  assert.equal(await page.locator('.dcbpv-comment-item').isVisible(), true, 'turning hideDccon off restores textcon');
+  assert.equal(await page.locator('.dcbpv-comment-item').isVisible(), false, 'hideTextCon keeps textcon hidden after global DCCon hiding is turned off');
+  await page.evaluate(() => {
+    window.testSettings.hideTextCon = false;
+    window.settingListeners.forEach((listener) => listener({ hideTextCon: { newValue: false, oldValue: true } }, 'sync'));
+  });
+  await page.waitForTimeout(100);
+  assert.equal(await page.locator('.dcbpv-comment-item').isVisible(), true, 'turning hideTextCon off restores textcon');
   const textconLayout = await page.evaluate(() => {
     const body = document.querySelector('.dcbpv-comment-body');
     const textcon = body?.querySelector('.coment_dccon_txt');
@@ -241,6 +335,37 @@ const listUrl = 'https://gall.dcinside.com/board/lists/?id=fixture';
   assert.ok(textconLayout, 'textcon remains in the preview DOM');
   assert.equal(textconLayout.display, 'inline-block', 'preview keeps textcon shrink-wrapped instead of stretching it like a block');
   assert.ok(textconLayout.textconWidth < textconLayout.bodyWidth * 0.75, 'short textcon does not expand across the comment row');
+
+  const observerStabilityData = {
+    ...data,
+    commentsHTML: '<div class="dcbpv-comment-list"><div class="dcbpv-comment-item"><div class="dcbpv-comment-body">일반 댓글</div></div></div>'
+  };
+  await page.evaluate((fixture) => {
+    window.testSettings.hideDccon = true;
+    window.testSettings.hideTextCon = false;
+    window.previewTest.renderPreview(fixture);
+  }, observerStabilityData);
+  await page.waitForTimeout(80);
+  await page.evaluate(() => {
+    const body = document.querySelector('.dcbpv-comment-body');
+    const img = document.createElement('img');
+    img.src = 'https://dcimg5.dcinside.com/dccon.php?no=dynamic';
+    body.append(img);
+  });
+  await page.waitForTimeout(220);
+  const summaryBefore = await page.evaluate(() => {
+    const summary = document.querySelector('.dcbpv-filter-summary');
+    if (!summary) return null;
+    summary.dataset.stabilityProbe = 'keep';
+    return { text: summary.textContent, count: document.querySelectorAll('.dcbpv-filter-summary').length };
+  });
+  assert.deepEqual(summaryBefore, { text: '차단 설정에 따라 댓글 1개를 숨겼습니다.', count: 1 });
+  await page.waitForTimeout(500);
+  const summaryAfter = await page.evaluate(() => ({
+    marker: document.querySelector('.dcbpv-filter-summary')?.dataset?.stabilityProbe || '',
+    count: document.querySelectorAll('.dcbpv-filter-summary').length
+  }));
+  assert.deepEqual(summaryAfter, { marker: 'keep', count: 1 }, 'DCCon observer settles without repeatedly recreating the summary DOM');
 
   await page.evaluate(() => { window.previewTest.closePreview(); document.querySelector('#origin').focus(); window.previewTest.renderLoading(); });
   assert.equal(await page.evaluate(() => document.documentElement.style.overflow), 'hidden');
@@ -274,5 +399,5 @@ const listUrl = 'https://gall.dcinside.com/board/lists/?id=fixture';
   }
   assert.deepEqual(errors, [], 'no uncaught page errors');
   await browser.close();
-  console.log('Preview regression checks passed: active HTML sanitization, 3 viewport layouts, media-only articles and fallbacks, movie URL/source preservation, media controls, textcon toggle, dialog focus and close.');
+  console.log('Preview regression checks passed: sanitization, responsive layouts, movie and poll embeds, stable DCCon filtering, textcon toggle, dialog focus and close.');
 })().catch((error) => { console.error(error); process.exitCode = 1; });

@@ -18,8 +18,10 @@
 
   let observer = null;
   let scanTimer = null;
+  let incrementalTimer = null;
   let rulesEpoch = 0;
   const attemptedUids = new Set();
+  const pendingRoots = new Set();
 
   const cleanText = (value) => String(value ?? "").trim();
 
@@ -181,6 +183,7 @@
     target.dataset.dcbAccountActivitySummary = summary;
     target.classList.toggle(PENDING_CLASS, state === "pending");
     target.classList.toggle(HIDDEN_CLASS, state === "hidden");
+    if (state === "hidden") globalThis.DCBBlockStats?.report?.(target, "lowActivity");
     if (showNotice && (state === "pending" || state === "hidden")) {
       showTargetNotice(target, uid, verdict, state === "pending");
     } else {
@@ -249,25 +252,46 @@
     document.querySelectorAll(`.${NOTICE_CLASS}`).forEach((notice) => notice.remove());
   }
 
-  async function scan() {
+  function writerNodesInScope(scope) {
+    const nodes = [];
+    if (!scope) return nodes;
+    if (scope === document || scope.nodeType === Node.DOCUMENT_NODE) {
+      document.querySelectorAll(WRITER_SELECTOR).forEach((node) => nodes.push(node));
+      return nodes;
+    }
+    if (scope.nodeType !== Node.ELEMENT_NODE && scope.nodeType !== Node.DOCUMENT_FRAGMENT_NODE) return nodes;
+    if (scope.nodeType === Node.ELEMENT_NODE) {
+      if (scope.matches?.(WRITER_SELECTOR)) nodes.push(scope);
+      const owner = scope.closest?.(".gall_writer,.ub-writer");
+      if (owner) nodes.push(owner);
+    }
+    scope.querySelectorAll?.(WRITER_SELECTOR).forEach((node) => nodes.push(node));
+    return nodes;
+  }
+
+  async function scanScope(scope = document) {
     const filter = FILTER();
     if (!filter) return;
     await filter.ready();
     const settings = filter.getSettings();
     if (!settings.enabled) {
-      clearAll();
+      if (scope === document) clearAll();
       return;
     }
     if (document.visibilityState === "hidden") return;
 
     const epoch = rulesEpoch;
     const seen = new Set();
-    document.querySelectorAll(WRITER_SELECTOR).forEach((node) => {
+    writerNodesInScope(scope).forEach((node) => {
       const writer = canonicalWriter(node);
       if (!writer || seen.has(writer)) return;
       seen.add(writer);
       void evaluateWriter(writer, filter, settings, epoch);
     });
+  }
+
+  async function scan() {
+    return scanScope(document);
   }
 
   function scheduleScan(delay = 80) {
@@ -278,9 +302,42 @@
     }, delay);
   }
 
+  function minimalPendingRoots() {
+    const roots = Array.from(pendingRoots).filter((root) => root?.isConnected !== false);
+    pendingRoots.clear();
+    return roots.filter((root, index) => {
+      if (!(root instanceof Element)) return true;
+      return !roots.some((other, otherIndex) => (
+        index !== otherIndex && other instanceof Element && other.contains?.(root)
+      ));
+    });
+  }
+
+  function flushIncrementalScans() {
+    incrementalTimer = null;
+    const roots = minimalPendingRoots();
+    if (!roots.length) return;
+    roots.forEach((root) => void scanScope(root));
+  }
+
+  function queueIncrementalScan(root) {
+    if (!root || (root.nodeType !== Node.ELEMENT_NODE && root.nodeType !== Node.DOCUMENT_FRAGMENT_NODE)) return;
+    pendingRoots.add(root);
+    if (incrementalTimer) return;
+    incrementalTimer = setTimeout(flushIncrementalScans, 80);
+  }
+
   function watch() {
     if (observer || !document.documentElement) return;
-    observer = new MutationObserver(() => scheduleScan(100));
+    observer = new MutationObserver((records) => {
+      for (const record of records) {
+        if (record.type === "attributes") {
+          queueIncrementalScan(record.target);
+          continue;
+        }
+        for (const node of record.addedNodes || []) queueIncrementalScan(node);
+      }
+    });
     observer.observe(document.documentElement, {
       childList: true,
       subtree: true,
@@ -305,7 +362,7 @@
       clearTarget(target);
       delete target.dataset.dcbAccountActivityPeek;
     });
-    scheduleScan(0);
+    if (preview) queueIncrementalScan(preview);
   });
 
   installStyle();

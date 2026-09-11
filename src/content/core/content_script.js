@@ -3173,6 +3173,22 @@ syncSettings(handleUrl);
     return /(?:dcbpv-dccon|written_dccon|comment_dccon|dccon_img|coment_dccon_img|dccon\.php|reqpath=['"]?\/dccon)/i.test(`${node.className || ""} ${attrBlob}`);
   }
 
+  function previewStatsCategory(reason){
+    const key = String(reason || "");
+    if (key === "dccon") return "dccon";
+    if (key === "textcon") return "textcon";
+    if (key === "user" || key === "blocked-parent") return "users";
+    if (key === "anonymous") return "anonymous";
+    if (key === "keyword" || key === "keyword-hide" || key === "keyword-block") return "keywords";
+    if (key === "dory") return "ads";
+    return "other";
+  }
+
+  function reportPreviewBlock(node, reason){
+    if (!(node instanceof Element)) return;
+    globalThis.DCBBlockStats?.report?.(node, previewStatsCategory(reason));
+  }
+
   function markPreviewHiddenNode(node, reason){
     if (!(node instanceof Element)) return false;
     let changed = false;
@@ -3202,6 +3218,9 @@ syncSettings(handleUrl);
         changed = true;
       }
       if (!row.dataset.dcbpvBlockedReason) row.dataset.dcbpvBlockedReason = reason;
+      reportPreviewBlock(row, row.dataset.dcbpvBlockedReason || reason);
+    } else {
+      reportPreviewBlock(node, reason);
     }
     return changed;
   }
@@ -3260,6 +3279,7 @@ syncSettings(handleUrl);
   function applyImageCommentFilter(overlay){
     overlay.querySelectorAll(".img_comment,.img_comment.fold,.img_comment.getMoreComment,.btn_imgcmtopen").forEach((node) => {
       node.classList.add("dcbpv-filter-hidden");
+      if (!node.matches?.(".btn_imgcmtopen")) globalThis.DCBBlockStats?.report?.(node, "imageComments");
     });
   }
 
@@ -3291,6 +3311,7 @@ syncSettings(handleUrl);
         row.classList.add("dcbpv-filter-hidden");
         if (!row.dataset.dcbpvBlockedReason) row.dataset.dcbpvBlockedReason = "blocked-parent";
         row.dataset.dcbpvBlockedParent = "1";
+        reportPreviewBlock(row, row.dataset.dcbpvBlockedReason || "blocked-parent");
       }
     });
   }
@@ -3506,8 +3527,12 @@ syncSettings(handleUrl);
         if (kw) {
           row.dataset.dcbpvSoftKey = `comment-${index}`;
           row.classList.add("dcbpv-filter-hidden");
+          row.dataset.dcbpvBlockedReason = row.dataset.dcbpvBlockedReason || "keyword-hide";
           row.insertAdjacentHTML("afterend", filterNote("keyword-hide", kw.label, row.dataset.dcbpvSoftKey));
         }
+      }
+      if (row.classList.contains("dcbpv-filter-hidden")) {
+        reportPreviewBlock(row, row.dataset.dcbpvBlockedReason || "other");
       }
     });
 
@@ -3716,8 +3741,28 @@ syncSettings(handleUrl);
     }
   }
 
+  const PREVIEW_CONTEXT_AUTHOR_SELECTOR = [
+    ".gall_writer",
+    ".ub-writer",
+    "td.gall_writer",
+    ".nickname",
+    ".writer_nikcon",
+    ".refresherUserData",
+    ".ip",
+    ".dcb-writer-tools",
+    ".dcb-user-memo-trigger",
+    ".dcb-uid-badge",
+    "[data-memo-uid]",
+    "[data-memo-ip]"
+  ].join(",");
+
   function previewUrlFromTarget(target){
     if (!(target instanceof Element)) return "";
+
+    // 작성자 영역의 우클릭은 사용자 차단/메모 기능이 전담한다.
+    // 목록 행 전체에서 게시글 URL을 찾는 미리보기 로직이 작성자 우클릭까지
+    // 가로채면 즉시 차단과 미리보기가 동시에 실행될 수 있다.
+    if (target.closest?.(PREVIEW_CONTEXT_AUTHOR_SELECTOR)) return "";
 
     const row = target.closest?.("tr.ub-content, tr, li.ub-content, li");
     const cell = target.closest?.(".gall_tit, .ub-word, .title, .tit") || row?.querySelector?.(".gall_tit, .ub-word, .title, .tit");

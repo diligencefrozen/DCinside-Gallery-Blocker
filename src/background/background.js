@@ -22,6 +22,7 @@ const USER_BLOCK_CONTEXT_MENU_ID = "dcb-user-block-context";
 const USER_MEMO_CONTEXT_MENU_ID = "dcb-user-memo-context";
 
 let userBlockMutationQueue = Promise.resolve();
+let updateNoticeMutationQueue = Promise.resolve();
 
 function queueUserBlockMutation(work) {
   const job = userBlockMutationQueue.then(work, work);
@@ -45,6 +46,17 @@ const ACCOUNT_SIGNAL_COOLDOWN_MS = 60 * 60 * 1000;
 const AUTO_REFRESH_GUARD_KEY = "dcbAutoRefreshLastRequestAt";
 const AUTO_REFRESH_MIN_INTERVAL_MS = 10_000;
 const DCB_FETCH_TIMEOUT_MS = 12_000;
+const BLOCK_STATS_TOTAL_KEY = "dcbBlockStatsTotal";
+const UPDATE_NOTICE_KEY = "dcbUpdateNotice";
+const UPDATE_NOTICE_SEEN_VERSION_KEY = "dcbUpdateNoticeSeenVersion";
+const GITHUB_VERSION_CACHE_KEY = "dcbGithubPublishedVersion";
+const GITHUB_RELEASE_API = "https://api.github.com/repos/diligencefrozen/DCinside-Gallery-Blocker/releases/latest";
+const GITHUB_TAGS_API = "https://api.github.com/repos/diligencefrozen/DCinside-Gallery-Blocker/tags?per_page=100";
+const GITHUB_RELEASES_URL = "https://github.com/diligencefrozen/DCinside-Gallery-Blocker/releases";
+const GITHUB_TAGS_URL = "https://github.com/diligencefrozen/DCinside-Gallery-Blocker/tags";
+const GITHUB_VERSION_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+const GITHUB_PENDING_RETRY_MS = 10 * 60 * 1000;
+const BLOCK_STATS_SESSION_PREFIX = "dcbBlockStatsPage:";
 const IMAGE_BYTES_TIMEOUT_MS = 12_000;
 const IMAGE_BYTES_MAX_SIZE = 25 * 1024 * 1024;
 const IMAGE_BYTES_MAX_CONCURRENCY = 2;
@@ -71,6 +83,143 @@ const LOW_ACTIVITY_INSTALL_DEFAULT = Object.freeze({
 /* ───── 유틸 ───── */
 function norm(v) {
   return String(v || "").trim().toLowerCase();
+}
+
+function normalizePublishedVersion(value) {
+  const raw = String(value || "").trim().replace(/^refs\/tags\//i, "").replace(/^v(?=\d)/i, "");
+  return /^\d+\.\d+\.\d+\.\d+$/.test(raw) ? raw : "";
+}
+
+function comparePublishedVersions(a, b) {
+  const aa = normalizePublishedVersion(a).split(".").map(Number);
+  const bb = normalizePublishedVersion(b).split(".").map(Number);
+  for (let i = 0; i < Math.max(aa.length, bb.length); i += 1) {
+    const diff = (aa[i] || 0) - (bb[i] || 0);
+    if (diff) return diff;
+  }
+  return 0;
+}
+
+async function fetchGithubJson(url) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      cache: "no-store",
+      credentials: "omit",
+      headers: { Accept: "application/vnd.github+json" },
+      signal: controller.signal
+    });
+    if (!response.ok) throw new Error(`GitHub ${response.status}`);
+    return await response.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function normalizeGithubVersionCache(value) {
+  if (!value || typeof value !== "object") return null;
+  const version = normalizePublishedVersion(value.version);
+  if (!version) return null;
+  return {
+    version,
+    source: value.source === "tag" ? "tag" : "release",
+    checkedAt: Number(value.checkedAt) || 0,
+    releasesUrl: GITHUB_RELEASES_URL,
+    tagsUrl: GITHUB_TAGS_URL
+  };
+}
+
+async function fetchGithubPublishedVersion({ maxAgeMs = GITHUB_VERSION_CACHE_TTL_MS, force = false } = {}) {
+  let cached = null;
+  try {
+    const stored = await chrome.storage.local.get({ [GITHUB_VERSION_CACHE_KEY]: null });
+    cached = normalizeGithubVersionCache(stored[GITHUB_VERSION_CACHE_KEY]);
+  } catch (_) {}
+
+  if (!force && cached && Date.now() - cached.checkedAt < maxAgeMs) return cached;
+
+  const candidates = [];
+  const [releaseResult, tagsResult] = await Promise.allSettled([
+    fetchGithubJson(GITHUB_RELEASE_API),
+    fetchGithubJson(GITHUB_TAGS_API)
+  ]);
+
+  if (releaseResult.status === "fulfilled") {
+    const release = releaseResult.value;
+    const version = !release?.draft && !release?.prerelease
+      ? normalizePublishedVersion(release?.tag_name || release?.name)
+      : "";
+    if (version) candidates.push({ version, source: "release" });
+  }
+
+  if (tagsResult.status === "fulfilled" && Array.isArray(tagsResult.value)) {
+    for (const tag of tagsResult.value) {
+      const version = normalizePublishedVersion(tag?.name);
+      if (version) candidates.push({ version, source: "tag" });
+    }
+  }
+
+  if (!candidates.length) return cached;
+  candidates.sort((a, b) => comparePublishedVersions(b.version, a.version));
+  const best = candidates[0];
+  const next = {
+    version: best.version,
+    source: best.source,
+    checkedAt: Date.now(),
+    releasesUrl: GITHUB_RELEASES_URL,
+    tagsUrl: GITHUB_TAGS_URL
+  };
+  try {
+    await chrome.storage.local.set({ [GITHUB_VERSION_CACHE_KEY]: next });
+  } catch (_) {}
+  return next;
+}
+
+async function resolveUpdateReleaseStatus() {
+  const stored = await chrome.storage.local.get({
+    [UPDATE_NOTICE_KEY]: null,
+    [UPDATE_NOTICE_SEEN_VERSION_KEY]: "",
+    [GITHUB_VERSION_CACHE_KEY]: null
+  }).catch(() => ({}));
+  const pending = stored[UPDATE_NOTICE_KEY] && typeof stored[UPDATE_NOTICE_KEY] === "object"
+    ? stored[UPDATE_NOTICE_KEY]
+    : null;
+  const cached = normalizeGithubVersionCache(stored[GITHUB_VERSION_CACHE_KEY]);
+  const installedVersion = normalizePublishedVersion(chrome.runtime.getManifest().version);
+
+  let published = cached;
+  const cacheAge = published ? Date.now() - published.checkedAt : Infinity;
+  const needsPendingRefresh = !!pending && (!published || published.version !== installedVersion)
+    && cacheAge >= GITHUB_PENDING_RETRY_MS;
+  if (!published || cacheAge >= GITHUB_VERSION_CACHE_TTL_MS || needsPendingRefresh) {
+    published = await fetchGithubPublishedVersion({
+      force: !published || needsPendingRefresh,
+      maxAgeMs: pending ? GITHUB_PENDING_RETRY_MS : GITHUB_VERSION_CACHE_TTL_MS
+    }).catch(() => published);
+  }
+
+  const publishedVersion = normalizePublishedVersion(published?.version);
+  if (!pending || !publishedVersion || publishedVersion !== installedVersion) {
+    return { publishedVersion, updateNotice: null, source: published?.source || "" };
+  }
+
+  const seenVersion = normalizePublishedVersion(stored[UPDATE_NOTICE_SEEN_VERSION_KEY]);
+  if (seenVersion === publishedVersion) {
+    chrome.storage.local.remove(UPDATE_NOTICE_KEY).catch(() => {});
+    return { publishedVersion, updateNotice: null, source: published?.source || "" };
+  }
+
+  return {
+    publishedVersion,
+    source: published?.source || "",
+    updateNotice: {
+      version: publishedVersion,
+      previousVersion: String(pending.previousVersion || ""),
+      updatedAt: Number(pending.updatedAt) || Date.now()
+    }
+  };
 }
 
 function escapeRegex(v) {
@@ -200,13 +349,302 @@ async function normalizeStoredUserBlockList() {
     // storage 정리는 보조 기능이므로 실패해도 핵심 차단 흐름은 유지한다.
   }
 }
-function showActionBadge(tabId, text) {
-  if (!tabId) return;
+const actionBadgeTimers = new Map();
+const pageBlockStats = new Map();
+const pageBlockTokens = new Map();
+let blockStatsMutationQueue = Promise.resolve();
 
-  chrome.action.setBadgeText({ tabId, text });
-  setTimeout(() => {
-    chrome.action.setBadgeText({ tabId, text: "" });
+function queueBlockStatsMutation(work) {
+  const job = blockStatsMutationQueue.then(work, work);
+  blockStatsMutationQueue = job.catch(() => {});
+  return job;
+}
+
+function emptyBlockStats() {
+  return { total: 0, byCategory: {} };
+}
+
+function normalizeBlockStats(value) {
+  const source = value && typeof value === "object" ? value : {};
+  const byCategory = {};
+  Object.entries(source.byCategory && typeof source.byCategory === "object" ? source.byCategory : {}).forEach(([key, count]) => {
+    const safe = Math.max(0, Number.parseInt(count, 10) || 0);
+    if (safe) byCategory[String(key).slice(0, 40)] = safe;
+  });
+  const total = Object.values(byCategory).reduce((sum, count) => sum + count, 0);
+  return { total, byCategory };
+}
+
+function mergeBlockStats(base, counts) {
+  const next = normalizeBlockStats(base);
+  Object.entries(counts && typeof counts === "object" ? counts : {}).forEach(([key, value]) => {
+    const category = String(key || "other").trim().slice(0, 40) || "other";
+    const count = Math.max(0, Math.min(10_000, Number.parseInt(value, 10) || 0));
+    if (!count) return;
+    next.byCategory[category] = (next.byCategory[category] || 0) + count;
+  });
+  next.total = Object.values(next.byCategory).reduce((sum, count) => sum + count, 0);
+  return next;
+}
+
+function blockStatsSessionKey(tabId) {
+  return `${BLOCK_STATS_SESSION_PREFIX}${tabId}`;
+}
+
+function badgeTextForCount(total) {
+  const count = Math.max(0, Number.parseInt(total, 10) || 0);
+  if (!count) return "";
+  if (count > 9999) return "9k+";
+  if (count > 999) return "999+";
+  return String(count);
+}
+
+async function setCountBadge(tabId, stats = null) {
+  if (!Number.isInteger(tabId) || tabId < 0) return;
+  let current = stats || pageBlockStats.get(tabId);
+  if (!current) {
+    try {
+      const stored = await chrome.storage.session.get(blockStatsSessionKey(tabId));
+      current = normalizeBlockStats(stored[blockStatsSessionKey(tabId)]);
+      pageBlockStats.set(tabId, current);
+    } catch (_) {
+      current = emptyBlockStats();
+    }
+  }
+  const text = badgeTextForCount(current.total);
+
+  // 숫자 자체가 핵심이다. 배지 색상 API 하나가 실패해도 숫자 표시까지 건너뛰지 않는다.
+  try {
+    await chrome.action.setBadgeText({ tabId, text });
+  } catch (_) {
+    return;
+  }
+  try {
+    await chrome.action.setBadgeBackgroundColor({ tabId, color: "#4f7cff" });
+  } catch (_) {}
+  try {
+    await chrome.action.setBadgeTextColor?.({ tabId, color: "#ffffff" });
+  } catch (_) {}
+}
+
+function broadcastBlockStats(tabId, page, cumulative = null) {
+  try {
+    chrome.runtime.sendMessage({
+      type: "dcb.stats.updated",
+      tabId,
+      page: normalizeBlockStats(page),
+      cumulative: cumulative ? normalizeBlockStats(cumulative) : null
+    }, () => void chrome.runtime.lastError);
+  } catch (_) {}
+}
+
+function showActionBadge(tabId, text) {
+  if (!Number.isInteger(tabId) || tabId < 0) return;
+  const previousTimer = actionBadgeTimers.get(tabId);
+  if (previousTimer) clearTimeout(previousTimer);
+
+  try {
+    chrome.action.setBadgeText({ tabId, text: String(text || "") });
+  } catch (_) {}
+
+  const timer = setTimeout(() => {
+    actionBadgeTimers.delete(tabId);
+    void setCountBadge(tabId);
   }, 1100);
+  actionBadgeTimers.set(tabId, timer);
+}
+
+function normalizePageId(value) {
+  return String(value || "").trim().slice(0, 120);
+}
+
+function statsSenderPageId(sender, fallback = "") {
+  // 콘텐츠 통계 모듈이 만든 PAGE_ID를 pageStart/sync/live 경로에서 일관되게 사용한다.
+  // 브라우저별 documentId 구현 차이가 통계 문서를 갈라놓지 않도록 fallback을 우선한다.
+  return normalizePageId(fallback || sender?.documentId);
+}
+
+function statsSenderIsActive(sender) {
+  const lifecycle = String(sender?.documentLifecycle || "").trim().toLowerCase();
+  return !lifecycle || lifecycle === "active";
+}
+
+function statsSessionValue(pageId, stats) {
+  const normalized = normalizeBlockStats(stats);
+  return { pageId: normalizePageId(pageId), total: normalized.total, byCategory: normalized.byCategory };
+}
+
+async function resetPageBlockStats(tabId, pageId = "") {
+  if (!Number.isInteger(tabId) || tabId < 0) return;
+  const token = normalizePageId(pageId);
+  const pageKey = blockStatsSessionKey(tabId);
+
+  // 동일 문서에서 pageStart가 재전송되더라도 이미 센 값을 지우지 않는다.
+  if (token) {
+    const memoryToken = normalizePageId(pageBlockTokens.get(tabId));
+    if (memoryToken === token) {
+      const current = pageBlockStats.get(tabId) || emptyBlockStats();
+      await setCountBadge(tabId, current);
+      return { page: current, reused: true };
+    }
+    try {
+      const stored = await chrome.storage.session.get(pageKey);
+      const storedValue = stored[pageKey];
+      if (normalizePageId(storedValue?.pageId) === token) {
+        const current = normalizeBlockStats(storedValue);
+        pageBlockTokens.set(tabId, token);
+        pageBlockStats.set(tabId, current);
+        await setCountBadge(tabId, current);
+        return { page: current, reused: true };
+      }
+    } catch (_) {}
+  }
+
+  const empty = emptyBlockStats();
+  pageBlockStats.set(tabId, empty);
+  if (token) pageBlockTokens.set(tabId, token);
+  else pageBlockTokens.delete(tabId);
+  try {
+    if (token) await chrome.storage.session.set({ [pageKey]: statsSessionValue(token, empty) });
+    else await chrome.storage.session.remove(pageKey);
+  } catch (_) {}
+  await setCountBadge(tabId, empty);
+  broadcastBlockStats(tabId, empty);
+  return { page: empty, reused: false };
+}
+
+async function readBlockStatsState(tabId) {
+  const pageKey = blockStatsSessionKey(tabId);
+  const [pageStored, totalStored] = await Promise.all([
+    chrome.storage.session.get(pageKey).catch(() => ({})),
+    chrome.storage.local.get({ [BLOCK_STATS_TOTAL_KEY]: emptyBlockStats() }).catch(() => ({ [BLOCK_STATS_TOTAL_KEY]: emptyBlockStats() }))
+  ]);
+  return {
+    pageKey,
+    storedPage: pageStored[pageKey],
+    cumulative: normalizeBlockStats(totalStored[BLOCK_STATS_TOTAL_KEY])
+  };
+}
+
+function resolveBlockStatsBase(tabId, storedPage, token, senderIsActive = true) {
+  const storedToken = normalizePageId(storedPage?.pageId);
+  const memoryToken = normalizePageId(pageBlockTokens.get(tabId));
+  const currentToken = storedToken || memoryToken;
+
+  if (currentToken && currentToken !== token) {
+    if (!senderIsActive) return { ignored: true, page: emptyBlockStats() };
+    // pageStart가 유실되어도 새 활성 문서의 첫 집계를 그대로 받아들인다.
+    return { ignored: false, page: emptyBlockStats(), newDocument: true };
+  }
+
+  const page = storedToken === token
+    ? normalizeBlockStats(storedPage)
+    : (pageBlockStats.get(tabId) || emptyBlockStats());
+  return { ignored: false, page, newDocument: !currentToken };
+}
+
+async function persistBlockStats(tabId, token, pageKey, page, cumulative) {
+  pageBlockTokens.set(tabId, token);
+  pageBlockStats.set(tabId, page);
+
+  // 화면 숫자는 storage I/O보다 먼저 갱신한다. 저장소가 잠깐 느려도 배지/열린 Popup은 멈추지 않는다.
+  await setCountBadge(tabId, page);
+  broadcastBlockStats(tabId, page, cumulative);
+
+  await Promise.all([
+    chrome.storage.session.set({ [pageKey]: statsSessionValue(token, page) }).catch(() => {}),
+    chrome.storage.local.set({ [BLOCK_STATS_TOTAL_KEY]: cumulative }).catch(() => {})
+  ]);
+  return { page, cumulative };
+}
+
+async function addBlockStats(tabId, counts, pageId = "", senderIsActive = true) {
+  if (!Number.isInteger(tabId) || tabId < 0) return null;
+  const token = normalizePageId(pageId);
+  if (!token) return null;
+
+  const { pageKey, storedPage, cumulative: currentCumulative } = await readBlockStatsState(tabId);
+  const base = resolveBlockStatsBase(tabId, storedPage, token, senderIsActive);
+  if (base.ignored) return { ignored: true };
+
+  const page = mergeBlockStats(base.page, counts);
+  const cumulative = mergeBlockStats(currentCumulative, counts);
+  return persistBlockStats(tabId, token, pageKey, page, cumulative);
+}
+
+async function syncBlockStats(tabId, absoluteStats, pageId = "", senderIsActive = true) {
+  if (!Number.isInteger(tabId) || tabId < 0) return null;
+  const token = normalizePageId(pageId);
+  if (!token) return null;
+
+  const incoming = normalizeBlockStats(absoluteStats);
+  const { pageKey, storedPage, cumulative: currentCumulative } = await readBlockStatsState(tabId);
+  const base = resolveBlockStatsBase(tabId, storedPage, token, senderIsActive);
+  if (base.ignored) return { ignored: true };
+
+  const page = normalizeBlockStats(base.page);
+  const delta = {};
+  Object.entries(incoming.byCategory).forEach(([category, count]) => {
+    const previous = Math.max(0, Number.parseInt(page.byCategory[category], 10) || 0);
+    if (count > previous) delta[category] = count - previous;
+    if (count > previous) page.byCategory[category] = count;
+  });
+  page.total = Object.values(page.byCategory).reduce((sum, count) => sum + count, 0);
+
+  const cumulative = mergeBlockStats(currentCumulative, delta);
+  return persistBlockStats(tabId, token, pageKey, page, cumulative);
+}
+
+function requestLiveBlockStats(tabId, { timeoutMs = 1200, reconcile = true } = {}) {
+  if (!Number.isInteger(tabId) || tabId < 0 || !chrome.tabs?.sendMessage) return Promise.resolve(null);
+
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(value);
+    };
+    const timer = setTimeout(() => finish(null), Math.max(200, Number(timeoutMs) || 1200));
+
+    try {
+      chrome.tabs.sendMessage(
+        tabId,
+        { type: "dcb.stats.snapshot", reconcile },
+        { frameId: 0 },
+        (response) => {
+          if (chrome.runtime.lastError || !response?.ok) {
+            finish(null);
+            return;
+          }
+          const pageId = normalizePageId(response.pageId);
+          if (!pageId) {
+            finish(null);
+            return;
+          }
+          finish({ pageId, page: normalizeBlockStats(response.page) });
+        }
+      );
+    } catch (_) {
+      finish(null);
+    }
+  });
+}
+
+async function reconcileLiveBlockStats(tabId, { reconcile = true } = {}) {
+  const live = await requestLiveBlockStats(tabId, { reconcile });
+  if (!live) return null;
+  return syncBlockStats(tabId, live.page, live.pageId, true);
+}
+
+function isStatsSupportedUrl(value) {
+  try {
+    const url = new URL(String(value || ""));
+    return /(^|\.)dcinside\.(?:com|co\.kr)$/i.test(url.hostname);
+  } catch (_) {
+    return false;
+  }
 }
 
 /* 우클릭 메뉴 재구성 */
@@ -285,8 +723,21 @@ function resetContextMenus() {
 }
 
 /* ───── 설치/업데이트: 기본값 주입 ───── */
-chrome.runtime.onInstalled.addListener(async ({ reason }) => {
+chrome.runtime.onInstalled.addListener(async ({ reason, previousVersion }) => {
   resetContextMenus();
+
+  if (reason === "update") {
+    try {
+      await chrome.storage.local.set({
+        [UPDATE_NOTICE_KEY]: {
+          previousVersion: String(previousVersion || ""),
+          updatedAt: Date.now()
+        }
+      });
+      // 표시할 버전명은 manifest가 아니라 GitHub Releases/Tags에서 확인한다.
+      fetchGithubPublishedVersion({ force: true }).catch(() => {});
+    } catch (_) {}
+  }
 
   if (reason === "install") {
     const seed = await chrome.storage.sync.get([
@@ -849,6 +1300,181 @@ function enqueueAccountSignal(uid, token) {
   accountSignalInflight.set(key, tracked);
   return tracked;
 }
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type === "dcb.stats.pageStart") {
+    const tabId = sender?.tab?.id;
+    const pageId = statsSenderPageId(sender, message.pageId);
+    if (!Number.isInteger(tabId) || !pageId || !statsSenderIsActive(sender)) {
+      sendResponse({ ok: false });
+      return;
+    }
+    queueBlockStatsMutation(() => resetPageBlockStats(tabId, pageId))
+      .then((result) => sendResponse({ ok: true, ...(result || {}) }))
+      .catch(() => sendResponse({ ok: false }));
+    return true;
+  }
+
+  if (message?.type === "dcb.stats.sync") {
+    const tabId = sender?.tab?.id;
+    const pageId = statsSenderPageId(sender, message.pageId);
+    if (!Number.isInteger(tabId) || !pageId) {
+      sendResponse({ ok: false });
+      return;
+    }
+    queueBlockStatsMutation(() => syncBlockStats(
+      tabId,
+      message.stats,
+      pageId,
+      statsSenderIsActive(sender)
+    ))
+      .then((result) => sendResponse({ ok: true, ...(result || {}) }))
+      .catch(() => sendResponse({ ok: false }));
+    return true;
+  }
+
+  if (message?.type === "dcb.stats.add") {
+    const tabId = sender?.tab?.id;
+    const pageId = statsSenderPageId(sender, message.pageId);
+    if (!Number.isInteger(tabId) || !pageId) {
+      sendResponse({ ok: false });
+      return;
+    }
+    queueBlockStatsMutation(() => addBlockStats(
+      tabId,
+      message.counts,
+      pageId,
+      statsSenderIsActive(sender)
+    ))
+      .then((result) => sendResponse({ ok: true, ...(result || {}) }))
+      .catch(() => sendResponse({ ok: false }));
+    return true;
+  }
+
+  if (message?.type === "dcb.stats.live") {
+    const tabId = Number.isInteger(message.tabId) ? message.tabId : sender?.tab?.id;
+    if (!Number.isInteger(tabId)) {
+      sendResponse({ ok: false });
+      return;
+    }
+
+    requestLiveBlockStats(tabId, { reconcile: message.reconcile !== false })
+      .then((live) => {
+        if (!live) return null;
+        return queueBlockStatsMutation(() => syncBlockStats(tabId, live.page, live.pageId, true))
+          .then((result) => ({ live, result }));
+      })
+      .then((payload) => {
+        if (!payload?.live || !payload?.result) {
+          sendResponse({ ok: false });
+          return;
+        }
+        sendResponse({
+          ok: true,
+          pageId: payload.live.pageId,
+          page: payload.result.page,
+          cumulative: payload.result.cumulative
+        });
+      })
+      .catch(() => sendResponse({ ok: false }));
+    return true;
+  }
+
+  if (message?.type === "dcb.stats.get") {
+    const tabId = Number.isInteger(message.tabId) ? message.tabId : sender?.tab?.id;
+    const pageKey = Number.isInteger(tabId) ? blockStatsSessionKey(tabId) : "";
+    Promise.all([
+      pageKey ? chrome.storage.session.get(pageKey).catch(() => ({})) : Promise.resolve({}),
+      chrome.storage.local.get({
+        [BLOCK_STATS_TOTAL_KEY]: emptyBlockStats(),
+        [GITHUB_VERSION_CACHE_KEY]: null
+      }).catch(() => ({ [BLOCK_STATS_TOTAL_KEY]: emptyBlockStats(), [GITHUB_VERSION_CACHE_KEY]: null }))
+    ]).then(([pageStored, localStored]) => {
+      const storedPageValue = pageKey ? pageStored[pageKey] : null;
+      const storedPage = normalizeBlockStats(storedPageValue);
+      const memoryPage = Number.isInteger(tabId) ? pageBlockStats.get(tabId) : null;
+      const page = memoryPage && memoryPage.total >= storedPage.total ? normalizeBlockStats(memoryPage) : storedPage;
+      if (Number.isInteger(tabId)) {
+        pageBlockStats.set(tabId, page);
+        const storedToken = normalizePageId(storedPageValue?.pageId);
+        if (storedToken && !pageBlockTokens.get(tabId)) pageBlockTokens.set(tabId, storedToken);
+      }
+      const cachedRelease = normalizeGithubVersionCache(localStored[GITHUB_VERSION_CACHE_KEY]);
+      sendResponse({
+        ok: true,
+        page,
+        cumulative: normalizeBlockStats(localStored[BLOCK_STATS_TOTAL_KEY]),
+        publishedVersion: cachedRelease?.version || ""
+      });
+    }).catch(() => sendResponse({ ok: false }));
+    return true;
+  }
+
+  if (message?.type === "dcb.release.status") {
+    resolveUpdateReleaseStatus()
+      .then((result) => sendResponse({ ok: true, ...(result || {}) }))
+      .catch(() => sendResponse({ ok: false }));
+    return true;
+  }
+
+  if (message?.type === "dcb.updateNotice.consume") {
+    const version = normalizePublishedVersion(message.version);
+    if (!version) {
+      sendResponse({ ok: false, show: false });
+      return;
+    }
+    updateNoticeMutationQueue = updateNoticeMutationQueue.then(async () => {
+      const stored = await chrome.storage.local.get({ [UPDATE_NOTICE_SEEN_VERSION_KEY]: "" });
+      const seenVersion = normalizePublishedVersion(stored[UPDATE_NOTICE_SEEN_VERSION_KEY]);
+      if (seenVersion === version) return { ok: true, show: false };
+      await chrome.storage.local.set({ [UPDATE_NOTICE_SEEN_VERSION_KEY]: version });
+      await chrome.storage.local.remove(UPDATE_NOTICE_KEY);
+      return { ok: true, show: true };
+    }, async () => ({ ok: false, show: false }));
+    updateNoticeMutationQueue
+      .then((result) => sendResponse(result || { ok: false, show: false }))
+      .catch(() => sendResponse({ ok: false, show: false }));
+    return true;
+  }
+});
+
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.status === "loading") {
+    // loading 이벤트에서 tab.url은 이전 문서 주소일 수 있다.
+    // 명시적인 새 URL이 비지원 페이지일 때만 지우고, DCInside 문서 경계는 pageStart/PAGE_ID가 맡는다.
+    if (changeInfo.url && !isStatsSupportedUrl(changeInfo.url)) void resetPageBlockStats(tabId);
+    return;
+  }
+
+  if (changeInfo.status === "complete") {
+    const currentUrl = tab?.url || changeInfo.url || "";
+    if (!isStatsSupportedUrl(currentUrl)) {
+      void resetPageBlockStats(tabId);
+      return;
+    }
+    // 초기 push가 누락돼도 로딩 완료 시 실제 content script 스냅샷으로 한 번 복구한다.
+    void reconcileLiveBlockStats(tabId).catch(() => {});
+  }
+});
+
+chrome.tabs.onRemoved.addListener((tabId) => {
+  const timer = actionBadgeTimers.get(tabId);
+  if (timer) clearTimeout(timer);
+  actionBadgeTimers.delete(tabId);
+  pageBlockStats.delete(tabId);
+  pageBlockTokens.delete(tabId);
+  void chrome.storage.session.remove(blockStatsSessionKey(tabId)).catch(() => {});
+});
+
+chrome.tabs.onActivated.addListener(({ tabId }) => {
+  // 탭 전환 시에도 DOM을 다시 훑는 대신 content script가 보관한 스냅샷을 받아 배지를 복구한다.
+  void reconcileLiveBlockStats(tabId)
+    .then((result) => {
+      if (!result) return setCountBadge(tabId);
+      return null;
+    })
+    .catch(() => setCountBadge(tabId));
+});
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type !== "dcb.accountSignal") return;

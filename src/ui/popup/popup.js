@@ -28,6 +28,8 @@ const blockStatsVersionEl = document.getElementById("blockStatsVersion");
 const blockStatsPageTotalEl = document.getElementById("blockStatsPageTotal");
 const blockStatsCumulativeTotalEl = document.getElementById("blockStatsCumulativeTotal");
 const blockStatsBreakdownEl = document.getElementById("blockStatsBreakdown");
+let activeBlockStatsTabId = null;
+let liveBlockSnapshotApplied = false;
 const updateNoticeEl = document.getElementById("updateNotice");
 const updateNoticeTitleEl = document.getElementById("updateNoticeTitle");
 
@@ -235,20 +237,58 @@ function loadReleaseStatus() {
   });
 }
 
+function renderBlockSummary(result = {}) {
+  if (result.page) {
+    if (blockStatsPageTotalEl) blockStatsPageTotalEl.textContent = formatBlockCount(result.page.total);
+    renderBlockBreakdown(result.page);
+  }
+  if (result.cumulative && blockStatsCumulativeTotalEl) {
+    blockStatsCumulativeTotalEl.textContent = formatBlockCount(result.cumulative.total);
+  }
+  if (result.publishedVersion) renderPublishedVersion(result.publishedVersion);
+}
+
+function loadLiveBlockSummary(tabId) {
+  if (!Number.isInteger(tabId)) return;
+
+  // 저장된 캐시와 별도로 현재 활성 탭의 실제 차단 상태를 직접 확인한다.
+  // 초기 push가 빠졌더라도 팝업을 여는 순간 page/cumulative/badge를 함께 복구한다.
+  chrome.runtime.sendMessage(
+    { type: "dcb.stats.live", tabId, reconcile: true },
+    (result) => {
+      if (chrome.runtime.lastError || !result?.ok || tabId !== activeBlockStatsTabId) return;
+      liveBlockSnapshotApplied = true;
+      renderBlockSummary({ page: result.page, cumulative: result.cumulative });
+    }
+  );
+}
+
 function loadBlockSummary() {
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     const tabId = Number.isInteger(tabs?.[0]?.id) ? tabs[0].id : null;
+    activeBlockStatsTabId = tabId;
+    liveBlockSnapshotApplied = false;
+
     chrome.runtime.sendMessage({ type: "dcb.stats.get", tabId }, (result) => {
-      if (chrome.runtime.lastError || !result?.ok) return;
-      if (blockStatsPageTotalEl) blockStatsPageTotalEl.textContent = formatBlockCount(result.page?.total);
-      if (blockStatsCumulativeTotalEl) blockStatsCumulativeTotalEl.textContent = formatBlockCount(result.cumulative?.total);
-      renderBlockBreakdown(result.page || {});
-      renderPublishedVersion(result.publishedVersion);
+      if (chrome.runtime.lastError || !result?.ok || tabId !== activeBlockStatsTabId) return;
+      if (liveBlockSnapshotApplied) {
+        renderBlockSummary({ cumulative: result.cumulative, publishedVersion: result.publishedVersion });
+      } else {
+        renderBlockSummary(result);
+      }
     });
+
+    loadLiveBlockSummary(tabId);
   });
   // GitHub 조회는 차단 현황 렌더링과 분리해 팝업 첫 화면을 기다리게 하지 않는다.
   loadReleaseStatus();
 }
+
+chrome.runtime.onMessage.addListener((message) => {
+  if (message?.type !== "dcb.stats.updated") return;
+  if (!Number.isInteger(activeBlockStatsTabId) || message.tabId !== activeBlockStatsTabId) return;
+  renderBlockSummary({ page: message.page, cumulative: message.cumulative });
+});
 
 /* ───────── util ───────── */
 function setChecked(el, value) {

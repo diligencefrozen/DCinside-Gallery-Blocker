@@ -25,6 +25,17 @@
     ".gall_item"
   ].join(",");
 
+  const COMMENT_ITEM_SELECTOR = [
+    "#focus_cmt li.ub-content",
+    ".cmt_list li.ub-content",
+    ".comment_wrap li.ub-content",
+    "li[id^='comment_li_']",
+    "li[id^='reply_li_']",
+    ".comment_box li.ub-content",
+    ".reply_box li.ub-content",
+    ".dccon_comment_box li.ub-content"
+  ].join(",");
+
   const DEFAULTS = {
     keywordHideEnabled: false,
     hiddenKeywords: [],
@@ -42,6 +53,7 @@
   let observer = null;
   let scheduled = false;
   let suppressObserver = false;
+  const pendingRoots = new Set();
   let nextSoftId = 1;
   let allowedKeys = loadAllowedKeys();
 
@@ -297,6 +309,7 @@
     if (document.querySelector(`[${PLACEHOLDER_ATTR}="1"][data-dcb-soft-for="${cssEscape(id)}"]`)) {
       element.setAttribute(HIDDEN_ATTR, "1");
       element.setAttribute(MATCH_ATTR, keyword.label);
+      globalThis.DCBBlockStats?.report?.(element, "keywords");
 
       extraElements.forEach((extra) => {
         if (!extra) return;
@@ -321,6 +334,7 @@
     element.parentNode?.insertBefore(placeholder, element);
     element.setAttribute(HIDDEN_ATTR, "1");
     element.setAttribute(MATCH_ATTR, keyword.label);
+    globalThis.DCBBlockStats?.report?.(element, "keywords");
 
     extraElements.forEach((extra) => {
       if (!extra) return;
@@ -343,6 +357,7 @@
 
       row.setAttribute(HIDDEN_ATTR, "1");
       row.setAttribute(MATCH_ATTR, keyword.label);
+      globalThis.DCBBlockStats?.report?.(row, "keywords");
       insertListPlaceholder(row, keyword, key);
     });
   }
@@ -398,18 +413,7 @@
   }
 
   function getCommentCandidates() {
-    const selectors = [
-      "#focus_cmt li.ub-content",
-      ".cmt_list li.ub-content",
-      ".comment_wrap li.ub-content",
-      "li[id^='comment_li_']",
-      "li[id^='reply_li_']",
-      ".comment_box li.ub-content",
-      ".reply_box li.ub-content",
-      ".dccon_comment_box li.ub-content"
-    ];
-
-    return Array.from(document.querySelectorAll(selectors.join(",")))
+    return Array.from(document.querySelectorAll(COMMENT_ITEM_SELECTOR))
       .filter((element, index, array) => array.indexOf(element) === index)
       .filter((element) => !element.closest(".write_div"))
       .filter((element) => !element.closest(`[${PLACEHOLDER_ATTR}="1"]`))
@@ -476,26 +480,103 @@
     });
   }
 
-  function applyKeywordHide() {
+  function applyKeywordHide({ reset = false } = {}) {
     scheduled = false;
 
     if (!enabled || !keywords.length) {
       clearSoftHides();
+      pendingRoots.clear();
       return;
     }
 
     ensureStyle();
-    clearSoftHides();
+    if (reset) clearSoftHides();
     hideListRows();
     hideArticleIfNeeded();
     hideComments();
+    pendingRoots.clear();
   }
 
-  function scheduleApply() {
-    if (scheduled) return;
+  function collectScoped(scope, selector) {
+    const out = [];
+    if (!scope) return out;
+    const element = scope.nodeType === Node.ELEMENT_NODE ? scope : scope.parentElement;
+    if (!element) return out;
+    const closest = element.closest?.(selector);
+    if (closest) out.push(closest);
+    if (element.matches?.(selector)) out.push(element);
+    element.querySelectorAll?.(selector).forEach((node) => out.push(node));
+    return out.filter((node, index, list) => list.indexOf(node) === index);
+  }
 
+  function hideListRow(row) {
+    if (!targets.listTitle || !row || row.hasAttribute(PLACEHOLDER_ATTR) || isBlockedByAnonymousFilter(row)) return;
+    const keyword = findKeyword(getListRowText(row));
+    if (!keyword) return;
+    const key = getListKey(row, keyword);
+    if (allowedKeys.has(key)) return;
+    row.setAttribute(HIDDEN_ATTR, "1");
+    row.setAttribute(MATCH_ATTR, keyword.label);
+    globalThis.DCBBlockStats?.report?.(row, "keywords");
+    insertListPlaceholder(row, keyword, key);
+  }
+
+  function hideComment(element) {
+    if (!targets.comments || !element || element.hasAttribute(PLACEHOLDER_ATTR) || element.closest(`[${PLACEHOLDER_ATTR}="1"]`)) return;
+    if (element.id === "comment_li_0" || element.classList.contains("dory")) return;
+    const keyword = findKeyword(getCommentText(element));
+    if (!keyword) return;
+    const key = getCommentKey(element, keyword);
+    const replyContainer = getReplyContainerForParentComment(element);
+    hideElementWithBox(element, keyword, key, "차단 키워드가 포함된 댓글", replyContainer ? [replyContainer] : []);
+  }
+
+  function processPendingRoots() {
+    scheduled = false;
+    if (!enabled || !keywords.length) {
+      pendingRoots.clear();
+      return;
+    }
+
+    const roots = Array.from(pendingRoots).filter((root) => root?.isConnected !== false);
+    pendingRoots.clear();
+    const minimal = roots.filter((root, index) => {
+      const element = root?.nodeType === Node.ELEMENT_NODE ? root : root?.parentElement;
+      if (!element) return false;
+      return !roots.some((other, otherIndex) => {
+        if (index === otherIndex) return false;
+        const parent = other?.nodeType === Node.ELEMENT_NODE ? other : other?.parentElement;
+        return !!parent?.contains?.(element);
+      });
+    });
+
+    const rows = new Set();
+    const comments = new Set();
+    let articleTouched = false;
+    for (const root of minimal) {
+      collectScoped(root, LIST_ITEM_SELECTOR).forEach((node) => rows.add(node));
+      collectScoped(root, COMMENT_ITEM_SELECTOR).forEach((node) => comments.add(node));
+      const element = root?.nodeType === Node.ELEMENT_NODE ? root : root?.parentElement;
+      if (element?.closest?.(".write_div,.writing_view_box,.write_view,#dgn_content_de,.gallview_head,.view_head") ||
+          element?.querySelector?.(".write_div,.writing_view_box,.write_view,#dgn_content_de,.gallview_head,.view_head")) {
+        articleTouched = true;
+      }
+    }
+
+    rows.forEach(hideListRow);
+    comments.forEach(hideComment);
+    if (articleTouched) hideArticleIfNeeded();
+  }
+
+  function scheduleApply(root = document) {
+    const validRoot = root === document || root?.nodeType === Node.ELEMENT_NODE || root?.nodeType === Node.TEXT_NODE || root?.nodeType === Node.DOCUMENT_FRAGMENT_NODE;
+    if (validRoot) pendingRoots.add(root);
+    if (scheduled) return;
     scheduled = true;
-    setTimeout(applyKeywordHide, 120);
+    setTimeout(() => {
+      if (pendingRoots.has(document)) applyKeywordHide();
+      else processPendingRoots();
+    }, 120);
   }
 
   function handleShowClick(event) {
@@ -570,7 +651,22 @@
         if (!contentMutations.length || mutationBelongsToSoftUi(contentMutations)) return;
       }
 
-      scheduleApply();
+      if (anonymousVisibilityChanged) {
+        // 익명 차단과의 우선순위가 바뀌는 경우는 드물므로 전체 상태를 한 번 맞춘다.
+        scheduleApply(document);
+        return;
+      }
+
+      for (const mutation of contentMutations) {
+        if (mutation.type === "childList") {
+          mutation.addedNodes.forEach((node) => {
+            if (node?.nodeType === Node.ELEMENT_NODE || node?.nodeType === Node.TEXT_NODE) pendingRoots.add(node);
+          });
+        } else if (mutation.type === "characterData") {
+          pendingRoots.add(mutation.target);
+        }
+      }
+      if (pendingRoots.size) scheduleApply(null);
     });
 
     const start = () => {
@@ -611,7 +707,7 @@
       if (enabled && keywords.length) startObserver();
       else stopObserver();
 
-      applyKeywordHide();
+      applyKeywordHide({ reset: true });
     });
   }
 
@@ -636,5 +732,5 @@
     loadSettingsAndApply();
   }
 
-  window.addEventListener("load", scheduleApply, { once: true });
+  window.addEventListener("load", () => scheduleApply(document), { once: true });
 })();
