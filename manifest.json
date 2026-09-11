@@ -18,7 +18,8 @@
     "activeTab",
     "declarativeNetRequest",
     "contextMenus",
-    "unlimitedStorage"
+    "unlimitedStorage",
+    "offscreen"
   ],
   "host_permissions": [
     "*://gall.dcinside.com/*",
@@ -36,10 +37,25 @@
   },
   "options_page": "src/ui/options/options.html",
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://gall.dcinside.com https://gallog.dcinside.com https://m.dcinside.com https://www.dcinside.com https://search.dcinside.com;"
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://gall.dcinside.com https://gallog.dcinside.com https://m.dcinside.com https://www.dcinside.com https://search.dcinside.com;"
   },
-  "minimum_chrome_version": "105",
+  "minimum_chrome_version": "116",
   "content_scripts": [
+    {
+      "matches": [
+        "*://gall.dcinside.com/board/view*",
+        "*://gall.dcinside.com/mgallery/board/view*",
+        "*://gall.dcinside.com/mini/board/view*",
+        "*://gall.dcinside.com/person/board/view*",
+        "*://gall.dcinside.com/board/lists*",
+        "*://gall.dcinside.com/mgallery/board/lists*",
+        "*://gall.dcinside.com/mini/board/lists*",
+        "*://gall.dcinside.com/person/board/lists*"
+      ],
+      "js": ["src/shared/detection-config.js", "src/content/detection/text-detector.js"],
+      "run_at": "document_idle",
+      "all_frames": false
+    },
     {
       "matches": [
         "*://gall.dcinside.com/board/lists*",
@@ -333,6 +349,7 @@
         "src/content/user/uid-badge.js",
         "src/content/user/member-ip-view.js"
       ],
+      "css": ["src/content/appearance/comment-author.css"],
       "run_at": "document_end",
       "all_frames": true
     },

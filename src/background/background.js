@@ -6,6 +6,7 @@ try {
 } catch (error) {
   console.warn("[DCB] User block store bootstrap failed:", error);
 }
+importScripts("../shared/detection-config.js", "text-detection.js");
 
 /*****************************************************************
  * background.js
@@ -304,6 +305,7 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
       "dcbFontCustomFamily",
       "dcbFontScale",
       "dcbApplyFontToDc",
+      "previewEnabled",
       "showMemberIpInfo",
       "userMemoEnabled",
       "recentPostsEnabled",
@@ -369,8 +371,10 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
     }
 
     if (typeof seed.dcbApplyFontToDc === "undefined") {
-      patch.dcbApplyFontToDc = true;
+      patch.dcbApplyFontToDc = false;
     }
+
+    if (typeof seed.previewEnabled === "undefined") patch.previewEnabled = true;
 
     if (typeof seed.showMemberIpInfo === "undefined") {
       patch.showMemberIpInfo = true;

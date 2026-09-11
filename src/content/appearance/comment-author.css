@@ -1,0 +1,84 @@
+/* Keep the native author column; only the name and optional tools may shrink. */
+.cmt_nickbox :is(.gall_writer, .ub-writer) {
+  display: inline-flex !important;
+  align-items: center !important;
+  flex-wrap: wrap !important;
+  gap: 3px !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+  white-space: normal !important;
+  overflow: visible !important;
+}
+
+.cmt_nickbox :is(.gall_writer, .ub-writer) > .nickname {
+  display: inline-flex !important;
+  align-items: center !important;
+  flex: 0 1 auto !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  white-space: nowrap !important;
+  word-break: normal !important;
+  overflow-wrap: normal !important;
+  /* The site's click menu may be inside nickname; clip only its text. */
+  overflow: visible !important;
+}
+
+.cmt_nickbox :is(.gall_writer, .ub-writer) > .nickname > em {
+  display: block !important;
+  flex: 0 1 auto !important;
+  min-width: 0 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+.cmt_nickbox :is(.gall_writer, .ub-writer) > .nickname:not(:has(> em, .user_data_list)) {
+  display: block !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+.cmt_nickbox :is(.gall_writer, .ub-writer):has(> .writer_nikcon) > .nickname {
+  max-width: calc(100% - 20px) !important;
+}
+
+.cmt_nickbox :is(.gall_writer, .ub-writer) :is(.ip, .writer_ip, .writer_nikcon, .dc-member-ip-chip) {
+  flex: 0 0 auto !important;
+  white-space: nowrap !important;
+  word-break: normal !important;
+  overflow-wrap: normal !important;
+}
+
+.cmt_nickbox :is(.gall_writer, .ub-writer) > .dcb-writer-tools {
+  display: flex !important;
+  order: 1 !important;
+  flex: 0 0 100% !important;
+  flex-wrap: wrap !important;
+  align-items: center !important;
+  gap: 3px !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  margin: 0 !important;
+  transform: none !important;
+  box-sizing: border-box !important;
+}
+
+.cmt_nickbox :is(.gall_writer, .ub-writer) > .dcb-writer-tools > :is(.dcb-uid-badge, .dcb-user-memo-trigger) {
+  display: block !important;
+  flex: 0 1 auto !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  margin: 0 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+.cmt_nickbox :is(.gall_writer, .ub-writer) .dcb-user-memo-trigger::before {
+  display: inline-block !important;
+  margin-right: 6px !important;
+  vertical-align: 1px !important;
+}

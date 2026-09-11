@@ -1,0 +1,35 @@
+.dcb-detection-card {
+  --reading-muted: #aebbd0;
+  display: grid; gap: 14px; min-width: 0;
+  padding: 18px; border: 1px solid #364258; border-radius: 14px;
+  background: #141c29; color: #edf2fb; line-height: 1.6;
+}
+.dcb-detection-card * { box-sizing: border-box; }
+.dcb-detection-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+.dcb-detection-heading strong { font-size: 16px; }
+.dcb-detection-card p { margin: 0; font-size: 12px; color: var(--reading-muted); }
+.dcb-detection-card .dcb-detection-options { display: flex; flex-wrap: wrap; gap: 10px 18px; }
+.dcb-detection-options label { display: flex; align-items: center; gap: 7px; font-size: 13px; }
+.dcb-detection-card input[type=checkbox] { accent-color: #799fff; }
+.dcb-detection-sensitivity { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 12px; font-size: 13px; }
+.dcb-detection-card select { width: 100%; min-width: 0; min-height: 36px; padding: 7px; color: #edf2fb; background: #0e1521; border: 1px solid #485570; border-radius: 7px; font: inherit; }
+.dcb-detection-card :disabled { opacity: .5; }
+.dcb-detection-card details { font-size: 12px; color: var(--reading-muted); }
+.dcb-detection-card summary { cursor: pointer; color: #c4d3ee; }
+.dcb-detection-card details p { margin-top: 8px; }
+.dcb-detection-card a { color: #a8c4ff; }
+.dcb-detection-card [data-detection-status] { padding-top: 12px; border-top: 1px solid #364258; color: #b7d2ff; overflow-wrap: anywhere; }
+.dcb-detection-card [data-error=true] { color: #ffb9aa; }
+.font-panel, .font-card { min-width: 0; }
+.font-panel .font-panel-head { gap: 8px; }
+.font-panel .font-brand { min-width: 0; }
+.font-panel .font-title-stack strong { font-size: 15px; letter-spacing: 0; text-shadow: none; }
+.font-panel .font-title-stack span { font-size: 11px; }
+.font-panel .font-field { display: grid; grid-template-columns: 1fr; gap: 6px; }
+.font-panel .font-size-row { grid-template-columns: 42px minmax(0, 1fr) 48px; }
+.font-panel .font-toggle-row { align-items: flex-start; }
+.font-panel .font-toggle-copy small { white-space: normal; text-overflow: clip; overflow: visible; }
+#dcbFontPreview { margin: 0; padding: 12px; border: 1px solid #42506b; border-radius: 9px; background: #0d1420; color: #edf2fb; }
+.dcb-font-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.dcb-font-actions small { flex: 1 1 160px; color: #aebbd0; font-size: 11px; line-height: 1.6; }
+#dcbFontReset { min-height: 34px; font-size: 12px; }

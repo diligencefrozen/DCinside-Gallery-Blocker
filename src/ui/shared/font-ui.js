@@ -1,11 +1,6 @@
-/*****************************************************************
- * font-ui.js — popup/options 글꼴 UI
- *****************************************************************/
+/* Shared reading-font controls. Settings menus keep their own stable typography. */
 (() => {
   if (!window.DCBFont || !globalThis.chrome?.storage?.sync) return;
-
-  const FONT_LINK_ID = "dcb-ui-google-font";
-  const FONT_STYLE_ID = "dcb-ui-font-style";
 
   const fontSelect = document.getElementById("dcbFontFamily");
   const customInput = document.getElementById("dcbFontCustomFamily");
@@ -14,192 +9,135 @@
   const applyToDcToggle = document.getElementById("dcbApplyFontToDc");
   const fontHint = document.getElementById("dcbFontHint");
   const googleFontsLink = document.getElementById("dcbGoogleFontsLink");
-
+  const resetButton = document.getElementById("dcbFontReset");
+  const fontPreview = document.getElementById("dcbFontPreview");
   if (!fontSelect && !customInput && !fontScaleRange && !applyToDcToggle) return;
 
   let saveTimer = null;
+  let requestVersion = 0;
 
-  function ensureFontLink() {
-    let link = document.getElementById(FONT_LINK_ID);
-
-    if (!link) {
-      link = document.createElement("link");
-      link.id = FONT_LINK_ID;
-      link.rel = "stylesheet";
-      document.head.appendChild(link);
+  function ensureNode(id, tag) {
+    let node = document.getElementById(id);
+    if (!node) {
+      node = document.createElement(tag);
+      node.id = id;
+      document.head.appendChild(node);
     }
-
-    return link;
-  }
-
-  function ensureFontStyle() {
-    let style = document.getElementById(FONT_STYLE_ID);
-
-    if (!style) {
-      style = document.createElement("style");
-      style.id = FONT_STYLE_ID;
-      document.head.appendChild(style);
-    }
-
-    return style;
+    return node;
   }
 
   function setScaleValue(scale) {
     const safeScale = DCBFont.normalizeFontScale(scale);
-
     if (fontScaleRange) {
       fontScaleRange.min = DCBFont.MIN_FONT_SCALE;
       fontScaleRange.max = DCBFont.MAX_FONT_SCALE;
       fontScaleRange.step = 5;
       fontScaleRange.value = String(safeScale);
+      fontScaleRange.setAttribute("aria-valuetext", `원래 글자 크기의 ${safeScale}%`);
     }
-
-    if (fontScaleValue) {
-      fontScaleValue.textContent = `${safeScale}%`;
-    }
-
+    if (fontScaleValue) fontScaleValue.textContent = `${safeScale}%`;
     return safeScale;
   }
 
-  function applyUiFont(conf = {}) {
-    const fontFamily = DCBFont.getEffectiveFontFamily(conf);
-    const fontScale = DCBFont.normalizeFontScale(conf.dcbFontScale);
-    const ratio = (fontScale / 100).toFixed(2);
-    const stack = DCBFont.cssFontStack(fontFamily);
-
-    ensureFontLink().href = DCBFont.googleFontHref(fontFamily);
-    ensureFontStyle().textContent = `
-      :root { --dcb-font-scale: ${ratio}; }
-
-      html, body, button, input, select, textarea {
-        font-family: ${stack} !important;
+  function showPreview(conf) {
+    const family = DCBFont.getEffectiveFontFamily(conf);
+    const scale = DCBFont.normalizeFontScale(conf.dcbFontScale);
+    const link = ensureNode("dcb-ui-google-font", "link");
+    link.rel = "stylesheet";
+    const href = DCBFont.googleFontHref(family);
+    if (link.getAttribute("href") !== href) link.href = href;
+    ensureNode("dcb-ui-font-style", "style").textContent = `
+      #dcbFontPreview {
+        font-family:${DCBFont.cssFontStack(family)} !important;
+        font-size:${14 * scale / 100}px !important;
+        line-height:1.6; overflow-wrap:anywhere; white-space:normal;
       }
-
-      body {
-        line-height: 1.55 !important;
-        -webkit-text-size-adjust: 100%;
-        text-size-adjust: 100%;
-      }
-
-      button, input, select, textarea {
-        line-height: 1.45 !important;
-      }
-
-      #dcbFontFamily,
-      #dcbFontCustomFamily {
-        width: 100% !important;
-        min-width: 0 !important;
-        min-height: 36px !important;
-        font-size: clamp(13px, calc(14px * var(--dcb-font-scale)), 18px) !important;
-      }
-
-      #dcbFontScale {
-        width: 100% !important;
-        min-width: 0 !important;
-      }
-
-      #dcbFontScaleValue,
-      #dcbFontHint {
-        font-size: clamp(11px, calc(12px * var(--dcb-font-scale)), 15px) !important;
-        line-height: 1.45 !important;
-      }
+      #dcbFontFamily, #dcbFontCustomFamily { width:100%; min-width:0; min-height:36px; }
+      #dcbFontScale { width:100%; min-width:0; }
+      #dcbFontHint { display:block; white-space:normal; overflow-wrap:anywhere; line-height:1.5; }
     `;
-
+    if (fontPreview) fontPreview.title = `${family} · ${scale}% 미리보기`;
     if (fontHint) {
-      const isDefault = fontFamily === DCBFont.DEFAULT_FONT_FAMILY && fontScale === DCBFont.DEFAULT_FONT_SCALE;
-      const applyToDc = conf.dcbApplyFontToDc !== false;
-      fontHint.textContent = isDefault
-        ? `기본값: Noto Sans Korean Regular 400 · ${fontScale}% · 디시 적용 ${applyToDc ? "ON" : "OFF"}`
-        : `현재: ${fontFamily} Regular 400 · ${fontScale}% · 디시 적용 ${applyToDc ? "ON" : "OFF"}`;
+      fontHint.textContent = conf.dcbApplyFontToDc === true
+        ? `제목·본문·댓글에 ${scale}%로 적용 중. 끄면 원래 글꼴과 크기로 돌아갑니다.`
+        : "디시 기본 글꼴 사용 중. 켜면 선택한 글꼴과 크기를 적용합니다.";
     }
   }
 
-  function renderControls(conf = {}) {
-    const selectedValue = DCBFont.getSelectValue(conf);
-    DCBFont.populateFontSelect(fontSelect, selectedValue);
-
+  function renderControls(settings, { force = false } = {}) {
+    const conf = { ...DCBFont.STORAGE_DEFAULTS, ...settings };
+    const selected = DCBFont.getSelectValue(conf);
+    DCBFont.populateFontSelect(fontSelect, selected);
     if (customInput) {
-      if (document.activeElement !== customInput) {
-        customInput.value = conf.dcbFontCustomFamily || "";
+      if (force || document.activeElement !== customInput) {
+        customInput.value = selected === DCBFont.CUSTOM_FONT_VALUE && conf.dcbFontFamily !== DCBFont.CUSTOM_FONT_VALUE
+          ? DCBFont.getEffectiveFontFamily(conf) : conf.dcbFontCustomFamily || "";
       }
-      customInput.style.display = selectedValue === DCBFont.CUSTOM_FONT_VALUE ? "block" : "none";
+      customInput.style.display = selected === DCBFont.CUSTOM_FONT_VALUE ? "block" : "none";
     }
-
     setScaleValue(conf.dcbFontScale);
-
-    if (applyToDcToggle) {
-      applyToDcToggle.checked = conf.dcbApplyFontToDc !== false;
-    }
-
-    if (googleFontsLink) {
-      googleFontsLink.href = DCBFont.GOOGLE_FONTS_KOREAN_URL;
-    }
-
-    applyUiFont(conf);
+    if (applyToDcToggle) applyToDcToggle.checked = conf.dcbApplyFontToDc === true;
+    if (googleFontsLink) googleFontsLink.href = DCBFont.GOOGLE_FONTS_KOREAN_URL;
+    showPreview(conf);
   }
 
   function getCurrentPatch() {
-    const selected = fontSelect ? fontSelect.value : DCBFont.DEFAULT_FONT_FAMILY;
-    const custom = DCBFont.normalizeFontFamily(customInput?.value || "");
-    const scale = DCBFont.normalizeFontScale(fontScaleRange?.value || DCBFont.DEFAULT_FONT_SCALE);
-
     return {
-      dcbFontFamily: selected,
-      dcbFontCustomFamily: custom,
-      dcbFontScale: scale,
-      dcbApplyFontToDc: applyToDcToggle ? !!applyToDcToggle.checked : true
+      dcbFontFamily: fontSelect?.value || DCBFont.DEFAULT_FONT_FAMILY,
+      dcbFontCustomFamily: DCBFont.normalizeFontFamily(customInput?.value || ""),
+      dcbFontScale: DCBFont.normalizeFontScale(fontScaleRange?.value || DCBFont.DEFAULT_FONT_SCALE),
+      dcbApplyFontToDc: !!applyToDcToggle?.checked
     };
   }
 
+  function persist(patch) {
+    saveTimer = null;
+    chrome.storage.sync.set(patch, () => {
+      if (chrome.runtime?.lastError && fontHint) {
+        fontHint.textContent = "글꼴 설정을 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.";
+      }
+    });
+  }
+
   function saveFontSettings({ immediate = false } = {}) {
+    ++requestVersion;
     const patch = getCurrentPatch();
-
-    if (customInput) {
-      customInput.style.display = patch.dcbFontFamily === DCBFont.CUSTOM_FONT_VALUE ? "block" : "none";
-    }
-
+    if (customInput) customInput.style.display = patch.dcbFontFamily === DCBFont.CUSTOM_FONT_VALUE ? "block" : "none";
     setScaleValue(patch.dcbFontScale);
-    applyUiFont(patch);
-
-    if (saveTimer) clearTimeout(saveTimer);
-
-    const persist = () => chrome.storage.sync.set(patch);
-
-    if (immediate) persist();
-    else saveTimer = setTimeout(persist, 120);
+    showPreview(patch);
+    clearTimeout(saveTimer);
+    if (immediate) persist(patch);
+    else saveTimer = setTimeout(() => persist(patch), 180);
   }
 
-  chrome.storage.sync.get(DCBFont.STORAGE_DEFAULTS, renderControls);
-
-  if (fontSelect) {
-    fontSelect.addEventListener("change", () => saveFontSettings({ immediate: true }));
+  function loadControls() {
+    const version = ++requestVersion;
+    chrome.storage.sync.get(DCBFont.STORAGE_DEFAULTS, (conf) => {
+      if (version === requestVersion && !chrome.runtime?.lastError) renderControls(conf);
+    });
   }
 
-  if (customInput) {
-    customInput.addEventListener("input", () => saveFontSettings());
-    customInput.addEventListener("change", () => saveFontSettings({ immediate: true }));
-    customInput.addEventListener("blur", () => saveFontSettings({ immediate: true }));
+  if (fontHint) {
+    fontHint.setAttribute("role", "status");
+    fontHint.setAttribute("aria-live", "polite");
   }
-
-  if (fontScaleRange) {
-    fontScaleRange.addEventListener("input", () => saveFontSettings());
-    fontScaleRange.addEventListener("change", () => saveFontSettings({ immediate: true }));
-  }
-
-  if (applyToDcToggle) {
-    applyToDcToggle.addEventListener("change", () => saveFontSettings({ immediate: true }));
-  }
+  fontSelect?.addEventListener("change", () => saveFontSettings({ immediate: true }));
+  customInput?.addEventListener("input", () => saveFontSettings());
+  customInput?.addEventListener("change", () => saveFontSettings({ immediate: true }));
+  customInput?.addEventListener("blur", () => saveFontSettings({ immediate: true }));
+  fontScaleRange?.addEventListener("input", () => saveFontSettings());
+  fontScaleRange?.addEventListener("change", () => saveFontSettings({ immediate: true }));
+  applyToDcToggle?.addEventListener("change", () => saveFontSettings({ immediate: true }));
+  resetButton?.addEventListener("click", () => {
+    ++requestVersion;
+    clearTimeout(saveTimer);
+    const defaults = { ...DCBFont.STORAGE_DEFAULTS };
+    renderControls(defaults, { force: true });
+    persist(defaults);
+  });
 
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area !== "sync") return;
-
-    if (
-      changes.dcbFontFamily ||
-      changes.dcbFontCustomFamily ||
-      changes.dcbFontScale ||
-      changes.dcbApplyFontToDc
-    ) {
-      chrome.storage.sync.get(DCBFont.STORAGE_DEFAULTS, renderControls);
-    }
+    if (area === "sync" && Object.keys(DCBFont.STORAGE_DEFAULTS).some((key) => key in changes)) loadControls();
   });
+  loadControls();
 })();

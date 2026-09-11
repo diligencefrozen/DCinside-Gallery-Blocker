@@ -140,51 +140,6 @@
       }
 
       /*
-        댓글/본문 작성자 영역
-      */
-
-      .cmt_nickbox .gall_writer.${WRITER_ENHANCED_CLASS},
-      .cmt_info .gall_writer.${WRITER_ENHANCED_CLASS},
-      .reply_info .gall_writer.${WRITER_ENHANCED_CLASS},
-      .cmt_nickbox .ub-writer.${WRITER_ENHANCED_CLASS},
-      .cmt_info .ub-writer.${WRITER_ENHANCED_CLASS},
-      .reply_info .ub-writer.${WRITER_ENHANCED_CLASS}{
-        display:inline-flex !important;
-        align-items:center !important;
-        flex-wrap:wrap !important;
-        gap:3px !important;
-        max-width:100% !important;
-        white-space:normal !important;
-        overflow:visible !important;
-      }
-
-      .cmt_nickbox .gall_writer.${WRITER_ENHANCED_CLASS} > .nickname,
-      .cmt_info .gall_writer.${WRITER_ENHANCED_CLASS} > .nickname,
-      .reply_info .gall_writer.${WRITER_ENHANCED_CLASS} > .nickname{
-        flex:0 1 auto !important;
-        min-width:0 !important;
-        max-width:none !important;
-        white-space:normal !important;
-        overflow:visible !important;
-        text-overflow:clip !important;
-        word-break:break-all !important;
-      }
-
-      .cmt_nickbox .gall_writer.${WRITER_ENHANCED_CLASS} > .writer_nikcon,
-      .cmt_info .gall_writer.${WRITER_ENHANCED_CLASS} > .writer_nikcon,
-      .reply_info .gall_writer.${WRITER_ENHANCED_CLASS} > .writer_nikcon{
-        flex:0 0 auto !important;
-      }
-
-      .cmt_nickbox .gall_writer.${WRITER_ENHANCED_CLASS} > .${WRITER_TOOLS_CLASS},
-      .cmt_info .gall_writer.${WRITER_ENHANCED_CLASS} > .${WRITER_TOOLS_CLASS},
-      .reply_info .gall_writer.${WRITER_ENHANCED_CLASS} > .${WRITER_TOOLS_CLASS}{
-        flex:0 0 auto !important;
-        margin-left:5px !important;
-        transform:translateX(2px) !important;
-      }
-
-      /*
         게시물 목록 작성자 칸 전용 최적화
         실제 구조:
         td.gall_writer
@@ -413,22 +368,6 @@
       }
 
       @media (max-width:640px){
-        .cmt_nickbox .gall_writer.${WRITER_ENHANCED_CLASS},
-        .cmt_info .gall_writer.${WRITER_ENHANCED_CLASS},
-        .reply_info .gall_writer.${WRITER_ENHANCED_CLASS},
-        .cmt_nickbox .ub-writer.${WRITER_ENHANCED_CLASS},
-        .cmt_info .ub-writer.${WRITER_ENHANCED_CLASS},
-        .reply_info .ub-writer.${WRITER_ENHANCED_CLASS}{
-          row-gap:4px !important;
-        }
-
-        .cmt_nickbox .gall_writer.${WRITER_ENHANCED_CLASS} > .${WRITER_TOOLS_CLASS},
-        .cmt_info .gall_writer.${WRITER_ENHANCED_CLASS} > .${WRITER_TOOLS_CLASS},
-        .reply_info .gall_writer.${WRITER_ENHANCED_CLASS} > .${WRITER_TOOLS_CLASS}{
-          margin-left:7px !important;
-          transform:translateX(3px) !important;
-        }
-
         .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} .${BADGE},
         td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] .${BADGE}{
           max-width:50px !important;

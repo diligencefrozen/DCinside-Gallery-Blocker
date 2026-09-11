@@ -82,7 +82,7 @@ const DEFAULTS = {
   hideComment: false,
   hideImgComment: false,
   hideDccon: false,
-  previewEnabled: false,
+  previewEnabled: true,
 
   keywordBlockEnabled: false,
   blockedKeywords: [],
@@ -122,7 +122,7 @@ const DEFAULTS = {
   dcbFontFamily: "Noto Sans KR",
   dcbFontCustomFamily: "",
   dcbFontScale: 100,
-  dcbApplyFontToDc: true
+  dcbApplyFontToDc: false
 };
 
 let userBlockEnabledState = true;
@@ -1599,7 +1599,7 @@ chrome.storage.onChanged.addListener((c, a) => {
     if (c.hideComment) setChecked(hideCmtToggle, c.hideComment.newValue);
     if (c.hideImgComment) setChecked(hideImgCmtToggle, c.hideImgComment.newValue);
     if (c.hideDccon) setChecked(hideDcconToggle, c.hideDccon.newValue);
-    if (c.previewEnabled) setChecked(previewToggle, c.previewEnabled.newValue);
+    if (c.previewEnabled) setChecked(previewToggle, c.previewEnabled.newValue !== false);
 
     if (c.keywordBlockEnabled) {
       setChecked(keywordBlockToggle, c.keywordBlockEnabled.newValue);

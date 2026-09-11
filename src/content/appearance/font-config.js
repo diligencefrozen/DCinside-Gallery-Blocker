@@ -10,10 +10,10 @@
   const GOOGLE_FONTS_KOREAN_URL = "https://fonts.google.com/?query=korean&preview.script=Kore&preview.lang=ko_Kore";
 
   const FONT_CHOICES = [
-    { value: DEFAULT_FONT_FAMILY, label: "Noto Sans Korean / Noto Sans KR" },
+    { value: DEFAULT_FONT_FAMILY, label: "본고딕 (Noto Sans KR)" },
     { value: "Nanum Gothic", label: "나눔고딕 / Nanum Gothic" },
     { value: "Nanum Myeongjo", label: "나눔명조 / Nanum Myeongjo" },
-    { value: "Noto Serif KR", label: "Noto Serif Korean / Noto Serif KR" },
+    { value: "Noto Serif KR", label: "본명조 (Noto Serif KR)" },
     { value: "IBM Plex Sans KR", label: "IBM Plex Sans KR" },
     { value: "Gowun Dodum", label: "고운돋움 / Gowun Dodum" },
     { value: "Gowun Batang", label: "고운바탕 / Gowun Batang" },
@@ -26,14 +26,14 @@
     { value: "Single Day", label: "Single Day" },
     { value: "Hi Melody", label: "Hi Melody" },
     { value: "Sunflower", label: "Sunflower" },
-    { value: CUSTOM_FONT_VALUE, label: "직접 입력 — Google Fonts family name" }
+    { value: CUSTOM_FONT_VALUE, label: "다른 Google 글꼴 직접 입력" }
   ];
 
   const STORAGE_DEFAULTS = {
     dcbFontFamily: DEFAULT_FONT_FAMILY,
     dcbFontCustomFamily: "",
     dcbFontScale: DEFAULT_FONT_SCALE,
-    dcbApplyFontToDc: true
+    dcbApplyFontToDc: false
   };
 
   function normalizeFontFamily(value) {

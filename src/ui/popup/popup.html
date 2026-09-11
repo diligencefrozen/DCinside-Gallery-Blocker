@@ -1038,6 +1038,7 @@
   .media-risk-status{min-height:14px;color:#9dd6a5;font-size:9.8px;line-height:1.35;text-align:right}
 
 </style>
+<link rel="stylesheet" href="../shared/reading-settings.css">
 </head>
 <body>
   <h1>디시갤 차단기</h1>
@@ -1342,7 +1343,22 @@
       <span class="slider"></span>
     </label>
   </label>
-  <p class="hint">게시글의 핵심 부분만 빠르게 확인합니다.</p>
+  <p class="hint">게시글 제목을 마우스 오른쪽 버튼으로 클릭해 본문·댓글·영상을 확인합니다. 기본으로 켜져 있습니다.</p>
+
+  <section class="dcb-detection-card" data-text-detection-settings aria-label="문장 분석 설정">
+    <div class="dcb-detection-heading">
+      <strong>갈등 표현 감지</strong>
+      <label class="switch" aria-label="갈등 표현 감지 사용"><input type="checkbox" data-detection-field="enabled"><span class="slider"></span></label>
+    </div>
+    <p>보고 있는 문장을 기기 안에서 분석해 참고 표시를 붙입니다. 본문과 댓글은 외부로 전송하지 않습니다.</p>
+    <div class="dcb-detection-options">
+      <label><input type="checkbox" data-detection-field="comments">댓글</label>
+      <label><input type="checkbox" data-detection-field="posts">게시글 본문 · 실험</label>
+    </div>
+    <label class="dcb-detection-sensitivity">탐지 기준<select data-detection-field="sensitivity"><option value="careful">신중 · 의심 표시 적게</option><option value="balanced">보통</option><option value="sensitive">민감 · 더 넓게 표시</option></select></label>
+    <details><summary>결과를 읽는 방법</summary><p>사람이나 계정의 정체·의도를 판정하지 않습니다. 오탐이 있으며 자동으로 차단하지 않습니다. 댓글용 모델이라 게시글의 정확도는 검증되지 않았고, 긴 글은 앞부분을 중심으로 분석합니다.</p><p><a href="../../../docs/text-detection.html" target="_blank" rel="noopener">자세한 사용 안내</a></p></details>
+    <p data-detection-status role="status" aria-live="polite">설정을 불러오는 중입니다.</p>
+  </section>
 
   <hr class="divider">
 
@@ -1578,35 +1594,37 @@
       <div class="font-brand">
         <span class="font-mark">Aa</span>
         <div class="font-title-stack">
-          <strong>Typography</strong>
-          <span>UI &amp; DC font</span>
+          <strong>읽기 편한 글꼴</strong>
+          <span>디시 제목·본문·댓글</span>
         </div>
       </div>
-      <a id="dcbGoogleFontsLink" class="font-link" href="https://fonts.google.com/?query=korean&amp;preview.script=Kore&amp;preview.lang=ko_Kore" target="_blank" rel="noopener noreferrer">Fonts ↗</a>
+      <a id="dcbGoogleFontsLink" class="font-link" href="https://fonts.google.com/?query=korean&amp;preview.script=Kore&amp;preview.lang=ko_Kore" target="_blank" rel="noopener noreferrer">글꼴 둘러보기 ↗</a>
     </div>
 
     <div class="font-field">
-      <label for="dcbFontFamily">Family</label>
+      <label for="dcbFontFamily">글꼴</label>
       <select id="dcbFontFamily" class="font-select" title="사용할 글꼴 선택"></select>
     </div>
-    <input id="dcbFontCustomFamily" class="font-custom" type="text" placeholder="Google Fonts family name">
+    <input id="dcbFontCustomFamily" class="font-custom" type="text" aria-label="직접 입력할 글꼴 이름" placeholder="Google Fonts 글꼴 이름 입력">
 
     <div class="font-size-row" title="선택한 글꼴이 작거나 크게 보일 때 보정합니다">
-      <label for="dcbFontScale">Size</label>
+      <label for="dcbFontScale">크기</label>
       <input type="range" id="dcbFontScale" min="90" max="140" step="5" value="100">
       <output id="dcbFontScaleValue" class="font-scale-value">100%</output>
     </div>
 
     <label class="font-toggle-row">
       <span class="font-toggle-copy">
-        <span>Apply to DC</span>
-        <small id="dcbFontHint">Default · 100% · ON</small>
+        <span>디시 글꼴 변경</span>
+        <small id="dcbFontHint">디시 기본 글꼴 사용 중</small>
       </span>
       <span class="switch">
         <input type="checkbox" id="dcbApplyFontToDc">
         <span class="slider"></span>
       </span>
     </label>
+  <p id="dcbFontPreview">가나다, 읽기 편한 글꼴을 골라 보세요.<br>게시글과 댓글 예시 · 123 ABC</p>
+  <div class="dcb-font-actions"><button type="button" id="dcbFontReset">기본값 복원</button><small>끄면 원래 글꼴·크기로 돌아갑니다. 메뉴와 버튼은 원래 크기를 유지합니다.</small></div>
   </div>
 
   <button id="openOptions">설정 메뉴 열기</button>
@@ -1619,5 +1637,7 @@
   <script src="../shared/dccon-block-options.js"></script>
   <script src="../shared/keyword-hide-ui.js"></script>
   <script src="../shared/image-account-settings-ui.js"></script>
+  <script src="../../shared/detection-config.js"></script>
+  <script src="../shared/text-detection-ui.js"></script>
 </body>
 </html>

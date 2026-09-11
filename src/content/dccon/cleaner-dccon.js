@@ -2,7 +2,8 @@
 cleaner-dccon.js - 디시콘(DCcon) 숨기기
  *****************************************************************/
 (() => {
-  const COMMENT_DCCON_SEL = 'div.comment_dccon, .comment_dccon, .dcbpv-dccon, [reqpath*=\"dccon\"]';  // 댓글 속 디시콘/미리보기 디시콘
+  const TEXTCON_SEL = '.coment_dccon_txt, .comment_dccon_txt, .txtcon_txt';
+  const COMMENT_DCCON_SEL = `.comment_dccon, .coment_dccon_img, .dcbpv-dccon, [reqpath*="dccon"], ${TEXTCON_SEL}`;
   const LEGACY_PLACEHOLDER_SEL = '.dcb-dccon-blocked[data-dcb-replaced="true"], .dcb-dccon-blocked';
   const COMMENT_ROW_SEL = [
     // DCInside 댓글 최상위 래퍼. 디시콘 댓글 제거의 1순위 타깃입니다.
@@ -29,6 +30,7 @@ cleaner-dccon.js - 디시콘(DCcon) 숨기기
     'img.written_dccon',             // 본문 속 디시콘 (img)
     '.written_dccon',                // 모든 written_dccon 클래스
     '.dcbpv-dccon',                  // 미리보기에서 정규화한 디시콘
+    TEXTCON_SEL,
     'img[src*=\"dccon.php\"]',
     'video[src*=\"dccon\"]',
     'source[src*=\"dccon\"]',
@@ -42,16 +44,7 @@ cleaner-dccon.js - 디시콘(DCcon) 숨기기
   const SELECTIVE_HIDDEN_SEL = '.dcb-selective-dccon-hidden, [data-dcb-selective-dccon-hidden="true"]';
   const CSS_RULE = `
     /* Chrome 계열에서는 :has()로 디시콘 댓글 행을 CSS 단계에서 먼저 숨깁니다. */
-    div.cmt_info:has(.comment_dccon),
-    li.ub-content:has(.comment_dccon),
-    li[id^="comment_li_"]:has(.comment_dccon),
-    li[id^="reply_"]:has(.comment_dccon),
-    .cmt_item:has(.comment_dccon),
-    .reply_item:has(.comment_dccon),
-    .comment_item:has(.comment_dccon),
-    .dcbpv-comment-item:has(.dcbpv-dccon),
-    .dcbpv-comment-item:has(.comment_dccon),
-    .dcbpv-comment-item:has(img[src*=\"dccon.php\"]),
+    :is(${COMMENT_ROW_SEL}):has(:is(${COMMENT_DCCON_SEL}, ${CONTENT_DCCON_SELS.join(',')})),
     .${COMMENT_HIDDEN_CLASS},
     .${CONTENT_HIDDEN_CLASS},
     ${LEGACY_PLACEHOLDER_SEL} {

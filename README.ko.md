@@ -37,7 +37,7 @@
 | 평점 | **5점 만점에 4.8점** |
 | 평점 수 | **18개** |
 | 현재 버전 | **7.3.37.2026** |
-| 지원 환경 | **Chrome 105 이상 · Manifest V3** |
+| 지원 환경 | **Chrome 116 이상 · Manifest V3** |
 | 개발 언어 | **JavaScript · HTML · CSS** |
 | 배포 | **Chrome 웹 스토어** |
 
@@ -46,6 +46,8 @@
 ---
 
 ## 왜 만들었나요?
+
+개발 중인 읽기 기능 개선: 미리보기 기본 활성화, 댓글 줄바꿈·영상 재생·텍스트콘 숨기기 수정, 원상 복원이 가능한 글꼴 설정, 선택형 기기 내 문장 분석이 포함됩니다. 모델까지 포함해 설치하는 방법은 [개발·검증 안내](docs/reading-and-detection.md), 분석 범위는 [사용 안내](docs/text-detection.html)를 확인하세요.
 
 디시인사이드를 이용하다 보면 보고 싶지 않은 글이나 댓글을 여러 곳에서 다시 마주치게 됩니다.
 
@@ -381,7 +383,7 @@ src/
 | 프로그래밍 언어 | JavaScript |
 | 화면 구성 | HTML, CSS |
 | 확장 프로그램 방식 | Chrome Manifest V3 |
-| 최소 Chrome 버전 | 105 |
+| 최소 Chrome 버전 | 116 |
 | 설정과 자료 저장 | Chrome Storage API |
 | 네트워크 단계 차단 | Declarative Net Request |
 | 브라우저 뒤 작업 | Service Worker |

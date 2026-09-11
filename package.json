@@ -1,0 +1,22 @@
+{
+  "name": "dcinside-gallery-blocker",
+  "private": true,
+  "scripts": {
+    "build:detector": "node scripts/build-detector.mjs",
+    "prepare:detector": "node scripts/prepare-detector.mjs",
+    "package:extension": "node scripts/package-extension.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "test:browser": "node --test tests/*.test.cjs",
+    "test:preview": "node tests/preview-regression.cjs",
+    "test:runtime": "node tests/detector-runtime.cjs",
+    "test:extension": "node tests/extension-integration.cjs"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "3.8.1",
+    "onnxruntime-web": "1.27.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.9",
+    "playwright": "1.62.1"
+  }
+}

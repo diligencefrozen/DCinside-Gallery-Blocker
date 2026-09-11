@@ -38,7 +38,7 @@ Block unwanted galleries, posts, comments, users, keywords, images, and other di
 | Store rating | **4.8 / 5** |
 | Ratings | **18** |
 | Current release | **7.3.37.2026** |
-| Platform | **Chrome 105+ · Manifest V3** |
+| Platform | **Chrome 116+ · Manifest V3** |
 | Stack | **JavaScript · HTML · CSS** |
 | Distribution | **Chrome Web Store** |
 
@@ -366,7 +366,7 @@ Some features request information directly from approved DCinside services when 
 | Interface | HTML, CSS |
 | Platform | Chrome Extension |
 | Extension model | Manifest V3 |
-| Minimum Chrome version | 105 |
+| Minimum Chrome version | 116 |
 | Local data | Chrome Storage API |
 | Network blocking | Declarative Net Request |
 | Background tasks | Service Worker |

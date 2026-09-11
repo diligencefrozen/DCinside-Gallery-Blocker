@@ -101,7 +101,7 @@ const BACKUP_KEYS = [
   DCCON_BLOCK_STATE_KEY,
   "keywordBlockEnabled", "blockedKeywords", "keywordBlockTargets",
   "keywordHideEnabled", "hiddenKeywords", "keywordHideTargets",
-  "dcbFontFamily", "dcbFontCustomFamily", "dcbFontScale", "dcbApplyFontToDc"
+  "dcbFontFamily", "dcbFontCustomFamily", "dcbFontScale", "dcbApplyFontToDc", "dcbTextDetection"
 ];
 
 const BACKUP_DEFAULTS = {
@@ -132,7 +132,7 @@ const BACKUP_DEFAULTS = {
   showMemberIpInfo: true,
   linkWarnEnabled: true,
   hideDCGray: undefined,
-  previewEnabled: false,
+  previewEnabled: true,
   hideAnonymousEnabled: false,
   gamemecaBlockEnabled: true,
   doryBlockEnabled: true,
@@ -154,7 +154,8 @@ const BACKUP_DEFAULTS = {
   dcbFontFamily: "Noto Sans KR",
   dcbFontCustomFamily: "",
   dcbFontScale: 100,
-  dcbApplyFontToDc: true
+  dcbApplyFontToDc: false,
+  dcbTextDetection: { enabled: false, posts: true, comments: true, sensitivity: "careful" }
 };
 
 /* ───── DOM 캐시 ───── */
@@ -2025,7 +2026,7 @@ chrome.storage.sync.get(
     hideComment: false,
     hideImgComment: false,
     hideDccon: false,
-    previewEnabled: false,
+    previewEnabled: true,
     hideAnonymousEnabled: false,
     gamemecaBlockEnabled: true,
     doryBlockEnabled: true,
@@ -2037,7 +2038,7 @@ chrome.storage.sync.get(
     keywordBlockTargets: KEYWORD_DEFAULT_TARGETS,
     dcbFontFamily: "Noto Sans KR",
     dcbFontCustomFamily: "",
-    dcbApplyFontToDc: true
+    dcbApplyFontToDc: false
   },
   ({
     blockedIds,
@@ -2250,7 +2251,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
     }
 
     if (changes.previewEnabled && previewEnabledEl) {
-      previewEnabledEl.checked = !!changes.previewEnabled.newValue;
+      previewEnabledEl.checked = changes.previewEnabled.newValue !== false;
     }
 
     if (changes.hideAnonymousEnabled && hideAnonymousEl) {
