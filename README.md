@@ -37,7 +37,7 @@ Block unwanted galleries, posts, comments, users, keywords, images, and other di
 | Chrome Web Store users | **792** |
 | Store rating | **4.8 / 5** |
 | Ratings | **18** |
-| Current release | **7.3.37.2026** |
+| Current release | **7.3.39.2026** |
 | Platform | **Chrome 116+ · Manifest V3** |
 | Stack | **JavaScript · HTML · CSS** |
 | Distribution | **Chrome Web Store** |
