@@ -192,20 +192,31 @@
     box-shadow:inset 0 1px 0 rgba(255,255,255,.04);
   }
   .block-summary-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
-  .block-summary-head strong{font-size:13px;font-weight:900;color:#f8fbff}
-  .block-version{font-size:10px;font-weight:800;color:#a9c2ff;background:#18233a;border:1px solid rgba(79,124,255,.24);border-radius:999px;padding:3px 7px}
+  .block-summary-head strong{font-size:14px;font-weight:900;color:#f8fbff}
+  .block-version{font-size:11px;line-height:1.25;font-weight:800;color:#a9c2ff;background:#18233a;border:1px solid rgba(79,124,255,.24);border-radius:999px;padding:3px 7px}
   .block-summary-numbers{display:grid;grid-template-columns:1fr 1fr;gap:8px}
   .block-stat{padding:9px 10px;border:1px solid rgba(148,163,184,.13);border-radius:11px;background:rgba(7,12,22,.48)}
-  .block-stat span{display:block;color:#91a4bf;font-size:10px;font-weight:700;margin-bottom:2px}
-  .block-stat strong{display:block;color:#fff;font-size:21px;line-height:1.1;font-weight:900;font-variant-numeric:tabular-nums}
+  .block-stat span{display:block;color:#a6b5ca;font-size:11.5px;line-height:1.35;font-weight:750;margin-bottom:2px}
+  .block-stat strong{display:block;color:#fff;font-size:22px;line-height:1.15;font-weight:900;font-variant-numeric:tabular-nums}
+  .block-history{padding:9px 10px 8px;border:1px solid rgba(148,163,184,.13);border-radius:11px;background:rgba(7,12,22,.38)}
+  .block-history-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:7px}
+  .block-history-head>span{color:#a8b8d0;font-size:11.5px;line-height:1.3;font-weight:800}
+  .block-history-head>strong{color:#dbe7ff;font-size:11.5px;line-height:1.3;font-weight:850;font-variant-numeric:tabular-nums}
+  .block-history-chart{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));align-items:end;gap:5px;height:70px}
+  .block-history-day{display:grid;grid-template-rows:47px 15px;align-items:end;gap:4px;min-width:0;text-align:center}
+  .block-history-bar-track{position:relative;width:100%;height:47px;border-radius:5px 5px 2px 2px;background:rgba(148,163,184,.07);overflow:hidden}
+  .block-history-bar{position:absolute;inset:auto 0 0;min-height:0;border-radius:5px 5px 2px 2px;background:linear-gradient(180deg,#7da1ff,#4f7cff);box-shadow:0 0 9px rgba(79,124,255,.28);transition:height .2s ease}
+  .block-history-day.is-today .block-history-bar{background:linear-gradient(180deg,#9dc0ff,#5b85ff)}
+  .block-history-label{overflow:hidden;color:#8c9db5;font-size:11px;font-weight:750;line-height:15px;white-space:nowrap;text-overflow:clip}
+  .block-history-day.is-today .block-history-label{color:#cbdcff}
   .block-breakdown{display:flex;flex-wrap:wrap;gap:5px;min-height:20px}
-  .block-breakdown-chip{display:inline-flex;align-items:center;gap:4px;padding:3px 7px;border-radius:999px;background:#172033;color:#c8d7ef;font-size:10px;font-weight:750}
-  .block-breakdown-empty{color:#8190a7;font-size:10px;line-height:20px}
+  .block-breakdown-chip{display:inline-flex;align-items:center;gap:4px;padding:4px 7px;border-radius:999px;background:#172033;color:#c8d7ef;font-size:11px;line-height:1.3;font-weight:750}
+  .block-breakdown-empty{color:#91a1b8;font-size:11px;line-height:1.4}
   .update-notice{display:flex;align-items:flex-start;gap:9px;padding:9px 10px;border:1px solid rgba(74,222,128,.24);border-radius:11px;background:rgba(34,197,94,.08);opacity:1;transform:translateY(0);transition:opacity .18s ease,transform .18s ease}
   .update-notice[hidden]{display:none!important}
   .update-notice-copy{flex:1 1 auto;min-width:0}
-  .update-notice-copy strong{display:block;color:#d9ffe5;font-size:11px;line-height:1.4}
-  .update-notice-copy span{display:block;margin-top:2px;color:#9fd6af;font-size:10px;line-height:1.35}
+  .update-notice-copy strong{display:block;color:#d9ffe5;font-size:11.5px;line-height:1.4}
+  .update-notice-copy span{display:block;margin-top:2px;color:#a9dbb7;font-size:11px;line-height:1.4}
   .update-notice.is-leaving{opacity:0;transform:translateY(-4px)}
 
   .quick-gallery-panel{
@@ -1063,6 +1074,39 @@
 
 </style>
 <link rel="stylesheet" href="../shared/reading-settings.css">
+<style>
+  /* Keep the compact popup layout, but make its text hierarchy readable at a glance. */
+  body{
+    font-family:system-ui,-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic","Segoe UI",sans-serif;
+    font-size:16px;
+    line-height:1.45;
+    letter-spacing:-.012em;
+    text-rendering:optimizeLegibility;
+    -webkit-font-smoothing:antialiased;
+  }
+  h1{font-size:20px;font-weight:800;line-height:1.3;letter-spacing:-.025em}
+  :is(button,input,select,textarea){font-family:inherit}
+  button{font-weight:700;line-height:1.35}
+  :is(input[type="number"],select,.row-input input[type="text"],.font-select,.font-custom){font-size:13.5px;line-height:1.35}
+  label.row > span{font-size:16px;font-weight:650;line-height:1.4}
+
+  :is(.hint,.muted,.status){font-size:12.5px!important;line-height:1.55}
+  :is(.user-block-title strong,.quick-gallery-head,.quick-guide-title,.theme-copy strong,.quick-toggle-head strong,.dccon-block-manager-copy strong,.donation-copy strong,.media-essentials-copy strong){font-size:14px;line-height:1.35}
+  :is(.user-block-title span,.quick-gallery-status,.theme-copy small,.dccon-block-manager-copy span,.donation-copy span,.media-essentials-copy span,.font-title-stack span,.font-toggle-copy small,.dcb-font-actions small){font-size:12px;line-height:1.5}
+  :is(.media-row > span,.font-toggle-copy span,.keyword-target-item,.user-memo-body,.dcb-detection-options label,.dcb-detection-sensitivity){font-size:13px;line-height:1.4}
+  .quick-toggle-panel .quick-toggle-grid .row > span{font-size:14px;font-weight:750;line-height:1.4}
+  :is(.quick-guide p,.donation-message,.dccon-block-guide,.dcb-detection-card p,.dcb-detection-card details,.keyword-empty,.uid-empty){font-size:12.5px;line-height:1.55}
+  :is(.user-block-count,.user-block-status,.uid-kind,.user-memo-chip,.quick-toggle-head span,.quick-guide .mini-note,.user-block-off-hint,.donation-badge,.media-pill,.media-row small,.media-status,.media-risk-note,.media-risk-actions button,.media-risk-status,.keyword-list-panel-title small,.keyword-sync-count,.dccon-block-count,.dccon-block-clear,.dccon-block-remove,.dccon-block-manager-badge,.dccon-block-empty,.dccon-block-status){font-size:11.5px;line-height:1.45}
+  .quick-toggle-panel .quick-guide .mini-note{font-size:12px;line-height:1.5}
+
+  :is(.font-link,.font-field label,.font-size-row label,.font-scale-value,.dccon-block-copy strong,.media-actions button,.media-mini-field input[type="number"],.media-risk-head strong,.media-risk-rule,.donation-small-link,.user-block-shortcuts button){font-size:12px;line-height:1.4}
+  :is(.keyword-list-panel-title,.dccon-block-panel-title){font-size:12.5px;line-height:1.4}
+  :is(.section-title){font-size:13.5px;line-height:1.4}
+  :is(.donation-button){font-size:13px}
+  :is(.media-risk-rule input[type="number"],.media-risk-rule select,.dccon-block-copy code,.dccon-block-copy small){font-size:11.5px}
+  .media-row > span{overflow:visible;text-overflow:clip;white-space:normal}
+  :is(code,.quick-gallery-id){letter-spacing:0}
+</style>
 </head>
 <body>
   <h1>디시갤 차단기</h1>
@@ -1075,6 +1119,13 @@
     <div class="block-summary-numbers">
       <div class="block-stat"><span>현재 페이지</span><strong id="blockStatsPageTotal">0</strong></div>
       <div class="block-stat"><span>누적 차단</span><strong id="blockStatsCumulativeTotal">0</strong></div>
+    </div>
+    <div class="block-history" aria-label="최근 7일 차단 그래프">
+      <div class="block-history-head">
+        <span>최근 7일</span>
+        <strong><span id="blockStatsWeekTotal">0</span>개 차단</strong>
+      </div>
+      <div class="block-history-chart" id="blockStatsHistoryChart" role="img" aria-label="최근 7일 동안 차단된 요소 수"></div>
     </div>
     <div class="block-breakdown" id="blockStatsBreakdown" aria-label="현재 페이지 차단 종류">
       <span class="block-breakdown-empty">현재 페이지에서 차단된 요소가 없습니다.</span>
@@ -1686,6 +1737,7 @@
   <script src="../shared/font-ui.js"></script>
   <script src="../../shared/storage/user-block-store.js"></script>
   <script src="../../shared/storage/dccon-block-store.js"></script>
+  <script src="../../shared/block-stats-history.js"></script>
   <script src="popup.js"></script>
   <script src="../shared/dccon-block-options.js"></script>
   <script src="../shared/keyword-hide-ui.js"></script>

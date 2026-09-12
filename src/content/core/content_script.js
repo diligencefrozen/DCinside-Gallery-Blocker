@@ -444,9 +444,11 @@ syncSettings(handleUrl);
     const style = document.createElement("style");
     style.id = STYLE_ID;
     style.textContent = `
-      #${OVERLAY_ID}{position:fixed;inset:0;z-index:2147483600;display:flex;align-items:center;justify-content:center;padding:22px;background:rgba(2,6,23,.58);backdrop-filter:blur(9px);font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;animation:dcbpv-fade .16s ease-out}
+      #${OVERLAY_ID}{position:fixed;inset:0;z-index:2147483600;display:flex;align-items:center;justify-content:center;padding:22px;background:rgba(2,6,23,.58);backdrop-filter:blur(9px);font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
       #${OVERLAY_ID} *{box-sizing:border-box}
-      #${OVERLAY_ID} .dcbpv-panel{width:min(880px,100%);min-width:0;max-height:min(92dvh,960px);display:flex;flex-direction:column;overflow:hidden;border-radius:18px;background:#fff;color:#111827;box-shadow:0 24px 80px rgba(0,0,0,.34),0 0 0 1px rgba(255,255,255,.25);animation:dcbpv-pop .18s ease-out}
+      #${OVERLAY_ID}.dcbpv-enter{animation:dcbpv-fade .16s ease-out}
+      #${OVERLAY_ID} .dcbpv-panel{width:min(880px,100%);min-width:0;max-height:min(92dvh,960px);display:flex;flex-direction:column;overflow:hidden;border-radius:18px;background:#fff;color:#111827;box-shadow:0 24px 80px rgba(0,0,0,.34),0 0 0 1px rgba(255,255,255,.25)}
+      #${OVERLAY_ID}.dcbpv-enter .dcbpv-panel{animation:dcbpv-pop .18s ease-out}
       #${OVERLAY_ID} .dcbpv-header{display:flex;flex-shrink:0;gap:14px;align-items:flex-start;justify-content:space-between;padding:17px 20px;border-bottom:1px solid #eef2f7;background:linear-gradient(180deg,#fff,#fbfcff)}
       #${OVERLAY_ID} .dcbpv-label{margin-bottom:5px;color:#64748b;font-size:12px;line-height:1.5;font-weight:600}
       #${OVERLAY_ID} .dcbpv-title{font-size:18px;font-weight:800;line-height:1.38;color:#0f172a;word-break:break-word}
@@ -553,6 +555,7 @@ syncSettings(handleUrl);
   }
 
   function mountPreview(overlay){
+    const isNewSession = !previewScrollLock;
     if (!previewScrollLock) {
       previewReturnFocus = document.activeElement;
       previewScrollLock = {
@@ -561,6 +564,7 @@ syncSettings(handleUrl);
       };
       document.documentElement.style.setProperty("overflow", "hidden");
     }
+    if (isNewSession) overlay.classList.add("dcbpv-enter");
     document.documentElement.appendChild(overlay);
     (overlay.querySelector("[data-act='close']") || overlay.querySelector(".dcbpv-panel"))?.focus({ preventScroll: true });
     emitPreviewState(true);

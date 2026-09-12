@@ -1,6 +1,7 @@
 /*****************************************************************
  * Bootstrap shared modules
  *****************************************************************/
+importScripts("../shared/block-stats-history.js");
 try {
   importScripts("../shared/storage/user-block-store.js");
 } catch (error) {
@@ -47,6 +48,7 @@ const AUTO_REFRESH_GUARD_KEY = "dcbAutoRefreshLastRequestAt";
 const AUTO_REFRESH_MIN_INTERVAL_MS = 10_000;
 const DCB_FETCH_TIMEOUT_MS = 12_000;
 const BLOCK_STATS_TOTAL_KEY = "dcbBlockStatsTotal";
+const BLOCK_STATS_HISTORY_KEY = "dcbBlockStatsHistory";
 const UPDATE_NOTICE_KEY = "dcbUpdateNotice";
 const UPDATE_NOTICE_SEEN_VERSION_KEY = "dcbUpdateNoticeSeenVersion";
 const GITHUB_VERSION_CACHE_KEY = "dcbGithubPublishedVersion";
@@ -57,6 +59,7 @@ const GITHUB_TAGS_URL = "https://github.com/diligencefrozen/DCinside-Gallery-Blo
 const GITHUB_VERSION_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const GITHUB_PENDING_RETRY_MS = 10 * 60 * 1000;
 const BLOCK_STATS_SESSION_PREFIX = "dcbBlockStatsPage:";
+const BLOCK_STATS_CHECKPOINT_PREFIX = "dcbBlockStatsCheckpoint:";
 const IMAGE_BYTES_TIMEOUT_MS = 12_000;
 const IMAGE_BYTES_MAX_SIZE = 25 * 1024 * 1024;
 const IMAGE_BYTES_MAX_CONCURRENCY = 2;
@@ -364,6 +367,16 @@ function emptyBlockStats() {
   return { total: 0, byCategory: {} };
 }
 
+function normalizeBlockStatsHistory(value) {
+  return DCBBlockStatsHistory.normalize(value);
+}
+
+function addBlockStatsHistory(value, counts) {
+  // 누적 통계와 같은 입력 제한을 적용해야 그래프 합계도 항상 누적 증가량과 일치한다.
+  const increment = mergeBlockStats(emptyBlockStats(), counts).total;
+  return DCBBlockStatsHistory.add(value, increment);
+}
+
 function normalizeBlockStats(value) {
   const source = value && typeof value === "object" ? value : {};
   const byCategory = {};
@@ -391,6 +404,10 @@ function blockStatsSessionKey(tabId) {
   return `${BLOCK_STATS_SESSION_PREFIX}${tabId}`;
 }
 
+function blockStatsCheckpointKey(tabId) {
+  return `${BLOCK_STATS_CHECKPOINT_PREFIX}${tabId}`;
+}
+
 function badgeTextForCount(total) {
   const count = Math.max(0, Number.parseInt(total, 10) || 0);
   if (!count) return "";
@@ -404,8 +421,15 @@ async function setCountBadge(tabId, stats = null) {
   let current = stats || pageBlockStats.get(tabId);
   if (!current) {
     try {
-      const stored = await chrome.storage.session.get(blockStatsSessionKey(tabId));
-      current = normalizeBlockStats(stored[blockStatsSessionKey(tabId)]);
+      const pageKey = blockStatsSessionKey(tabId);
+      const checkpointKey = blockStatsCheckpointKey(tabId);
+      const [sessionStored, localStored] = await Promise.all([
+        chrome.storage.session.get(pageKey).catch(() => ({})),
+        chrome.storage.local.get({ [checkpointKey]: null }).catch(() => ({}))
+      ]);
+      const checkpoint = localStored[checkpointKey];
+      const stored = normalizePageId(checkpoint?.pageId) ? checkpoint : sessionStored[pageKey];
+      current = normalizeBlockStats(stored);
       pageBlockStats.set(tabId, current);
     } catch (_) {
       current = emptyBlockStats();
@@ -427,13 +451,14 @@ async function setCountBadge(tabId, stats = null) {
   } catch (_) {}
 }
 
-function broadcastBlockStats(tabId, page, cumulative = null) {
+function broadcastBlockStats(tabId, page, cumulative = null, history = null) {
   try {
     chrome.runtime.sendMessage({
       type: "dcb.stats.updated",
       tabId,
       page: normalizeBlockStats(page),
-      cumulative: cumulative ? normalizeBlockStats(cumulative) : null
+      cumulative: cumulative ? normalizeBlockStats(cumulative) : null,
+      history: history ? normalizeBlockStatsHistory(history) : null
     }, () => void chrome.runtime.lastError);
   } catch (_) {}
 }
@@ -478,29 +503,44 @@ async function resetPageBlockStats(tabId, pageId = "") {
   if (!Number.isInteger(tabId) || tabId < 0) return;
   const token = normalizePageId(pageId);
   const pageKey = blockStatsSessionKey(tabId);
+  const checkpointKey = blockStatsCheckpointKey(tabId);
 
   // 동일 문서에서 pageStart가 재전송되더라도 이미 센 값을 지우지 않는다.
   if (token) {
     const memoryToken = normalizePageId(pageBlockTokens.get(tabId));
-    if (memoryToken === token) {
-      const current = pageBlockStats.get(tabId) || emptyBlockStats();
+    const [sessionStored, localStored] = await Promise.all([
+      chrome.storage.session.get(pageKey).catch(() => ({})),
+      // 로컬 읽기 실패를 "체크포인트 없음"으로 취급하면 이미 반영한 델타를 다시 더할 수 있다.
+      chrome.storage.local.get({ [checkpointKey]: null })
+    ]);
+    const durableValue = localStored[checkpointKey];
+    const durableToken = normalizePageId(durableValue?.pageId);
+    const sessionValue = sessionStored[pageKey];
+    const sessionToken = normalizePageId(sessionValue?.pageId);
+    const storedValue = durableToken ? durableValue : sessionValue;
+    const storedToken = durableToken || sessionToken;
+
+    if (storedToken === token || memoryToken === token) {
+      const current = storedToken === token
+        ? normalizeBlockStats(storedValue)
+        : normalizeBlockStats(pageBlockStats.get(tabId));
+      // 기존 session 체크포인트를 처음 마이그레이션하는 경우에도 다음 성공 응답 전에 내구화한다.
+      if (durableToken !== token) {
+        await chrome.storage.local.set({ [checkpointKey]: statsSessionValue(token, current) });
+      }
+      pageBlockTokens.set(tabId, token);
+      pageBlockStats.set(tabId, current);
+      await chrome.storage.session.set({ [pageKey]: statsSessionValue(token, current) }).catch(() => {});
       await setCountBadge(tabId, current);
       return { page: current, reused: true };
     }
-    try {
-      const stored = await chrome.storage.session.get(pageKey);
-      const storedValue = stored[pageKey];
-      if (normalizePageId(storedValue?.pageId) === token) {
-        const current = normalizeBlockStats(storedValue);
-        pageBlockTokens.set(tabId, token);
-        pageBlockStats.set(tabId, current);
-        await setCountBadge(tabId, current);
-        return { page: current, reused: true };
-      }
-    } catch (_) {}
   }
 
   const empty = emptyBlockStats();
+  // 새 문서의 0 기준점도 먼저 내구화해야 이전 문서의 늦은 재전송과 구분할 수 있다.
+  if (token) await chrome.storage.local.set({ [checkpointKey]: statsSessionValue(token, empty) });
+  else await chrome.storage.local.remove(checkpointKey);
+
   pageBlockStats.set(tabId, empty);
   if (token) pageBlockTokens.set(tabId, token);
   else pageBlockTokens.delete(tabId);
@@ -515,14 +555,23 @@ async function resetPageBlockStats(tabId, pageId = "") {
 
 async function readBlockStatsState(tabId) {
   const pageKey = blockStatsSessionKey(tabId);
+  const checkpointKey = blockStatsCheckpointKey(tabId);
   const [pageStored, totalStored] = await Promise.all([
     chrome.storage.session.get(pageKey).catch(() => ({})),
-    chrome.storage.local.get({ [BLOCK_STATS_TOTAL_KEY]: emptyBlockStats() }).catch(() => ({ [BLOCK_STATS_TOTAL_KEY]: emptyBlockStats() }))
+    // 누적 저장소 읽기가 실패하면 mutation 전체를 실패시켜 producer의 절대 스냅샷 재시도를 유도한다.
+    chrome.storage.local.get({
+      [BLOCK_STATS_TOTAL_KEY]: emptyBlockStats(),
+      [BLOCK_STATS_HISTORY_KEY]: null,
+      [checkpointKey]: null
+    })
   ]);
+  const durablePage = totalStored[checkpointKey];
   return {
     pageKey,
-    storedPage: pageStored[pageKey],
-    cumulative: normalizeBlockStats(totalStored[BLOCK_STATS_TOTAL_KEY])
+    checkpointKey,
+    storedPage: normalizePageId(durablePage?.pageId) ? durablePage : pageStored[pageKey],
+    cumulative: normalizeBlockStats(totalStored[BLOCK_STATS_TOTAL_KEY]),
+    history: normalizeBlockStatsHistory(totalStored[BLOCK_STATS_HISTORY_KEY])
   };
 }
 
@@ -543,19 +592,25 @@ function resolveBlockStatsBase(tabId, storedPage, token, senderIsActive = true) 
   return { ignored: false, page, newDocument: !currentToken };
 }
 
-async function persistBlockStats(tabId, token, pageKey, page, cumulative) {
+async function persistBlockStats(tabId, token, pageKey, checkpointKey, page, cumulative, history) {
+  const checkpoint = statsSessionValue(token, page);
+
+  // 누적/일별 합계와 이 델타를 계산한 페이지 기준점을 한 저장 작업으로 커밋한다.
+  // 실패를 삼키지 않아 producer가 같은 절대 스냅샷을 재전송하게 하고, 성공 후 재전송은
+  // 함께 저장된 체크포인트가 중복 델타를 제거한다.
+  await chrome.storage.local.set({
+    [BLOCK_STATS_TOTAL_KEY]: cumulative,
+    [BLOCK_STATS_HISTORY_KEY]: history,
+    [checkpointKey]: checkpoint
+  });
+
   pageBlockTokens.set(tabId, token);
   pageBlockStats.set(tabId, page);
-
-  // 화면 숫자는 storage I/O보다 먼저 갱신한다. 저장소가 잠깐 느려도 배지/열린 Popup은 멈추지 않는다.
+  const sessionWrite = chrome.storage.session.set({ [pageKey]: checkpoint }).catch(() => {});
   await setCountBadge(tabId, page);
-  broadcastBlockStats(tabId, page, cumulative);
-
-  await Promise.all([
-    chrome.storage.session.set({ [pageKey]: statsSessionValue(token, page) }).catch(() => {}),
-    chrome.storage.local.set({ [BLOCK_STATS_TOTAL_KEY]: cumulative }).catch(() => {})
-  ]);
-  return { page, cumulative };
+  broadcastBlockStats(tabId, page, cumulative, history);
+  await sessionWrite;
+  return { page, cumulative, history };
 }
 
 async function addBlockStats(tabId, counts, pageId = "", senderIsActive = true) {
@@ -563,13 +618,20 @@ async function addBlockStats(tabId, counts, pageId = "", senderIsActive = true) 
   const token = normalizePageId(pageId);
   if (!token) return null;
 
-  const { pageKey, storedPage, cumulative: currentCumulative } = await readBlockStatsState(tabId);
+  const {
+    pageKey,
+    checkpointKey,
+    storedPage,
+    cumulative: currentCumulative,
+    history: currentHistory
+  } = await readBlockStatsState(tabId);
   const base = resolveBlockStatsBase(tabId, storedPage, token, senderIsActive);
   if (base.ignored) return { ignored: true };
 
   const page = mergeBlockStats(base.page, counts);
   const cumulative = mergeBlockStats(currentCumulative, counts);
-  return persistBlockStats(tabId, token, pageKey, page, cumulative);
+  const history = addBlockStatsHistory(currentHistory, counts);
+  return persistBlockStats(tabId, token, pageKey, checkpointKey, page, cumulative, history);
 }
 
 async function syncBlockStats(tabId, absoluteStats, pageId = "", senderIsActive = true) {
@@ -578,7 +640,13 @@ async function syncBlockStats(tabId, absoluteStats, pageId = "", senderIsActive 
   if (!token) return null;
 
   const incoming = normalizeBlockStats(absoluteStats);
-  const { pageKey, storedPage, cumulative: currentCumulative } = await readBlockStatsState(tabId);
+  const {
+    pageKey,
+    checkpointKey,
+    storedPage,
+    cumulative: currentCumulative,
+    history: currentHistory
+  } = await readBlockStatsState(tabId);
   const base = resolveBlockStatsBase(tabId, storedPage, token, senderIsActive);
   if (base.ignored) return { ignored: true };
 
@@ -592,7 +660,8 @@ async function syncBlockStats(tabId, absoluteStats, pageId = "", senderIsActive 
   page.total = Object.values(page.byCategory).reduce((sum, count) => sum + count, 0);
 
   const cumulative = mergeBlockStats(currentCumulative, delta);
-  return persistBlockStats(tabId, token, pageKey, page, cumulative);
+  const history = addBlockStatsHistory(currentHistory, delta);
+  return persistBlockStats(tabId, token, pageKey, checkpointKey, page, cumulative, history);
 }
 
 function requestLiveBlockStats(tabId, { timeoutMs = 1200, reconcile = true } = {}) {
@@ -635,7 +704,9 @@ function requestLiveBlockStats(tabId, { timeoutMs = 1200, reconcile = true } = {
 async function reconcileLiveBlockStats(tabId, { reconcile = true } = {}) {
   const live = await requestLiveBlockStats(tabId, { reconcile });
   if (!live) return null;
-  return syncBlockStats(tabId, live.page, live.pageId, true);
+  // 탭 완료/활성화 이벤트도 메시지 기반 집계와 같은 큐를 사용해야
+  // 여러 탭의 누적/일별 증가량이 서로의 storage 값을 덮어쓰지 않는다.
+  return queueBlockStatsMutation(() => syncBlockStats(tabId, live.page, live.pageId, true));
 }
 
 function isStatsSupportedUrl(value) {
@@ -1373,7 +1444,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           ok: true,
           pageId: payload.live.pageId,
           page: payload.result.page,
-          cumulative: payload.result.cumulative
+          cumulative: payload.result.cumulative,
+          history: payload.result.history
         });
       })
       .catch(() => sendResponse({ ok: false }));
@@ -1383,14 +1455,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === "dcb.stats.get") {
     const tabId = Number.isInteger(message.tabId) ? message.tabId : sender?.tab?.id;
     const pageKey = Number.isInteger(tabId) ? blockStatsSessionKey(tabId) : "";
+    const checkpointKey = Number.isInteger(tabId) ? blockStatsCheckpointKey(tabId) : "";
+    const localDefaults = {
+      [BLOCK_STATS_TOTAL_KEY]: emptyBlockStats(),
+      [BLOCK_STATS_HISTORY_KEY]: null,
+      [GITHUB_VERSION_CACHE_KEY]: null
+    };
+    if (checkpointKey) localDefaults[checkpointKey] = null;
     Promise.all([
       pageKey ? chrome.storage.session.get(pageKey).catch(() => ({})) : Promise.resolve({}),
-      chrome.storage.local.get({
-        [BLOCK_STATS_TOTAL_KEY]: emptyBlockStats(),
-        [GITHUB_VERSION_CACHE_KEY]: null
-      }).catch(() => ({ [BLOCK_STATS_TOTAL_KEY]: emptyBlockStats(), [GITHUB_VERSION_CACHE_KEY]: null }))
+      // 읽기 오류를 정상적인 0 통계처럼 표시하지 않는다. 호출자가 기존 화면을 유지할 수 있게 실패로 응답한다.
+      chrome.storage.local.get(localDefaults)
     ]).then(([pageStored, localStored]) => {
-      const storedPageValue = pageKey ? pageStored[pageKey] : null;
+      const durablePageValue = checkpointKey ? localStored[checkpointKey] : null;
+      const storedPageValue = normalizePageId(durablePageValue?.pageId)
+        ? durablePageValue
+        : (pageKey ? pageStored[pageKey] : null);
       const storedPage = normalizeBlockStats(storedPageValue);
       const memoryPage = Number.isInteger(tabId) ? pageBlockStats.get(tabId) : null;
       const page = memoryPage && memoryPage.total >= storedPage.total ? normalizeBlockStats(memoryPage) : storedPage;
@@ -1404,6 +1484,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         ok: true,
         page,
         cumulative: normalizeBlockStats(localStored[BLOCK_STATS_TOTAL_KEY]),
+        history: normalizeBlockStatsHistory(localStored[BLOCK_STATS_HISTORY_KEY]),
         publishedVersion: cachedRelease?.version || ""
       });
     }).catch(() => sendResponse({ ok: false }));
@@ -1442,14 +1523,16 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status === "loading") {
     // loading 이벤트에서 tab.url은 이전 문서 주소일 수 있다.
     // 명시적인 새 URL이 비지원 페이지일 때만 지우고, DCInside 문서 경계는 pageStart/PAGE_ID가 맡는다.
-    if (changeInfo.url && !isStatsSupportedUrl(changeInfo.url)) void resetPageBlockStats(tabId);
+    if (changeInfo.url && !isStatsSupportedUrl(changeInfo.url)) {
+      void queueBlockStatsMutation(() => resetPageBlockStats(tabId)).catch(() => {});
+    }
     return;
   }
 
   if (changeInfo.status === "complete") {
     const currentUrl = tab?.url || changeInfo.url || "";
     if (!isStatsSupportedUrl(currentUrl)) {
-      void resetPageBlockStats(tabId);
+      void queueBlockStatsMutation(() => resetPageBlockStats(tabId)).catch(() => {});
       return;
     }
     // 초기 push가 누락돼도 로딩 완료 시 실제 content script 스냅샷으로 한 번 복구한다.
@@ -1461,9 +1544,15 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   const timer = actionBadgeTimers.get(tabId);
   if (timer) clearTimeout(timer);
   actionBadgeTimers.delete(tabId);
-  pageBlockStats.delete(tabId);
-  pageBlockTokens.delete(tabId);
-  void chrome.storage.session.remove(blockStatsSessionKey(tabId)).catch(() => {});
+  // 진행 중인 mutation 뒤에서 정리해야 완료된 쓰기가 제거된 체크포인트를 되살리지 않는다.
+  void queueBlockStatsMutation(async () => {
+    pageBlockStats.delete(tabId);
+    pageBlockTokens.delete(tabId);
+    await Promise.all([
+      chrome.storage.session.remove(blockStatsSessionKey(tabId)).catch(() => {}),
+      chrome.storage.local.remove(blockStatsCheckpointKey(tabId)).catch(() => {})
+    ]);
+  }).catch(() => {});
 });
 
 chrome.tabs.onActivated.addListener(({ tabId }) => {

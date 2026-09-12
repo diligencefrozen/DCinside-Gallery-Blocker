@@ -136,34 +136,7 @@
   const packageInflight = new Map();
   const previousInlineDisplay = new WeakMap();
 
-  function blockedCodeCss() {
-    const rowSelector = `:is(${COMMENT_ROW_SELECTORS.join(",")})`;
-    const parentSelector = ":is(video,picture,.written_dccon,.dcbpv-dccon,.comment_dccon,.coment_dccon_img,.coment_dccon_txt,.comment_dccon_txt,.dccon_area,.dccon_layer,.dccon_over_box)";
-
-    return Array.from(blockedCodes)
-      .sort()
-      .map((code) => {
-        const identitySelector = `:is(${IDENTITY_CODE_ATTRIBUTES
-          .map((name) => `[${name}*="${code}"]`)
-          .join(",")})`;
-
-        return `
-          ${identitySelector},
-          ${parentSelector}:has(${identitySelector}),
-          ${rowSelector}:has(${identitySelector}) {
-            display: none !important;
-            visibility: hidden !important;
-            opacity: 0 !important;
-            pointer-events: none !important;
-            animation: none !important;
-            transition: none !important;
-            content-visibility: hidden !important;
-          }
-        `;
-      })
-      .join("\n");
-  }
-
+  // 디시콘 코드는 속성 부분 문자열 CSS로 비교하지 않는다. 실제 URL을 파싱한 정확 일치만 사용한다.
   function buildStyleText() {
     return `
       .${HIDDEN_CLASS},
@@ -207,8 +180,6 @@
 
       #${TOAST_ID} strong { font-size: 14px; }
       #${TOAST_ID} span { color: #cbd5e1; }
-
-      ${blockedCodeCss()}
     `;
   }
 
@@ -441,9 +412,31 @@
     return "개별 디시콘";
   }
 
-  function hideTargetFor(node) {
-    const row = node?.closest?.(COMMENT_ROW_SELECTOR);
-    return row || node;
+  function exactIdentityElement(node, code) {
+    const normalizedCode = Store.extractCode(code);
+    if (!(node instanceof Element) || !normalizedCode) return null;
+
+    const hasExactCode = (candidate) => {
+      const values = [
+        candidate.currentSrc,
+        ...IDENTITY_CODE_ATTRIBUTES.map((name) => candidate.getAttribute(name))
+      ];
+      return values.some((value) => Store.extractCode(value) === normalizedCode);
+    };
+
+    if (hasExactCode(node)) return mediaNode(node);
+    for (const candidate of node.querySelectorAll?.(NESTED_CODE_SELECTOR) || []) {
+      if (hasExactCode(candidate)) return mediaNode(candidate);
+    }
+    return null;
+  }
+
+  function hideTargetFor(node, code = codeFromNode(node)) {
+    if (!(node instanceof Element)) return null;
+    // 댓글 행 전체를 숨기면 이후 지연 삽입되는 안전한 형제 디시콘도 함께 가려진다.
+    // 개별/그룹 차단 모두 실제로 일치한 미디어 또는 텍스트콘 루트만 숨긴다.
+    if (isTextconNode(node)) return normalizedTextconRoot(node) || node;
+    return exactIdentityElement(node, code) || node;
   }
 
   function forceHidden(target, code = "") {
@@ -490,7 +483,7 @@
     const blockedByPackage = !!packageIdx && blockedPackageIdxs.has(packageIdx);
     if (!blockedByCode && !blockedByPackage) return false;
 
-    const target = hideTargetFor(node);
+    const target = hideTargetFor(node, code);
     if (!target) return false;
 
     forceHidden(target, code || `package_${packageIdx}`);

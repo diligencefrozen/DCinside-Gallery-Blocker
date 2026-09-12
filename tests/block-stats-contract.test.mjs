@@ -8,6 +8,7 @@ const background = fs.readFileSync('src/background/background.js', 'utf8');
 const popupHtml = fs.readFileSync('src/ui/popup/popup.html', 'utf8');
 const popupJs = fs.readFileSync('src/ui/popup/popup.js', 'utf8');
 const statsSource = fs.readFileSync('src/shared/block-stats.js', 'utf8');
+const historySource = fs.readFileSync('src/shared/block-stats-history.js', 'utf8');
 
 test('block stats helper loads before normal content scripts', () => {
   assert.equal(manifest.content_scripts[0].run_at, 'document_start');
@@ -18,6 +19,8 @@ test('block stats helper loads before normal content scripts', () => {
 
 test('background keeps per-page and cumulative block counts without navigation reset races', () => {
   assert.match(background, /BLOCK_STATS_TOTAL_KEY/);
+  assert.match(background, /BLOCK_STATS_HISTORY_KEY/);
+  assert.match(background, /DCBBlockStatsHistory\.add/);
   assert.match(background, /chrome\.storage\.session/);
   assert.match(background, /setCountBadge/);
   assert.match(background, /dcb\.stats\.get/);
@@ -29,6 +32,7 @@ test('background keeps per-page and cumulative block counts without navigation r
   assert.match(background, /pageStart가 유실되어도 새 활성 문서의 첫 집계를 그대로 받아들인다/);
   assert.match(background, /changeInfo\.status === "complete"/);
   assert.match(background, /reconcileLiveBlockStats\(tabId\)/);
+  assert.match(background, /return queueBlockStatsMutation\(\(\) => syncBlockStats\(tabId, live\.page, live\.pageId, true\)\)/);
 });
 
 test('popup exposes current-page, cumulative, and category stats', () => {
@@ -42,6 +46,37 @@ test('popup exposes current-page, cumulative, and category stats', () => {
   assert.match(background, /dcb\.stats\.live/);
   assert.match(background, /requestLiveBlockStats/);
   assert.match(background, /broadcastBlockStats/);
+  assert.match(background, /if \(count > 9999\) return "9k\+"/);
+  assert.match(background, /if \(count > 999\) return "999\+"/);
+  assert.match(popupJs, /먼저 끝난 실시간 재집계가 더 최신이다/);
+  assert.doesNotMatch(
+    popupJs,
+    /if \(liveBlockSnapshotApplied\) \{[\s\S]{0,220}cumulative: result\.cumulative/
+  );
+});
+
+test('popup exposes a rolling seven-day blocking graph', () => {
+  assert.match(popupHtml, /id="blockStatsWeekTotal"/);
+  assert.match(popupHtml, /id="blockStatsHistoryChart"/);
+  assert.match(popupHtml, /src="\.\.\/\.\.\/shared\/block-stats-history\.js"/);
+  assert.match(popupJs, /function renderBlockHistory/);
+  assert.match(popupJs, /DCBBlockStatsHistory\.recent\(history, \{ days: 7 \}\)/);
+  assert.match(popupJs, /message\.history/);
+  assert.match(background, /history: payload\.result\.history/);
+  assert.match(historySource, /DEFAULT_KEEP_DAYS = 30/);
+});
+
+test('rolling history keeps a seven-day window and adds only new daily counts', () => {
+  const context = { globalThis: null };
+  context.globalThis = context;
+  vm.runInNewContext(historySource, context, { filename: 'block-stats-history.js' });
+  const now = new Date(2026, 8, 12, 12).getTime();
+  const first = context.DCBBlockStatsHistory.add(null, 2, { now });
+  const second = context.DCBBlockStatsHistory.add(first, 3, { now });
+  const recent = context.DCBBlockStatsHistory.recent(second, { now, days: 7 });
+  assert.equal(recent.length, 7);
+  assert.equal(recent.at(-1).total, 5);
+  assert.equal(recent.at(-1).isToday, true);
 });
 
 test('update notice is update-only, GitHub-sourced, one-shot per version, and auto-hides', () => {
@@ -137,6 +172,16 @@ test('content-side stats use absolute snapshots, retry transient failures, and d
   assert.match(statsSource, /절대값 스냅샷/);
 });
 
+test('content-side observer incrementally recovers dynamic blocker markers', () => {
+  assert.match(statsSource, /복구 표식은 각 차단기가 registerSelector\(\)를 쓰지 않아도/);
+  assert.match(statsSource, /attributeFilter: RECOVERY_ATTRIBUTE_FILTER/);
+  assert.match(statsSource, /scanRecoveryMarkers\(root\)/);
+  assert.match(statsSource, /scanActivatedStyleRecovery\(root\)/);
+  assert.match(statsSource, /\.dcb-selective-dccon-hidden[\s\S]{0,120}category: "dccon"/);
+  assert.match(statsSource, /const MAX_PENDING_ROOTS = 80/);
+  assert.match(statsSource, /pendingFullScan = true/);
+});
+
 
 
 
@@ -151,7 +196,7 @@ test('block stats can recover counts from the live DOM and CSS-only blockers', (
   assert.match(statsSource, /message\?\.type !== "dcb\.stats\.snapshot"/);
   assert.match(statsSource, /reconcile\(document\)/);
   assert.match(background, /setBadgeText\(\{ tabId, text \}\)/);
-  assert.match(background, /화면 숫자는 storage I\/O보다 먼저 갱신/);
+  assert.match(background, /누적\/일별 합계와 이 델타를 계산한 페이지 기준점을 한 저장 작업으로 커밋/);
 });
 
 test('comment-heavy filters avoid full-document rescans on every mutation', () => {

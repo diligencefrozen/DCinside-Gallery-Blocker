@@ -367,6 +367,39 @@ const listUrl = 'https://gall.dcinside.com/board/lists/?id=fixture';
   }));
   assert.deepEqual(summaryAfter, { marker: 'keep', count: 1 }, 'DCCon observer settles without repeatedly recreating the summary DOM');
 
+  const previewAnimationLifecycle = await page.evaluate((fixture) => {
+    window.previewTest.closePreview();
+    window.previewTest.renderLoading();
+    const firstOverlay = document.querySelector('#dcb-preview-overlay');
+    const initial = {
+      entering: firstOverlay.classList.contains('dcbpv-enter'),
+      overlayAnimation: getComputedStyle(firstOverlay).animationName,
+      panelAnimation: getComputedStyle(firstOverlay.querySelector('.dcbpv-panel')).animationName
+    };
+
+    window.previewTest.renderPreview(fixture);
+    const contentOverlay = document.querySelector('#dcb-preview-overlay');
+    const contentSwap = {
+      entering: contentOverlay.classList.contains('dcbpv-enter'),
+      overlayAnimation: getComputedStyle(contentOverlay).animationName,
+      panelAnimation: getComputedStyle(contentOverlay.querySelector('.dcbpv-panel')).animationName
+    };
+
+    window.previewTest.renderLoading();
+    const navigationOverlay = document.querySelector('#dcb-preview-overlay');
+    const navigationSwap = {
+      entering: navigationOverlay.classList.contains('dcbpv-enter'),
+      overlayAnimation: getComputedStyle(navigationOverlay).animationName,
+      panelAnimation: getComputedStyle(navigationOverlay.querySelector('.dcbpv-panel')).animationName
+    };
+    return { initial, contentSwap, navigationSwap };
+  }, data);
+  assert.deepEqual(previewAnimationLifecycle, {
+    initial: { entering: true, overlayAnimation: 'dcbpv-fade', panelAnimation: 'dcbpv-pop' },
+    contentSwap: { entering: false, overlayAnimation: 'none', panelAnimation: 'none' },
+    navigationSwap: { entering: false, overlayAnimation: 'none', panelAnimation: 'none' }
+  }, 'preview only animates once per open session, so loading/content/navigation swaps do not flash');
+
   await page.evaluate(() => { window.previewTest.closePreview(); document.querySelector('#origin').focus(); window.previewTest.renderLoading(); });
   assert.equal(await page.evaluate(() => document.documentElement.style.overflow), 'hidden');
   await page.keyboard.press('Escape');

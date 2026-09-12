@@ -27,6 +27,8 @@ const blockCurrentGalleryStatus = document.getElementById("blockCurrentGallerySt
 const blockStatsVersionEl = document.getElementById("blockStatsVersion");
 const blockStatsPageTotalEl = document.getElementById("blockStatsPageTotal");
 const blockStatsCumulativeTotalEl = document.getElementById("blockStatsCumulativeTotal");
+const blockStatsWeekTotalEl = document.getElementById("blockStatsWeekTotal");
+const blockStatsHistoryChartEl = document.getElementById("blockStatsHistoryChart");
 const blockStatsBreakdownEl = document.getElementById("blockStatsBreakdown");
 let activeBlockStatsTabId = null;
 let liveBlockSnapshotApplied = false;
@@ -187,6 +189,52 @@ function renderBlockBreakdown(stats = {}) {
   });
 }
 
+function blockHistoryDayLabel(entry) {
+  if (entry?.isToday) return "오늘";
+  const [, month = "", day = ""] = String(entry?.date || "").split("-");
+  return `${Number(month) || 0}/${Number(day) || 0}`;
+}
+
+function renderBlockHistory(history = null) {
+  if (!blockStatsHistoryChartEl || !globalThis.DCBBlockStatsHistory) return;
+  const entries = DCBBlockStatsHistory.recent(history, { days: 7 });
+  const maximum = Math.max(0, ...entries.map((entry) => entry.total));
+  const weeklyTotal = entries.reduce((sum, entry) => sum + entry.total, 0);
+
+  if (blockStatsWeekTotalEl) blockStatsWeekTotalEl.textContent = formatBlockCount(weeklyTotal);
+  blockStatsHistoryChartEl.replaceChildren();
+  const dailyDescription = entries
+    .map((entry) => `${blockHistoryDayLabel(entry)} ${formatBlockCount(entry.total)}개`)
+    .join(", ");
+  blockStatsHistoryChartEl.setAttribute(
+    "aria-label",
+    `최근 7일 동안 ${formatBlockCount(weeklyTotal)}개 요소 차단. ${dailyDescription}`
+  );
+
+  entries.forEach((entry) => {
+    const column = document.createElement("div");
+    column.className = `block-history-day${entry.isToday ? " is-today" : ""}`;
+    column.title = `${entry.date} · ${formatBlockCount(entry.total)}개 차단`;
+
+    const track = document.createElement("span");
+    track.className = "block-history-bar-track";
+    track.setAttribute("aria-hidden", "true");
+
+    const bar = document.createElement("span");
+    bar.className = "block-history-bar";
+    const percent = maximum > 0 ? Math.max(entry.total > 0 ? 8 : 0, Math.round((entry.total / maximum) * 100)) : 0;
+    bar.style.height = `${percent}%`;
+    track.appendChild(bar);
+
+    const label = document.createElement("span");
+    label.className = "block-history-label";
+    label.textContent = blockHistoryDayLabel(entry);
+
+    column.append(track, label);
+    blockStatsHistoryChartEl.appendChild(column);
+  });
+}
+
 let updateNoticeTimer = null;
 
 function hideUpdateNoticeSoon() {
@@ -245,6 +293,7 @@ function renderBlockSummary(result = {}) {
   if (result.cumulative && blockStatsCumulativeTotalEl) {
     blockStatsCumulativeTotalEl.textContent = formatBlockCount(result.cumulative.total);
   }
+  if (result.history) renderBlockHistory(result.history);
   if (result.publishedVersion) renderPublishedVersion(result.publishedVersion);
 }
 
@@ -258,7 +307,7 @@ function loadLiveBlockSummary(tabId) {
     (result) => {
       if (chrome.runtime.lastError || !result?.ok || tabId !== activeBlockStatsTabId) return;
       liveBlockSnapshotApplied = true;
-      renderBlockSummary({ page: result.page, cumulative: result.cumulative });
+      renderBlockSummary({ page: result.page, cumulative: result.cumulative, history: result.history });
     }
   );
 }
@@ -272,7 +321,11 @@ function loadBlockSummary() {
     chrome.runtime.sendMessage({ type: "dcb.stats.get", tabId }, (result) => {
       if (chrome.runtime.lastError || !result?.ok || tabId !== activeBlockStatsTabId) return;
       if (liveBlockSnapshotApplied) {
-        renderBlockSummary({ cumulative: result.cumulative, publishedVersion: result.publishedVersion });
+        // 먼저 끝난 실시간 재집계가 더 최신이다. 그 뒤 도착한 저장 캐시로
+        // 누적/일별 그래프를 되돌리지 말고, 별도 릴리스 정보만 반영한다.
+        renderBlockSummary({
+          publishedVersion: result.publishedVersion
+        });
       } else {
         renderBlockSummary(result);
       }
@@ -287,7 +340,7 @@ function loadBlockSummary() {
 chrome.runtime.onMessage.addListener((message) => {
   if (message?.type !== "dcb.stats.updated") return;
   if (!Number.isInteger(activeBlockStatsTabId) || message.tabId !== activeBlockStatsTabId) return;
-  renderBlockSummary({ page: message.page, cumulative: message.cumulative });
+  renderBlockSummary({ page: message.page, cumulative: message.cumulative, history: message.history });
 });
 
 /* ───────── util ───────── */

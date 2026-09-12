@@ -27,7 +27,8 @@
     "*://search.dcinside.com/*",
     "*://m.dcinside.com/*",
     "*://*.dcinside.com/*",
-    "*://*.dcinside.co.kr/*"
+    "*://*.dcinside.co.kr/*",
+    "https://api.github.com/*"
   ],
   "declarative_net_request": {
     "rule_resources": []
@@ -37,10 +38,19 @@
   },
   "options_page": "src/ui/options/options.html",
   "content_security_policy": {
-    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://gall.dcinside.com https://gallog.dcinside.com https://m.dcinside.com https://www.dcinside.com https://search.dcinside.com;"
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://gall.dcinside.com https://gallog.dcinside.com https://m.dcinside.com https://www.dcinside.com https://search.dcinside.com https://api.github.com;"
   },
   "minimum_chrome_version": "116",
   "content_scripts": [
+    {
+      "matches": [
+        "*://*.dcinside.com/*",
+        "*://*.dcinside.co.kr/*"
+      ],
+      "js": ["src/shared/block-stats.js"],
+      "run_at": "document_start",
+      "all_frames": false
+    },
     {
       "matches": [
         "*://gall.dcinside.com/board/view*",
