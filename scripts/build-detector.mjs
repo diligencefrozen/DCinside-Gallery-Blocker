@@ -8,7 +8,6 @@ const root = new URL("../", import.meta.url);
 await mkdir(new URL("vendor/detector/", root), { recursive: true });
 await build({
   entryPoints: {
-    offscreen: fileURLToPath(new URL("src/offscreen/detection.js", root)),
     "inference-worker": fileURLToPath(new URL("src/offscreen/inference-worker.js", root))
   },
   outdir: fileURLToPath(new URL("vendor/detector/", root)),

@@ -12,7 +12,7 @@ const outsideRequests = [];
 let browser;
 const server = http.createServer((request, response) => {
   const pathname = decodeURIComponent(new URL(request.url, 'http://localhost').pathname);
-  if (!/^\/(?:vendor\/detector\/|models\/conflict\/|src\/offscreen\/detection\.html$)/.test(pathname) || pathname.includes('..')) {
+  if (!/^\/(?:vendor\/detector\/|models\/conflict\/|src\/offscreen\/detection\.(?:html|js)$)/.test(pathname) || pathname.includes('..')) {
     response.writeHead(404).end();
     return;
   }

@@ -9,7 +9,12 @@ export const modelIdentity = Object.freeze({
 });
 
 export async function verifyModel(file) {
-  const details = await stat(file);
+  const details = await stat(file).catch(error => {
+    if (error?.code === "ENOENT") {
+      throw new Error("분석 모델이 없습니다. scripts/prepare-detector.mjs --from <model.onnx 경로>로 먼저 등록해 주세요.");
+    }
+    throw error;
+  });
   if (!details.isFile() || details.size !== modelIdentity.byteLength) {
     throw new Error("분석 모델의 파일 크기가 올바르지 않습니다.");
   }

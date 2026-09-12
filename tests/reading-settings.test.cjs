@@ -28,7 +28,7 @@ async function fixture(kind) {
         onChanged: { addListener: fn => listeners.push(fn) }
       }
     };
-    window.runtimeStatus = state => listeners.forEach(fn => fn({ dcbDetectionStatus: { newValue: { state } } }, 'session'));
+    window.runtimeStatus = (state, details = {}) => listeners.forEach(fn => fn({ dcbDetectionStatus: { newValue: { state, ...details } } }, 'session'));
   });
   await page.route('**/*', async route => {
     const url = new URL(route.request().url());
@@ -55,6 +55,8 @@ for (const kind of ['popup', 'options']) {
       await page.locator('[data-detection-field="enabled"] + .slider').click();
       await page.locator('[data-detection-field="sensitivity"]').selectOption('sensitive');
       assert.equal(await page.evaluate(() => savedSettings.dcbTextDetection.sensitivity), 'sensitive');
+      await page.evaluate(() => runtimeStatus('limited', { mode: 'basic', reason: 'model-unavailable' }));
+      assert.match(await page.locator('[data-detection-status]').innerText(), /기본 감지 사용 중/);
       await page.evaluate(() => runtimeStatus('error'));
       assert.match(await page.locator('[data-detection-status]').innerText(), /시작하지 못/);
       await page.locator('[data-detection-field="enabled"] + .slider').click();

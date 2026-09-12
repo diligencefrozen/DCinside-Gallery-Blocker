@@ -84,7 +84,7 @@ test('textcon can be individually blocked with a stable local fingerprint', asyn
     assert.equal(result.ok, true);
     assert.equal(result.mode, 'item');
     assert.match(result.code, /^textcon_[a-z0-9]+_[a-z0-9]+$/);
-    assert.notEqual(await page.locator('#row-1').evaluate((node) => getComputedStyle(node).display), 'none');
+    assert.equal(await page.locator('#row-1').evaluate((node) => getComputedStyle(node).display), 'none');
     assert.equal(await page.locator('#row-1 .coment_dccon_txt').evaluate((node) => getComputedStyle(node).display), 'none');
 
     const state = await page.evaluate(() => window.__dcbLocalData.dcbDcconBlockState);
@@ -99,7 +99,7 @@ test('textcon can be individually blocked with a stable local fingerprint', asyn
       document.body.appendChild(next);
     });
     await page.waitForFunction(() => getComputedStyle(document.querySelector('#row-2 .coment_dccon_txt')).display === 'none');
-    assert.notEqual(await page.locator('#row-2').evaluate((node) => getComputedStyle(node).display), 'none');
+    assert.equal(await page.locator('#row-2').evaluate((node) => getComputedStyle(node).display), 'none');
   } finally {
     await page.close();
   }
@@ -122,7 +122,7 @@ test('textcon group block uses package_idx and also hides different textcons fro
   try {
     const result = await invokeContextBlock(page, '#group-row-1 .txtcon_txt', 'group');
     assert.deepEqual(result, { ok: true, mode: 'group', packageIdx: '321', count: 2 });
-    assert.notEqual(await page.locator('#group-row-1').evaluate((node) => getComputedStyle(node).display), 'none');
+    assert.equal(await page.locator('#group-row-1').evaluate((node) => getComputedStyle(node).display), 'none');
     assert.equal(await page.locator('#group-row-1 .coment_dccon_txt').evaluate((node) => getComputedStyle(node).display), 'none');
 
     const group = await page.evaluate(() => window.__dcbLocalData.dcbDcconBlockState.groups['321']);
@@ -138,7 +138,7 @@ test('textcon group block uses package_idx and also hides different textcons fro
       document.body.appendChild(next);
     });
     await page.waitForFunction(() => getComputedStyle(document.querySelector('#group-row-2 .coment_dccon_txt')).display === 'none');
-    assert.notEqual(await page.locator('#group-row-2').evaluate((node) => getComputedStyle(node).display), 'none');
+    assert.equal(await page.locator('#group-row-2').evaluate((node) => getComputedStyle(node).display), 'none');
   } finally {
     await page.close();
   }
@@ -165,8 +165,8 @@ test('individual blocking compares the full DCCon code instead of a substring', 
   const blockedCode = 'abcdefghijklmnop1234';
   const containingCode = `zz${blockedCode}yy`;
   const page = await fixture(`
-    <div class="cmt_info" id="blocked-row">
-      <img class="written_dccon" id="blocked-dccon" src="https://dcimg5.dcinside.com/dccon.php?no=${blockedCode}">
+    <div class="cmt_info" id="blocked-row" style="display:flex">
+      <img class="written_dccon" id="blocked-dccon" style="display:inline-block" src="https://dcimg5.dcinside.com/dccon.php?no=${blockedCode}">
     </div>
     <div class="cmt_info" id="safe-row">
       <img class="written_dccon" id="safe-dccon" src="https://dcimg5.dcinside.com/dccon.php?no=${containingCode}">
@@ -176,7 +176,7 @@ test('individual blocking compares the full DCCon code instead of a substring', 
   try {
     const result = await invokeContextBlock(page, '#blocked-dccon', 'item');
     assert.deepEqual(result, { ok: true, mode: 'item', code: blockedCode });
-    assert.notEqual(await page.locator('#blocked-row').evaluate((node) => getComputedStyle(node).display), 'none');
+    assert.equal(await page.locator('#blocked-row').evaluate((node) => getComputedStyle(node).display), 'none');
     assert.equal(await page.locator('#blocked-dccon').evaluate((node) => getComputedStyle(node).display), 'none');
     assert.notEqual(
       await page.locator('#safe-row').evaluate((node) => getComputedStyle(node).display),
@@ -184,6 +184,71 @@ test('individual blocking compares the full DCCon code instead of a substring', 
       'a different code containing the blocked code remains visible'
     );
     assert.notEqual(await page.locator('#safe-dccon').evaluate((node) => getComputedStyle(node).display), 'none');
+
+    await page.evaluate((code) => window.DCBDcconBlockStore.removeItem(code), blockedCode);
+    await page.waitForFunction(() => (
+      getComputedStyle(document.querySelector('#blocked-row')).display !== 'none'
+      && getComputedStyle(document.querySelector('#blocked-dccon')).display !== 'none'
+    ));
+    assert.deepEqual(await page.locator('#blocked-row').evaluate((node) => ({
+      display: node.style.getPropertyValue('display'),
+      priority: node.style.getPropertyPriority('display'),
+      marked: node.hasAttribute('data-dcb-selective-dccon-empty-row')
+    })), { display: 'flex', priority: '', marked: false });
+    assert.deepEqual(await page.locator('#blocked-dccon').evaluate((node) => ({
+      display: node.style.getPropertyValue('display'),
+      priority: node.style.getPropertyPriority('display'),
+      marked: node.hasAttribute('data-dcb-selective-dccon-hidden')
+    })), { display: 'inline-block', priority: '', marked: false });
+  } finally {
+    await page.close();
+  }
+});
+
+test('metadata-only DCCon row hides, then follows dynamic meaningful content', async () => {
+  const blockedCode = '62b5df2be09d3ca567b1c5bc12d46b394aa3b1058c6e4d0ca41648b650ef206ef8299a6ef74b36c7c827ab86da164c58217d5841ef07c97e86f6444c5022f3b03b27c3369d5acac71ad18c4b';
+  const page = await fixture(`
+    <div class="cmt_info clear" id="metadata-row" data-no="590888" data-article-no="146483">
+      <div class="addbox">
+        <div class="cmt_nickbox"><span class="gall_writer ub-writer"><span class="nickname"><em>편살즉영체</em></span></span></div>
+        <div class="clear cmt_txtbox btn_reply_write_all" id="metadata-body">
+          <div class="comment_dccon clear">
+            <div class="coment_dccon_img"><img class="written_dccon" id="metadata-dccon" src="https://dcimg5.dcinside.com/dccon.php?no=${blockedCode}" alt="6"></div>
+            <div class="coment_dccon_info clear dccon_over_box" style="display:none"><button type="button" reqpath="/dccon">디시콘 보기</button></div>
+          </div>
+        </div>
+      </div>
+      <div class="fr clear"><span class="date_time">2025.06.28 22:47:17</span><div class="cmt_mdf_del"><button>삭제</button></div></div>
+    </div>
+  `);
+
+  try {
+    const result = await invokeContextBlock(page, '#metadata-dccon', 'item');
+    assert.deepEqual(result, { ok: true, mode: 'item', code: blockedCode });
+    assert.equal(await page.locator('#metadata-row').evaluate((node) => getComputedStyle(node).display), 'none');
+
+    await page.evaluate(() => {
+      const text = document.createElement('p');
+      text.id = 'dynamic-comment-text';
+      text.className = 'usertxt';
+      text.textContent = '디시콘과 함께 작성한 실제 댓글입니다.';
+      document.querySelector('#metadata-body').appendChild(text);
+    });
+    await page.waitForFunction(() => getComputedStyle(document.querySelector('#metadata-row')).display !== 'none');
+    assert.equal(await page.locator('#metadata-dccon').evaluate((node) => getComputedStyle(node).display), 'none');
+
+    await page.locator('#dynamic-comment-text').evaluate((node) => { node.textContent = ''; });
+    await page.waitForFunction(() => getComputedStyle(document.querySelector('#metadata-row')).display === 'none');
+
+    await page.evaluate(() => {
+      const attachment = document.createElement('img');
+      attachment.id = 'dynamic-attachment';
+      attachment.alt = '일반 첨부 이미지';
+      attachment.src = 'https://example.invalid/ordinary-image.png';
+      document.querySelector('#metadata-body').appendChild(attachment);
+    });
+    await page.waitForFunction(() => getComputedStyle(document.querySelector('#metadata-row')).display !== 'none');
+    assert.notEqual(await page.locator('#dynamic-attachment').evaluate((node) => getComputedStyle(node).display), 'none');
   } finally {
     await page.close();
   }
@@ -204,7 +269,7 @@ test('a safe DCCon inserted after blocking remains visible', async () => {
     const result = await invokeContextBlock(page, '#dynamic-blocked', 'item');
     assert.deepEqual(result, { ok: true, mode: 'item', code: blockedCode });
     assert.equal(await page.locator('#dynamic-blocked').evaluate((node) => getComputedStyle(node).display), 'none');
-    assert.notEqual(await page.locator('#dynamic-row').evaluate((node) => getComputedStyle(node).display), 'none');
+    assert.equal(await page.locator('#dynamic-row').evaluate((node) => getComputedStyle(node).display), 'none');
 
     await page.evaluate((code) => {
       const safe = document.createElement('img');

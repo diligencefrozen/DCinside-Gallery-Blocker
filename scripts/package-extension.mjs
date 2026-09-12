@@ -5,7 +5,8 @@ import { modelFile, verifyModel } from "./model-artifact.mjs";
 
 const root = new URL("../", import.meta.url);
 await verifyModel(modelFile);
-for (const name of ["offscreen.js", "inference-worker.js", "ort-wasm-simd-threaded.mjs", "ort-wasm-simd-threaded.wasm"]) {
+await import("./build-detector.mjs");
+for (const name of ["inference-worker.js", "ort-wasm-simd-threaded.mjs", "ort-wasm-simd-threaded.wasm"]) {
   await stat(new URL(`vendor/detector/${name}`, root));
 }
 const workspace = await realpath(fileURLToPath(root));

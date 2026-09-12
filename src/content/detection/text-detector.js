@@ -40,6 +40,7 @@
   let requestActive = false;
   let retryAfter = 0;
   let batchTimer = 0;
+  let retryTimer = 0;
   let pruneTimer = 0;
   let observer = null;
   let viewportObserver = null;
@@ -273,6 +274,21 @@
     batchTimer = setTimeout(runBatch, 80);
   }
 
+  function scheduleRetry(requestEpoch, delay = 60_000) {
+    clearTimeout(retryTimer);
+    retryAfter = Date.now() + delay;
+    retryTimer = setTimeout(() => {
+      retryTimer = 0;
+      if (!settings.enabled || requestEpoch !== epoch) return;
+      retryAfter = 0;
+      for (const record of records.values()) {
+        if (record.inRange) consider(record);
+      }
+      drainDeferred();
+      scheduleBatch();
+    }, delay);
+  }
+
   async function runBatch() {
     batchTimer = 0;
     if (!settings.enabled || requestActive || Date.now() < retryAfter) return;
@@ -291,7 +307,9 @@
       const response = await chrome.runtime.sendMessage({ type: 'DCB_DETECT_TEXT', items: batch.map((item) => item.input) });
       if (!response?.ok || !Array.isArray(response.results) || response.results.length !== batch.length
         || response.results.some(({ score } = {}) => typeof score !== 'number' || !Number.isFinite(score) || score < 0 || score > 1)) {
-        throw new Error('Detection unavailable');
+        const error = new Error('Detection unavailable');
+        error.code = response?.error;
+        throw error;
       }
       if (!settings.enabled || requestEpoch !== epoch) return;
       batch.forEach((item, index) => {
@@ -303,15 +321,22 @@
         record.input = null;
         showResult(record, score);
       });
-    } catch (_) {
+    } catch (error) {
       if (requestEpoch === epoch) {
-        retryAfter = Date.now() + 60_000;
         queued.clear();
         deferred.clear();
+        scheduleRetry(requestEpoch, error?.code === 'busy' ? 1_000 : 60_000);
       }
     } finally {
       requestActive = false;
-      batch.forEach(({ record }) => { record.pending = false; });
+      batch.forEach(({ record }) => {
+        record.pending = false;
+        // 분석을 기다리는 동안 본문이 바뀌면 mutation 시점에는 pending이라 다시
+        // 큐에 넣지 못한다. 응답 처리가 끝난 직후 최신 스냅샷을 다시 검토한다.
+        if (settings.enabled && requestEpoch === epoch && records.get(record.node) === record && record.inRange) {
+          consider(record);
+        }
+      });
       if (settings.enabled && Date.now() >= retryAfter) {
         drainDeferred();
         scheduleBatch();
@@ -462,9 +487,10 @@
 
   function clearAll() {
     clearTimeout(batchTimer);
+    clearTimeout(retryTimer);
     clearTimeout(pruneTimer);
     clearTimeout(fallbackTimer);
-    batchTimer = pruneTimer = fallbackTimer = 0;
+    batchTimer = retryTimer = pruneTimer = fallbackTimer = 0;
     queued.clear();
     deferred.clear();
     for (const record of [...records.values()]) forget(record);

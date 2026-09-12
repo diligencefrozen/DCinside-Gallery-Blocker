@@ -6,7 +6,7 @@ import { readFile } from "node:fs/promises";
 const configSource = await readFile(new URL("../src/shared/detection-config.js", import.meta.url), "utf8");
 const workerSource = await readFile(new URL("../src/background/text-detection.js", import.meta.url), "utf8");
 
-function fixture(overrides = {}) {
+function fixture(overrides = {}, inferenceFailure = "") {
   const listeners = [];
   const calls = [];
   let documentExists = false;
@@ -14,12 +14,16 @@ function fixture(overrides = {}) {
     URL, setTimeout: () => 1, clearTimeout() {},
     chrome: {
       runtime: { id: "test-extension", getURL: path => `chrome-extension://test-extension/${path}`,
+        getContexts: async () => documentExists ? [{}] : [],
         onMessage: { addListener: fn => listeners.push(fn) },
-        sendMessage: async message => { calls.push(message); return { ok: true, results: message.items.map(() => ({ score: 0.8 })) }; } },
+        sendMessage: async message => {
+          calls.push(message);
+          return inferenceFailure ? { ok: false, error: inferenceFailure }
+            : { ok: true, results: message.items.map(() => ({ score: 0.8 })) };
+        } },
       storage: { sync: { get: async () => ({ dcbTextDetection: { enabled: true, ...overrides } }) },
         session: { set: async () => {} }, onChanged: { addListener() {} } },
-      offscreen: { hasDocument: async () => documentExists,
-        createDocument: async options => { calls.push(options); documentExists = true; }, closeDocument: async () => {} }
+      offscreen: { createDocument: async options => { calls.push(options); documentExists = true; }, closeDocument: async () => {} }
     }
   });
   vm.runInContext(configSource, context);
@@ -67,4 +71,17 @@ test("concurrent tabs share one runtime and process serial batches", async () =>
   assert.ok(replies.every(reply => reply.ok && reply.results[0].score === 0.8));
   assert.equal(app.calls.filter(call => call.url).length, 1);
   assert.equal(app.calls.filter(call => call.type === "DCB_INFERENCE").length, 3);
+});
+
+test("missing model runtime falls back to a disclosed conservative detector", async () => {
+  const app = fixture({}, "model-unavailable");
+  const reply = await app.request({ type: "DCB_DETECT_TEXT", items: [{ ...app.item, body: "너 같은 쓰레기는 닥쳐." }] });
+  assert.equal(reply.ok, true);
+  assert.equal(reply.mode, "basic");
+  assert.equal(reply.reason, "model-unavailable");
+  assert.ok(reply.results[0].score >= app.config.thresholds.careful);
+  assert.ok(app.config.fallbackScore("산책", "오늘은 날씨가 좋습니다.") < app.config.thresholds.sensitive);
+  assert.ok(app.config.fallbackScore("청소", "집 앞 쓰레기를 치우고 자료를 뒤져 봤습니다.") < app.config.thresholds.sensitive);
+  assert.ok(app.config.fallbackScore("연극", "미친놈 연기를 꽤 잘했습니다.") < app.config.thresholds.careful);
+  assert.ok(app.config.fallbackScore("환경", "코너에서 쓰레기 문제가 너무 심하다고 말했습니다.") < app.config.thresholds.careful);
 });

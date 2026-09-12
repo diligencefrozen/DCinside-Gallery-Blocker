@@ -109,6 +109,8 @@
   const HIDDEN_CLASS = "dcb-selective-dccon-hidden";
   const HIDDEN_ATTR = "data-dcb-selective-dccon-hidden";
   const HIDDEN_CODE_ATTR = "data-dcb-selective-dccon-code";
+  const EMPTY_ROW_CLASS = "dcb-selective-dccon-empty-row";
+  const EMPTY_ROW_ATTR = "data-dcb-selective-dccon-empty-row";
   const INITIAL_GUARD_ATTR = "data-dcb-selective-dccon-loading";
   const STYLE_ID = "dcb-selective-dccon-style";
   const TOAST_ID = "dcb-selective-dccon-toast";
@@ -117,6 +119,55 @@
   const PACKAGE_CACHE_TTL = 30 * 60 * 1000;
   const INTEGRITY_SCAN_INTERVAL = 4_000;
   const HIDDEN_SELECTOR = `.${HIDDEN_CLASS},[${HIDDEN_ATTR}="true"]`;
+  const EMPTY_ROW_SELECTOR = `.${EMPTY_ROW_CLASS},[${EMPTY_ROW_ATTR}="true"]`;
+  const COMMENT_BODY_SELECTOR = [
+    ".cmt_txtbox",
+    ".reply_txtbox",
+    ".reply_txt",
+    ".comment_txt",
+    ".dcbpv-comment-body"
+  ].join(",");
+  const NON_BODY_SELECTOR = [
+    HIDDEN_SELECTOR,
+    ".comment_dccon",
+    ".coment_dccon_img",
+    ".coment_dccon_txt",
+    ".comment_dccon_txt",
+    ".txtcon_txt",
+    ".dccon_over_box",
+    ".coment_dccon_info",
+    "[reqpath*='dccon']",
+    ".cmt_nickbox",
+    ".gall_writer",
+    ".ub-writer",
+    ".nickname",
+    ".dcb-writer-tools",
+    ".writer_nikcon",
+    ".fr",
+    ".date_time",
+    ".cmt_mdf_del",
+    "script",
+    "style",
+    "noscript",
+    "template",
+    "form",
+    "button",
+    "input",
+    "textarea",
+    "select"
+  ].join(",");
+  const VISUAL_CONTENT_SELECTOR = [
+    "img",
+    "video",
+    "audio",
+    "picture",
+    "canvas",
+    "svg",
+    "iframe",
+    "object",
+    "embed",
+    '[data-dcb-text-detection-placeholder="1"]'
+  ].join(",");
 
   let currentState = Store.emptyState();
   let blockedCodes = new Set();
@@ -148,6 +199,11 @@
         animation: none !important;
         transition: none !important;
         content-visibility: hidden !important;
+      }
+
+      .${EMPTY_ROW_CLASS},
+      [${EMPTY_ROW_ATTR}="true"] {
+        display: none !important;
       }
 
       html[${INITIAL_GUARD_ATTR}="true"] :is(${DCCON_SELECTOR}),
@@ -433,21 +489,146 @@
 
   function hideTargetFor(node, code = codeFromNode(node)) {
     if (!(node instanceof Element)) return null;
-    // 댓글 행 전체를 숨기면 이후 지연 삽입되는 안전한 형제 디시콘도 함께 가려진다.
-    // 개별/그룹 차단 모두 실제로 일치한 미디어 또는 텍스트콘 루트만 숨긴다.
+    // 먼저 정확히 일치한 콘텐츠만 숨긴 뒤, 댓글에 표시할 내용이 남았는지는 별도로 판단한다.
     if (isTextconNode(node)) return normalizedTextconRoot(node) || node;
     return exactIdentityElement(node, code) || node;
+  }
+
+  function rememberInlineDisplay(target) {
+    if (!(target instanceof Element) || previousInlineDisplay.has(target)) return;
+    previousInlineDisplay.set(target, {
+      value: target.style.getPropertyValue("display"),
+      priority: target.style.getPropertyPriority("display")
+    });
+  }
+
+  function restoreInlineDisplay(target) {
+    const previous = previousInlineDisplay.get(target);
+    if (!previous) return;
+
+    if (previous.value) target.style.setProperty("display", previous.value, previous.priority);
+    else target.style.removeProperty("display");
+    previousInlineDisplay.delete(target);
+  }
+
+  function structurallyHidden(node, row) {
+    let cursor = node;
+    while (cursor instanceof Element && cursor !== row) {
+      if (cursor.hidden || cursor.getAttribute("aria-hidden") === "true") return true;
+      const display = cursor.style?.getPropertyValue("display");
+      const visibility = cursor.style?.visibility;
+      if (display === "none" || visibility === "hidden" || visibility === "collapse") return true;
+      cursor = cursor.parentElement;
+    }
+    return false;
+  }
+
+  function excludedFromCommentBody(node, row) {
+    if (!(node instanceof Element)) return true;
+    const excluded = node.closest?.(NON_BODY_SELECTOR);
+    return !!excluded && row.contains(excluded);
+  }
+
+  function commentBodyRoots(row) {
+    const candidates = Array.from(row.querySelectorAll?.(COMMENT_BODY_SELECTOR) || []);
+    const roots = candidates.filter((candidate) => !candidates.some((other) => (
+      other !== candidate && other.contains(candidate)
+    )));
+    return roots.length ? roots : [row];
+  }
+
+  function rowHasVisibleDccon(row) {
+    for (const candidate of row.querySelectorAll?.(DCCON_SELECTOR) || []) {
+      const target = isTextconNode(candidate)
+        ? normalizedTextconRoot(candidate)
+        : exactIdentityElement(candidate, codeFromNode(candidate));
+      if (!(target instanceof Element)) continue;
+      if (target.matches?.(HIDDEN_SELECTOR) || target.closest?.(HIDDEN_SELECTOR)) continue;
+      if (!structurallyHidden(target, row)) return true;
+    }
+    return false;
+  }
+
+  function rowHasMeaningfulText(row) {
+    for (const root of commentBodyRoots(row)) {
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      while (walker.nextNode()) {
+        const parent = walker.currentNode.parentElement;
+        if (!parent || excludedFromCommentBody(parent, row) || structurallyHidden(parent, row)) continue;
+        const value = String(walker.currentNode.textContent || "")
+          .normalize("NFKC")
+          .replace(/[\s\u200b-\u200d\u2060\ufeff]+/g, "");
+        if (value) return true;
+      }
+    }
+    return false;
+  }
+
+  function rowHasOtherVisibleContent(row) {
+    for (const root of commentBodyRoots(row)) {
+      const candidates = [];
+      if (root.matches?.(VISUAL_CONTENT_SELECTOR)) candidates.push(root);
+      candidates.push(...(root.querySelectorAll?.(VISUAL_CONTENT_SELECTOR) || []));
+      for (const candidate of candidates) {
+        if (excludedFromCommentBody(candidate, row) || structurallyHidden(candidate, row)) continue;
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function rowHasMeaningfulContent(row) {
+    return rowHasVisibleDccon(row)
+      || rowHasMeaningfulText(row)
+      || rowHasOtherVisibleContent(row);
+  }
+
+  function forceEmptyRowHidden(row) {
+    if (!(row instanceof Element)) return;
+    rememberInlineDisplay(row);
+    if (!row.classList.contains(EMPTY_ROW_CLASS)) row.classList.add(EMPTY_ROW_CLASS);
+    if (row.getAttribute(EMPTY_ROW_ATTR) !== "true") row.setAttribute(EMPTY_ROW_ATTR, "true");
+    if (row.style.getPropertyValue("display") !== "none"
+      || row.style.getPropertyPriority("display") !== "important") {
+      row.style.setProperty("display", "none", "important");
+    }
+  }
+
+  function restoreEmptyRow(row) {
+    if (!(row instanceof Element)) return;
+    if (row.classList.contains(EMPTY_ROW_CLASS)) row.classList.remove(EMPTY_ROW_CLASS);
+    if (row.hasAttribute(EMPTY_ROW_ATTR)) row.removeAttribute(EMPTY_ROW_ATTR);
+    restoreInlineDisplay(row);
+  }
+
+  function reconcileCommentRow(row) {
+    if (!(row instanceof Element)) return;
+    const hasBlockedContent = !!row.querySelector?.(HIDDEN_SELECTOR);
+    if (!hasBlockedContent || rowHasMeaningfulContent(row)) restoreEmptyRow(row);
+    else forceEmptyRowHidden(row);
+  }
+
+  function reconcileCommentRows(scope = document) {
+    const rows = new Set();
+    if (scope instanceof Element) {
+      const closest = scope.closest?.(COMMENT_ROW_SELECTOR);
+      if (closest) rows.add(closest);
+      if (scope.matches?.(COMMENT_ROW_SELECTOR)) rows.add(scope);
+    }
+
+    scope?.querySelectorAll?.(`${EMPTY_ROW_SELECTOR},${HIDDEN_SELECTOR}`).forEach((target) => {
+      const row = target.matches?.(COMMENT_ROW_SELECTOR)
+        ? target
+        : target.closest?.(COMMENT_ROW_SELECTOR);
+      if (row) rows.add(row);
+    });
+    rows.forEach(reconcileCommentRow);
   }
 
   function forceHidden(target, code = "") {
     if (!(target instanceof Element)) return;
 
-    if (!previousInlineDisplay.has(target)) {
-      previousInlineDisplay.set(target, {
-        value: target.style.getPropertyValue("display"),
-        priority: target.style.getPropertyPriority("display")
-      });
-    }
+    rememberInlineDisplay(target);
 
     if (!target.classList.contains(HIDDEN_CLASS)) target.classList.add(HIDDEN_CLASS);
     if (target.getAttribute(HIDDEN_ATTR) !== "true") target.setAttribute(HIDDEN_ATTR, "true");
@@ -468,12 +649,7 @@
     target.removeAttribute(HIDDEN_ATTR);
     target.removeAttribute(HIDDEN_CODE_ATTR);
 
-    const previous = previousInlineDisplay.get(target);
-    if (!previous) return;
-
-    if (previous.value) target.style.setProperty("display", previous.value, previous.priority);
-    else target.style.removeProperty("display");
-    previousInlineDisplay.delete(target);
+    restoreInlineDisplay(target);
   }
 
   function hideNode(node, code = codeFromNode(node)) {
@@ -487,10 +663,12 @@
     if (!target) return false;
 
     forceHidden(target, code || `package_${packageIdx}`);
+    reconcileCommentRow(target.closest?.(COMMENT_ROW_SELECTOR));
     return true;
   }
 
   function restoreHidden() {
+    document.querySelectorAll(EMPTY_ROW_SELECTOR).forEach(restoreEmptyRow);
     document.querySelectorAll(HIDDEN_SELECTOR).forEach(restoreTarget);
   }
 
@@ -562,11 +740,14 @@
     }
     reconcileHidden(scope);
     scan(scope);
+    reconcileCommentRows(scope);
   }
 
   function mutationMayContainDccon(node) {
     if (!(node instanceof Element)) return false;
+    if (node.matches?.(EMPTY_ROW_SELECTOR) || node.closest?.(EMPTY_ROW_SELECTOR)) return true;
     if (node.matches?.(HIDDEN_SELECTOR) || node.closest?.(HIDDEN_SELECTOR)) return true;
+    if (node.closest?.(COMMENT_ROW_SELECTOR)?.querySelector?.(HIDDEN_SELECTOR)) return true;
     if (node.matches?.(DCCON_SELECTOR)) return true;
     return !!node.querySelector?.(DCCON_SELECTOR);
   }
@@ -579,6 +760,7 @@
     observer.observe(root, {
       childList: true,
       subtree: true,
+      characterData: true,
       attributes: true,
       attributeFilter: [
         "src",
@@ -606,7 +788,8 @@
         "data-dccon-package-idx",
         "data-package-no",
         HIDDEN_ATTR,
-        HIDDEN_CODE_ATTR
+        HIDDEN_CODE_ATTR,
+        EMPTY_ROW_ATTR
       ]
     });
     observerAttached = true;
@@ -627,6 +810,13 @@
             if (mutationMayContainDccon(node)) scopes.add(node);
           });
           if (mutationMayContainDccon(mutation.target)) scopes.add(mutation.target);
+          return;
+        }
+
+        if (mutation.type === "characterData") {
+          const parent = mutation.target.parentElement;
+          const row = parent?.closest?.(COMMENT_ROW_SELECTOR);
+          if (row?.querySelector?.(HIDDEN_SELECTOR)) scopes.add(parent);
           return;
         }
 
@@ -666,6 +856,7 @@
       ensureStyle();
       reconcileHidden(document);
       scan(document);
+      reconcileCommentRows(document);
     }, INTEGRITY_SCAN_INTERVAL);
   }
 
@@ -686,6 +877,7 @@
       startIntegrityScan();
       reconcileHidden(document);
       scan(document);
+      reconcileCommentRows(document);
     } else {
       stopObserver();
       stopIntegrityScan();

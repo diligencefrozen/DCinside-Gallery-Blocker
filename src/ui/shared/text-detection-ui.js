@@ -9,6 +9,19 @@
   let status = { state: "idle" };
   let revision = 0;
 
+  function statusText() {
+    if (!settings.enabled) return "꺼짐 · 켜면 화면에 보이는 글과 댓글부터 확인합니다.";
+    if (!settings.posts && !settings.comments) return "확인할 게시글 또는 댓글을 선택해 주세요.";
+    if (status.state === "error") return "감지 기능을 시작하지 못했습니다. 기능을 껐다 켜거나 확장 프로그램을 새로고침한 뒤 다시 시도해 주세요.";
+    if (status.state === "limited") return status.reason === "model-timeout"
+      ? "기본 감지 사용 중 · 정밀 분석 준비가 오래 걸려 명확한 공격 표현부터 확인합니다. 잠시 뒤 다시 연결합니다."
+      : "기본 감지 사용 중 · 정밀 분석 구성 요소를 불러오지 못해 명확한 공격 표현부터 확인합니다.";
+    if (status.state === "loading") return "기기 안에서 감지 기능을 준비하고 있습니다. 처음에는 시간이 조금 걸릴 수 있습니다.";
+    if (status.state === "analyzing") return "현재 기기에서 공격적인 표현을 확인하고 있습니다.";
+    if (status.state === "ready") return "준비 완료 · 잘못 감지하거나 놓칠 수 있습니다.";
+    return "사용 중 · 글이나 미리보기를 열면 확인합니다.";
+  }
+
   function render() {
     for (const root of roots) {
       for (const field of root.querySelectorAll("[data-detection-field]")) {
@@ -20,13 +33,7 @@
       const output = root.querySelector("[data-detection-status]");
       if (!output) continue;
       output.dataset.error = String(settings.enabled && status.state === "error");
-      output.textContent = !settings.enabled ? "꺼짐 · 켜면 화면에 보이는 글과 댓글부터 확인합니다."
-        : !settings.posts && !settings.comments ? "확인할 게시글 또는 댓글을 선택해 주세요."
-        : status.state === "error" ? "감지 기능을 시작하지 못했습니다. 기능을 껐다 켜서 다시 시도해 주세요. 계속 안 되면 확장 프로그램과 페이지를 새로고침해 주세요."
-        : status.state === "loading" ? "기기 안에서 감지 기능을 준비하고 있습니다. 처음에는 시간이 조금 걸릴 수 있습니다."
-        : status.state === "analyzing" ? "현재 기기에서 공격적인 표현을 확인하고 있습니다."
-        : status.state === "ready" ? "준비 완료 · 잘못 감지하거나 놓칠 수 있습니다."
-        : "사용 중 · 글이나 미리보기를 열면 확인합니다.";
+      output.textContent = statusText();
     }
   }
 
