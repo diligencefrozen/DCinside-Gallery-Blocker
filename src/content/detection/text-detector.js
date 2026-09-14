@@ -41,6 +41,7 @@
   let retryAfter = 0;
   let batchTimer = 0;
   let retryTimer = 0;
+  let modelRetryTimer = 0;
   let pruneTimer = 0;
   let observer = null;
   let viewportObserver = null;
@@ -187,6 +188,7 @@
     record.dirty = true;
     record.doneKey = '';
     record.input = null;
+    record.lastMode = '';
   }
 
   function updateSnapshot(record) {
@@ -227,8 +229,8 @@
     return placeholder;
   }
 
-  function showResult(record, score) {
-    if (!Config.isFlagged(score, settings) || allowedKeys.has(record.key)) {
+  function showResult(record, score, mode) {
+    if (!Config.isFlagged(score, settings, mode) || allowedKeys.has(record.key)) {
       removePresentation(record);
       return;
     }
@@ -238,9 +240,9 @@
     record.node.setAttribute(HIDDEN_ATTR, '1');
   }
 
-  function remember(key, score) {
+  function remember(key, score, mode = 'model') {
     cache.delete(key);
-    cache.set(key, score);
+    cache.set(key, { score, mode });
     if (cache.size > MAX_CACHE) cache.delete(cache.keys().next().value);
   }
 
@@ -248,11 +250,12 @@
     if (!record || !record.inRange || !settings.enabled || !settings[record.kind === 'post' ? 'posts' : 'comments']) return;
     if (!updateSnapshot(record)) return;
     if (cache.has(record.key)) {
-      const score = cache.get(record.key);
-      remember(record.key, score);
+      const { score, mode } = cache.get(record.key);
+      remember(record.key, score, mode);
       record.doneKey = record.key;
       record.input = null;
-      showResult(record, score);
+      record.lastMode = mode;
+      showResult(record, score, mode);
     } else if (record.doneKey !== record.key && !record.pending && !queued.has(record.node) && !deferred.has(record)) {
       if (queued.size < MAX_QUEUE) queued.set(record.node, record);
       else deferred.add(record);
@@ -312,14 +315,31 @@
         throw error;
       }
       if (!settings.enabled || requestEpoch !== epoch) return;
+      if (response.mode === 'basic' && !modelRetryTimer) {
+        modelRetryTimer = setTimeout(() => {
+          modelRetryTimer = 0;
+          for (const [key, result] of cache) if (result.mode === 'basic') cache.delete(key);
+          for (const record of records.values()) {
+            if (record.lastMode !== 'basic') continue;
+            record.doneKey = '';
+            record.lastMode = '';
+            // The original node may be display:none while its reveal placeholder
+            // is on screen. Keep it eligible for the scheduled model retry.
+            record.inRange = visible(record.placeholder, 350) || visible(record.node, 350);
+            if (record.inRange) consider(record);
+          }
+          scheduleBatch();
+        }, 5 * 60_000 + 1_000);
+      }
       batch.forEach((item, index) => {
         const record = item.record;
         if (records.get(record.node) !== record || record.version !== item.version || record.key !== item.key) return;
         const score = response.results[index]?.score;
-        remember(item.key, score);
+        remember(item.key, score, response.mode);
         record.doneKey = item.key;
         record.input = null;
-        showResult(record, score);
+        record.lastMode = response.mode;
+        showResult(record, score, response.mode);
       });
     } catch (error) {
       if (requestEpoch === epoch) {
@@ -373,7 +393,7 @@
     const record = {
       ...target,
       id: nextRecordId++, key: '', doneKey: '', version: 0, pending: false,
-      input: null, titleNode: null, dirty: true, inRange: false, placeholder: null
+      input: null, titleNode: null, dirty: true, inRange: false, placeholder: null, lastMode: ''
     };
     records.set(target.node, record);
     recordsById.set(record.id, record);
@@ -489,6 +509,8 @@
     clearTimeout(batchTimer);
     clearTimeout(retryTimer);
     clearTimeout(pruneTimer);
+    clearTimeout(modelRetryTimer);
+    modelRetryTimer = 0;
     clearTimeout(fallbackTimer);
     batchTimer = retryTimer = pruneTimer = fallbackTimer = 0;
     queued.clear();
@@ -505,6 +527,8 @@
     epoch += 1;
     retryAfter = 0;
     clearAll();
+    // Toggling or changing settings is also an explicit retry of model loading.
+    for (const [key, result] of cache) if (result.mode === 'basic') cache.delete(key);
     if (!settings.enabled || (!settings.posts && !settings.comments)) return;
     if (!document.documentElement) {
       document.addEventListener('DOMContentLoaded', () => apply(settings), { once: true });

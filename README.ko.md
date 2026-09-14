@@ -47,7 +47,7 @@
 
 ## 왜 만들었나요?
 
-개발 중인 읽기 기능 개선: 미리보기 기본 활성화, 댓글 줄바꿈·영상 재생·텍스트콘 숨기기 수정, 원상 복원이 가능한 글꼴 설정, 선택형 기기 내 문장 분석이 포함됩니다. 모델까지 포함해 설치하는 방법은 [개발·검증 안내](docs/reading-and-detection.md), 분석 범위는 [사용 안내](docs/text-detection.html)를 확인하세요.
+개발 중인 읽기 기능 개선: 미리보기 기본 활성화, 댓글 줄바꿈·영상 재생·텍스트콘 숨기기 수정, 원상 복원이 가능한 글꼴 설정, 선택형 기기 내 문장 분석이 포함됩니다. 모델 계약은 [모델 안내](models/conflict/CONTRACT.md), 분석 범위는 [사용 안내](docs/text-detection.html)를 확인하세요.
 
 디시인사이드를 이용하다 보면 보고 싶지 않은 글이나 댓글을 여러 곳에서 다시 마주치게 됩니다.
 
@@ -240,7 +240,7 @@ flowchart TD
 - **Chrome Storage** — 차단 목록과 각종 설정을 저장합니다.
 - **Declarative Net Request** — **`하드`** 방식을 선택했을 때 갤러리가 열리기 전에 접근을 막습니다.
 
-JavaScript, HTML, CSS만 사용하며 별도의 프레임워크, 자체 서버, 패키지 설치, 빌드 과정은 필요하지 않습니다.
+화면은 JavaScript, HTML, CSS로 만들며 별도의 프레임워크나 자체 서버는 사용하지 않습니다. 기기 내 모델 감지는 ONNX Runtime을 함께 사용하므로, 개발용 설치와 패키징에는 아래의 의존성 설치 및 빌드 과정이 필요합니다.
 
 ---
 
@@ -413,6 +413,8 @@ src/
 
 ## 직접 실행하기
 
+프로젝트 코드는 [GPL-3.0](LICENSE)이며 Copyright (C) 2025-2026 diligencefrozen입니다. 공격적 표현 감지 학습에는 Curse Detection Data(2runo, MIT), Korean HateSpeech / BEEP!(Moon·Cho·Lee, CC BY-SA 4.0), Korean Malicious Comments(ZIZUN, MIT)를 사용합니다. 출처와 코드·모델 가중치의 라이선스 구분은 [제3자 고지](THIRD_PARTY_NOTICES.md)를 확인하세요.
+
 저장소를 내려받거나 복제한 뒤 다음 주소를 엽니다.
 
 ```text
@@ -425,7 +427,14 @@ chrome://extensions
 2. **압축해제된 확장 프로그램을 로드합니다**를 누릅니다.
 3. `manifest.json`이 있는 프로젝트 폴더를 선택합니다.
 
-따로 설치해야 하는 개발 도구나 빌드 과정은 없습니다.
+일반 차단 기능과 기본 표현 감지는 프로젝트 폴더에서 바로 실행할 수 있습니다. 모델 감지까지 사용하려면 고정된 런타임과 명시적인 설치 파일 목록을 빌드합니다.
+
+```bash
+pnpm install --frozen-lockfile
+pnpm run package:extension
+```
+
+`dist/DCinside-Gallery-Blocker` 폴더를 압축해제 확장 프로그램으로 불러오거나 `dist/DCinside-Gallery-Blocker.zip`을 사용합니다. 원본 데이터와 Teacher 모델은 설치 파일에 포함하지 않습니다. 자세한 내용은 [모델 계약](models/conflict/CONTRACT.md), [모델 카드](models/conflict/MODEL_CARD.md), [재학습 절차](scripts/TRAINING.md)를 확인하세요.
 
 ---
 

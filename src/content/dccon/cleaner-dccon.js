@@ -50,8 +50,6 @@ cleaner-dccon.js - 디시콘 / 텍스트콘 숨기기
   const TEXT_COMMENT_HIDDEN_CLASS = 'dcb-cleaner-textcon-comment-hidden';
   const MEDIA_CONTENT_HIDDEN_CLASS = 'dcb-cleaner-dccon-content-hidden';
   const TEXT_CONTENT_HIDDEN_CLASS = 'dcb-cleaner-textcon-content-hidden';
-  const SELECTIVE_HIDDEN_SEL = '.dcb-selective-dccon-hidden, [data-dcb-selective-dccon-hidden="true"]';
-
   const MEDIA_CANDIDATE_SEL = [COMMENT_MEDIA_DCCON_SEL, ...MEDIA_DCCON_SELS].join(',');
 
   const MEDIA_CSS_RULE = `
@@ -154,13 +152,6 @@ cleaner-dccon.js - 디시콘 / 텍스트콘 숨기기
     addHiddenKind(node, kind);
   };
 
-  const restoreInlineDisplay = () => {
-    document.querySelectorAll(`${MEDIA_CANDIDATE_SEL}, ${TEXTCON_SEL}`).forEach((el) => {
-      if (el.matches?.(SELECTIVE_HIDDEN_SEL) || el.closest?.(SELECTIVE_HIDDEN_SEL)) return;
-      if (el.style?.display === 'none') el.style.removeProperty('display');
-    });
-  };
-
   const restoreOwnHiddenState = () => {
     document.querySelectorAll('[data-dcb-cleaner-hidden="true"]').forEach((el) => {
       el.classList.remove(
@@ -173,7 +164,6 @@ cleaner-dccon.js - 디시콘 / 텍스트콘 숨기기
       el.removeAttribute('data-dcb-cleaner-hidden');
       el.removeAttribute('data-dcb-dccon-hidden');
     });
-    restoreInlineDisplay();
   };
 
   const hideMediaInScope = (scope) => {

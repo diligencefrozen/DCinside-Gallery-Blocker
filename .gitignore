@@ -1,7 +1,5 @@
 node_modules/
 .pnpm-store/
 vendor/detector/
-models/conflict/model.onnx
 *.part
-test-results/
 dist/

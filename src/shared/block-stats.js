@@ -20,7 +20,7 @@
     }
   })();
 
-  const COMMENT_ROW_SELECTOR = [
+  const COMMENT_CONTAINER_SELECTOR = [
     "#focus_cmt li.ub-content",
     "#focus_cmt li[id^='comment_']",
     "#focus_cmt li[id^='reply_']",
@@ -29,7 +29,18 @@
     ".reply_list li",
     "li[id^='comment_li_']",
     "li[id^='reply_li_']",
+    ".cmt_item",
+    ".reply_item",
+    ".comment_item",
     ".dcbpv-comment-item"
+  ].join(",");
+
+  const COMMENT_ROW_SELECTOR = [
+    COMMENT_CONTAINER_SELECTOR,
+    "div.cmt_info[data-no]",
+    "div.cmt_info[data-article-no]",
+    "div.cmt_info.clear",
+    ".cmt_info"
   ].join(",");
 
   // report() 호출이 초기 로딩 경쟁으로 누락되더라도, 확장 프로그램이 남긴
@@ -43,7 +54,8 @@
     { selector: ".dcb-cleaner-textcon-comment-hidden,.dcb-cleaner-textcon-content-hidden,.dcbpv-textcon-hidden", category: "textcon", canonicalComment: true },
     {
       selector: '.dcb-selective-dccon-hidden,[data-dcb-selective-dccon-hidden="true"]',
-      category: "dccon"
+      category: "dccon",
+      canonicalComment: true
     },
     { selector: ".dcb-cleaner-dccon-comment-hidden,.dcb-cleaner-dccon-content-hidden,.dcbpv-dccon-hidden,[data-dcb-dccon-hidden=\"true\"]", category: "dccon", canonicalComment: true },
     { selector: ".dcb-dory-blocked", category: "ads" },
@@ -220,7 +232,11 @@
   function canonicalRecoveryTarget(element, rule) {
     if (!(element instanceof Element)) return null;
     if (!rule?.canonicalComment) return element;
-    return element.closest?.(COMMENT_ROW_SELECTOR) || element;
+    // Legacy rows wrap .cmt_info in a list item. Prefer that outer row so a
+    // row-level marker and a nested DCCon marker share one statistics target.
+    return element.closest?.(COMMENT_CONTAINER_SELECTOR)
+      || element.closest?.(".cmt_info")
+      || element;
   }
 
   function previewReasonCategory(reason) {

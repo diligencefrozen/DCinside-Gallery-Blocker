@@ -27,7 +27,7 @@ function getWorker() {
     if (worker !== instance || !pending || data?.id !== pending.id) return;
     if (!data.ok || !Array.isArray(data.results) || data.results.length !== pending.count || data.results.some(item =>
       !item || !Number.isFinite(item.score) || item.score < 0 || item.score > 1)) {
-      stopWorker();
+      stopWorker(data?.ok ? "invalid-result" : data?.error || "model-unavailable");
       return;
     }
     const job = pending;
