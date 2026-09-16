@@ -450,7 +450,6 @@ syncSettings(handleUrl);
       #${OVERLAY_ID} .dcbpv-panel{width:min(880px,100%);min-width:0;max-height:min(92dvh,960px);display:flex;flex-direction:column;overflow:hidden;border-radius:18px;background:#fff;color:#111827;box-shadow:0 24px 80px rgba(0,0,0,.34),0 0 0 1px rgba(255,255,255,.25)}
       #${OVERLAY_ID}.dcbpv-enter .dcbpv-panel{animation:dcbpv-pop .18s ease-out}
       #${OVERLAY_ID} .dcbpv-header{display:flex;flex-shrink:0;gap:14px;align-items:flex-start;justify-content:space-between;padding:17px 20px;border-bottom:1px solid #eef2f7;background:linear-gradient(180deg,#fff,#fbfcff)}
-      #${OVERLAY_ID} .dcbpv-label{margin-bottom:5px;color:#64748b;font-size:12px;line-height:1.5;font-weight:600}
       #${OVERLAY_ID} .dcbpv-title{font-size:18px;font-weight:800;line-height:1.38;color:#0f172a;word-break:break-word}
       #${OVERLAY_ID} .dcbpv-title a{color:inherit;text-decoration:underline;text-underline-offset:3px}
       #${OVERLAY_ID} .dcbpv-writer{margin-top:8px;color:#64748b;font-size:12px;line-height:1.55;word-break:break-word}
@@ -3599,7 +3598,6 @@ syncSettings(handleUrl);
       <section class="dcbpv-panel" role="dialog" aria-modal="true" aria-label="디시 게시글 미리보기" tabindex="-1">
         <header class="dcbpv-header">
           <div style="min-width:0;flex:1">
-            <div class="dcbpv-label">게시글 미리보기 · Esc로 닫기</div>
             <div class="dcbpv-title"><a href="${escapeText(data.url)}" target="_blank" rel="noreferrer noopener">${escapeText(data.title)}</a></div>
             <div class="dcbpv-writer">${data.writerHTML || "작성자 정보 없음"}</div>
           </div>
