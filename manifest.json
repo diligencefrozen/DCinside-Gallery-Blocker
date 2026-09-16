@@ -187,6 +187,17 @@
     },
     {
       "matches": [
+        "*://www.dcinside.com/*",
+        "*://gall.dcinside.com/board/lists*"
+      ],
+      "js": [
+        "src/content/gallery/dcbest-source-filter.js"
+      ],
+      "run_at": "document_end",
+      "all_frames": false
+    },
+    {
+      "matches": [
         "*://gall.dcinside.com/board/*",
         "*://gall.dcinside.com/mgallery/board/*",
         "*://gall.dcinside.com/mini/board/*",

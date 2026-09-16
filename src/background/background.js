@@ -1783,6 +1783,183 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   return true;
 });
 
+
+/* ───── 실베 원출처 확인: 서버 부하를 피하기 위해 전역 단일 큐 + 최소 요청 간격 적용 ───── */
+const DCBEST_SOURCE_MIN_INTERVAL_MS = 4000;
+const DCBEST_SOURCE_JITTER_MS = 1500;
+const DCBEST_SOURCE_BACKOFF_MS = 120_000;
+const DCBEST_SOURCE_SESSION_KEY = "dcbDcbestSourceGuardV1";
+let dcbestSourceQueue = Promise.resolve();
+let dcbestSourceGuard = {
+  lastRequestAt: 0,
+  cooldownUntil: 0
+};
+
+const dcbestSourceGuardReady = (async () => {
+  try {
+    const stored = await chrome.storage.session.get({
+      [DCBEST_SOURCE_SESSION_KEY]: dcbestSourceGuard
+    });
+    const value = stored?.[DCBEST_SOURCE_SESSION_KEY];
+    if (value && typeof value === "object") {
+      dcbestSourceGuard = {
+        lastRequestAt: Math.max(0, Number(value.lastRequestAt) || 0),
+        cooldownUntil: Math.max(0, Number(value.cooldownUntil) || 0)
+      };
+    }
+  } catch (_) {}
+})();
+
+function persistDcbestSourceGuard() {
+  void chrome.storage.session.set({
+    [DCBEST_SOURCE_SESSION_KEY]: {
+      lastRequestAt: dcbestSourceGuard.lastRequestAt,
+      cooldownUntil: dcbestSourceGuard.cooldownUntil
+    }
+  });
+}
+
+function dcbestSourceSenderAllowed(sender) {
+  try {
+    const source = new URL(String(sender?.url || sender?.tab?.url || ""));
+    if (source.protocol !== "https:") return false;
+    if (source.hostname === "www.dcinside.com") return true;
+    if (source.hostname !== "gall.dcinside.com") return false;
+    return /^\/board\/lists\/?$/i.test(source.pathname)
+      && String(source.searchParams.get("id") || "").trim().toLowerCase() === "dcbest";
+  } catch (_) {
+    return false;
+  }
+}
+
+function decodeHtmlAttribute(value) {
+  return String(value || "")
+    .replace(/&amp;/gi, "&")
+    .replace(/&#38;/g, "&")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'");
+}
+
+function stripHtmlTags(value) {
+  return String(value || "")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function extractDcbestSourceGalleryId(html) {
+  const source = String(html || "");
+  if (!source) return "";
+
+  const anchorPattern = /<a\b[^>]*\bhref\s*=\s*(["'])(.*?)\1[^>]*>([\s\S]*?)<\/a>/gi;
+  let match;
+
+  while ((match = anchorPattern.exec(source))) {
+    const label = stripHtmlTags(match[3]);
+    if (!label.includes("원본 보기")) continue;
+
+    try {
+      const href = decodeHtmlAttribute(match[2]);
+      const target = new URL(href, "https://gall.dcinside.com/");
+      if (target.hostname !== "gall.dcinside.com") continue;
+      const gid = String(target.searchParams.get("id") || "").trim().toLowerCase();
+      if (gid && gid !== "dcbest" && /^[a-z0-9_-]+$/i.test(gid)) return gid;
+    } catch (_) {}
+  }
+
+  return "";
+}
+
+async function resolveDcbestSourceGallery(no) {
+  await dcbestSourceGuardReady;
+
+  const postNo = String(no || "").trim();
+  if (!/^\d{1,12}$/.test(postNo)) {
+    return { ok: false, gid: "", reason: "INVALID_NO" };
+  }
+
+  const now = Date.now();
+  if (dcbestSourceGuard.cooldownUntil > now) {
+    return {
+      ok: false,
+      gid: "",
+      rateLimited: true,
+      retryAfterMs: dcbestSourceGuard.cooldownUntil - now
+    };
+  }
+
+  const jitter = Math.floor(Math.random() * (DCBEST_SOURCE_JITTER_MS + 1));
+  const earliest = dcbestSourceGuard.lastRequestAt + DCBEST_SOURCE_MIN_INTERVAL_MS + jitter;
+  if (earliest > now) {
+    await new Promise((resolve) => setTimeout(resolve, earliest - now));
+  }
+
+  dcbestSourceGuard.lastRequestAt = Date.now();
+  persistDcbestSourceGuard();
+
+  const url = `https://gall.dcinside.com/board/view/?id=dcbest&no=${encodeURIComponent(postNo)}`;
+  const result = await dcbFetchDcinsideHtml(url, {
+    cache: "default",
+    referrer: "https://gall.dcinside.com/board/lists?id=dcbest"
+  });
+
+  if (result.status === 403 || result.status === 429) {
+    dcbestSourceGuard.cooldownUntil = Date.now() + DCBEST_SOURCE_BACKOFF_MS;
+    persistDcbestSourceGuard();
+    return {
+      ok: false,
+      gid: "",
+      rateLimited: true,
+      retryAfterMs: DCBEST_SOURCE_BACKOFF_MS,
+      status: result.status
+    };
+  }
+
+  if (!result.ok) {
+    return {
+      ok: false,
+      gid: "",
+      status: result.status || 0,
+      reason: result.error || "FETCH"
+    };
+  }
+
+  return {
+    ok: true,
+    gid: extractDcbestSourceGalleryId(result.text),
+    status: result.status || 200
+  };
+}
+
+function enqueueDcbestSourceGallery(no) {
+  const task = dcbestSourceQueue.then(
+    () => resolveDcbestSourceGallery(no),
+    () => resolveDcbestSourceGallery(no)
+  );
+  dcbestSourceQueue = task.catch(() => {});
+  return task;
+}
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type !== "dcb.dcbestSource") return;
+
+  if (!dcbestSourceSenderAllowed(sender)) {
+    sendResponse({ ok: false, gid: "", reason: "INVALID_SENDER" });
+    return;
+  }
+
+  enqueueDcbestSourceGallery(message.no)
+    .then(sendResponse)
+    .catch((error) => sendResponse({
+      ok: false,
+      gid: "",
+      reason: error?.message || String(error)
+    }));
+
+  return true;
+});
+
 /* ───── 사용자 즉시 차단/해제 ───── */
 function matchingBlockedUserTokens(storedTokens, candidates) {
   const normalizedCandidates = DCBUserBlockStore.normalizeList(candidates);
