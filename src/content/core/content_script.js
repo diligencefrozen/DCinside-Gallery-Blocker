@@ -513,7 +513,11 @@ syncSettings(handleUrl);
       #${OVERLAY_ID} .dcbpv-btn.primary{background:#2563eb;border-color:#2563eb;color:#fff}#${OVERLAY_ID} .dcbpv-btn.primary:hover{background:#1d4ed8}
       #${OVERLAY_ID} .dcbpv-btn.warn{color:#b91c1c;border-color:#fecaca;background:#fff7f7}
       #${OVERLAY_ID} .dcbpv-center{min-height:240px;display:grid;place-items:center;text-align:center;color:#64748b;padding:28px}
+      #${OVERLAY_ID} .dcbpv-loading-panel{width:min(420px,92vw)}
+      #${OVERLAY_ID} .dcbpv-loading-panel .dcbpv-center{min-height:132px;padding:22px}
       #${OVERLAY_ID} .dcbpv-spinner{width:34px;height:34px;border-radius:50%;border:3px solid #dbeafe;border-top-color:#2563eb;margin:0 auto 14px;animation:dcbpv-spin .8s linear infinite}
+      #${OVERLAY_ID} .dcbpv-inline-loading{display:flex;align-items:center;justify-content:center;gap:9px;min-height:62px;padding:14px;color:#64748b;font-size:13px}
+      #${OVERLAY_ID} .dcbpv-inline-spinner{width:16px;height:16px;flex:0 0 auto;border-radius:50%;border:2px solid #dbeafe;border-top-color:#2563eb;animation:dcbpv-spin .8s linear infinite}
       #${OVERLAY_ID} .dcbpv-user-data-list{position:fixed!important;z-index:2147483640!important;min-width:156px!important;margin:0!important;padding:6px 0!important;list-style:none!important;border:1px solid #d8dde8!important;border-radius:10px!important;background:#fff!important;color:#111827!important;box-shadow:0 14px 38px rgba(15,23,42,.22)!important;font-size:12px!important;line-height:1.35!important;overflow:hidden!important}
       #${OVERLAY_ID} .dcbpv-user-data-list,#${OVERLAY_ID} .dcbpv-user-data-list *{box-sizing:border-box!important;background-image:none!important;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif!important;text-shadow:none!important}
       #${OVERLAY_ID} .dcbpv-user-data-list li{margin:0!important;padding:0!important;list-style:none!important;white-space:nowrap!important;background:transparent!important}
@@ -605,18 +609,16 @@ syncSettings(handleUrl);
     const overlay = document.createElement("div");
     overlay.id = OVERLAY_ID;
     overlay.innerHTML = `
-      <section class="dcbpv-panel" role="dialog" aria-modal="true" aria-label="게시글 미리보기 불러오는 중" tabindex="-1">
-        <header class="dcbpv-header"><strong>게시글 미리보기</strong><button class="dcbpv-icon" type="button" data-act="close" aria-label="미리보기 닫기">×</button></header>
+      <section class="dcbpv-panel dcbpv-loading-panel" role="dialog" aria-modal="true" aria-label="게시글 미리보기 불러오는 중" tabindex="-1">
         <div class="dcbpv-center" role="status" aria-live="polite">
           <div>
             <div class="dcbpv-spinner"></div>
-            <strong>게시글과 댓글을 불러오는 중...</strong>
-            <div style="font-size:12px;margin-top:6px;color:#94a3b8">본문·댓글·이미지를 정리하고 있습니다.</div>
+            <strong>게시글 불러오는 중...</strong>
           </div>
         </div>
       </section>`;
     overlay.addEventListener("click", (event) => {
-      if (event.target === overlay || event.target.closest("[data-act='close']")) closePreview();
+      if (event.target === overlay) closePreview();
     });
     mountPreview(overlay);
   }
@@ -2813,7 +2815,7 @@ syncSettings(handleUrl);
     return { html: "", debug };
   }
 
-  async function loadPreview(url, { force = false } = {}){
+  async function loadPreview(url, { force = false, onArticleReady = null } = {}){
     const cached = cache.get(url);
     if (!force && cached && Date.now() - cached.time < CACHE_TTL) return cached.data;
 
@@ -2866,6 +2868,13 @@ syncSettings(handleUrl);
         // 렌더링된 본문을 우선하고, 기존 fetch에서 얻은 댓글/통계만 보충한다.
         data = data ? mergePreviewData(renderedData, data) : renderedData;
       }
+    }
+
+    if (data && !isWeakPreviewData(data) && typeof onArticleReady === "function") {
+      const existingCommentCount = actualCommentItemCountFromHtml(data.commentsHTML || "");
+      try {
+        onArticleReady(data, { commentsPending: !data.commentsHTML || existingCommentCount === 0 });
+      } catch (_) {}
     }
 
     try {
@@ -3544,19 +3553,48 @@ syncSettings(handleUrl);
     summarizeHiddenComments(overlay);
   }
 
-  function renderPreview(data){
+  function previewCommentHtml(data, commentsPending = false){
+    const commentDebugLines = Array.isArray(data.commentDebug)
+      ? data.commentDebug.slice(-4).map(commentDebugSummaryItem).filter(Boolean)
+      : [];
+
+    if (data.commentsHTML) {
+      return `${data.commentsHTML}${commentsPending ? `<div class="dcbpv-inline-loading" role="status" aria-live="polite"><span class="dcbpv-inline-spinner"></span><span>댓글을 확인하는 중...</span></div>` : ""}`;
+    }
+    if (commentsPending) {
+      return `<div class="dcbpv-inline-loading" role="status" aria-live="polite"><span class="dcbpv-inline-spinner"></span><span>댓글 불러오는 중...</span></div>`;
+    }
+    return `<div class="dcbpv-empty">${data.commentError ? "댓글을 불러오지 못했습니다. 새로고침하거나 원문에서 확인해 주세요." : "표시할 댓글이 없습니다."}${previewCommentDebugEnabled(data.url) && commentDebugLines.length ? `<br><small>${escapeText(commentDebugLines.join(" | "))}</small>` : ""}</div>`;
+  }
+
+  function updatePreviewComments(data){
+    const overlay = document.getElementById(OVERLAY_ID);
+    if (!overlay || overlay.dataset.dcbpvUrl !== data.url) return false;
+
+    currentPreviewData = data;
+    const commentsSection = overlay.querySelector(".dcbpv-comments");
+    const commentRoot = commentsSection?.querySelector(".dcbpv-comment-html");
+    const commentTitle = commentsSection?.querySelector(".dcbpv-comments-title");
+    if (!commentsSection || !commentRoot) return false;
+
+    if (commentTitle) commentTitle.textContent = data.commentTitle || "댓글";
+    commentRoot.innerHTML = previewCommentHtml(data, false);
+    settlePreviewMedia(commentRoot, data.fetchedUrl || data.url, data.url);
+    applyPreviewFeatureBridge(overlay, data);
+    return true;
+  }
+
+  function renderPreview(data, { commentsPending = false } = {}){
     currentPreviewData = data;
     installPreviewCss();
     closePreview({ preserveSession: true });
     currentPreviewData = data;
 
-    const commentDebugLines = Array.isArray(data.commentDebug)
-      ? data.commentDebug.slice(-4).map(commentDebugSummaryItem).filter(Boolean)
-      : [];
-    const commentEmptyHtml = data.commentsHTML || `<div class="dcbpv-empty">${data.commentError ? "댓글을 불러오지 못했습니다. 새로고침하거나 원문에서 확인해 주세요." : "표시할 댓글이 없습니다."}${previewCommentDebugEnabled(data.url) && commentDebugLines.length ? `<br><small>${escapeText(commentDebugLines.join(" | "))}</small>` : ""}</div>`;
+    const commentEmptyHtml = previewCommentHtml(data, commentsPending);
 
     const overlay = document.createElement("div");
     overlay.id = OVERLAY_ID;
+    overlay.dataset.dcbpvUrl = data.url;
     overlay.innerHTML = `
       <section class="dcbpv-panel" role="dialog" aria-modal="true" aria-label="디시 게시글 미리보기" tabindex="-1">
         <header class="dcbpv-header">
@@ -3581,7 +3619,7 @@ syncSettings(handleUrl);
             &nbsp; 비추 : <span class="dcbpv-vote-down">${data.counts.down || "0"}</span>
           </div>
           <section class="dcbpv-section dcbpv-comments">
-            <h3 class="dcbpv-section-title">${escapeText(data.commentTitle || "댓글")}</h3>
+            <h3 class="dcbpv-section-title dcbpv-comments-title">${escapeText(data.commentTitle || "댓글")}</h3>
             <article class="dcbpv-html dcbpv-comment-html">${commentEmptyHtml}</article>
           </section>
         </main>
@@ -3734,12 +3772,44 @@ syncSettings(handleUrl);
     if (!url) return;
     activeAbort?.abort();
     const requestVersion = ++previewRequestVersion;
-    renderLoading();
+
+    const cached = !options.force ? cache.get(url) : null;
+    if (cached && Date.now() - cached.time < CACHE_TTL) {
+      renderPreview(cached.data);
+      return;
+    }
+
+    let articleRendered = false;
+    let loadingTimer = setTimeout(() => {
+      loadingTimer = 0;
+      if (requestVersion === previewRequestVersion && !articleRendered) renderLoading();
+    }, 140);
+
+    const clearLoadingTimer = () => {
+      if (!loadingTimer) return;
+      clearTimeout(loadingTimer);
+      loadingTimer = 0;
+    };
+
     try {
-      const data = await loadPreview(url, options);
+      const data = await loadPreview(url, {
+        ...options,
+        onArticleReady: (partialData, state = {}) => {
+          if (requestVersion !== previewRequestVersion) return;
+          articleRendered = true;
+          clearLoadingTimer();
+          renderPreview(partialData, { commentsPending: state.commentsPending !== false });
+        }
+      });
+      clearLoadingTimer();
       if (requestVersion !== previewRequestVersion) return;
-      renderPreview(data);
+      if (articleRendered) {
+        if (!updatePreviewComments(data)) renderPreview(data);
+      } else {
+        renderPreview(data);
+      }
     } catch (error) {
+      clearLoadingTimer();
       if (requestVersion !== previewRequestVersion || error?.name === "AbortError") return;
       renderError(error?.message || "알 수 없는 오류", url);
     }
