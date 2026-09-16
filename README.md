@@ -229,7 +229,7 @@ In this project:
 - **Chrome Storage** keeps settings and personal block data.
 - **Declarative Net Request** handles strict network-level gallery blocking.
 
-The interface uses plain JavaScript, HTML, and CSS, without a framework or custom backend. Local model inference uses a bundled ONNX Runtime; development installation and packaging require the pinned Node dependencies and build step below.
+The extension is built with plain JavaScript, HTML, and CSS. There is no framework, package installation, custom backend, or build step.
 
 ---
 
@@ -394,8 +394,6 @@ Some features request information directly from approved DCinside services when 
 
 ## Run It Locally
 
-The project code is [GPL-3.0](LICENSE), copyright (C) 2025-2026 diligencefrozen. The aggressive-expression training pipeline uses Curse Detection Data (2runo, MIT), Korean HateSpeech / BEEP! (Moon, Cho and Lee, CC BY-SA 4.0), and Korean Malicious Comments (ZIZUN, MIT). See [third-party notices](THIRD_PARTY_NOTICES.md) for attribution and the distinction between software and model-weight licensing.
-
 Clone the repository:
 
 ```bash
@@ -409,14 +407,7 @@ Then:
 3. Click **Load unpacked**.
 4. Select the project folder containing `manifest.json`.
 
-The ordinary blocking features and basic expression fallback can run directly from the checkout. For full local model inference, build the pinned runtime and explicit installation allowlist:
-
-```bash
-pnpm install --frozen-lockfile
-pnpm run package:extension
-```
-
-Load `dist/DCinside-Gallery-Blocker` as the unpacked extension, or use `dist/DCinside-Gallery-Blocker.zip`. Raw training data and teacher weights are not included. See the [model contract](models/conflict/CONTRACT.md), [model card](models/conflict/MODEL_CARD.md), and [training procedure](scripts/TRAINING.md).
+No dependency installation or build step is required.
 
 ---
 

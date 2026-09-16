@@ -12,7 +12,18 @@
   const EXTRA_FOR_ATTR = "data-dcb-keyword-soft-extra-for";
   const ANONYMOUS_HIDDEN_CLASS = "dcb-anonymous-hidden";
   const ALLOW_SESSION_KEY = `dcb-keyword-soft-allow:${location.pathname}${location.search}`;
-  const listFilter = globalThis.DCBListFilter;
+  const LIST_ITEM_SELECTOR = [
+    ".gall_list tr.ub-content",
+    ".gall_list tr[data-no]",
+    ".gall_list tr.gall_tr",
+    "tr.ub-content",
+    "tr[data-no]",
+    "tr.gall_tr",
+    ".gall_list li.ub-content",
+    ".gall_list li.gall_item",
+    "li.gall_item",
+    ".gall_item"
+  ].join(",");
 
   const COMMENT_ITEM_SELECTOR = [
     "#focus_cmt li.ub-content",
@@ -46,7 +57,13 @@
   let nextSoftId = 1;
   let allowedKeys = loadAllowedKeys();
 
-  const { normalizeText, prepareKeywords } = globalThis.DCBKeywordMatcher;
+  function normalizeText(value) {
+    return String(value || "")
+      .normalize("NFKC")
+      .toLowerCase()
+      .replace(/\s+/g, " ")
+      .trim();
+  }
 
   function escapeHtml(value) {
     return String(value || "")
@@ -93,8 +110,30 @@
     }
   }
 
+  function prepareKeywords(list) {
+    if (!Array.isArray(list)) return [];
+
+    const seen = new Set();
+    const prepared = [];
+
+    list.forEach((raw) => {
+      const label = String(raw || "").normalize("NFKC").trim();
+      const needle = normalizeText(label);
+
+      if (!label || !needle || seen.has(needle)) return;
+
+      seen.add(needle);
+      prepared.push({ label, needle });
+    });
+
+    return prepared;
+  }
+
   function findKeyword(text) {
-    return globalThis.DCBKeywordMatcher.findKeyword(text, keywords);
+    const haystack = normalizeText(text);
+    if (!haystack) return null;
+
+    return keywords.find((keyword) => haystack.includes(keyword.needle)) || null;
   }
 
   function ensureStyle() {
@@ -210,16 +249,29 @@
   }
 
   function getListRows() {
-    return listFilter.collect(document);
+    return Array.from(document.querySelectorAll(LIST_ITEM_SELECTOR))
+      .filter((row, index, rows) => rows.indexOf(row) === index)
+      .filter((row) => !row.hasAttribute(PLACEHOLDER_ATTR));
   }
 
   function getListRowText(row) {
-    return listFilter.read(row)?.title || "";
+    const selectors = [
+      ".gall_tit",
+      ".gall_subject",
+      ".subject",
+      ".title",
+      "a[href*='/view']"
+    ];
+    const text = selectors
+      .map((selector) => row.querySelector(selector)?.innerText || "")
+      .filter(Boolean)
+      .join(" ");
+    return text || row.innerText || "";
   }
 
   function getListKey(row, keyword) {
     const no = row.getAttribute("data-no") || row.querySelector(".gall_num")?.textContent?.trim() || "";
-    const href = listFilter.read(row)?.detailUrl || row.querySelector(".gall_tit a[href]")?.getAttribute("href") || "";
+    const href = row.querySelector(".gall_tit a[href]")?.getAttribute("href") || "";
     const fallback = normalizeText(getListRowText(row)).slice(0, 120);
 
     return `list:${keyword.needle}:${no || href || fallback}`;
@@ -294,7 +346,20 @@
   function hideListRows() {
     if (!targets.listTitle) return;
 
-    getListRows().forEach(hideListRow);
+    getListRows().forEach((row) => {
+      if (isBlockedByAnonymousFilter(row)) return;
+
+      const keyword = findKeyword(getListRowText(row));
+      if (!keyword) return;
+
+      const key = getListKey(row, keyword);
+      if (allowedKeys.has(key)) return;
+
+      row.setAttribute(HIDDEN_ATTR, "1");
+      row.setAttribute(MATCH_ATTR, keyword.label);
+      globalThis.DCBBlockStats?.report?.(row, "keywords");
+      insertListPlaceholder(row, keyword, key);
+    });
   }
 
   function getArticleTitleText() {
@@ -447,17 +512,9 @@
   function hideListRow(row) {
     if (!targets.listTitle || !row || row.hasAttribute(PLACEHOLDER_ATTR) || isBlockedByAnonymousFilter(row)) return;
     const keyword = findKeyword(getListRowText(row));
-    const key = keyword ? getListKey(row, keyword) : "";
-    const id = row.getAttribute(ITEM_ID_ATTR);
-    const placeholder = row.previousElementSibling;
-    const ownPlaceholder = id && placeholder?.getAttribute("data-dcb-soft-for") === id ? placeholder : null;
-    if (!keyword || allowedKeys.has(key) || row.hasAttribute("data-dcb-list-hidden")) {
-      row.removeAttribute(HIDDEN_ATTR);
-      row.removeAttribute(MATCH_ATTR);
-      ownPlaceholder?.remove();
-      return;
-    }
-    if (ownPlaceholder && ownPlaceholder.dataset.dcbSoftKey !== key) ownPlaceholder.remove();
+    if (!keyword) return;
+    const key = getListKey(row, keyword);
+    if (allowedKeys.has(key)) return;
     row.setAttribute(HIDDEN_ATTR, "1");
     row.setAttribute(MATCH_ATTR, keyword.label);
     globalThis.DCBBlockStats?.report?.(row, "keywords");
@@ -481,16 +538,23 @@
       return;
     }
 
-    const roots = [...new Set(Array.from(pendingRoots, root => root?.nodeType === Node.TEXT_NODE ? root.parentElement : root))]
-      .filter((root) => root && root.isConnected !== false);
+    const roots = Array.from(pendingRoots).filter((root) => root?.isConnected !== false);
     pendingRoots.clear();
-    const minimal = roots.filter(root => !roots.some(other => other !== root && other.contains?.(root)));
+    const minimal = roots.filter((root, index) => {
+      const element = root?.nodeType === Node.ELEMENT_NODE ? root : root?.parentElement;
+      if (!element) return false;
+      return !roots.some((other, otherIndex) => {
+        if (index === otherIndex) return false;
+        const parent = other?.nodeType === Node.ELEMENT_NODE ? other : other?.parentElement;
+        return !!parent?.contains?.(element);
+      });
+    });
 
     const rows = new Set();
     const comments = new Set();
     let articleTouched = false;
     for (const root of minimal) {
-      listFilter.collect(root).forEach((node) => rows.add(node));
+      collectScoped(root, LIST_ITEM_SELECTOR).forEach((node) => rows.add(node));
       collectScoped(root, COMMENT_ITEM_SELECTOR).forEach((node) => comments.add(node));
       const element = root?.nodeType === Node.ELEMENT_NODE ? root : root?.parentElement;
       if (element?.closest?.(".write_div,.writing_view_box,.write_view,#dgn_content_de,.gallview_head,.view_head") ||
@@ -563,8 +627,8 @@
       if (!target || !target.closest) return false;
       if (target.closest(`[${PLACEHOLDER_ATTR}="1"]`)) return true;
 
-      return mutation.type === "childList" && mutation.addedNodes.length > 0 && mutation.removedNodes.length === 0 && Array.from(mutation.addedNodes).every((node) => {
-        if (!node || node.nodeType !== 1 || !node.closest) return !node?.textContent?.trim();
+      return Array.from(mutation.addedNodes || []).every((node) => {
+        if (!node || node.nodeType !== 1 || !node.closest) return true;
         return !!node.closest(`[${PLACEHOLDER_ATTR}="1"]`);
       });
     });
@@ -598,8 +662,6 @@
           mutation.addedNodes.forEach((node) => {
             if (node?.nodeType === Node.ELEMENT_NODE || node?.nodeType === Node.TEXT_NODE) pendingRoots.add(node);
           });
-          const target = mutation.target;
-          if (target?.closest?.(`${listFilter.selector},${COMMENT_ITEM_SELECTOR}`)) pendingRoots.add(target);
         } else if (mutation.type === "characterData") {
           pendingRoots.add(mutation.target);
         }
@@ -663,9 +725,6 @@
   }
 
   document.addEventListener("click", handleShowClick, true);
-  document.addEventListener("dcb:list-filter-change", event => {
-    if (enabled && targets.listTitle) scheduleApply(event.target);
-  });
 
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", loadSettingsAndApply, { once: true });

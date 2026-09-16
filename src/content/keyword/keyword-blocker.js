@@ -23,10 +23,14 @@
   let scheduled = false;
   let suppressObserver = false;
   let navigating = false;
-  const pendingRoots = new Set();
-  const { prepareKeywords } = globalThis.DCBKeywordMatcher;
-  const COMMENT_SELECTOR = "#focus_cmt li.ub-content,.cmt_list li.ub-content,.comment_wrap li.ub-content,li[id^='comment_li_'],.comment_box li,.reply_box li,.dccon_comment_box li";
-  const ARTICLE_SELECTOR = ".title_subject,h3.title,.gallview_head,.view_head,.write_div,.writing_view_box,.write_view,#dgn_content_de";
+
+  function normalizeText(v) {
+    return String(v || "")
+      .normalize("NFKC")
+      .toLowerCase()
+      .replace(/\s+/g, " ")
+      .trim();
+  }
 
   function escapeHtml(v) {
     return String(v || "")
@@ -49,8 +53,30 @@
     }
   }
 
+  function prepareKeywords(list) {
+    if (!Array.isArray(list)) return [];
+
+    const seen = new Set();
+    const out = [];
+
+    list.forEach((raw) => {
+      const label = String(raw || "").normalize("NFKC").trim();
+      const needle = normalizeText(label);
+
+      if (!label || !needle || seen.has(needle)) return;
+
+      seen.add(needle);
+      out.push({ label, needle });
+    });
+
+    return out;
+  }
+
   function findKeyword(text) {
-    return globalThis.DCBKeywordMatcher.findKeyword(text, keywords);
+    const haystack = normalizeText(text);
+    if (!haystack) return null;
+
+    return keywords.find((kw) => haystack.includes(kw.needle)) || null;
   }
 
   function ensureStyle() {
@@ -194,7 +220,6 @@
 
     el.setAttribute(BLOCKED_ATTR, "1");
     el.setAttribute("data-dcb-keyword-match", kw.label);
-    globalThis.DCBBlockStats?.report?.(el, "keywords");
   }
 
   function getPostNoFromUrl() {
@@ -203,6 +228,25 @@
     } catch {
       return "";
     }
+  }
+
+  function getListRows() {
+    return Array.from(document.querySelectorAll("tr.ub-content"));
+  }
+
+  function getListRowText(row) {
+    const title = row.querySelector(".gall_tit")?.innerText || "";
+    const subject = row.querySelector(".gall_subject")?.innerText || "";
+    return `${subject} ${title}`;
+  }
+
+  function blockListRows() {
+    if (!targets.listTitle) return;
+
+    getListRows().forEach((row) => {
+      const kw = findKeyword(getListRowText(row));
+      if (kw) markHidden(row, kw);
+    });
   }
 
   function getArticleTitleText() {
@@ -380,7 +424,17 @@
   }
 
   function getCommentCandidates() {
-    return Array.from(document.querySelectorAll(COMMENT_SELECTOR))
+    const selectors = [
+      "#focus_cmt li.ub-content",
+      ".cmt_list li.ub-content",
+      ".comment_wrap li.ub-content",
+      "li[id^='comment_li_']",
+      ".comment_box li",
+      ".reply_box li",
+      ".dccon_comment_box li"
+    ];
+
+    return Array.from(document.querySelectorAll(selectors.join(",")))
       .filter((el, idx, arr) => arr.indexOf(el) === idx)
       .filter((el) => !el.closest(".write_div"))
       .filter((el) => !el.closest(`#${ARTICLE_OVERLAY_ID}`));
@@ -398,32 +452,24 @@
     ];
 
     const text = textNodes
-      .map((sel) => el.querySelector(sel)?.textContent || "")
+      .map((sel) => el.querySelector(sel)?.innerText || "")
       .filter(Boolean)
       .join(" ");
 
-    return text || el.textContent || "";
-  }
-
-  function blockComment(el) {
-    if (!el || el.closest(".write_div") || el.closest(`#${ARTICLE_OVERLAY_ID}`)) return;
-    const kw = targets.comments ? findKeyword(getCommentText(el)) : null;
-    if (kw) markHidden(el, kw);
-    else {
-      el.removeAttribute(BLOCKED_ATTR);
-      el.removeAttribute("data-dcb-keyword-match");
-    }
+    return text || el.innerText || "";
   }
 
   function blockComments() {
     if (!targets.comments) return;
 
-    getCommentCandidates().forEach(blockComment);
+    getCommentCandidates().forEach((el) => {
+      const kw = findKeyword(getCommentText(el));
+      if (kw) markHidden(el, kw);
+    });
   }
 
   function applyKeywordBlock() {
     scheduled = false;
-    pendingRoots.clear();
 
     if (!enabled || !keywords.length) {
       clearAllKeywordBlocks();
@@ -433,34 +479,16 @@
     ensureStyle();
 
     clearHiddenMarks();
+    blockListRows();
     blockComments();
     blockArticleIfNeeded();
   }
 
-  function scheduleApply(root = document) {
-    if (root) pendingRoots.add(root);
+  function scheduleApply() {
     if (scheduled) return;
 
     scheduled = true;
-    setTimeout(() => {
-      if (pendingRoots.has(document)) return applyKeywordBlock();
-      scheduled = false;
-      const roots = [...pendingRoots];
-      pendingRoots.clear();
-      if (!enabled || !keywords.length) return;
-      const comments = new Set();
-      let articleTouched = false;
-      for (const root of roots) {
-        const element = root?.nodeType === Node.TEXT_NODE ? root.parentElement : root;
-        if (!element?.isConnected) continue;
-        const comment = element.closest?.(COMMENT_SELECTOR);
-        if (comment) comments.add(comment);
-        element.querySelectorAll?.(COMMENT_SELECTOR).forEach((node) => comments.add(node));
-        if (element.closest?.(ARTICLE_SELECTOR) || element.querySelector?.(ARTICLE_SELECTOR)) articleTouched = true;
-      }
-      comments.forEach(blockComment);
-      if (articleTouched) blockArticleIfNeeded();
-    }, 120);
+    setTimeout(applyKeywordBlock, 120);
   }
 
   function mutationBelongsToOverlay(mutations) {
@@ -474,7 +502,7 @@
 
       if (target.closest(`#${ARTICLE_OVERLAY_ID}`)) return true;
 
-      return m.type === "childList" && m.addedNodes.length > 0 && m.removedNodes.length === 0 && Array.from(m.addedNodes).every((node) => {
+      return Array.from(m.addedNodes || []).every((node) => {
         if (!node || node.nodeType !== 1 || !node.closest) return true;
         return node.id === ARTICLE_OVERLAY_ID || !!node.closest(`#${ARTICLE_OVERLAY_ID}`);
       });
@@ -488,14 +516,7 @@
       if (suppressObserver) return;
       if (mutationBelongsToOverlay(mutations)) return;
 
-      for (const mutation of mutations) {
-        if (mutation.type === "characterData") scheduleApply(mutation.target);
-        else {
-          mutation.addedNodes.forEach((node) => scheduleApply(node));
-          const scope = mutation.target.closest?.(`${COMMENT_SELECTOR},${ARTICLE_SELECTOR}`);
-          if (scope) scheduleApply(scope);
-        }
-      }
+      scheduleApply();
     });
 
     const start = () => {
@@ -552,5 +573,5 @@
     loadSettingsAndApply();
   }
 
-  window.addEventListener("load", () => scheduleApply(document), { once: true });
+  window.addEventListener("load", scheduleApply, { once: true });
 })();

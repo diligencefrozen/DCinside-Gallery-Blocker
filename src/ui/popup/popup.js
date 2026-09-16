@@ -151,7 +151,6 @@ const BLOCK_STATS_LABELS = Object.freeze({
   users: "이용자",
   anonymous: "비회원",
   keywords: "키워드",
-  galleries: "갤러리",
   images: "이미지",
   aggressive: "공격적 표현",
   lowActivity: "활동 적은 회원",

@@ -50,7 +50,9 @@
     "data-dccon",
     "conalt",
     "con_alt",
-    "style"
+    "style",
+    "alt",
+    "title"
   ];
 
   const IDENTITY_CODE_ATTRIBUTES = [
@@ -86,13 +88,11 @@
     "[con_alt]"
   ].join(",");
 
-  const COMMENT_INFO_SELECTORS = [
+  const COMMENT_ROW_SELECTORS = [
     "div.cmt_info[data-no]",
     "div.cmt_info[data-article-no]",
     "div.cmt_info.clear",
-    ".cmt_info"
-  ];
-  const COMMENT_CONTAINER_SELECTORS = [
+    ".cmt_info",
     "li.ub-content",
     "li[id^='comment_li_']",
     "li[id^='reply_']",
@@ -104,9 +104,6 @@
     ".dccon_comment_box li",
     ".dcbpv-comment-item"
   ];
-  const COMMENT_ROW_SELECTORS = [...COMMENT_INFO_SELECTORS, ...COMMENT_CONTAINER_SELECTORS];
-  const COMMENT_INFO_SELECTOR = COMMENT_INFO_SELECTORS.join(",");
-  const COMMENT_CONTAINER_SELECTOR = COMMENT_CONTAINER_SELECTORS.join(",");
   const COMMENT_ROW_SELECTOR = COMMENT_ROW_SELECTORS.join(",");
 
   const HIDDEN_CLASS = "dcb-selective-dccon-hidden";
@@ -132,6 +129,7 @@
   ].join(",");
   const NON_BODY_SELECTOR = [
     HIDDEN_SELECTOR,
+    ".comment_dccon",
     ".coment_dccon_img",
     ".coment_dccon_txt",
     ".comment_dccon_txt",
@@ -188,15 +186,6 @@
   const packageCache = new Map();
   const packageInflight = new Map();
   const previousInlineDisplay = new WeakMap();
-
-  function commentRowFor(node) {
-    if (!(node instanceof Element)) return null;
-    // Older comment markup wraps .cmt_info in an li. Hiding that outer row
-    // avoids leaving the list item's spacing behind after its DCCon disappears.
-    return node.closest?.(COMMENT_CONTAINER_SELECTOR)
-      || node.closest?.(COMMENT_INFO_SELECTOR)
-      || null;
-  }
 
   // 디시콘 코드는 속성 부분 문자열 CSS로 비교하지 않는다. 실제 URL을 파싱한 정확 일치만 사용한다.
   function buildStyleText() {
@@ -427,7 +416,7 @@
   function packageIdxFromNode(node, deep = false) {
     if (!(node instanceof Element)) return "";
 
-    const row = commentRowFor(node);
+    const row = node.closest?.(COMMENT_ROW_SELECTOR);
     const boundary = row || node.closest?.(".dccon_area,.dccon_layer,.dccon_over_box") || node.parentElement;
     let cursor = node;
     let depth = 0;
@@ -622,12 +611,15 @@
   function reconcileCommentRows(scope = document) {
     const rows = new Set();
     if (scope instanceof Element) {
-      const closest = commentRowFor(scope);
+      const closest = scope.closest?.(COMMENT_ROW_SELECTOR);
       if (closest) rows.add(closest);
+      if (scope.matches?.(COMMENT_ROW_SELECTOR)) rows.add(scope);
     }
 
     scope?.querySelectorAll?.(`${EMPTY_ROW_SELECTOR},${HIDDEN_SELECTOR}`).forEach((target) => {
-      const row = commentRowFor(target);
+      const row = target.matches?.(COMMENT_ROW_SELECTOR)
+        ? target
+        : target.closest?.(COMMENT_ROW_SELECTOR);
       if (row) rows.add(row);
     });
     rows.forEach(reconcileCommentRow);
@@ -671,7 +663,7 @@
     if (!target) return false;
 
     forceHidden(target, code || `package_${packageIdx}`);
-    reconcileCommentRow(commentRowFor(target));
+    reconcileCommentRow(target.closest?.(COMMENT_ROW_SELECTOR));
     return true;
   }
 
@@ -755,7 +747,7 @@
     if (!(node instanceof Element)) return false;
     if (node.matches?.(EMPTY_ROW_SELECTOR) || node.closest?.(EMPTY_ROW_SELECTOR)) return true;
     if (node.matches?.(HIDDEN_SELECTOR) || node.closest?.(HIDDEN_SELECTOR)) return true;
-    if (commentRowFor(node)?.querySelector?.(HIDDEN_SELECTOR)) return true;
+    if (node.closest?.(COMMENT_ROW_SELECTOR)?.querySelector?.(HIDDEN_SELECTOR)) return true;
     if (node.matches?.(DCCON_SELECTOR)) return true;
     return !!node.querySelector?.(DCCON_SELECTOR);
   }
@@ -823,7 +815,7 @@
 
         if (mutation.type === "characterData") {
           const parent = mutation.target.parentElement;
-          const row = commentRowFor(parent);
+          const row = parent?.closest?.(COMMENT_ROW_SELECTOR);
           if (row?.querySelector?.(HIDDEN_SELECTOR)) scopes.add(parent);
           return;
         }

@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { pipeline } from "node:stream/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { modelFile, tokenizerFile, verifyModel, verifyTokenizer } from "./model-artifact.mjs";
+import { modelFile, verifyModel } from "./model-artifact.mjs";
 
 const arguments_ = process.argv.slice(2);
 if (arguments_.length && (arguments_.length !== 2 || arguments_[0] !== "--from")) {
@@ -13,8 +13,7 @@ if (arguments_.length && (arguments_.length !== 2 || arguments_[0] !== "--from")
 
 if (!arguments_.length) {
   await verifyModel(modelFile);
-  await verifyTokenizer(tokenizerFile);
-  console.log("등록된 분석 모델과 토크나이저의 무결성을 확인했습니다.");
+  console.log("등록된 분석 모델의 무결성을 확인했습니다.");
 } else {
   const supplied = pathToFileURL(resolve(arguments_[1]));
   await verifyModel(supplied);
@@ -29,6 +28,5 @@ if (!arguments_.length) {
       await rm(pendingFile, { force: true });
     }
   }
-  await verifyTokenizer(tokenizerFile);
-  console.log("로컬 분석 모델을 등록하고 모델·토크나이저를 검증했습니다.");
+  console.log("로컬 분석 모델을 등록하고 검증했습니다.");
 }

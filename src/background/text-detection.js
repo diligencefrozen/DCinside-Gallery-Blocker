@@ -26,7 +26,7 @@
   }
   function failureReason(error) {
     const reason = typeof error === "string" ? error : error?.error;
-    return ["model-missing", "invalid-model", "runtime-init-failed", "model-unavailable", "model-timeout", "runtime-unavailable", "invalid-result", "busy"].includes(reason)
+    return ["model-unavailable", "model-timeout", "runtime-unavailable", "invalid-result", "busy"].includes(reason)
       ? reason : "runtime-unavailable";
   }
   function basicResult(items, reason) {

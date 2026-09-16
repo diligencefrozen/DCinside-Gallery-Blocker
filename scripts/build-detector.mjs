@@ -1,5 +1,7 @@
 import { build } from "esbuild";
-import { mkdir, copyFile, writeFile } from "node:fs/promises";
+import { mkdir, copyFile, writeFile, realpath } from "node:fs/promises";
+import { createRequire } from "node:module";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = new URL("../", import.meta.url);
@@ -21,6 +23,10 @@ const runtimeDir = new URL("node_modules/onnxruntime-web/dist/", root);
 for (const name of ["ort-wasm-simd-threaded.mjs", "ort-wasm-simd-threaded.wasm"]) {
   await copyFile(new URL(name, runtimeDir), new URL(`vendor/detector/${name}`, root));
 }
+await copyFile(new URL("node_modules/@huggingface/transformers/LICENSE", root), new URL("vendor/detector/Transformers-LICENSE", root));
+const transformerRequire = createRequire(await realpath(new URL("node_modules/@huggingface/transformers/package.json", root)));
+const jinjaLicense = resolve(dirname(transformerRequire.resolve("@huggingface/jinja")), "../LICENSE");
+await copyFile(jinjaLicense, new URL("vendor/detector/Jinja-LICENSE", root));
 // The npm distribution omits LICENSE; retain the notice from the pinned upstream release.
 // https://github.com/microsoft/onnxruntime/blob/v1.27.0/LICENSE
 await writeFile(new URL("vendor/detector/ONNX-Runtime-LICENSE", root), `MIT License

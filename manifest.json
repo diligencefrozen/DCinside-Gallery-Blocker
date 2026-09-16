@@ -52,12 +52,6 @@
       "all_frames": false
     },
     {
-      "matches": ["*://gall.dcinside.com/*", "*://www.dcinside.com/*"],
-      "js": ["src/shared/keyword-matcher.js", "src/content/list/list-filter.js"],
-      "run_at": "document_start",
-      "all_frames": false
-    },
-    {
       "matches": [
         "*://gall.dcinside.com/board/view*",
         "*://gall.dcinside.com/mgallery/board/view*",
@@ -409,7 +403,6 @@
         "*://gall.dcinside.com/mgallery/board/lists*",
         "*://gall.dcinside.com/mini/board/lists*",
         "*://gall.dcinside.com/person/board/lists*",
-        "*://www.dcinside.com/*",
         "*://gall.dcinside.com/board/view*",
         "*://gall.dcinside.com/mgallery/board/view*",
         "*://gall.dcinside.com/mini/board/view*",
