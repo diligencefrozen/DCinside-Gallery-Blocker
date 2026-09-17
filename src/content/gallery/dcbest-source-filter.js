@@ -201,7 +201,7 @@
 
     try {
       const url = new URL(location.href);
-      return /^\/board\/lists\/?$/i.test(url.pathname)
+      return /^\/board\/(?:lists|view)\/?$/i.test(url.pathname)
         && normalizeText(url.searchParams.get("id")) === "dcbest";
     } catch (_) {
       return false;
