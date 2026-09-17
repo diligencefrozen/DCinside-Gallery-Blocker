@@ -68,7 +68,7 @@
         "src/shared/detection-config.js",
         "src/content/detection/text-detector.js"
       ],
-      "run_at": "document_idle",
+      "run_at": "document_start",
       "all_frames": false
     },
     {

@@ -26,6 +26,8 @@
   const MAX_CACHE = 128;
   const MAX_ALLOWED = 128;
   const BATCH_SIZE = 4;
+  const HOT_SETTINGS_KEY = 'dcbTextDetectionHotCacheV1';
+  const HOT_SETTINGS_VERSION = 1;
   const ALLOW_SESSION_KEY = `dcb-text-detection-allow:${location.pathname}${location.search}`;
 
   const records = new Map();
@@ -35,12 +37,14 @@
   const cache = new Map();
   const allowedKeys = loadAllowedKeys();
   let settings = Config.normalize();
+  let settingsApplied = false;
   let epoch = 0;
   let nextRecordId = 1;
   let requestActive = false;
   let retryAfter = 0;
   let batchTimer = 0;
   let retryTimer = 0;
+  let modelRetryTimer = 0;
   let pruneTimer = 0;
   let observer = null;
   let viewportObserver = null;
@@ -187,6 +191,7 @@
     record.dirty = true;
     record.doneKey = '';
     record.input = null;
+    record.lastMode = '';
   }
 
   function updateSnapshot(record) {
@@ -227,8 +232,8 @@
     return placeholder;
   }
 
-  function showResult(record, score) {
-    if (!Config.isFlagged(score, settings) || allowedKeys.has(record.key)) {
+  function showResult(record, score, mode) {
+    if (!Config.isFlagged(score, settings, mode) || allowedKeys.has(record.key)) {
       removePresentation(record);
       return;
     }
@@ -238,9 +243,9 @@
     record.node.setAttribute(HIDDEN_ATTR, '1');
   }
 
-  function remember(key, score) {
+  function remember(key, score, mode = 'model') {
     cache.delete(key);
-    cache.set(key, score);
+    cache.set(key, { score, mode });
     if (cache.size > MAX_CACHE) cache.delete(cache.keys().next().value);
   }
 
@@ -248,11 +253,12 @@
     if (!record || !record.inRange || !settings.enabled || !settings[record.kind === 'post' ? 'posts' : 'comments']) return;
     if (!updateSnapshot(record)) return;
     if (cache.has(record.key)) {
-      const score = cache.get(record.key);
-      remember(record.key, score);
+      const { score, mode } = cache.get(record.key);
+      remember(record.key, score, mode);
       record.doneKey = record.key;
       record.input = null;
-      showResult(record, score);
+      record.lastMode = mode;
+      showResult(record, score, mode);
     } else if (record.doneKey !== record.key && !record.pending && !queued.has(record.node) && !deferred.has(record)) {
       if (queued.size < MAX_QUEUE) queued.set(record.node, record);
       else deferred.add(record);
@@ -271,7 +277,8 @@
 
   function scheduleBatch() {
     if (batchTimer || requestActive || !settings.enabled || !queued.size || Date.now() < retryAfter) return;
-    batchTimer = setTimeout(runBatch, 80);
+    // Keep a tiny batching window for nearby comments without delaying the first visible result.
+    batchTimer = setTimeout(runBatch, queued.size >= BATCH_SIZE ? 0 : 12);
   }
 
   function scheduleRetry(requestEpoch, delay = 60_000) {
@@ -312,14 +319,31 @@
         throw error;
       }
       if (!settings.enabled || requestEpoch !== epoch) return;
+      if (response.mode === 'basic' && !modelRetryTimer) {
+        modelRetryTimer = setTimeout(() => {
+          modelRetryTimer = 0;
+          for (const [key, result] of cache) if (result.mode === 'basic') cache.delete(key);
+          for (const record of records.values()) {
+            if (record.lastMode !== 'basic') continue;
+            record.doneKey = '';
+            record.lastMode = '';
+            // The original node may be display:none while its reveal placeholder
+            // is on screen. Keep it eligible for the scheduled model retry.
+            record.inRange = visible(record.placeholder, 350) || visible(record.node, 350);
+            if (record.inRange) consider(record);
+          }
+          scheduleBatch();
+        }, 5 * 60_000 + 1_000);
+      }
       batch.forEach((item, index) => {
         const record = item.record;
         if (records.get(record.node) !== record || record.version !== item.version || record.key !== item.key) return;
         const score = response.results[index]?.score;
-        remember(item.key, score);
+        remember(item.key, score, response.mode);
         record.doneKey = item.key;
         record.input = null;
-        showResult(record, score);
+        record.lastMode = response.mode;
+        showResult(record, score, response.mode);
       });
     } catch (error) {
       if (requestEpoch === epoch) {
@@ -373,7 +397,7 @@
     const record = {
       ...target,
       id: nextRecordId++, key: '', doneKey: '', version: 0, pending: false,
-      input: null, titleNode: null, dirty: true, inRange: false, placeholder: null
+      input: null, titleNode: null, dirty: true, inRange: false, placeholder: null, lastMode: ''
     };
     records.set(target.node, record);
     recordsById.set(record.id, record);
@@ -489,6 +513,8 @@
     clearTimeout(batchTimer);
     clearTimeout(retryTimer);
     clearTimeout(pruneTimer);
+    clearTimeout(modelRetryTimer);
+    modelRetryTimer = 0;
     clearTimeout(fallbackTimer);
     batchTimer = retryTimer = pruneTimer = fallbackTimer = 0;
     queued.clear();
@@ -500,12 +526,25 @@
     document.getElementById(STYLE_ID)?.remove();
   }
 
+  function sameSettings(a, b) {
+    return !!a && !!b && a.enabled === b.enabled && a.posts === b.posts
+      && a.comments === b.comments && a.sensitivity === b.sensitivity;
+  }
+
   function apply(value) {
-    settings = Config.normalize(value);
+    const next = Config.normalize(value);
+    if (settingsApplied && sameSettings(settings, next)) return;
+    settings = next;
+    settingsApplied = true;
     epoch += 1;
     retryAfter = 0;
     clearAll();
+    // Toggling or changing settings is also an explicit retry of model loading.
+    for (const [key, result] of cache) if (result.mode === 'basic') cache.delete(key);
     if (!settings.enabled || (!settings.posts && !settings.comments)) return;
+    // Start the local inference runtime while the page is still building so the first
+    // visible post/comment does not have to pay the full cold-start cost.
+    chrome.runtime.sendMessage({ type: 'DCB_DETECTION_PREWARM' }).catch(() => {});
     if (!document.documentElement) {
       document.addEventListener('DOMContentLoaded', () => apply(settings), { once: true });
       return;
@@ -544,14 +583,41 @@
     removePresentation(record);
   }
 
+  function hotSettingsFrom(record) {
+    return record && record.version === HOT_SETTINGS_VERSION && record.data && typeof record.data === 'object'
+      ? Config.normalize(record.data) : null;
+  }
+
+  function writeHotSettings(value) {
+    if (!chrome.storage.local) return;
+    chrome.storage.local.set({
+      [HOT_SETTINGS_KEY]: { version: HOT_SETTINGS_VERSION, updatedAt: Date.now(), data: Config.normalize(value) }
+    }).catch(() => {});
+  }
+
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'sync' || !changes[Config.key]) return;
     settingsChanged = true;
-    apply(changes[Config.key].newValue);
+    const next = Config.normalize(changes[Config.key].newValue);
+    writeHotSettings(next);
+    apply(next);
   });
-  chrome.storage.sync.get({ [Config.key]: Config.defaults }, (values) => {
-    if (!settingsChanged) apply(values[Config.key]);
-  });
+
+  (async () => {
+    // Apply the local snapshot first so detection can start while sync storage wakes up.
+    try {
+      const local = await chrome.storage.local.get({ [HOT_SETTINGS_KEY]: null });
+      const hot = hotSettingsFrom(local?.[HOT_SETTINGS_KEY]);
+      if (hot && !settingsChanged) apply(hot);
+    } catch (_) {}
+
+    try {
+      const values = await chrome.storage.sync.get({ [Config.key]: Config.defaults });
+      const synced = Config.normalize(values[Config.key]);
+      writeHotSettings(synced);
+      if (!settingsChanged) apply(synced);
+    } catch (_) {}
+  })();
   document.addEventListener('click', handleReveal, true);
   document.addEventListener('scroll', scheduleFallbackRefresh, { passive: true, capture: true });
   window.addEventListener('resize', scheduleFallbackRefresh, { passive: true });

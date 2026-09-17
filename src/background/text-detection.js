@@ -4,6 +4,8 @@
   const page = "src/offscreen/detection.html";
   const statusKey = "dcbDetectionStatus";
   const runtimeRetryMs = 5 * 60_000;
+  const settingsHotKey = 'dcbTextDetectionHotCacheV1';
+  const settingsHotVersion = 1;
   let creating;
   let queued = 0;
   let chain = Promise.resolve();
@@ -13,10 +15,47 @@
   let releaseRequested = false;
   let runtimeRetryAt = 0;
   let runtimeFailure = "";
+  let detectionSettings = config.normalize();
+  let warming;
   const statusReady = Promise.resolve(chrome.storage.session.get?.(statusKey)).then(stored => {
     const saved = stored?.[statusKey];
     if (!statusRevision && saved && typeof saved.state === "string") status = saved;
   }).catch(() => {});
+  function hotSettingsFrom(record) {
+    return record && record.version === settingsHotVersion && record.data && typeof record.data === "object"
+      ? config.normalize(record.data) : null;
+  }
+  function writeHotSettings(value) {
+    return chrome.storage.local.set({
+      [settingsHotKey]: { version: settingsHotVersion, updatedAt: Date.now(), data: config.normalize(value) }
+    }).catch(() => {});
+  }
+  const settingsReady = (async () => {
+    let usedHot = false;
+    try {
+      const local = await chrome.storage.local.get({ [settingsHotKey]: null });
+      const hot = hotSettingsFrom(local?.[settingsHotKey]);
+      if (hot) {
+        detectionSettings = hot;
+        usedHot = true;
+      }
+    } catch (_) {}
+
+    const reconcile = async () => {
+      try {
+        const stored = await chrome.storage.sync.get({ [config.key]: config.defaults });
+        detectionSettings = config.normalize(stored[config.key]);
+        await writeHotSettings(detectionSettings);
+      } catch (_) {}
+      return detectionSettings;
+    };
+
+    if (usedHot) {
+      void reconcile();
+      return detectionSettings;
+    }
+    return reconcile();
+  })();
   function setStatus(state, details = {}) {
     const next = { state, ...details };
     if (statusRevision && status.state === next.state && status.mode === next.mode && status.reason === next.reason) return;
@@ -26,7 +65,7 @@
   }
   function failureReason(error) {
     const reason = typeof error === "string" ? error : error?.error;
-    return ["model-unavailable", "model-timeout", "runtime-unavailable", "invalid-result", "busy"].includes(reason)
+    return ["model-missing", "invalid-model", "runtime-init-failed", "model-unavailable", "model-timeout", "runtime-unavailable", "invalid-result", "busy"].includes(reason)
       ? reason : "runtime-unavailable";
   }
   function basicResult(items, reason) {
@@ -75,12 +114,52 @@
     }
     return creating;
   }
+  async function prewarmRuntime() {
+    await settingsReady;
+    if (!detectionSettings.enabled || (!detectionSettings.posts && !detectionSettings.comments)) return { ok: false, error: "disabled" };
+    if (status.state === "ready" && Date.now() >= runtimeRetryAt) return { ok: true, ready: true };
+    if (!warming) {
+      warming = (async () => {
+        if (Date.now() < runtimeRetryAt) return { ok: false, error: runtimeFailure || "runtime-unavailable" };
+        setStatus("loading", { mode: "model" });
+        try {
+          await ensureRuntime();
+          const result = await chrome.runtime.sendMessage({
+            type: "DCB_INFERENCE",
+            target: "detection-offscreen",
+            items: [{ kind: "comment", title: "", body: "runtime warmup" }]
+          });
+          if (validModelResult(result, 1)) {
+            runtimeRetryAt = 0;
+            runtimeFailure = "";
+            setStatus("ready", { mode: "model" });
+            return { ok: true, ready: true };
+          }
+          runtimeFailure = failureReason(result?.ok ? "invalid-result" : result);
+          runtimeRetryAt = Date.now() + runtimeRetryMs;
+          setStatus("limited", { mode: "basic", reason: runtimeFailure });
+          return { ok: false, error: runtimeFailure };
+        } catch (error) {
+          runtimeFailure = failureReason(error);
+          runtimeRetryAt = Date.now() + runtimeRetryMs;
+          setStatus("limited", { mode: "basic", reason: runtimeFailure });
+          return { ok: false, error: runtimeFailure };
+        }
+      })().finally(() => { warming = undefined; });
+    }
+    return warming;
+  }
   function authorized(sender) {
     if (sender.id !== chrome.runtime.id) return false;
     try { return new URL(sender.url).hostname === "gall.dcinside.com"; }
     catch { return false; }
   }
   chrome.runtime.onMessage.addListener((message, sender, respond) => {
+    if (message?.type === "DCB_DETECTION_PREWARM") {
+      if (!authorized(sender)) { respond({ ok: false, error: "invalid-request" }); return; }
+      prewarmRuntime().then(respond, () => respond({ ok: false, error: "runtime-unavailable" }));
+      return true;
+    }
     if (message?.type === "DCB_DETECTION_STATUS" && sender.id === chrome.runtime.id) {
       statusReady.then(() => respond(status));
       return true;
@@ -100,8 +179,8 @@
     queued++;
     clearTimeout(idleTimer);
     const job = chain.then(async () => {
-      const stored = await chrome.storage.sync.get({ [config.key]: config.defaults });
-      const settings = config.normalize(stored[config.key]);
+      await settingsReady;
+      const settings = detectionSettings;
       if (!settings.enabled || items.some(item => item.kind === "post" ? !settings.posts : !settings.comments)) {
         return { ok: false, error: "disabled" };
       }
@@ -137,7 +216,9 @@
   });
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === "sync" && changes[config.key]) {
-      releaseRequested = !config.normalize(changes[config.key].newValue).enabled;
+      detectionSettings = config.normalize(changes[config.key].newValue);
+      void writeHotSettings(detectionSettings);
+      releaseRequested = !detectionSettings.enabled;
       runtimeRetryAt = 0;
       runtimeFailure = "";
       setStatus("idle");
