@@ -1785,8 +1785,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
 
 /* ───── 실베 원출처 확인: 서버 부하를 피하기 위해 전역 단일 큐 + 최소 요청 간격 적용 ───── */
-const DCBEST_SOURCE_MIN_INTERVAL_MS = 4000;
-const DCBEST_SOURCE_JITTER_MS = 1500;
+const DCBEST_SOURCE_MAIN_MIN_INTERVAL_MS = 2200;
+const DCBEST_SOURCE_MAIN_JITTER_MS = 900;
+const DCBEST_SOURCE_LIST_MIN_INTERVAL_MS = 3200;
+const DCBEST_SOURCE_LIST_JITTER_MS = 1300;
 const DCBEST_SOURCE_BACKOFF_MS = 120_000;
 const DCBEST_SOURCE_SESSION_KEY = "dcbDcbestSourceGuardV1";
 let dcbestSourceQueue = Promise.resolve();
@@ -1819,6 +1821,23 @@ function persistDcbestSourceGuard() {
   });
 }
 
+function getDcbestSourcePacing(referrerUrl) {
+  try {
+    const source = new URL(String(referrerUrl || ""));
+    if (source.hostname === "www.dcinside.com") {
+      return {
+        minIntervalMs: DCBEST_SOURCE_MAIN_MIN_INTERVAL_MS,
+        jitterMs: DCBEST_SOURCE_MAIN_JITTER_MS
+      };
+    }
+  } catch (_) {}
+
+  return {
+    minIntervalMs: DCBEST_SOURCE_LIST_MIN_INTERVAL_MS,
+    jitterMs: DCBEST_SOURCE_LIST_JITTER_MS
+  };
+}
+
 function dcbestSourceSenderAllowed(sender) {
   try {
     const source = new URL(String(sender?.url || sender?.tab?.url || ""));
@@ -1848,9 +1867,9 @@ function stripHtmlTags(value) {
     .trim();
 }
 
-function extractDcbestSourceGalleryId(html) {
+function extractDcbestSourceGallery(html) {
   const source = String(html || "");
-  if (!source) return "";
+  if (!source) return { gid: "", url: "" };
 
   const anchorPattern = /<a\b[^>]*\bhref\s*=\s*(["'])(.*?)\1[^>]*>([\s\S]*?)<\/a>/gi;
   let match;
@@ -1862,21 +1881,43 @@ function extractDcbestSourceGalleryId(html) {
     try {
       const href = decodeHtmlAttribute(match[2]);
       const target = new URL(href, "https://gall.dcinside.com/");
-      if (target.hostname !== "gall.dcinside.com") continue;
+      if (target.protocol !== "https:" || target.hostname !== "gall.dcinside.com") continue;
+      if (!/^\/(?:board|mgallery\/board|mini\/board|person\/board)\/view\/?$/i.test(target.pathname)) continue;
       const gid = String(target.searchParams.get("id") || "").trim().toLowerCase();
-      if (gid && gid !== "dcbest" && /^[a-z0-9_-]+$/i.test(gid)) return gid;
+      if (gid && gid !== "dcbest" && /^[a-z0-9_-]+$/i.test(gid)) {
+        return { gid, url: target.href };
+      }
     } catch (_) {}
   }
 
-  return "";
+  return { gid: "", url: "" };
 }
 
-async function resolveDcbestSourceGallery(no) {
+function normalizeDcbestPostUrl(rawUrl, expectedNo) {
+  try {
+    const target = new URL(String(rawUrl || ""));
+    if (target.protocol !== "https:" || target.hostname !== "gall.dcinside.com") return "";
+    if (!/^\/board\/view\/?$/i.test(target.pathname)) return "";
+    if (String(target.searchParams.get("id") || "").trim().toLowerCase() !== "dcbest") return "";
+    const no = String(target.searchParams.get("no") || "").trim();
+    if (!/^\d{1,12}$/.test(no) || no !== String(expectedNo || "").trim()) return "";
+    return target.href;
+  } catch (_) {
+    return "";
+  }
+}
+
+async function resolveDcbestSourceGallery(no, rawUrl, referrerUrl) {
   await dcbestSourceGuardReady;
 
   const postNo = String(no || "").trim();
   if (!/^\d{1,12}$/.test(postNo)) {
     return { ok: false, gid: "", reason: "INVALID_NO" };
+  }
+
+  const postUrl = normalizeDcbestPostUrl(rawUrl, postNo);
+  if (!postUrl) {
+    return { ok: false, gid: "", reason: "INVALID_URL" };
   }
 
   const now = Date.now();
@@ -1889,8 +1930,9 @@ async function resolveDcbestSourceGallery(no) {
     };
   }
 
-  const jitter = Math.floor(Math.random() * (DCBEST_SOURCE_JITTER_MS + 1));
-  const earliest = dcbestSourceGuard.lastRequestAt + DCBEST_SOURCE_MIN_INTERVAL_MS + jitter;
+  const pacing = getDcbestSourcePacing(referrerUrl);
+  const jitter = Math.floor(Math.random() * (pacing.jitterMs + 1));
+  const earliest = dcbestSourceGuard.lastRequestAt + pacing.minIntervalMs + jitter;
   if (earliest > now) {
     await new Promise((resolve) => setTimeout(resolve, earliest - now));
   }
@@ -1898,10 +1940,11 @@ async function resolveDcbestSourceGallery(no) {
   dcbestSourceGuard.lastRequestAt = Date.now();
   persistDcbestSourceGuard();
 
-  const url = `https://gall.dcinside.com/board/view/?id=dcbest&no=${encodeURIComponent(postNo)}`;
-  const result = await dcbFetchDcinsideHtml(url, {
+  // 목록에 실제로 걸려 있던 실베 URL을 그대로 요청한다.
+  // _dcbest/page 같은 컨텍스트 파라미터가 있으면 보존한다.
+  const result = await dcbFetchDcinsideHtml(postUrl, {
     cache: "default",
-    referrer: "https://gall.dcinside.com/board/lists?id=dcbest"
+    referrer: referrerUrl || "https://www.dcinside.com/"
   });
 
   if (result.status === 403 || result.status === 429) {
@@ -1925,17 +1968,29 @@ async function resolveDcbestSourceGallery(no) {
     };
   }
 
+  const source = extractDcbestSourceGallery(result.text);
+  if (!source.gid) {
+    return {
+      ok: false,
+      gid: "",
+      sourceUrl: "",
+      status: result.status || 200,
+      reason: "SOURCE_NOT_FOUND"
+    };
+  }
+
   return {
     ok: true,
-    gid: extractDcbestSourceGalleryId(result.text),
+    gid: source.gid,
+    sourceUrl: source.url,
     status: result.status || 200
   };
 }
 
-function enqueueDcbestSourceGallery(no) {
+function enqueueDcbestSourceGallery(no, url, referrerUrl) {
   const task = dcbestSourceQueue.then(
-    () => resolveDcbestSourceGallery(no),
-    () => resolveDcbestSourceGallery(no)
+    () => resolveDcbestSourceGallery(no, url, referrerUrl),
+    () => resolveDcbestSourceGallery(no, url, referrerUrl)
   );
   dcbestSourceQueue = task.catch(() => {});
   return task;
@@ -1949,7 +2004,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return;
   }
 
-  enqueueDcbestSourceGallery(message.no)
+  const referrerUrl = String(sender?.url || sender?.tab?.url || "");
+  enqueueDcbestSourceGallery(message.no, message.url, referrerUrl)
     .then(sendResponse)
     .catch((error) => sendResponse({
       ok: false,

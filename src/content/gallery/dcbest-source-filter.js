@@ -22,11 +22,12 @@
   const SOURCE_HIDDEN_ATTR = "data-dcb-dcbest-source-hidden";
   const POST_NO_ATTR = "data-dcb-dcbest-no";
   const FADING_ATTR = "data-dcb-dcbest-fading";
+  const ANALYZING_ATTR = "data-dcb-dcbest-analyzing";
   const VISUAL_HIDDEN_ATTR = "data-dcb-dcbest-hidden";
   const FADE_MS = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ? 0 : 180;
   const CACHE_KEY = "dcbDcbestSourceCacheV1";
   const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
-  const MISS_TTL_MS = 30 * 60 * 1000;
+  const SOURCE_RETRY_MS = 10 * 60 * 1000;
   const CACHE_MAX_ENTRIES = 800;
   const OBSERVER_MARGIN = "700px 0px";
 
@@ -61,6 +62,8 @@
   const queuedNos = new Set();
   const requestQueue = [];
   const itemsByNo = new Map();
+  const postUrlByNo = new Map();
+  const retryAfterByNo = new Map();
   const hideTimers = new WeakMap();
 
   function normalizeText(value) {
@@ -133,6 +136,38 @@
     const style = document.createElement("style");
     style.id = STYLE_ID;
     style.textContent = `
+      @keyframes dcbDcbestScanSweep {
+        0% { transform: translateX(-115%); opacity: 0; }
+        15% { opacity: 1; }
+        85% { opacity: 1; }
+        100% { transform: translateX(340%); opacity: 0; }
+      }
+      [${ANALYZING_ATTR}="1"] .besttxt,
+      [${ANALYZING_ATTR}="1"] .gall_tit {
+        position: relative !important;
+      }
+      [${ANALYZING_ATTR}="1"] .besttxt::after,
+      [${ANALYZING_ATTR}="1"] .gall_tit::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        width: 42%;
+        pointer-events: none;
+        z-index: 3;
+        background: linear-gradient(
+          90deg,
+          rgba(86, 146, 255, 0) 0%,
+          rgba(86, 146, 255, 0.08) 25%,
+          rgba(86, 146, 255, 0.22) 50%,
+          rgba(86, 146, 255, 0.08) 75%,
+          rgba(86, 146, 255, 0) 100%
+        );
+        animation: dcbDcbestScanSweep 1.05s ease-in-out infinite;
+      }
+      [${ANALYZING_ATTR}="1"] .besttxt,
+      [${ANALYZING_ATTR}="1"] .gall_tit {
+        box-shadow: inset 0 -1px rgba(86, 146, 255, 0.20);
+      }
       [${FADING_ATTR}="1"] {
         opacity: 0 !important;
         pointer-events: none !important;
@@ -141,16 +176,37 @@
       [${VISUAL_HIDDEN_ATTR}="1"] {
         display: none !important;
       }
+      @media (prefers-reduced-motion: reduce) {
+        [${ANALYZING_ATTR}="1"] .besttxt::after,
+        [${ANALYZING_ATTR}="1"] .gall_tit::after {
+          animation: none !important;
+          display: none !important;
+        }
+      }
     `;
     (document.head || document.documentElement).appendChild(style);
   }
 
-  function getArticleNo(link) {
+  function getDcbestPostUrl(link) {
     try {
-      const url = new URL(link.href, location.href);
+      const url = new URL(link?.href || "", location.href);
+      if (url.protocol !== "https:") return "";
+      if (url.hostname !== "gall.dcinside.com") return "";
+      if (!/^\/board\/view\/?$/i.test(url.pathname)) return "";
       if (normalizeText(url.searchParams.get("id")) !== "dcbest") return "";
       const no = String(url.searchParams.get("no") || "").trim();
-      return /^\d{1,12}$/.test(no) ? no : "";
+      if (!/^\d{1,12}$/.test(no)) return "";
+      return url.href;
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function getArticleNo(link) {
+    const href = getDcbestPostUrl(link);
+    if (!href) return "";
+    try {
+      return new URL(href).searchParams.get("no") || "";
     } catch (_) {
       return "";
     }
@@ -280,9 +336,9 @@
 
   function cacheEntryFresh(entry) {
     if (!entry || typeof entry !== "object") return false;
+    const gid = normalizeGalleryId(entry.gid);
     const stamp = Number(entry.at) || 0;
-    const ttl = entry.gid ? CACHE_TTL_MS : MISS_TTL_MS;
-    return stamp > 0 && Date.now() - stamp < ttl;
+    return !!gid && stamp > 0 && Date.now() - stamp < CACHE_TTL_MS;
   }
 
   function getCachedSource(no) {
@@ -320,6 +376,17 @@
     scheduleCacheSave();
   }
 
+  function setAnalyzing(no, active) {
+    const items = itemsByNo.get(no);
+    if (!items) return;
+
+    items.forEach((item) => {
+      if (!item?.isConnected) return;
+      if (active) item.setAttribute(ANALYZING_ATTR, "1");
+      else item.removeAttribute(ANALYZING_ATTR);
+    });
+  }
+
   function applySourceResult(no, gid) {
     const normalized = normalizeGalleryId(gid);
     const shouldHide = !!normalized
@@ -348,10 +415,10 @@
     });
   }
 
-  function fetchSourceGallery(no) {
+  function fetchSourceGallery(no, postUrl) {
     return new Promise((resolve) => {
       chrome.runtime.sendMessage(
-        { type: "dcb.dcbestSource", no },
+        { type: "dcb.dcbestSource", no, url: postUrl },
         (response) => {
           if (chrome.runtime.lastError) {
             resolve({ ok: false, gid: "" });
@@ -385,7 +452,17 @@
         await waitForVisibleTab();
         if (!galleryBlockEnabled || !blockedGalleryIds.size) continue;
 
-        const result = await fetchSourceGallery(no);
+        const postUrl = postUrlByNo.get(no) || "";
+        if (!postUrl) continue;
+
+        let result;
+        setAnalyzing(no, true);
+        try {
+          result = await fetchSourceGallery(no, postUrl);
+        } finally {
+          setAnalyzing(no, false);
+        }
+
         if (result?.rateLimited) {
           if (!queuedNos.has(no)) {
             queuedNos.add(no);
@@ -397,8 +474,14 @@
         }
 
         const gid = result?.ok ? normalizeGalleryId(result.gid) : "";
-        putCachedSource(no, gid);
-        applySourceResult(no, gid);
+        if (gid) {
+          retryAfterByNo.delete(no);
+          putCachedSource(no, gid);
+          applySourceResult(no, gid);
+        } else {
+          // 일시적인 HTML 차이/응답 실패를 영구적인 "원출처 없음"으로 캐시하지 않는다.
+          retryAfterByNo.set(no, Date.now() + SOURCE_RETRY_MS);
+        }
       }
     } finally {
       queueRunning = false;
@@ -411,6 +494,10 @@
   function enqueueSourceCheck(no) {
     if (!no || queuedNos.has(no)) return;
     if (!galleryBlockEnabled || !blockedGalleryIds.size) return;
+
+    const retryAfter = Number(retryAfterByNo.get(no)) || 0;
+    if (retryAfter > Date.now()) return;
+    if (retryAfter) retryAfterByNo.delete(no);
 
     const cached = getCachedSource(no);
     if (cached) {
@@ -441,8 +528,13 @@
   }
 
   function registerItem(link) {
-    const no = getArticleNo(link);
+    const postUrl = getDcbestPostUrl(link);
+    if (!postUrl) return;
+
+    let no = "";
+    try { no = new URL(postUrl).searchParams.get("no") || ""; } catch (_) {}
     if (!no) return;
+    postUrlByNo.set(no, postUrl);
 
     const item = getItemForLink(link);
     if (!(item instanceof Element)) return;
