@@ -209,14 +209,50 @@
     }
   }
 
-  function isDcbestListPage() {
+  function isDcbestPage() {
     try {
       const url = new URL(location.href);
-      return /\/board\/lists\/?$/i.test(url.pathname)
+      return /^\/board\/(?:lists|view)\/?$/i.test(url.pathname)
         && String(url.searchParams.get("id") || "").toLowerCase() === "dcbest";
     } catch {
       return false;
     }
+  }
+
+  function isDcbestPostListRow(row) {
+    if (!isDcbestPage() || !(row instanceof Element) || row.tagName !== "TR") return false;
+
+    const link = row.querySelector('a[href*="id=dcbest"][href*="no="]:not(.reply_numbox)');
+    if (!link) return false;
+
+    try {
+      const url = new URL(link.getAttribute("href") || link.href || "", location.href);
+      return url.hostname === "gall.dcinside.com"
+        && /^\/board\/view\/?$/i.test(url.pathname)
+        && String(url.searchParams.get("id") || "").toLowerCase() === "dcbest"
+        && /^\d{1,12}$/.test(String(url.searchParams.get("no") || ""));
+    } catch {
+      return false;
+    }
+  }
+
+  function clearListSoftHideArtifacts(row) {
+    if (!(row instanceof Element)) return;
+
+    const id = row.getAttribute(ITEM_ID_ATTR) || "";
+    if (id) {
+      const previous = row.previousElementSibling;
+      if (previous?.getAttribute(PLACEHOLDER_ATTR) === "1"
+        && previous.getAttribute("data-dcb-soft-for") === id) {
+        previous.remove();
+      }
+      document.querySelectorAll(`[${PLACEHOLDER_ATTR}="1"][data-dcb-soft-for="${cssEscape(id)}"]`)
+        .forEach((placeholder) => placeholder.remove());
+    }
+
+    row.removeAttribute(HIDDEN_ATTR);
+    row.removeAttribute(MATCH_ATTR);
+    row.removeAttribute(ITEM_ID_ATTR);
   }
 
   function getListRows() {
@@ -457,15 +493,12 @@
   function hideListRow(row) {
     if (!targets.listTitle || !row || row.hasAttribute(PLACEHOLDER_ATTR) || isBlockedByAnonymousFilter(row)) return;
 
-    // 실시간 베스트 목록은 dcbest-source-filter가 키워드 숨김까지 hard-hide한다.
-    // 여기서 soft placeholder(계속 보기)를 만들면 실제 행은 이미 사라진 상태라
-    // 사용자가 버튼을 눌러도 복구되지 않는 모순된 UI가 된다.
-    if (isDcbestListPage()) {
-      row.removeAttribute(HIDDEN_ATTR);
-      row.removeAttribute(MATCH_ATTR);
-      const id = row.getAttribute(ITEM_ID_ATTR);
-      const placeholder = row.previousElementSibling;
-      if (id && placeholder?.getAttribute("data-dcb-soft-for") === id) placeholder.remove();
+    // 실베의 게시글 <tr>은 목록 페이지와 상세 하단 목록 모두 dcbest-source-filter가 담당한다.
+    // keyword-hider가 먼저 soft-hide하면 행이 display:none이 되어 원출처 IntersectionObserver가
+    // 분석을 시작하지 못하므로, 이 경로에서는 placeholder를 만들지 않고 전권을 넘긴다.
+    // 댓글은 <tr>이 아니므로 기존 "이번만 보기" soft-hide UI를 그대로 유지한다.
+    if (isDcbestPostListRow(row)) {
+      clearListSoftHideArtifacts(row);
       return;
     }
 
