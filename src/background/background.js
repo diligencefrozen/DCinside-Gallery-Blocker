@@ -1980,6 +1980,8 @@ const DCBEST_SOURCE_LIST_JITTER_MS = 750;
 // 단, 연속 페이지 이동으로 서버를 두드리지 않도록 전역 최소 간격은 유지한다.
 const DCBEST_SOURCE_NEW_PAGE_MIN_GAP_MS = 350;
 const DCBEST_SOURCE_NEW_PAGE_JITTER_MS = 120;
+const DCBEST_SOURCE_MAIN_FIRST_GAP_MS = 120;
+const DCBEST_SOURCE_MAIN_FIRST_JITTER_MS = 80;
 const DCBEST_SOURCE_BURST_LIMIT = 7;
 const DCBEST_SOURCE_BURST_PAUSE_MIN_MS = 1800;
 const DCBEST_SOURCE_BURST_PAUSE_JITTER_MS = 800;
@@ -2040,7 +2042,7 @@ function dcbestSourceSenderAllowed(sender) {
     if (source.protocol !== "https:") return false;
     if (source.hostname === "www.dcinside.com") return true;
     if (source.hostname !== "gall.dcinside.com") return false;
-    return /^\/board\/lists\/?$/i.test(source.pathname)
+    return /^\/board\/(?:lists|view)\/?$/i.test(source.pathname)
       && String(source.searchParams.get("id") || "").trim().toLowerCase() === "dcbest";
   } catch (_) {
     return false;
@@ -2187,11 +2189,24 @@ async function resolveDcbestSourceGallery(no, rawUrl, referrerUrl, tabId = -1, p
   }
 
   const pacedNow = Date.now();
+  let isMainPage = false;
+  try {
+    isMainPage = new URL(String(referrerUrl || "")).hostname === "www.dcinside.com";
+  } catch (_) {}
+
+  // 메인 실베의 첫 항목은 화면 진입 직후 빠르게 분석을 시작한다.
+  // 이후 요청은 기존 pacing을 그대로 사용하므로 연속 요청량은 증가시키지 않는다.
+  const firstGapMs = isMainPage
+    ? DCBEST_SOURCE_MAIN_FIRST_GAP_MS
+    : DCBEST_SOURCE_NEW_PAGE_MIN_GAP_MS;
+  const firstJitterMs = isMainPage
+    ? DCBEST_SOURCE_MAIN_FIRST_JITTER_MS
+    : DCBEST_SOURCE_NEW_PAGE_JITTER_MS;
   const minIntervalMs = isFirstRequestForPage
-    ? Math.min(pacing.minIntervalMs, DCBEST_SOURCE_NEW_PAGE_MIN_GAP_MS)
+    ? Math.min(pacing.minIntervalMs, firstGapMs)
     : pacing.minIntervalMs;
   const jitterMs = isFirstRequestForPage
-    ? Math.min(pacing.jitterMs, DCBEST_SOURCE_NEW_PAGE_JITTER_MS)
+    ? Math.min(pacing.jitterMs, firstJitterMs)
     : pacing.jitterMs;
   const jitter = Math.floor(Math.random() * (jitterMs + 1));
   const earliest = dcbestSourceGuard.lastRequestAt + minIntervalMs + jitter;

@@ -195,7 +195,8 @@
     {
       "matches": [
         "*://www.dcinside.com/*",
-        "*://gall.dcinside.com/board/lists*"
+        "*://gall.dcinside.com/board/lists*",
+        "*://gall.dcinside.com/board/view*"
       ],
       "js": [
         "src/shared/keyword-settings-hot-cache.js",

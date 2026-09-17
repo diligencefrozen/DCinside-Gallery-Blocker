@@ -17,6 +17,19 @@
 (() => {
   "use strict";
 
+  // gall.dcinside.com에서는 실베 목록/상세에서만 동작한다.
+  // manifest는 query string으로 id=dcbest를 제한할 수 없으므로 일반 갤러리 페이지는 즉시 종료한다.
+  if (location.hostname === "gall.dcinside.com") {
+    try {
+      const pageUrl = new URL(location.href);
+      const isDcbestSurface = /^\/board\/(?:lists|view)\/?$/i.test(pageUrl.pathname)
+        && String(pageUrl.searchParams.get("id") || "").trim().toLowerCase() === "dcbest";
+      if (!isDcbestSurface) return;
+    } catch (_) {
+      return;
+    }
+  }
+
   const STYLE_ID = "dcb-dcbest-source-filter-style";
   const KEYWORD_HIDDEN_ATTR = "data-dcb-dcbest-keyword-hidden";
   const SOURCE_HIDDEN_ATTR = "data-dcb-dcbest-source-hidden";
