@@ -70,6 +70,7 @@
   let cacheSaveTimer = null;
 
   let mutationObserver = null;
+  let rankMutationObserver = null;
   let intersectionObserver = null;
   let scanTimer = null;
   let queueRunning = false;
@@ -187,49 +188,77 @@
       @keyframes dcbDcbestSpin {
         to { transform: rotate(360deg); }
       }
+      @keyframes dcbDcbestProgress {
+        0% { transform: translateX(-115%); }
+        100% { transform: translateX(315%); }
+      }
       .dcb-dcbest-analysis-indicator {
         display: inline-flex;
         align-items: center;
         gap: 5px;
-        margin-left: 7px;
-        padding: 2px 7px;
+        margin-left: 6px;
+        padding: 2px 7px 2px 6px;
         border-radius: 999px;
-        border: 1px solid rgba(86, 146, 255, 0.25);
-        background: rgba(86, 146, 255, 0.08);
-        color: #4f7fd8;
-        font-size: 11px;
-        font-weight: 600;
-        line-height: 16px;
+        border: 1px solid rgba(70, 125, 220, 0.24);
+        background: rgba(70, 125, 220, 0.07);
+        color: #416fbd;
+        font-size: 10px;
+        font-weight: 700;
+        line-height: 15px;
+        letter-spacing: -0.15px;
         white-space: nowrap;
         vertical-align: middle;
         opacity: 0;
-        transform: translateY(-1px);
-        transition: opacity 120ms ease, background-color 120ms ease, color 120ms ease;
+        transform: translateY(-1px) scale(0.96);
+        transition: opacity 130ms ease, transform 130ms ease, background-color 130ms ease, color 130ms ease, border-color 130ms ease;
         pointer-events: none;
       }
-      .dcb-dcbest-analysis-indicator.is-visible { opacity: 1; }
+      .dcb-dcbest-analysis-indicator.is-visible {
+        opacity: 1;
+        transform: translateY(-1px) scale(1);
+      }
       .dcb-dcbest-analysis-indicator .dcb-dcbest-analysis-spinner {
-        width: 10px;
-        height: 10px;
+        width: 9px;
+        height: 9px;
         box-sizing: border-box;
         border-radius: 50%;
         border: 1.5px solid currentColor;
         border-right-color: transparent;
-        animation: dcbDcbestSpin 0.65s linear infinite;
+        animation: dcbDcbestSpin 0.62s linear infinite;
+      }
+      .dcb-dcbest-analysis-indicator .dcb-dcbest-analysis-icon {
+        display: none;
+        width: 10px;
+        text-align: center;
+        font-size: 10px;
+        line-height: 10px;
       }
       .dcb-dcbest-analysis-indicator[data-state="allowed"] {
-        color: #4f8a62;
-        border-color: rgba(79, 138, 98, 0.24);
-        background: rgba(79, 138, 98, 0.08);
+        color: #36784a;
+        border-color: rgba(54, 120, 74, 0.22);
+        background: rgba(54, 120, 74, 0.07);
       }
       .dcb-dcbest-analysis-indicator[data-state="blocked"] {
-        color: #c25555;
-        border-color: rgba(194, 85, 85, 0.24);
-        background: rgba(194, 85, 85, 0.08);
+        color: #b34747;
+        border-color: rgba(179, 71, 71, 0.24);
+        background: rgba(179, 71, 71, 0.08);
       }
-      [${ANALYZING_ATTR}="1"] .besttxt,
-      [${ANALYZING_ATTR}="1"] .gall_tit {
-        box-shadow: inset 0 -1px rgba(86, 146, 255, 0.16);
+      .dcb-dcbest-analysis-indicator[data-state="analyzing"] {
+        position: relative;
+        overflow: hidden;
+      }
+      .dcb-dcbest-analysis-indicator[data-state="analyzing"]::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        bottom: 0;
+        width: 34%;
+        height: 1px;
+        border-radius: 2px;
+        background: linear-gradient(90deg, transparent, currentColor, transparent);
+        opacity: .55;
+        animation: dcbDcbestProgress 1.05s ease-in-out infinite;
+        pointer-events: none;
       }
       [${FADING_ATTR}="1"] {
         opacity: 0 !important;
@@ -511,9 +540,18 @@
 
   function getAnalysisHost(item) {
     if (!(item instanceof Element)) return null;
-    return item.querySelector(".besttxt")
+    return item.querySelector(".best_info")
       || item.querySelector(".gall_tit")
+      || item.querySelector(".besttxt")
       || item;
+  }
+
+  function isElementVisible(element) {
+    if (!(element instanceof Element) || !element.isConnected) return false;
+    const style = getComputedStyle(element);
+    if (style.display === "none" || style.visibility === "hidden") return false;
+    const rect = element.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
   }
 
   function ensureAnalysisIndicator(item) {
@@ -531,11 +569,21 @@
     spinner.className = "dcb-dcbest-analysis-spinner";
     spinner.setAttribute("aria-hidden", "true");
 
+    const icon = document.createElement("span");
+    icon.className = "dcb-dcbest-analysis-icon";
+    icon.setAttribute("aria-hidden", "true");
+
     const label = document.createElement("span");
     label.className = "dcb-dcbest-analysis-label";
 
-    indicator.append(spinner, label);
-    host.appendChild(indicator);
+    indicator.append(spinner, icon, label);
+
+    const sourceName = host.matches?.(".best_info")
+      ? host.querySelector(":scope > .name")
+      : null;
+    if (sourceName) sourceName.insertAdjacentElement("afterend", indicator);
+    else host.appendChild(indicator);
+
     return indicator;
   }
 
@@ -547,6 +595,10 @@
       if (!item?.isConnected) return;
       clearAnalysisTimer(item);
 
+      // 같은 실베 글이 랭킹/추천 등 여러 숨은 목록에 중복될 수 있다.
+      // 상태 UI는 현재 실제로 보이는 항목에만 표시한다.
+      if (state && state !== "off" && !isElementVisible(item)) return;
+
       if (!state || state === "off") {
         item.removeAttribute(ANALYZING_ATTR);
         item.querySelectorAll?.(".dcb-dcbest-analysis-indicator").forEach((node) => node.remove());
@@ -556,6 +608,7 @@
       const indicator = ensureAnalysisIndicator(item);
       if (!indicator) return;
       const spinner = indicator.querySelector(".dcb-dcbest-analysis-spinner");
+      const icon = indicator.querySelector(".dcb-dcbest-analysis-icon");
       const label = indicator.querySelector(".dcb-dcbest-analysis-label");
 
       indicator.dataset.state = state;
@@ -564,17 +617,22 @@
       if (state === "analyzing") {
         item.setAttribute(ANALYZING_ATTR, "1");
         if (spinner) spinner.style.display = "inline-block";
-        if (label) label.textContent = "원출처 확인 중";
+        if (icon) icon.style.display = "none";
+        if (label) label.textContent = "원출처 분석 중";
         return;
       }
 
       item.removeAttribute(ANALYZING_ATTR);
       if (spinner) spinner.style.display = "none";
+      if (icon) {
+        icon.style.display = "inline-block";
+        icon.textContent = state === "blocked" ? "⊘" : "✓";
+      }
       if (label) {
-        label.textContent = state === "blocked" ? "차단 갤러리 감지" : "확인 완료";
+        label.textContent = state === "blocked" ? "차단 출처" : "확인 완료";
       }
 
-      const holdMs = state === "blocked" ? 160 : 260;
+      const holdMs = state === "blocked" ? 240 : 420;
       const timer = setTimeout(() => {
         analysisTimers.delete(item);
         indicator.classList.remove("is-visible");
@@ -849,6 +907,78 @@
     });
   }
 
+  function getVisibleRankLists() {
+    if (location.hostname !== "www.dcinside.com") return [];
+    return Array.from(document.querySelectorAll("#dcbest_list_rank ul.dcbest_rank_ul"))
+      .filter(isElementVisible);
+  }
+
+  function refreshActiveRankTab() {
+    const lists = getVisibleRankLists();
+    if (!lists.length) return;
+
+    lists.forEach((list) => {
+      getCandidateLinks(list).forEach((link) => {
+        registerItem(link);
+        const item = getItemForLink(link);
+        const no = getArticleNo(link);
+        if (!(item instanceof Element) || !no) return;
+
+        // 숨은 랭킹 목록에서 먼저 observe됐던 항목도 탭 활성화 시
+        // 현재 viewport 기준으로 다시 관찰/큐잉한다.
+        intersectionObserver?.unobserve(item);
+        observeForSourceCheck(item, no);
+      });
+    });
+  }
+
+  function scheduleRankRefresh() {
+    requestAnimationFrame(() => {
+      refreshActiveRankTab();
+      setTimeout(refreshActiveRankTab, 80);
+    });
+  }
+
+  function setupRankTabWatchers() {
+    if (location.hostname !== "www.dcinside.com") return;
+
+    document.addEventListener("click", (event) => {
+      const button = event.target?.closest?.(".btn_dcbest_rank_tab");
+      if (!button) return;
+      scheduleRankRefresh();
+    }, true);
+
+    rankMutationObserver?.disconnect();
+    const rankPanel = document.querySelector("#dcbest_list_rank");
+    if (!rankPanel) return;
+
+    rankMutationObserver = new MutationObserver((records) => {
+      const relevant = records.some((record) => {
+        if (record.type === "attributes") {
+          return record.target instanceof Element
+            && (record.target.matches("#dcbest_list_rank")
+              || record.target.matches("ul.dcbest_rank_ul"));
+        }
+
+        if (record.type !== "childList" || !record.addedNodes?.length) return false;
+        return Array.from(record.addedNodes).some((node) => {
+          if (!(node instanceof Element)) return false;
+          return node.matches?.("ul.dcbest_rank_ul, a[href*='id=dcbest'][href*='no=']")
+            || !!node.querySelector?.("ul.dcbest_rank_ul, a[href*='id=dcbest'][href*='no=']");
+        });
+      });
+
+      if (relevant) scheduleRankRefresh();
+    });
+
+    rankMutationObserver.observe(rankPanel, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: ["class", "style"]
+    });
+  }
+
   function setupMutationObserver() {
     mutationObserver?.disconnect();
     mutationObserver = new MutationObserver((records) => {
@@ -914,8 +1044,10 @@
     ensureStyle();
     setupIntersectionObserver();
     setupMutationObserver();
+    setupRankTabWatchers();
     await Promise.all([loadCache(), loadSettings()]);
     scan(document);
+    scheduleRankRefresh();
   }
 
   chrome.storage.onChanged.addListener((changes, area) => {
@@ -939,6 +1071,7 @@
       setupIntersectionObserver();
       refreshExistingItems();
       scan(document);
+      scheduleRankRefresh();
     });
   });
 
