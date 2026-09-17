@@ -229,7 +229,7 @@ In this project:
 - **Chrome Storage** keeps settings and personal block data.
 - **Declarative Net Request** handles strict network-level gallery blocking.
 
-The extension is built with plain JavaScript, HTML, and CSS. There is no framework, package installation, custom backend, or build step.
+The extension UI and filtering logic are built with plain JavaScript, HTML, and CSS. Most features need no external service. The optional on-device aggressive-expression detector uses a local ONNX model and a generated ONNX Runtime Web bundle; source checkouts must prepare those artifacts before using that feature.
 
 ---
 
@@ -400,6 +400,18 @@ Clone the repository:
 git clone https://github.com/diligencefrozen/DCinside-Gallery-Blocker.git
 ```
 
+For the regular source files, the repository can be inspected directly. The optional on-device aggressive-expression detector needs two generated/local artifacts that are intentionally not committed: the ~180 MB `models/conflict/model.onnx` file and `vendor/detector/`.
+
+To prepare a complete development checkout:
+
+```bash
+npm install
+npm run prepare:detector -- --from /path/to/model.onnx
+npm run build:detector
+```
+
+The model command verifies the exact file size and SHA-256 digest before registering it. See [Local text detection: development and packaging](docs/reading-and-detection.md) for the expected checksum and packaging flow.
+
 Then:
 
 1. Open `chrome://extensions`.
@@ -407,7 +419,7 @@ Then:
 3. Click **Load unpacked**.
 4. Select the project folder containing `manifest.json`.
 
-No dependency installation or build step is required.
+For a distributable folder, run `npm run package:extension` and package the contents of `dist/DCinside-Gallery-Blocker/` rather than the repository root.
 
 ---
 
