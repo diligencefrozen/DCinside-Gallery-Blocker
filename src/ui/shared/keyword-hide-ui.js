@@ -59,6 +59,8 @@
   let pendingSaveCount = 0;
   let deferredStorageRefresh = false;
   let stateMutationRevision = 0;
+  let popupKeywordListOwned = false;
+  let popupKeywordHighlight = "";
   let state = {
     keywordHideEnabled: DEFAULTS.keywordHideEnabled,
     hiddenKeywords: [...DEFAULTS.hiddenKeywords],
@@ -169,10 +171,14 @@
     const srcTargets = config.keywordHideTargets && typeof config.keywordHideTargets === "object"
       ? config.keywordHideTargets
       : {};
+    const storedKeywords = normalizeKeywordList(config.hiddenKeywords);
+    const nextKeywords = activeContext?.name === "popup" && popupKeywordListOwned
+      ? [...state.hiddenKeywords]
+      : storedKeywords;
 
     state = {
       keywordHideEnabled: Boolean(config.keywordHideEnabled),
-      hiddenKeywords: normalizeKeywordList(config.hiddenKeywords),
+      hiddenKeywords: nextKeywords,
       keywordHideTargets: {
         listTitle: typeof srcTargets.listTitle === "boolean" ? srcTargets.listTitle : DEFAULTS.keywordHideTargets.listTitle,
         viewTitle: typeof srcTargets.viewTitle === "boolean" ? srcTargets.viewTitle : DEFAULTS.keywordHideTargets.viewTitle,
@@ -235,6 +241,7 @@
 
     if (Object.prototype.hasOwnProperty.call(nextPartial, "hiddenKeywords")) {
       nextPartial.hiddenKeywords = normalizeKeywordList(nextPartial.hiddenKeywords);
+      if (activeContext?.name === "popup") popupKeywordListOwned = true;
     }
 
     stateMutationRevision += 1;
@@ -249,6 +256,13 @@
 
     uiCache?.merge?.(nextPartial);
     render();
+    if (activeContext?.name === "popup" && popupKeywordListOwned) {
+      const revision = stateMutationRevision;
+      queueMicrotask(() => {
+        if (revision !== stateMutationRevision || !popupKeywordListOwned) return;
+        renderKeywordList();
+      });
+    }
     notifyActiveTabKeywordHideState();
     setStatus(message || "저장 중...");
 
@@ -326,8 +340,13 @@
       return;
     }
 
+    const highlightKey = keywordCompareKey(popupKeywordHighlight);
+
     keywords.forEach((keyword, index) => {
       const li = document.createElement("li");
+      if (activeContext?.name === "popup" && highlightKey && keywordCompareKey(keyword) === highlightKey) {
+        li.classList.add("keyword-just-added");
+      }
 
       const code = document.createElement("code");
       code.textContent = keyword;
@@ -342,6 +361,13 @@
       li.append(code, button);
       list.appendChild(li);
     });
+
+    if (activeContext?.name === "popup" && highlightKey) {
+      requestAnimationFrame(() => {
+        if (!list?.isConnected) return;
+        list.scrollTop = list.scrollHeight;
+      });
+    }
   }
 
   function parseKeywordInput(rawValue) {
@@ -388,6 +414,8 @@
       return;
     }
 
+    if (activeContext?.name === "popup") popupKeywordHighlight = filtered[filtered.length - 1] || "";
+
     saveState(
       {
         hiddenKeywords: [...current, ...filtered]
@@ -407,6 +435,7 @@
     if (index < 0 || index >= current.length) return;
 
     current.splice(index, 1);
+    if (activeContext?.name === "popup") popupKeywordHighlight = "";
 
     saveState(
       {

@@ -44,6 +44,8 @@ let blockedKeywordWriteQueue = Promise.resolve();
 let blockedKeywordWritePending = 0;
 let blockedKeywordDeferredRefresh = false;
 let blockedKeywordMutationRevision = 0;
+let blockedKeywordPopupOwned = false;
+let blockedKeywordHighlight = "";
 const keywordListCountEl = document.getElementById("keywordListCount");
 const keywordTargetListTitle = document.getElementById("keywordTargetListTitle");
 const keywordTargetViewTitle = document.getElementById("keywordTargetViewTitle");
@@ -1037,7 +1039,7 @@ function refreshUidList(delay = 0) {
 }
 
 /* ───────── 키워드 차단 목록 ───────── */
-function renderKeywordList(list) {
+function renderKeywordList(list, { highlight = blockedKeywordHighlight } = {}) {
   if (!keywordListEl) return;
 
   keywordListEl.replaceChildren();
@@ -1061,8 +1063,11 @@ function renderKeywordList(list) {
     return;
   }
 
+  const highlightKey = sanitizeKeyword(highlight).toLowerCase();
+
   keywords.forEach((keyword, idx) => {
     const li = document.createElement("li");
+    if (highlightKey && keyword.toLowerCase() === highlightKey) li.classList.add("keyword-just-added");
 
     const code = document.createElement("code");
     code.textContent = keyword;
@@ -1077,6 +1082,13 @@ function renderKeywordList(list) {
     li.append(code, btn);
     keywordListEl.appendChild(li);
   });
+
+  if (highlightKey) {
+    requestAnimationFrame(() => {
+      if (!keywordListEl?.isConnected) return;
+      keywordListEl.scrollTop = keywordListEl.scrollHeight;
+    });
+  }
 }
 
 function normalizeKeywordList(list) {
@@ -1115,7 +1127,7 @@ function refreshKeywordBlockState() {
 
       // 팝업을 연 직후 시작된 오래된 storage.get()이 등록 직후의
       // optimistic UI를 덮어쓰지 않도록 로컬 mutation 이후의 응답만 반영한다.
-      if (requestedAtRevision === blockedKeywordMutationRevision && blockedKeywordWritePending === 0) {
+      if (!blockedKeywordPopupOwned && requestedAtRevision === blockedKeywordMutationRevision && blockedKeywordWritePending === 0) {
         renderKeywordList(conf.blockedKeywords || []);
       }
     }
@@ -1125,7 +1137,7 @@ function refreshKeywordBlockState() {
 function refreshBlockedKeywordListFromStorage() {
   const requestedAtRevision = blockedKeywordMutationRevision;
   chrome.storage.sync.get({ blockedKeywords: [] }, ({ blockedKeywords }) => {
-    if (requestedAtRevision !== blockedKeywordMutationRevision || blockedKeywordWritePending > 0) return;
+    if (blockedKeywordPopupOwned || requestedAtRevision !== blockedKeywordMutationRevision || blockedKeywordWritePending > 0) return;
     renderKeywordList(blockedKeywords || []);
   });
 }
@@ -1178,8 +1190,14 @@ function saveKeywordList(mutator) {
   const next = normalizeKeywordList(list);
 
   blockedKeywordMutationRevision += 1;
+  blockedKeywordPopupOwned = true;
+  blockedKeywordHighlight = next.length > blockedKeywordState.length ? next[next.length - 1] : "";
   UI_SETTINGS_CACHE?.merge?.({ blockedKeywords: next });
   renderKeywordList(next);
+  queueMicrotask(() => {
+    if (!blockedKeywordPopupOwned) return;
+    renderKeywordList(blockedKeywordState);
+  });
   notifyActiveTabKeywordBlockState();
   queueBlockedKeywordWrite(next);
 }
@@ -1440,7 +1458,7 @@ function applyPopupSettings(conf = {}, { refreshAsync = true } = {}) {
 
   // A popup-local keyword mutation is authoritative for the lifetime of this popup.
   // Do not let a late initial settings read repaint the list with a stale snapshot.
-  if (blockedKeywordMutationRevision === 0) {
+  if (!blockedKeywordPopupOwned && blockedKeywordMutationRevision === 0) {
     renderKeywordList(blockedKeywords);
   }
   if (refreshAsync) refreshKeywordBlockState();
@@ -1974,7 +1992,10 @@ chrome.storage.onChanged.addListener((c, a) => {
       lockKeywordBlockUI(!c.keywordBlockEnabled.newValue);
     }
     if (c.blockedKeywords) {
-      if (blockedKeywordWritePending > 0) {
+      if (blockedKeywordPopupOwned) {
+        // This popup session owns the list after a local mutation. Background/sync
+        // echoes must never repaint it with an older snapshot.
+      } else if (blockedKeywordWritePending > 0) {
         blockedKeywordDeferredRefresh = true;
       } else {
         renderKeywordList(c.blockedKeywords.newValue || []);
