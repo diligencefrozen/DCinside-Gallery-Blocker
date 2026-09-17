@@ -1,0 +1,26 @@
+name: Finalize repository
+
+on:
+  push:
+    paths:
+      - ".github/finalize-repository.trigger"
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Finalize repository
+        run: bash scripts/finalize-repository.sh
