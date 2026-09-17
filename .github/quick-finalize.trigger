@@ -1,1 +1,1 @@
-trigger quick finalization
+trigger quick finalization v2
