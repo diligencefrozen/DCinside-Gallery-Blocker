@@ -1785,13 +1785,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
 
 /* ───── 실베 원출처 확인: 서버 부하를 피하기 위해 전역 단일 큐 + 최소 요청 간격 적용 ───── */
-const DCBEST_SOURCE_MAIN_MIN_INTERVAL_MS = 2200;
-const DCBEST_SOURCE_MAIN_JITTER_MS = 900;
-const DCBEST_SOURCE_LIST_MIN_INTERVAL_MS = 3200;
-const DCBEST_SOURCE_LIST_JITTER_MS = 1300;
+const DCBEST_SOURCE_MAIN_MIN_INTERVAL_MS = 850;
+const DCBEST_SOURCE_MAIN_JITTER_MS = 550;
+const DCBEST_SOURCE_LIST_MIN_INTERVAL_MS = 1250;
+const DCBEST_SOURCE_LIST_JITTER_MS = 750;
+const DCBEST_SOURCE_BURST_LIMIT = 7;
+const DCBEST_SOURCE_BURST_PAUSE_MIN_MS = 1800;
+const DCBEST_SOURCE_BURST_PAUSE_JITTER_MS = 800;
 const DCBEST_SOURCE_BACKOFF_MS = 120_000;
 const DCBEST_SOURCE_SESSION_KEY = "dcbDcbestSourceGuardV1";
 let dcbestSourceQueue = Promise.resolve();
+let dcbestSourceBurstCount = 0;
 let dcbestSourceGuard = {
   lastRequestAt: 0,
   cooldownUntil: 0
@@ -1931,13 +1935,25 @@ async function resolveDcbestSourceGallery(no, rawUrl, referrerUrl) {
   }
 
   const pacing = getDcbestSourcePacing(referrerUrl);
+
+  // 짧은 간격으로 체감 속도를 높이되, 일정 건수마다 한 번 쉬어
+  // 장시간 연속 조회가 디시 서버에 누적되지 않게 한다.
+  if (dcbestSourceBurstCount >= DCBEST_SOURCE_BURST_LIMIT) {
+    const pause = DCBEST_SOURCE_BURST_PAUSE_MIN_MS
+      + Math.floor(Math.random() * (DCBEST_SOURCE_BURST_PAUSE_JITTER_MS + 1));
+    await new Promise((resolve) => setTimeout(resolve, pause));
+    dcbestSourceBurstCount = 0;
+  }
+
+  const pacedNow = Date.now();
   const jitter = Math.floor(Math.random() * (pacing.jitterMs + 1));
   const earliest = dcbestSourceGuard.lastRequestAt + pacing.minIntervalMs + jitter;
-  if (earliest > now) {
-    await new Promise((resolve) => setTimeout(resolve, earliest - now));
+  if (earliest > pacedNow) {
+    await new Promise((resolve) => setTimeout(resolve, earliest - pacedNow));
   }
 
   dcbestSourceGuard.lastRequestAt = Date.now();
+  dcbestSourceBurstCount += 1;
   persistDcbestSourceGuard();
 
   // 목록에 실제로 걸려 있던 실베 URL을 그대로 요청한다.

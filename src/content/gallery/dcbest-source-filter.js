@@ -26,10 +26,13 @@
   const VISUAL_HIDDEN_ATTR = "data-dcb-dcbest-hidden";
   const FADE_MS = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ? 0 : 180;
   const CACHE_KEY = "dcbDcbestSourceCacheV1";
+  const SOURCE_ALIAS_CACHE_KEY = "dcbDcbestSourceAliasCacheV1";
   const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
-  const SOURCE_RETRY_MS = 10 * 60 * 1000;
+  const SOURCE_ALIAS_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+  const SOURCE_RETRY_MS = 3 * 60 * 1000;
   const CACHE_MAX_ENTRIES = 800;
-  const OBSERVER_MARGIN = "700px 0px";
+  const SOURCE_ALIAS_CACHE_MAX_ENTRIES = 300;
+  const OBSERVER_MARGIN = "280px 0px";
 
   const DEFAULTS = {
     galleryBlockEnabled: undefined,
@@ -42,16 +45,27 @@
       viewTitle: true,
       viewBody: true,
       comments: true
+    },
+    keywordHideEnabled: false,
+    hiddenKeywords: [],
+    keywordHideTargets: {
+      listTitle: true,
+      viewTitle: true,
+      viewBody: true,
+      comments: true
     }
   };
 
   let galleryBlockEnabled = true;
   let blockedGalleryIds = new Set();
   let keywordBlockEnabled = false;
+  let keywordHideEnabled = false;
   let keywordList = [];
   let keywordTargets = { ...DEFAULTS.keywordBlockTargets };
+  let keywordHideTargets = { ...DEFAULTS.keywordHideTargets };
 
   let cache = Object.create(null);
+  let sourceAliasCache = Object.create(null);
   let cacheLoaded = false;
   let cacheSaveTimer = null;
 
@@ -60,11 +74,14 @@
   let scanTimer = null;
   let queueRunning = false;
   const queuedNos = new Set();
+  const activeNos = new Set();
   const requestQueue = [];
   const itemsByNo = new Map();
   const postUrlByNo = new Map();
+  const sourceLabelByNo = new Map();
   const retryAfterByNo = new Map();
   const hideTimers = new WeakMap();
+  const analysisTimers = new WeakMap();
 
   function normalizeText(value) {
     return String(value || "")
@@ -109,6 +126,37 @@
     return out;
   }
 
+  function rebuildActiveKeywordList(conf = {}) {
+    const active = [];
+
+    const blockTargets = {
+      ...DEFAULTS.keywordBlockTargets,
+      ...(conf.keywordBlockTargets || {})
+    };
+    const hideTargets = {
+      ...DEFAULTS.keywordHideTargets,
+      ...(conf.keywordHideTargets || {})
+    };
+
+    keywordBlockEnabled = !!conf.keywordBlockEnabled;
+    keywordHideEnabled = !!conf.keywordHideEnabled;
+    keywordTargets = blockTargets;
+    keywordHideTargets = hideTargets;
+
+    if (keywordBlockEnabled && blockTargets.listTitle) {
+      active.push(...(Array.isArray(conf.blockedKeywords) ? conf.blockedKeywords : []));
+    }
+    if (keywordHideEnabled && hideTargets.listTitle) {
+      active.push(...(Array.isArray(conf.hiddenKeywords) ? conf.hiddenKeywords : []));
+    }
+
+    keywordList = prepareKeywords(active);
+  }
+
+  function keywordFilteringEnabled() {
+    return keywordList.length > 0;
+  }
+
   function findKeyword(text) {
     const haystack = normalizeText(text);
     if (!haystack) return null;
@@ -136,37 +184,52 @@
     const style = document.createElement("style");
     style.id = STYLE_ID;
     style.textContent = `
-      @keyframes dcbDcbestScanSweep {
-        0% { transform: translateX(-115%); opacity: 0; }
-        15% { opacity: 1; }
-        85% { opacity: 1; }
-        100% { transform: translateX(340%); opacity: 0; }
+      @keyframes dcbDcbestSpin {
+        to { transform: rotate(360deg); }
       }
-      [${ANALYZING_ATTR}="1"] .besttxt,
-      [${ANALYZING_ATTR}="1"] .gall_tit {
-        position: relative !important;
-      }
-      [${ANALYZING_ATTR}="1"] .besttxt::after,
-      [${ANALYZING_ATTR}="1"] .gall_tit::after {
-        content: "";
-        position: absolute;
-        inset: 0;
-        width: 42%;
+      .dcb-dcbest-analysis-indicator {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        margin-left: 7px;
+        padding: 2px 7px;
+        border-radius: 999px;
+        border: 1px solid rgba(86, 146, 255, 0.25);
+        background: rgba(86, 146, 255, 0.08);
+        color: #4f7fd8;
+        font-size: 11px;
+        font-weight: 600;
+        line-height: 16px;
+        white-space: nowrap;
+        vertical-align: middle;
+        opacity: 0;
+        transform: translateY(-1px);
+        transition: opacity 120ms ease, background-color 120ms ease, color 120ms ease;
         pointer-events: none;
-        z-index: 3;
-        background: linear-gradient(
-          90deg,
-          rgba(86, 146, 255, 0) 0%,
-          rgba(86, 146, 255, 0.08) 25%,
-          rgba(86, 146, 255, 0.22) 50%,
-          rgba(86, 146, 255, 0.08) 75%,
-          rgba(86, 146, 255, 0) 100%
-        );
-        animation: dcbDcbestScanSweep 1.05s ease-in-out infinite;
+      }
+      .dcb-dcbest-analysis-indicator.is-visible { opacity: 1; }
+      .dcb-dcbest-analysis-indicator .dcb-dcbest-analysis-spinner {
+        width: 10px;
+        height: 10px;
+        box-sizing: border-box;
+        border-radius: 50%;
+        border: 1.5px solid currentColor;
+        border-right-color: transparent;
+        animation: dcbDcbestSpin 0.65s linear infinite;
+      }
+      .dcb-dcbest-analysis-indicator[data-state="allowed"] {
+        color: #4f8a62;
+        border-color: rgba(79, 138, 98, 0.24);
+        background: rgba(79, 138, 98, 0.08);
+      }
+      .dcb-dcbest-analysis-indicator[data-state="blocked"] {
+        color: #c25555;
+        border-color: rgba(194, 85, 85, 0.24);
+        background: rgba(194, 85, 85, 0.08);
       }
       [${ANALYZING_ATTR}="1"] .besttxt,
       [${ANALYZING_ATTR}="1"] .gall_tit {
-        box-shadow: inset 0 -1px rgba(86, 146, 255, 0.20);
+        box-shadow: inset 0 -1px rgba(86, 146, 255, 0.16);
       }
       [${FADING_ATTR}="1"] {
         opacity: 0 !important;
@@ -177,10 +240,10 @@
         display: none !important;
       }
       @media (prefers-reduced-motion: reduce) {
-        [${ANALYZING_ATTR}="1"] .besttxt::after,
-        [${ANALYZING_ATTR}="1"] .gall_tit::after {
+        .dcb-dcbest-analysis-indicator,
+        .dcb-dcbest-analysis-indicator .dcb-dcbest-analysis-spinner {
+          transition: none !important;
           animation: none !important;
-          display: none !important;
         }
       }
     `;
@@ -269,6 +332,12 @@
     return link?.textContent || item.textContent || "";
   }
 
+  function getSourceLabel(item) {
+    if (!(item instanceof Element)) return "";
+    const label = item.querySelector(".best_info .name")?.textContent || "";
+    return normalizeSourceLabel(label);
+  }
+
   function shouldHideItem(item) {
     return item.getAttribute(KEYWORD_HIDDEN_ATTR) === "1"
       || item.getAttribute(SOURCE_HIDDEN_ATTR) === "1";
@@ -341,6 +410,16 @@
     return !!gid && stamp > 0 && Date.now() - stamp < CACHE_TTL_MS;
   }
 
+  function sourceAliasEntryFresh(entry) {
+    if (!entry || typeof entry !== "object") return false;
+    const stamp = Number(entry.at) || 0;
+    return stamp > 0 && Date.now() - stamp < SOURCE_ALIAS_TTL_MS;
+  }
+
+  function normalizeSourceLabel(value) {
+    return normalizeText(value).replace(/\s*갤러리$/, "").trim();
+  }
+
   function getCachedSource(no) {
     const entry = cache[no];
     if (!cacheEntryFresh(entry)) {
@@ -350,6 +429,21 @@
     return entry;
   }
 
+  function getCachedSourceAlias(label) {
+    const key = normalizeSourceLabel(label);
+    if (!key) return null;
+
+    const entry = sourceAliasCache[key];
+    if (!sourceAliasEntryFresh(entry)) {
+      if (entry) delete sourceAliasCache[key];
+      return null;
+    }
+
+    if (entry.ambiguous) return null;
+    const gid = normalizeGalleryId(entry.gid);
+    return gid ? { gid, at: Number(entry.at) || 0 } : null;
+  }
+
   function pruneCache() {
     const entries = Object.entries(cache)
       .filter(([, value]) => cacheEntryFresh(value))
@@ -357,6 +451,13 @@
       .slice(0, CACHE_MAX_ENTRIES);
 
     cache = Object.fromEntries(entries);
+
+    const aliases = Object.entries(sourceAliasCache)
+      .filter(([, value]) => sourceAliasEntryFresh(value))
+      .sort((a, b) => (Number(b[1]?.at) || 0) - (Number(a[1]?.at) || 0))
+      .slice(0, SOURCE_ALIAS_CACHE_MAX_ENTRIES);
+
+    sourceAliasCache = Object.fromEntries(aliases);
   }
 
   function scheduleCacheSave() {
@@ -364,26 +465,122 @@
     cacheSaveTimer = setTimeout(() => {
       cacheSaveTimer = null;
       pruneCache();
-      chrome.storage.local.set({ [CACHE_KEY]: cache });
-    }, 1200);
+      chrome.storage.local.set({
+        [CACHE_KEY]: cache,
+        [SOURCE_ALIAS_CACHE_KEY]: sourceAliasCache
+      });
+    }, 650);
   }
 
   function putCachedSource(no, gid) {
+    const normalized = normalizeGalleryId(gid);
+    if (!normalized) return;
+
     cache[no] = {
-      gid: normalizeGalleryId(gid),
+      gid: normalized,
       at: Date.now()
     };
     scheduleCacheSave();
   }
 
-  function setAnalyzing(no, active) {
+  function putCachedSourceAlias(label, gid) {
+    const key = normalizeSourceLabel(label);
+    const normalized = normalizeGalleryId(gid);
+    if (!key || !normalized) return;
+
+    const previous = sourceAliasCache[key];
+    if (sourceAliasEntryFresh(previous)) {
+      const previousGid = normalizeGalleryId(previous.gid);
+      if (previous.ambiguous || (previousGid && previousGid !== normalized)) {
+        sourceAliasCache[key] = { ambiguous: true, gid: "", at: Date.now() };
+        scheduleCacheSave();
+        return;
+      }
+    }
+
+    sourceAliasCache[key] = { gid: normalized, ambiguous: false, at: Date.now() };
+    scheduleCacheSave();
+  }
+
+  function clearAnalysisTimer(item) {
+    const timer = analysisTimers.get(item);
+    if (!timer) return;
+    clearTimeout(timer);
+    analysisTimers.delete(item);
+  }
+
+  function getAnalysisHost(item) {
+    if (!(item instanceof Element)) return null;
+    return item.querySelector(".besttxt")
+      || item.querySelector(".gall_tit")
+      || item;
+  }
+
+  function ensureAnalysisIndicator(item) {
+    const host = getAnalysisHost(item);
+    if (!(host instanceof Element)) return null;
+
+    let indicator = host.querySelector(":scope > .dcb-dcbest-analysis-indicator");
+    if (indicator) return indicator;
+
+    indicator = document.createElement("span");
+    indicator.className = "dcb-dcbest-analysis-indicator";
+    indicator.setAttribute("aria-live", "polite");
+
+    const spinner = document.createElement("span");
+    spinner.className = "dcb-dcbest-analysis-spinner";
+    spinner.setAttribute("aria-hidden", "true");
+
+    const label = document.createElement("span");
+    label.className = "dcb-dcbest-analysis-label";
+
+    indicator.append(spinner, label);
+    host.appendChild(indicator);
+    return indicator;
+  }
+
+  function setAnalysisState(no, state) {
     const items = itemsByNo.get(no);
     if (!items) return;
 
     items.forEach((item) => {
       if (!item?.isConnected) return;
-      if (active) item.setAttribute(ANALYZING_ATTR, "1");
-      else item.removeAttribute(ANALYZING_ATTR);
+      clearAnalysisTimer(item);
+
+      if (!state || state === "off") {
+        item.removeAttribute(ANALYZING_ATTR);
+        item.querySelectorAll?.(".dcb-dcbest-analysis-indicator").forEach((node) => node.remove());
+        return;
+      }
+
+      const indicator = ensureAnalysisIndicator(item);
+      if (!indicator) return;
+      const spinner = indicator.querySelector(".dcb-dcbest-analysis-spinner");
+      const label = indicator.querySelector(".dcb-dcbest-analysis-label");
+
+      indicator.dataset.state = state;
+      indicator.classList.add("is-visible");
+
+      if (state === "analyzing") {
+        item.setAttribute(ANALYZING_ATTR, "1");
+        if (spinner) spinner.style.display = "inline-block";
+        if (label) label.textContent = "원출처 확인 중";
+        return;
+      }
+
+      item.removeAttribute(ANALYZING_ATTR);
+      if (spinner) spinner.style.display = "none";
+      if (label) {
+        label.textContent = state === "blocked" ? "차단 갤러리 감지" : "확인 완료";
+      }
+
+      const holdMs = state === "blocked" ? 160 : 260;
+      const timer = setTimeout(() => {
+        analysisTimers.delete(item);
+        indicator.classList.remove("is-visible");
+        setTimeout(() => indicator.remove(), 140);
+      }, holdMs);
+      analysisTimers.set(item, timer);
     });
   }
 
@@ -449,6 +646,14 @@
           continue;
         }
 
+        const sourceLabel = sourceLabelByNo.get(no) || "";
+        const alias = getCachedSourceAlias(sourceLabel);
+        if (alias) {
+          putCachedSource(no, alias.gid);
+          applySourceResult(no, alias.gid);
+          continue;
+        }
+
         await waitForVisibleTab();
         if (!galleryBlockEnabled || !blockedGalleryIds.size) continue;
 
@@ -456,14 +661,18 @@
         if (!postUrl) continue;
 
         let result;
-        setAnalyzing(no, true);
+        activeNos.add(no);
+        setAnalysisState(no, "analyzing");
         try {
           result = await fetchSourceGallery(no, postUrl);
+        } catch (_) {
+          result = { ok: false, gid: "" };
         } finally {
-          setAnalyzing(no, false);
+          activeNos.delete(no);
         }
 
         if (result?.rateLimited) {
+          setAnalysisState(no, "off");
           if (!queuedNos.has(no)) {
             queuedNos.add(no);
             requestQueue.unshift(no);
@@ -477,22 +686,30 @@
         if (gid) {
           retryAfterByNo.delete(no);
           putCachedSource(no, gid);
+          if (sourceLabel) putCachedSourceAlias(sourceLabel, gid);
+
+          const blocked = galleryBlockEnabled && blockedGalleryIds.has(gid);
+          setAnalysisState(no, blocked ? "blocked" : "allowed");
+          if (blocked) {
+            await new Promise((resolve) => setTimeout(resolve, 120));
+          }
           applySourceResult(no, gid);
         } else {
-          // 일시적인 HTML 차이/응답 실패를 영구적인 "원출처 없음"으로 캐시하지 않는다.
+          setAnalysisState(no, "off");
+          // 일시적인 HTML 차이/응답 실패는 짧게만 재시도 보류한다.
           retryAfterByNo.set(no, Date.now() + SOURCE_RETRY_MS);
         }
       }
     } finally {
       queueRunning = false;
       if (requestQueue.length && galleryBlockEnabled && blockedGalleryIds.size) {
-        setTimeout(runQueue, 500);
+        setTimeout(runQueue, 180);
       }
     }
   }
 
   function enqueueSourceCheck(no) {
-    if (!no || queuedNos.has(no)) return;
+    if (!no || queuedNos.has(no) || activeNos.has(no)) return;
     if (!galleryBlockEnabled || !blockedGalleryIds.size) return;
 
     const retryAfter = Number(retryAfterByNo.get(no)) || 0;
@@ -502,6 +719,13 @@
     const cached = getCachedSource(no);
     if (cached) {
       applySourceResult(no, cached.gid);
+      return;
+    }
+
+    const alias = getCachedSourceAlias(sourceLabelByNo.get(no) || "");
+    if (alias) {
+      putCachedSource(no, alias.gid);
+      applySourceResult(no, alias.gid);
       return;
     }
 
@@ -548,7 +772,10 @@
     }
     items.add(item);
 
-    const keyword = keywordBlockEnabled && keywordTargets.listTitle
+    const sourceLabel = getSourceLabel(item);
+    if (sourceLabel) sourceLabelByNo.set(no, sourceLabel);
+
+    const keyword = keywordFilteringEnabled()
       ? findKeyword(getTitleText(item, link))
       : null;
     setKeywordHidden(item, keyword);
@@ -581,14 +808,21 @@
         ? item
         : item.querySelector?.('a[href*="id=dcbest"][href*="no="]:not(.reply_numbox)');
 
-      const keyword = keywordBlockEnabled && keywordTargets.listTitle
+      const sourceLabel = getSourceLabel(item);
+      if (sourceLabel) sourceLabelByNo.set(no, sourceLabel);
+
+      const keyword = keywordFilteringEnabled()
         ? findKeyword(getTitleText(item, link))
         : null;
       setKeywordHidden(item, keyword);
 
       const cached = getCachedSource(no);
+      const alias = cached ? null : getCachedSourceAlias(sourceLabelByNo.get(no) || "");
       if (cached) applySourceResult(no, cached.gid);
-      else {
+      else if (alias) {
+        putCachedSource(no, alias.gid);
+        applySourceResult(no, alias.gid);
+      } else {
         setSourceHidden(item, "");
         if (galleryBlockEnabled && blockedGalleryIds.size) observeForSourceCheck(item, no);
       }
@@ -636,11 +870,20 @@
 
   function loadCache() {
     return new Promise((resolve) => {
-      chrome.storage.local.get({ [CACHE_KEY]: {} }, (result) => {
+      chrome.storage.local.get({
+        [CACHE_KEY]: {},
+        [SOURCE_ALIAS_CACHE_KEY]: {}
+      }, (result) => {
         const raw = result?.[CACHE_KEY];
+        const rawAliases = result?.[SOURCE_ALIAS_CACHE_KEY];
+
         cache = raw && typeof raw === "object" && !Array.isArray(raw)
           ? raw
           : Object.create(null);
+        sourceAliasCache = rawAliases && typeof rawAliases === "object" && !Array.isArray(rawAliases)
+          ? rawAliases
+          : Object.create(null);
+
         pruneCache();
         cacheLoaded = true;
         resolve();
@@ -661,12 +904,7 @@
             .filter(Boolean)
         );
 
-        keywordBlockEnabled = !!conf.keywordBlockEnabled;
-        keywordList = prepareKeywords(conf.blockedKeywords);
-        keywordTargets = {
-          ...DEFAULTS.keywordBlockTargets,
-          ...(conf.keywordBlockTargets || {})
-        };
+        rebuildActiveKeywordList(conf);
         resolve();
       });
     });
@@ -690,6 +928,9 @@
       && !changes.keywordBlockEnabled
       && !changes.blockedKeywords
       && !changes.keywordBlockTargets
+      && !changes.keywordHideEnabled
+      && !changes.hiddenKeywords
+      && !changes.keywordHideTargets
     ) return;
 
     loadSettings().then(() => {

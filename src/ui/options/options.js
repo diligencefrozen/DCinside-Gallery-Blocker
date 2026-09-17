@@ -258,6 +258,10 @@ const optionKeywordInput = document.getElementById("optionKeywordInput");
 const optionAddKeywordBtn = document.getElementById("optionAddKeywordBtn");
 const optionKeywordList = document.getElementById("optionKeywordList");
 const optionKeywordStatus = document.getElementById("optionKeywordStatus");
+let blockedKeywordState = [];
+let blockedKeywordWriteQueue = Promise.resolve();
+let blockedKeywordWritePending = 0;
+let blockedKeywordDeferredRefresh = false;
 
 const keywordTargetListTitle = document.getElementById("keywordTargetListTitle");
 const keywordTargetViewTitle = document.getElementById("keywordTargetViewTitle");
@@ -995,6 +999,7 @@ function renderKeywordList(list) {
   if (!optionKeywordList) return;
 
   const keywords = normalizeKeywordList(list);
+  blockedKeywordState = keywords.slice();
   optionKeywordList.innerHTML = "";
 
   if (!keywords.length) {
@@ -1025,31 +1030,43 @@ function renderKeywordList(list) {
   setKeywordStatus(`현재 ${keywords.length}개의 키워드가 차단 리스트에 등록되어 있습니다.`);
 }
 
+function refreshBlockedKeywordListFromStorage() {
+  chrome.storage.sync.get({ blockedKeywords: [] }, ({ blockedKeywords }) => {
+    renderKeywordList(blockedKeywords || []);
+  });
+}
+
+function queueBlockedKeywordWrite(next) {
+  const snapshot = normalizeKeywordList(next);
+  blockedKeywordWritePending += 1;
+
+  blockedKeywordWriteQueue = blockedKeywordWriteQueue.then(() => new Promise((resolve) => {
+    chrome.storage.sync.set({ blockedKeywords: snapshot }, () => {
+      const failed = !!chrome.runtime?.lastError;
+      blockedKeywordWritePending = Math.max(0, blockedKeywordWritePending - 1);
+
+      if (failed) {
+        console.warn("[DCB] blockedKeywords save failed:", chrome.runtime.lastError?.message || "unknown");
+        blockedKeywordDeferredRefresh = true;
+      }
+
+      if (blockedKeywordWritePending === 0 && blockedKeywordDeferredRefresh) {
+        blockedKeywordDeferredRefresh = false;
+        refreshBlockedKeywordListFromStorage();
+      }
+      resolve();
+    });
+  }));
+}
+
 function saveKeywordList(mutator) {
-  chrome.storage.sync.get(
-    {
-      blockedKeywords: []
-    },
-    ({ blockedKeywords }) => {
-      const list = Array.isArray(blockedKeywords)
-        ? blockedKeywords.slice()
-        : [];
+  const list = blockedKeywordState.slice();
+  mutator(list);
 
-      mutator(list);
-
-      const next = normalizeKeywordList(list);
-
-      chrome.storage.sync.set(
-        {
-          blockedKeywords: next
-        },
-        () => {
-          renderKeywordList(next);
-          setKeywordStatus(`차단 키워드 ${next.length}개 저장 완료`);
-        }
-      );
-    }
-  );
+  const next = normalizeKeywordList(list);
+  renderKeywordList(next);
+  setKeywordStatus(`차단 키워드 ${next.length}개 저장 중...`);
+  queueBlockedKeywordWrite(next);
 }
 
 function saveKeywordTargets() {
@@ -1526,6 +1543,42 @@ async function renderMemoList() {
   });
 }
 
+function createKeywordImeGuard() {
+  let composing = false;
+  let pendingEnter = false;
+  let lastCompositionEndAt = 0;
+
+  return {
+    start() { composing = true; },
+    end(onCommitted) {
+      composing = false;
+      lastCompositionEndAt = Date.now();
+      if (!pendingEnter) return;
+
+      pendingEnter = false;
+      setTimeout(() => onCommitted?.(), 0);
+    },
+    handleEnter(event, onCommitted) {
+      if (event.key !== "Enter") return false;
+
+      if (composing || event.isComposing || event.keyCode === 229 || event.which === 229) {
+        // IME 확정용 Enter라면 조합이 끝난 다음 완성된 input.value를 등록한다.
+        pendingEnter = true;
+        return true;
+      }
+
+      if (Date.now() - lastCompositionEndAt < 100) {
+        // compositionend 직후 따라오는 동일 Enter 이벤트의 중복 등록을 막는다.
+        return true;
+      }
+
+      event.preventDefault();
+      onCommitted?.();
+      return true;
+    }
+  };
+}
+
 /* ───── 이벤트: 키워드 차단 ───── */
 if (optionKeywordBlockEnabled) {
   optionKeywordBlockEnabled.addEventListener("change", (e) => {
@@ -1547,6 +1600,8 @@ if (optionKeywordBlockEnabled) {
 }
 
 if (optionAddKeywordBtn && optionKeywordInput) {
+  const imeGuard = createKeywordImeGuard();
+
   optionAddKeywordBtn.addEventListener("click", () => {
     const keyword = sanitizeKeyword(optionKeywordInput.value);
 
@@ -1563,11 +1618,12 @@ if (optionAddKeywordBtn && optionKeywordInput) {
     optionKeywordInput.focus();
   });
 
+  optionKeywordInput.addEventListener("compositionstart", () => imeGuard.start());
+  optionKeywordInput.addEventListener("compositionend", () => {
+    imeGuard.end(() => optionAddKeywordBtn.click());
+  });
   optionKeywordInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      optionAddKeywordBtn.click();
-    }
+    imeGuard.handleEnter(e, () => optionAddKeywordBtn.click());
   });
 }
 
@@ -2319,7 +2375,11 @@ chrome.storage.onChanged.addListener((changes, area) => {
     }
 
     if (changes.blockedKeywords) {
-      renderKeywordList(changes.blockedKeywords.newValue || []);
+      if (blockedKeywordWritePending > 0) {
+        blockedKeywordDeferredRefresh = true;
+      } else {
+        renderKeywordList(changes.blockedKeywords.newValue || []);
+      }
     }
 
     if (changes.keywordBlockTargets) {

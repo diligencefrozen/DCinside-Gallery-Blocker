@@ -55,6 +55,9 @@
 
   const uiCache = globalThis.DCBUiSettingsCache;
   let activeContext = null;
+  let saveQueue = Promise.resolve();
+  let pendingSaveCount = 0;
+  let deferredStorageRefresh = false;
   let state = {
     keywordHideEnabled: DEFAULTS.keywordHideEnabled,
     hiddenKeywords: [...DEFAULTS.hiddenKeywords],
@@ -181,6 +184,12 @@
     }
   }
 
+  function refreshStateAfterWrites() {
+    if (pendingSaveCount > 0 || !deferredStorageRefresh) return;
+    deferredStorageRefresh = false;
+    loadState(render);
+  }
+
   function saveState(partial, message) {
     if (!hasChromeStorage()) return;
 
@@ -200,10 +209,35 @@
     };
 
     uiCache?.merge?.(nextPartial);
-    chrome.storage.sync.set(nextPartial, () => {
-      render();
-      setStatus(message || "저장되었습니다.");
-    });
+    render();
+    setStatus(message || "저장 중...");
+
+    const snapshot = { ...nextPartial };
+    if (snapshot.keywordHideTargets) {
+      snapshot.keywordHideTargets = { ...snapshot.keywordHideTargets };
+    }
+    if (snapshot.hiddenKeywords) {
+      snapshot.hiddenKeywords = [...snapshot.hiddenKeywords];
+    }
+
+    pendingSaveCount += 1;
+    saveQueue = saveQueue.then(() => new Promise((resolve) => {
+      chrome.storage.sync.set(snapshot, () => {
+        const failed = !!chrome.runtime?.lastError;
+        pendingSaveCount = Math.max(0, pendingSaveCount - 1);
+
+        if (failed) {
+          console.warn("[DCB] keyword hide save failed:", chrome.runtime.lastError?.message || "unknown");
+          deferredStorageRefresh = true;
+        }
+
+        if (pendingSaveCount === 0) {
+          if (!failed) setStatus(message || "저장되었습니다.");
+          refreshStateAfterWrites();
+        }
+        resolve();
+      });
+    }));
   }
 
   function render() {
@@ -379,34 +413,44 @@
 
   function createImeGuard() {
     let isComposing = false;
+    let pendingEnter = false;
     let lastCompositionEndAt = 0;
 
     function markCompositionStart() {
       isComposing = true;
     }
 
-    function markCompositionEnd() {
+    function markCompositionEnd(onCommitted) {
       isComposing = false;
       lastCompositionEndAt = Date.now();
+
+      if (!pendingEnter) return;
+      pendingEnter = false;
+      window.setTimeout(() => onCommitted?.(), 0);
     }
 
-    function isImeEnterEvent(event) {
-      const recentlyEnded =
-        Date.now() - lastCompositionEndAt < IME_FINALIZE_GRACE_MS;
+    function handleEnter(event, onCommitted) {
+      if (event.key !== "Enter") return false;
 
-      return (
-        isComposing ||
-        event.isComposing ||
-        event.keyCode === 229 ||
-        event.which === 229 ||
-        recentlyEnded
-      );
+      if (isComposing || event.isComposing || event.keyCode === 229 || event.which === 229) {
+        // IME 조합을 끝내는 Enter라면 compositionend 후 완성 문자열을 등록한다.
+        pendingEnter = true;
+        return true;
+      }
+
+      if (Date.now() - lastCompositionEndAt < IME_FINALIZE_GRACE_MS) {
+        return true;
+      }
+
+      event.preventDefault();
+      onCommitted?.();
+      return true;
     }
 
     return {
       markCompositionStart,
       markCompositionEnd,
-      isImeEnterEvent
+      handleEnter
     };
   }
 
@@ -426,21 +470,11 @@
       });
 
       input.addEventListener("compositionend", () => {
-        imeGuard.markCompositionEnd();
+        imeGuard.markCompositionEnd(addKeyword);
       });
 
       input.addEventListener("keydown", (event) => {
-        if (event.key !== "Enter") return;
-
-        // 한글/일본어/중국어 IME 조합 확정용 Enter는 키워드 추가로 처리하지 않습니다.
-        // 일부 Chromium 환경에서는 compositionend 직후 keydown Enter가 들어와서
-        // 마지막 글자만 별도 키워드로 추가되는 문제가 발생할 수 있습니다.
-        if (imeGuard.isImeEnterEvent(event)) {
-          return;
-        }
-
-        event.preventDefault();
-        addKeyword();
+        imeGuard.handleEnter(event, addKeyword);
       });
     }
 
@@ -487,6 +521,11 @@
         changes.keywordHideTargets;
 
       if (!touched) return;
+
+      if (pendingSaveCount > 0) {
+        deferredStorageRefresh = true;
+        return;
+      }
 
       loadState(render);
     });
