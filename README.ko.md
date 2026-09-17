@@ -240,7 +240,7 @@ flowchart TD
 - **Chrome Storage** — 차단 목록과 각종 설정을 저장합니다.
 - **Declarative Net Request** — **`하드`** 방식을 선택했을 때 갤러리가 열리기 전에 접근을 막습니다.
 
-화면과 차단 기능 대부분은 JavaScript, HTML, CSS로 동작하며 별도의 개발자 서버를 사용하지 않습니다. 다만 선택 기능인 기기 내 공격적 표현 감지는 로컬 ONNX 모델과 브라우저용 실행 파일을 사용하므로, 소스 저장소에서 직접 실행할 때는 해당 파일을 한 번 준비해야 합니다.
+화면과 차단 기능 대부분은 JavaScript, HTML, CSS로 동작하며 별도의 개발자 서버를 사용하지 않습니다. 선택 기능인 기기 내 공격적 표현 감지도 로컬에서 작동하며, 검증된 ONNX 모델과 브라우저용 실행 파일을 저장소에 함께 포함합니다.
 
 ---
 
@@ -413,17 +413,7 @@ src/
 
 ## 직접 실행하기
 
-저장소에는 일반 GitHub 파일 제한보다 큰 약 180MB의 `models/conflict/model.onnx`와, 설치된 패키지에서 다시 만들 수 있는 `vendor/detector/`를 포함하지 않습니다. 따라서 기기 내 공격적 표현 감지까지 포함해 소스 저장소를 직접 실행하려면 먼저 다음 준비가 필요합니다.
-
-```bash
-npm install
-npm run prepare:detector -- --from /path/to/model.onnx
-npm run build:detector
-```
-
-`prepare:detector`는 모델을 복사하기 전에 파일 크기와 SHA-256 값을 확인해 프로젝트에서 사용하는 모델과 정확히 같은 파일인지 검증합니다. 필요한 모델 정보와 자세한 과정은 [개발·검증 안내](docs/reading-and-detection.md)를 참고해주세요.
-
-준비가 끝나면 다음 주소를 엽니다.
+저장소를 내려받거나 복제한 뒤 다음 주소를 엽니다.
 
 ```text
 chrome://extensions
@@ -435,7 +425,17 @@ chrome://extensions
 2. **압축해제된 확장 프로그램을 로드합니다**를 누릅니다.
 3. `manifest.json`이 있는 프로젝트 폴더를 선택합니다.
 
-배포용 폴더를 만들 때는 `npm run package:extension`을 실행합니다. 완성된 파일은 `dist/DCinside-Gallery-Blocker/`에 만들어지며, 저장소 전체가 아니라 이 폴더의 내용만 배포용 ZIP으로 묶는 것을 권장합니다.
+저장소에는 기기 내 공격적 표현 감지에 필요한 검증된 로컬 모델과 브라우저용 실행 파일도 함께 포함되어 있어, Chrome에서 직접 불러오기 위해 별도의 설치나 빌드 과정은 필요하지 않습니다.
+
+감지용 실행 파일을 다시 만들거나 새 배포본을 생성하려면 다음 명령을 사용합니다.
+
+```bash
+pnpm install --frozen-lockfile
+npm run build:detector
+npm run package:extension
+```
+
+배포용 폴더는 `dist/DCinside-Gallery-Blocker/`에 생성됩니다.
 
 ---
 

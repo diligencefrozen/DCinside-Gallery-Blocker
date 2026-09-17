@@ -229,7 +229,7 @@ In this project:
 - **Chrome Storage** keeps settings and personal block data.
 - **Declarative Net Request** handles strict network-level gallery blocking.
 
-The extension UI and filtering logic are built with plain JavaScript, HTML, and CSS. Most features need no external service. The optional on-device aggressive-expression detector uses a local ONNX model and a generated ONNX Runtime Web bundle; source checkouts must prepare those artifacts before using that feature.
+The extension UI and filtering logic are built with plain JavaScript, HTML, and CSS. Most features need no external service. The optional on-device aggressive-expression detector also runs locally, and the verified ONNX model plus pinned browser runtime are included in the repository.
 
 ---
 
@@ -400,18 +400,6 @@ Clone the repository:
 git clone https://github.com/diligencefrozen/DCinside-Gallery-Blocker.git
 ```
 
-For the regular source files, the repository can be inspected directly. The optional on-device aggressive-expression detector needs two generated/local artifacts that are intentionally not committed: the ~180 MB `models/conflict/model.onnx` file and `vendor/detector/`.
-
-To prepare a complete development checkout:
-
-```bash
-npm install
-npm run prepare:detector -- --from /path/to/model.onnx
-npm run build:detector
-```
-
-The model command verifies the exact file size and SHA-256 digest before registering it. See [Local text detection: development and packaging](docs/reading-and-detection.md) for the expected checksum and packaging flow.
-
 Then:
 
 1. Open `chrome://extensions`.
@@ -419,7 +407,17 @@ Then:
 3. Click **Load unpacked**.
 4. Select the project folder containing `manifest.json`.
 
-For a distributable folder, run `npm run package:extension` and package the contents of `dist/DCinside-Gallery-Blocker/` rather than the repository root.
+No dependency installation or build step is required to load the checked-out extension in Chrome. The repository includes the verified local detector model and browser runtime used by the optional on-device aggressive-expression detection feature.
+
+If you want to rebuild the detector runtime or create a fresh release folder, install the pinned dependencies and run:
+
+```bash
+pnpm install --frozen-lockfile
+npm run build:detector
+npm run package:extension
+```
+
+The distributable folder is created at `dist/DCinside-Gallery-Blocker/`.
 
 ---
 
