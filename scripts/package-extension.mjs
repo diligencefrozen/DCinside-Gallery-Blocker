@@ -30,7 +30,7 @@ async function removeGenerated(folder) {
 }
 
 try {
-  for (const name of ["manifest.json", "icons", "src", "models/conflict", "vendor/detector", "licenses", "LICENSE", "PRIVACY.md", "THIRD_PARTY_NOTICES.md", "docs/text-detection.html"]) {
+  for (const name of ["manifest.json", "icons", "src", "models/conflict", "vendor/detector", "licenses", "PRIVACY.md", "docs/text-detection.html"]) {
     await cp(new URL(name, root), join(staging, name), { recursive: true });
   }
   await removeGenerated(target);
