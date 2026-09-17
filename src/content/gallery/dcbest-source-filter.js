@@ -45,6 +45,7 @@
   const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
   const SOURCE_ALIAS_TTL_MS = 30 * 24 * 60 * 60 * 1000;
   const SOURCE_RETRY_MS = 3 * 60 * 1000;
+  const SOURCE_MESSAGE_TIMEOUT_MS = 15_000;
   const CACHE_MAX_ENTRIES = 800;
   const SOURCE_ALIAS_CACHE_MAX_ENTRIES = 300;
   const OBSERVER_MARGIN = "280px 0px";
@@ -825,11 +826,26 @@
       if (!item?.isConnected) return;
       clearAnalysisTimer(item);
 
-      // 같은 실베 글이 랭킹/추천 등 여러 숨은 목록에 중복될 수 있다.
-      // 상태 UI는 현재 실제로 보이는 항목에만 표시한다.
-      if (state && state !== "off" && !isElementVisible(item)) return;
-
       if (!state || state === "off") {
+        item.removeAttribute(ANALYZING_ATTR);
+        item.querySelectorAll?.(".dcb-dcbest-analysis-indicator").forEach((node) => node.remove());
+        removeMainAnalysisIndicator(item);
+        return;
+      }
+
+      const visible = isElementVisible(item);
+
+      // 분석이 끝난 뒤 해당 카드가 다른 랭킹 탭 등에서 숨겨져 있더라도
+      // 'analyzing' 속성/UI는 반드시 정리한다. 이전 코드는 숨은 항목을 먼저
+      // return해서 탭을 다시 열었을 때 무한 '출처 분석 중'처럼 보일 수 있었다.
+      if (state !== "analyzing") {
+        item.removeAttribute(ANALYZING_ATTR);
+        if (!visible) {
+          item.querySelectorAll?.(".dcb-dcbest-analysis-indicator").forEach((node) => node.remove());
+          removeMainAnalysisIndicator(item);
+          return;
+        }
+      } else if (!visible) {
         item.removeAttribute(ANALYZING_ATTR);
         item.querySelectorAll?.(".dcb-dcbest-analysis-indicator").forEach((node) => node.remove());
         removeMainAnalysisIndicator(item);
@@ -931,18 +947,40 @@
 
   function fetchSourceGallery(no, postUrl) {
     return new Promise((resolve) => {
-      chrome.runtime.sendMessage(
-        { type: "dcb.dcbestSource", no, url: postUrl, pageToken },
-        (response) => {
-          if (chrome.runtime.lastError) {
-            resolve({ ok: false, gid: "" });
-            return;
+      let settled = false;
+      const finish = (value) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeoutId);
+        resolve(value && typeof value === "object"
+          ? value
+          : { ok: false, gid: "", reason: "EMPTY_RESPONSE" });
+      };
+
+      // background 쪽 fetch에도 timeout이 있지만, message channel 자체가 끊기거나
+      // service worker 응답이 유실돼도 UI가 영원히 '분석 중'에 머물지 않게 한다.
+      const timeoutId = setTimeout(() => {
+        finish({ ok: false, gid: "", reason: "MESSAGE_TIMEOUT" });
+      }, SOURCE_MESSAGE_TIMEOUT_MS);
+
+      try {
+        chrome.runtime.sendMessage(
+          { type: "dcb.dcbestSource", no, url: postUrl, pageToken },
+          (response) => {
+            if (chrome.runtime.lastError) {
+              finish({
+                ok: false,
+                gid: "",
+                reason: chrome.runtime.lastError.message || "MESSAGE_ERROR"
+              });
+              return;
+            }
+            finish(response);
           }
-          resolve(response && typeof response === "object"
-            ? response
-            : { ok: false, gid: "" });
-        }
-      );
+        );
+      } catch (error) {
+        finish({ ok: false, gid: "", reason: error?.message || "MESSAGE_ERROR" });
+      }
     });
   }
 
@@ -955,10 +993,15 @@
         const no = requestQueue.shift();
         queuedNos.delete(no);
 
-        if (!galleryBlockEnabled || !blockedGalleryIds.size) continue;
+        if (!galleryBlockEnabled || !blockedGalleryIds.size) {
+          setAnalysisState(no, "off");
+          continue;
+        }
 
         const cached = getCachedSource(no);
         if (cached) {
+          const blocked = galleryBlockEnabled && blockedGalleryIds.has(normalizeGalleryId(cached.gid));
+          setAnalysisState(no, blocked ? "blocked" : "allowed");
           applySourceResult(no, cached.gid);
           continue;
         }
@@ -967,15 +1010,23 @@
         const alias = getCachedSourceAlias(sourceLabel);
         if (alias) {
           putCachedSource(no, alias.gid);
+          const blocked = galleryBlockEnabled && blockedGalleryIds.has(normalizeGalleryId(alias.gid));
+          setAnalysisState(no, blocked ? "blocked" : "allowed");
           applySourceResult(no, alias.gid);
           continue;
         }
 
         await waitForVisibleTab();
-        if (!galleryBlockEnabled || !blockedGalleryIds.size) continue;
+        if (!galleryBlockEnabled || !blockedGalleryIds.size) {
+          setAnalysisState(no, "off");
+          continue;
+        }
 
         const postUrl = postUrlByNo.get(no) || "";
-        if (!postUrl) continue;
+        if (!postUrl) {
+          setAnalysisState(no, "off");
+          continue;
+        }
 
         let result;
         activeNos.add(no);
