@@ -83,6 +83,10 @@
   const retryAfterByNo = new Map();
   const hideTimers = new WeakMap();
   const analysisTimers = new WeakMap();
+  const mainAnalysisIndicators = new WeakMap();
+  const mainAnalysisItemsByHost = new WeakMap();
+  const activeMainAnalysisIndicators = new Set();
+  let mainAnalysisPositionRaf = 0;
 
   function normalizeText(value) {
     return String(value || "")
@@ -538,10 +542,22 @@
     analysisTimers.delete(item);
   }
 
+  function getMainCardLink(item) {
+    if (!(item instanceof Element)) return null;
+    if (item.matches?.('a.main_log[href*="id=dcbest"][href*="no="]')) return item;
+    return item.querySelector?.('a.main_log[href*="id=dcbest"][href*="no="]') || null;
+  }
+
+  function isMainCard(item) {
+    return location.hostname === "www.dcinside.com"
+      && item instanceof Element
+      && !!item.querySelector?.(".best_info")
+      && !!getMainCardLink(item);
+  }
+
   function getAnalysisHost(item) {
     if (!(item instanceof Element)) return null;
-    return item.querySelector(".best_info")
-      || item.querySelector(".gall_tit")
+    return item.querySelector(".gall_tit")
       || item.querySelector(".besttxt")
       || item;
   }
@@ -577,15 +593,200 @@
     label.className = "dcb-dcbest-analysis-label";
 
     indicator.append(spinner, icon, label);
-
-    const sourceName = host.matches?.(".best_info")
-      ? host.querySelector(":scope > .name")
-      : null;
-    if (sourceName) sourceName.insertAdjacentElement("afterend", indicator);
-    else host.appendChild(indicator);
-
+    host.appendChild(indicator);
     return indicator;
   }
+
+  function positionMainAnalysisIndicator(item, host) {
+    if (!(item instanceof Element) || !(host instanceof HTMLElement)) return;
+    if (!item.isConnected || !isElementVisible(item)) {
+      host.style.display = "none";
+      return;
+    }
+
+    const card = getMainCardLink(item) || item;
+    const cardRect = card.getBoundingClientRect();
+    const image = item.querySelector?.(".bestimg");
+    const imageRect = image && isElementVisible(image)
+      ? image.getBoundingClientRect()
+      : null;
+
+    // 메인 카드에서는 텍스트/출처/시간 레이아웃에 전혀 손대지 않는다.
+    // 가능하면 썸네일 위에 작게 띄우고, 이미지가 없을 때만 카드 우측 상단을 쓴다.
+    const top = Math.max(8, (imageRect || cardRect).top + 5);
+    const left = imageRect
+      ? Math.max(8, imageRect.left + 5)
+      : Math.max(8, Math.min(window.innerWidth - 92, cardRect.right - 92));
+
+    host.style.display = "block";
+    host.style.top = `${Math.round(top)}px`;
+    host.style.left = `${Math.round(left)}px`;
+  }
+
+  function scheduleMainAnalysisReposition() {
+    if (mainAnalysisPositionRaf) return;
+    mainAnalysisPositionRaf = requestAnimationFrame(() => {
+      mainAnalysisPositionRaf = 0;
+      activeMainAnalysisIndicators.forEach((host) => {
+        const item = mainAnalysisItemsByHost.get(host);
+        if (!item?.isConnected) {
+          activeMainAnalysisIndicators.delete(host);
+          host.remove();
+          return;
+        }
+        positionMainAnalysisIndicator(item, host);
+      });
+    });
+  }
+
+  function removeMainAnalysisIndicator(item) {
+    const host = mainAnalysisIndicators.get(item);
+    if (!host) return;
+    activeMainAnalysisIndicators.delete(host);
+    host.remove();
+    mainAnalysisIndicators.delete(item);
+  }
+
+  function ensureMainAnalysisIndicator(item) {
+    let host = mainAnalysisIndicators.get(item);
+    if (host?.isConnected) {
+      positionMainAnalysisIndicator(item, host);
+      return host;
+    }
+
+    host = document.createElement("span");
+    host.className = "dcb-dcbest-main-analysis-host";
+    host.setAttribute("aria-live", "polite");
+    host.style.cssText = [
+      "all:initial",
+      "position:fixed",
+      "z-index:2147483000",
+      "pointer-events:none",
+      "transform:none",
+      "display:none"
+    ].join(";");
+
+    const root = host.attachShadow({ mode: "open" });
+    root.innerHTML = `
+      <style>
+        :host { all: initial; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes sweep {
+          0% { transform: translateX(-120%); opacity: .15; }
+          45% { opacity: .8; }
+          100% { transform: translateX(320%); opacity: .15; }
+        }
+        .pill {
+          position: relative;
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          min-height: 24px;
+          box-sizing: border-box;
+          padding: 3px 9px 4px 8px;
+          overflow: hidden;
+          border: 1px solid rgba(255,255,255,.16);
+          border-radius: 999px;
+          background: rgba(24, 29, 39, .90);
+          box-shadow: 0 5px 16px rgba(0,0,0,.18), inset 0 1px 0 rgba(255,255,255,.05);
+          color: rgba(255,255,255,.94);
+          backdrop-filter: blur(8px) saturate(130%);
+          -webkit-backdrop-filter: blur(8px) saturate(130%);
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+          font-size: 10.5px;
+          font-weight: 650;
+          line-height: 1;
+          letter-spacing: -.12px;
+          white-space: nowrap;
+          opacity: 0;
+          transform: translateY(-3px) scale(.96);
+          transition: opacity 140ms ease, transform 160ms cubic-bezier(.2,.8,.2,1), background-color 140ms ease, border-color 140ms ease;
+        }
+        .pill.visible { opacity: 1; transform: translateY(0) scale(1); }
+        .glyph {
+          display: grid;
+          place-items: center;
+          width: 11px;
+          height: 11px;
+          flex: 0 0 11px;
+        }
+        .spinner {
+          width: 10px;
+          height: 10px;
+          box-sizing: border-box;
+          border-radius: 50%;
+          border: 1.5px solid rgba(255,255,255,.42);
+          border-top-color: #78a9ff;
+          animation: spin .72s linear infinite;
+        }
+        .icon { display: none; font-size: 11px; font-weight: 800; }
+        .pill[data-state="analyzing"]::after {
+          content: "";
+          position: absolute;
+          left: 0;
+          bottom: 0;
+          width: 34%;
+          height: 2px;
+          border-radius: 999px;
+          background: linear-gradient(90deg, transparent, #78a9ff, transparent);
+          animation: sweep 1.05s ease-in-out infinite;
+        }
+        .pill[data-state="allowed"] {
+          background: rgba(28, 67, 45, .92);
+          border-color: rgba(122, 221, 155, .28);
+        }
+        .pill[data-state="allowed"] .icon { color: #9be3b3; }
+        .pill[data-state="blocked"] {
+          background: rgba(82, 33, 37, .94);
+          border-color: rgba(255, 133, 142, .30);
+        }
+        .pill[data-state="blocked"] .icon { color: #ff9aa2; }
+        @media (prefers-reduced-motion: reduce) {
+          .pill, .spinner, .pill::after { animation: none !important; transition: none !important; }
+        }
+      </style>
+      <span class="pill" data-state="analyzing">
+        <span class="glyph"><span class="spinner"></span><span class="icon"></span></span>
+        <span class="label">출처 분석 중</span>
+      </span>
+    `;
+
+    (document.body || document.documentElement).appendChild(host);
+    mainAnalysisIndicators.set(item, host);
+    mainAnalysisItemsByHost.set(host, item);
+    activeMainAnalysisIndicators.add(host);
+    positionMainAnalysisIndicator(item, host);
+    return host;
+  }
+
+  function updateMainAnalysisIndicator(item, state) {
+    const host = ensureMainAnalysisIndicator(item);
+    const root = host.shadowRoot;
+    const pill = root?.querySelector(".pill");
+    const spinner = root?.querySelector(".spinner");
+    const icon = root?.querySelector(".icon");
+    const label = root?.querySelector(".label");
+    if (!pill) return;
+
+    pill.dataset.state = state;
+    pill.classList.add("visible");
+    if (state === "analyzing") {
+      if (spinner) spinner.style.display = "block";
+      if (icon) icon.style.display = "none";
+      if (label) label.textContent = "출처 분석 중";
+    } else {
+      if (spinner) spinner.style.display = "none";
+      if (icon) {
+        icon.style.display = "block";
+        icon.textContent = state === "blocked" ? "×" : "✓";
+      }
+      if (label) label.textContent = state === "blocked" ? "차단 출처" : "확인 완료";
+    }
+    positionMainAnalysisIndicator(item, host);
+  }
+
+  window.addEventListener("scroll", scheduleMainAnalysisReposition, { passive: true, capture: true });
+  window.addEventListener("resize", scheduleMainAnalysisReposition, { passive: true });
 
   function setAnalysisState(no, state) {
     const items = itemsByNo.get(no);
@@ -602,6 +803,26 @@
       if (!state || state === "off") {
         item.removeAttribute(ANALYZING_ATTR);
         item.querySelectorAll?.(".dcb-dcbest-analysis-indicator").forEach((node) => node.remove());
+        removeMainAnalysisIndicator(item);
+        return;
+      }
+
+      const mainCard = isMainCard(item);
+      if (mainCard) {
+        if (state === "analyzing") item.setAttribute(ANALYZING_ATTR, "1");
+        else item.removeAttribute(ANALYZING_ATTR);
+        updateMainAnalysisIndicator(item, state);
+
+        if (state === "analyzing") return;
+        const holdMs = state === "blocked" ? 260 : 520;
+        const timer = setTimeout(() => {
+          analysisTimers.delete(item);
+          const host = mainAnalysisIndicators.get(item);
+          const pill = host?.shadowRoot?.querySelector(".pill");
+          pill?.classList.remove("visible");
+          setTimeout(() => removeMainAnalysisIndicator(item), 150);
+        }, holdMs);
+        analysisTimers.set(item, timer);
         return;
       }
 
