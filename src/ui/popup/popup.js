@@ -1437,7 +1437,12 @@ function applyPopupSettings(conf = {}, { refreshAsync = true } = {}) {
   setChecked(keywordBlockToggle, keywordBlockEnabled);
   renderKeywordTargets(keywordBlockTargets);
   lockKeywordBlockUI(!keywordBlockEnabled);
-  renderKeywordList(blockedKeywords);
+
+  // A popup-local keyword mutation is authoritative for the lifetime of this popup.
+  // Do not let a late initial settings read repaint the list with a stale snapshot.
+  if (blockedKeywordMutationRevision === 0) {
+    renderKeywordList(blockedKeywords);
+  }
   if (refreshAsync) refreshKeywordBlockState();
 
   setChecked(autoRefreshToggle, autoRefreshEnabled);

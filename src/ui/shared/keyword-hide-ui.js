@@ -585,13 +585,17 @@
     activeContext = detectContext();
     if (!activeContext) return;
 
-    let bound = false;
+    // Bind controls immediately. Previously binding waited for the asynchronous
+    // storage hydration, so a freshly opened popup could ignore Add/Enter for
+    // roughly a storage round-trip. Render the fast UI snapshot first, then
+    // hydrate from storage without blocking interaction.
+    const cached = uiCache?.read?.(DEFAULTS);
+    if (cached) applyStoredState({ ...DEFAULTS, ...cached });
+    render();
+    bind();
+
     loadState(() => {
       render();
-      if (!bound) {
-        bound = true;
-        bind();
-      }
     });
   }
 
