@@ -209,6 +209,16 @@
     }
   }
 
+  function isDcbestListPage() {
+    try {
+      const url = new URL(location.href);
+      return /\/board\/lists\/?$/i.test(url.pathname)
+        && String(url.searchParams.get("id") || "").toLowerCase() === "dcbest";
+    } catch {
+      return false;
+    }
+  }
+
   function getListRows() {
     return listFilter.collect(document);
   }
@@ -446,6 +456,19 @@
 
   function hideListRow(row) {
     if (!targets.listTitle || !row || row.hasAttribute(PLACEHOLDER_ATTR) || isBlockedByAnonymousFilter(row)) return;
+
+    // 실시간 베스트 목록은 dcbest-source-filter가 키워드 숨김까지 hard-hide한다.
+    // 여기서 soft placeholder(계속 보기)를 만들면 실제 행은 이미 사라진 상태라
+    // 사용자가 버튼을 눌러도 복구되지 않는 모순된 UI가 된다.
+    if (isDcbestListPage()) {
+      row.removeAttribute(HIDDEN_ATTR);
+      row.removeAttribute(MATCH_ATTR);
+      const id = row.getAttribute(ITEM_ID_ATTR);
+      const placeholder = row.previousElementSibling;
+      if (id && placeholder?.getAttribute("data-dcb-soft-for") === id) placeholder.remove();
+      return;
+    }
+
     const keyword = findKeyword(getListRowText(row));
     const key = keyword ? getListKey(row, keyword) : "";
     const id = row.getAttribute(ITEM_ID_ATTR);

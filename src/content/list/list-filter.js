@@ -4,7 +4,7 @@
 
   const matcher = globalThis.DCBKeywordMatcher;
   if (!matcher) return;
-  const ROW_SELECTOR = "tr.ub-content,tr[data-no],tr.gall_tr,.gall_list li.ub-content,li.gall_item,.gall_item";
+  const ROW_SELECTOR = "tr.ub-content,tr[data-no],tr.gall_tr,tr:has(td.gall_tit),tr:has(td.gall_subject),.gall_list li.ub-content,li.gall_item,.gall_item";
   const MAIN_TITLE_SELECTOR = ".besttxt,.txt_box > strong.tit";
   const CANDIDATE_SELECTOR = `${ROW_SELECTOR},${MAIN_TITLE_SELECTOR}`;
   const HIDDEN_ATTR = "data-dcb-list-hidden";
