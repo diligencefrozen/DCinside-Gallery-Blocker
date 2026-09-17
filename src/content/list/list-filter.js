@@ -4,7 +4,8 @@
 
   const matcher = globalThis.DCBKeywordMatcher;
   if (!matcher) return;
-  const ROW_SELECTOR = "tr.ub-content,tr[data-no],tr.gall_tr,tr:has(td.gall_tit),tr:has(td.gall_subject),.gall_list li.ub-content,li.gall_item,.gall_item";
+  const ROW_SELECTOR = "tr.ub-content,tr[data-no],tr.gall_tr,.gall_list tbody tr,tr:has(td.gall_tit),tr:has(td.gall_subject),.gall_list li.ub-content,li.gall_item,.gall_item";
+  const POST_LINK_SELECTOR = "a[href*=\'/board/view\'][href*=\'no=\'],a[href*=\'/mgallery/board/view\'][href*=\'no=\'],a[href*=\'/mini/board/view\'][href*=\'no=\'],a[href*=\'/person/board/view\'][href*=\'no=\']";
   const MAIN_TITLE_SELECTOR = ".besttxt,.txt_box > strong.tit";
   const CANDIDATE_SELECTOR = `${ROW_SELECTOR},${MAIN_TITLE_SELECTOR}`;
   const HIDDEN_ATTR = "data-dcb-list-hidden";
@@ -62,9 +63,13 @@
     let linkScope;
     let surface;
     if (element.matches(ROW_SELECTOR)) {
-      titleNode = element.querySelector(".gall_tit") || (element.matches("li.ub-content,li.gall_item,.gall_item")
-        ? element.querySelector(".subject,.title,a[href*='/view']") : null);
-      if (!titleNode) return null;
+      const postAnchor = element.querySelector(POST_LINK_SELECTOR);
+      titleNode = element.querySelector(".gall_tit")
+        || postAnchor?.closest("td,th,.subject,.title,.ub-word")
+        || (element.matches("li.ub-content,li.gall_item,.gall_item")
+          ? element.querySelector(".subject,.title,a[href*='/view']") : null)
+        || postAnchor;
+      if (!titleNode || (!postAnchor && element.matches(".gall_list tbody tr"))) return null;
       linkScope = titleNode;
       surface = "gallery";
     } else {
