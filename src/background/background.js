@@ -32,9 +32,18 @@ const KEYWORD_SYNC_DEFAULTS = Object.freeze({
   keywordHideTargets: { listTitle: true, viewTitle: true, viewBody: true, comments: true }
 });
 const KEYWORD_SYNC_KEYS = new Set(Object.keys(KEYWORD_SYNC_DEFAULTS));
+const DCBEST_FILTER_HOT_CACHE_KEY = "dcbDcbestFilterSettingsHotCacheV1";
+const DCBEST_FILTER_HOT_CACHE_VERSION = 1;
+const DCBEST_FILTER_SYNC_DEFAULTS = Object.freeze({
+  galleryBlockEnabled: null,
+  enabled: true,
+  blockedIds: []
+});
+const DCBEST_FILTER_SYNC_KEYS = new Set(Object.keys(DCBEST_FILTER_SYNC_DEFAULTS));
 
 let keywordSettingsWriteQueue = Promise.resolve();
 let keywordHotCacheWriteQueue = Promise.resolve();
+let dcbestFilterHotCacheWriteQueue = Promise.resolve();
 
 let userBlockMutationQueue = Promise.resolve();
 let updateNoticeMutationQueue = Promise.resolve();
@@ -99,6 +108,56 @@ async function seedKeywordHotCache() {
   try {
     const conf = await chrome.storage.sync.get(KEYWORD_SYNC_DEFAULTS);
     await writeKeywordHotCache(conf);
+  } catch (_) {}
+}
+
+function normalizeDcbestFilterHotPatch(patch = {}) {
+  const out = {};
+  for (const [key, value] of Object.entries(patch && typeof patch === "object" ? patch : {})) {
+    if (!DCBEST_FILTER_SYNC_KEYS.has(key)) continue;
+    if (key === "blockedIds") {
+      out.blockedIds = Array.isArray(value)
+        ? value.map((item) => String(item || "").trim()).filter(Boolean)
+        : [];
+      continue;
+    }
+    if (key === "galleryBlockEnabled") {
+      out.galleryBlockEnabled = typeof value === "boolean" ? value : null;
+      continue;
+    }
+    out.enabled = !!value;
+  }
+  return out;
+}
+
+async function writeDcbestFilterHotCache(patch = {}) {
+  const safePatch = normalizeDcbestFilterHotPatch(patch);
+  if (!Object.keys(safePatch).length) return;
+
+  const job = dcbestFilterHotCacheWriteQueue.then(async () => {
+    const stored = await chrome.storage.local.get({ [DCBEST_FILTER_HOT_CACHE_KEY]: null });
+    const current = stored?.[DCBEST_FILTER_HOT_CACHE_KEY];
+    const currentData = current?.version === DCBEST_FILTER_HOT_CACHE_VERSION
+      && current?.data && typeof current.data === "object"
+      ? current.data
+      : {};
+    const data = { ...DCBEST_FILTER_SYNC_DEFAULTS, ...currentData, ...safePatch };
+    await chrome.storage.local.set({
+      [DCBEST_FILTER_HOT_CACHE_KEY]: {
+        version: DCBEST_FILTER_HOT_CACHE_VERSION,
+        updatedAt: Date.now(),
+        data
+      }
+    });
+  });
+  dcbestFilterHotCacheWriteQueue = job.catch(() => {});
+  return job;
+}
+
+async function seedDcbestFilterHotCache() {
+  try {
+    const conf = await chrome.storage.sync.get(DCBEST_FILTER_SYNC_DEFAULTS);
+    await writeDcbestFilterHotCache(conf);
   } catch (_) {}
 }
 
@@ -1204,6 +1263,12 @@ chrome.storage.onChanged.addListener((c, area) => {
       if (c[key]) patch[key] = c[key].newValue;
     }
     if (Object.keys(patch).length) void writeKeywordHotCache(patch);
+
+    const dcbestPatch = {};
+    for (const key of DCBEST_FILTER_SYNC_KEYS) {
+      if (c[key]) dcbestPatch[key] = c[key].newValue;
+    }
+    if (Object.keys(dcbestPatch).length) void writeDcbestFilterHotCache(dcbestPatch);
   }
 });
 
@@ -1217,9 +1282,16 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return true;
 });
 
-chrome.runtime.onStartup?.addListener(() => { void seedKeywordHotCache(); });
-chrome.runtime.onInstalled?.addListener(() => { void seedKeywordHotCache(); });
+chrome.runtime.onStartup?.addListener(() => {
+  void seedKeywordHotCache();
+  void seedDcbestFilterHotCache();
+});
+chrome.runtime.onInstalled?.addListener(() => {
+  void seedKeywordHotCache();
+  void seedDcbestFilterHotCache();
+});
 void seedKeywordHotCache();
+void seedDcbestFilterHotCache();
 
 
 /* ───── 회원 활동량 조회: 전 탭 공통 속도 제한·중복 제거·회로 차단 ───── */
@@ -1826,6 +1898,15 @@ async function dcbFetchDcinsideHtml(rawUrl, options = {}) {
   };
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), DCB_FETCH_TIMEOUT_MS);
+  let detachExternalAbort = null;
+  if (options.signal && typeof options.signal.addEventListener === "function") {
+    const abortFromExternal = () => controller.abort();
+    if (options.signal.aborted) controller.abort();
+    else {
+      options.signal.addEventListener("abort", abortFromExternal, { once: true });
+      detachExternalAbort = () => options.signal.removeEventListener("abort", abortFromExternal);
+    }
+  }
   requestInit.signal = controller.signal;
 
   if (method === "POST") requestInit.body = String(options.body || "");
@@ -1860,6 +1941,7 @@ async function dcbFetchDcinsideHtml(rawUrl, options = {}) {
     };
   } finally {
     clearTimeout(timeoutId);
+    detachExternalAbort?.();
   }
 }
 
@@ -1894,6 +1976,10 @@ const DCBEST_SOURCE_MAIN_MIN_INTERVAL_MS = 850;
 const DCBEST_SOURCE_MAIN_JITTER_MS = 550;
 const DCBEST_SOURCE_LIST_MIN_INTERVAL_MS = 1250;
 const DCBEST_SOURCE_LIST_JITTER_MS = 750;
+// 새 페이지의 첫 확인은 이전 페이지 pacing을 그대로 상속하지 않는다.
+// 단, 연속 페이지 이동으로 서버를 두드리지 않도록 전역 최소 간격은 유지한다.
+const DCBEST_SOURCE_NEW_PAGE_MIN_GAP_MS = 350;
+const DCBEST_SOURCE_NEW_PAGE_JITTER_MS = 120;
 const DCBEST_SOURCE_BURST_LIMIT = 7;
 const DCBEST_SOURCE_BURST_PAUSE_MIN_MS = 1800;
 const DCBEST_SOURCE_BURST_PAUSE_JITTER_MS = 800;
@@ -1901,6 +1987,7 @@ const DCBEST_SOURCE_BACKOFF_MS = 120_000;
 const DCBEST_SOURCE_SESSION_KEY = "dcbDcbestSourceGuardV1";
 let dcbestSourceQueue = Promise.resolve();
 let dcbestSourceBurstCount = 0;
+const dcbestSourcePageByTab = new Map();
 let dcbestSourceGuard = {
   lastRequestAt: 0,
   cooldownUntil: 0
@@ -1960,6 +2047,44 @@ function dcbestSourceSenderAllowed(sender) {
   }
 }
 
+function getDcbestSourceTabId(sender) {
+  const id = sender?.tab?.id;
+  return Number.isInteger(id) && id >= 0 ? id : -1;
+}
+
+function normalizeDcbestSourcePageToken(value) {
+  const token = String(value || "").trim();
+  return /^[a-z0-9._:-]{8,96}$/i.test(token) ? token : "";
+}
+
+function registerDcbestSourcePage(sender, rawToken) {
+  const tabId = getDcbestSourceTabId(sender);
+  const token = normalizeDcbestSourcePageToken(rawToken);
+  if (tabId < 0 || !token) return null;
+
+  const current = dcbestSourcePageByTab.get(tabId);
+  if (!current || current.token !== token) {
+    try { current?.controller?.abort(); } catch (_) {}
+    const next = { token, hasFetched: false, updatedAt: Date.now(), controller: null };
+    dcbestSourcePageByTab.set(tabId, next);
+    return next;
+  }
+
+  current.updatedAt = Date.now();
+  return current;
+}
+
+function isCurrentDcbestSourcePage(tabId, token) {
+  if (tabId < 0 || !token) return true;
+  return dcbestSourcePageByTab.get(tabId)?.token === token;
+}
+
+chrome.tabs?.onRemoved?.addListener((tabId) => {
+  const state = dcbestSourcePageByTab.get(tabId);
+  try { state?.controller?.abort(); } catch (_) {}
+  dcbestSourcePageByTab.delete(tabId);
+});
+
 function decodeHtmlAttribute(value) {
   return String(value || "")
     .replace(/&amp;/gi, "&")
@@ -2016,8 +2141,12 @@ function normalizeDcbestPostUrl(rawUrl, expectedNo) {
   }
 }
 
-async function resolveDcbestSourceGallery(no, rawUrl, referrerUrl) {
+async function resolveDcbestSourceGallery(no, rawUrl, referrerUrl, tabId = -1, pageToken = "") {
   await dcbestSourceGuardReady;
+
+  if (!isCurrentDcbestSourcePage(tabId, pageToken)) {
+    return { ok: false, gid: "", stale: true, reason: "STALE_PAGE" };
+  }
 
   const postNo = String(no || "").trim();
   if (!/^\d{1,12}$/.test(postNo)) {
@@ -2040,6 +2169,10 @@ async function resolveDcbestSourceGallery(no, rawUrl, referrerUrl) {
   }
 
   const pacing = getDcbestSourcePacing(referrerUrl);
+  const pageState = tabId >= 0 ? dcbestSourcePageByTab.get(tabId) : null;
+  const isFirstRequestForPage = !!pageState
+    && pageState.token === pageToken
+    && !pageState.hasFetched;
 
   // 짧은 간격으로 체감 속도를 높이되, 일정 건수마다 한 번 쉬어
   // 장시간 연속 조회가 디시 서버에 누적되지 않게 한다.
@@ -2048,25 +2181,47 @@ async function resolveDcbestSourceGallery(no, rawUrl, referrerUrl) {
       + Math.floor(Math.random() * (DCBEST_SOURCE_BURST_PAUSE_JITTER_MS + 1));
     await new Promise((resolve) => setTimeout(resolve, pause));
     dcbestSourceBurstCount = 0;
+    if (!isCurrentDcbestSourcePage(tabId, pageToken)) {
+      return { ok: false, gid: "", stale: true, reason: "STALE_PAGE" };
+    }
   }
 
   const pacedNow = Date.now();
-  const jitter = Math.floor(Math.random() * (pacing.jitterMs + 1));
-  const earliest = dcbestSourceGuard.lastRequestAt + pacing.minIntervalMs + jitter;
+  const minIntervalMs = isFirstRequestForPage
+    ? Math.min(pacing.minIntervalMs, DCBEST_SOURCE_NEW_PAGE_MIN_GAP_MS)
+    : pacing.minIntervalMs;
+  const jitterMs = isFirstRequestForPage
+    ? Math.min(pacing.jitterMs, DCBEST_SOURCE_NEW_PAGE_JITTER_MS)
+    : pacing.jitterMs;
+  const jitter = Math.floor(Math.random() * (jitterMs + 1));
+  const earliest = dcbestSourceGuard.lastRequestAt + minIntervalMs + jitter;
   if (earliest > pacedNow) {
     await new Promise((resolve) => setTimeout(resolve, earliest - pacedNow));
   }
 
+  if (!isCurrentDcbestSourcePage(tabId, pageToken)) {
+    return { ok: false, gid: "", stale: true, reason: "STALE_PAGE" };
+  }
+
   dcbestSourceGuard.lastRequestAt = Date.now();
   dcbestSourceBurstCount += 1;
+  if (pageState && pageState.token === pageToken) pageState.hasFetched = true;
   persistDcbestSourceGuard();
 
   // 목록에 실제로 걸려 있던 실베 URL을 그대로 요청한다.
   // _dcbest/page 같은 컨텍스트 파라미터가 있으면 보존한다.
+  const requestController = new AbortController();
+  if (pageState && pageState.token === pageToken) pageState.controller = requestController;
   const result = await dcbFetchDcinsideHtml(postUrl, {
     cache: "default",
-    referrer: referrerUrl || "https://www.dcinside.com/"
+    referrer: referrerUrl || "https://www.dcinside.com/",
+    signal: requestController.signal
   });
+  if (pageState?.controller === requestController) pageState.controller = null;
+
+  if (!isCurrentDcbestSourcePage(tabId, pageToken)) {
+    return { ok: false, gid: "", stale: true, reason: "STALE_PAGE" };
+  }
 
   if (result.status === 403 || result.status === 429) {
     dcbestSourceGuard.cooldownUntil = Date.now() + DCBEST_SOURCE_BACKOFF_MS;
@@ -2108,25 +2263,34 @@ async function resolveDcbestSourceGallery(no, rawUrl, referrerUrl) {
   };
 }
 
-function enqueueDcbestSourceGallery(no, url, referrerUrl) {
+function enqueueDcbestSourceGallery(no, url, referrerUrl, tabId = -1, pageToken = "") {
   const task = dcbestSourceQueue.then(
-    () => resolveDcbestSourceGallery(no, url, referrerUrl),
-    () => resolveDcbestSourceGallery(no, url, referrerUrl)
+    () => resolveDcbestSourceGallery(no, url, referrerUrl, tabId, pageToken),
+    () => resolveDcbestSourceGallery(no, url, referrerUrl, tabId, pageToken)
   );
   dcbestSourceQueue = task.catch(() => {});
   return task;
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message?.type !== "dcb.dcbestSource") return;
+  if (message?.type !== "dcb.dcbestSource" && message?.type !== "dcb.dcbestSourcePage") return;
 
   if (!dcbestSourceSenderAllowed(sender)) {
     sendResponse({ ok: false, gid: "", reason: "INVALID_SENDER" });
     return;
   }
 
+  if (message.type === "dcb.dcbestSourcePage") {
+    const state = registerDcbestSourcePage(sender, message.pageToken);
+    sendResponse({ ok: !!state });
+    return;
+  }
+
   const referrerUrl = String(sender?.url || sender?.tab?.url || "");
-  enqueueDcbestSourceGallery(message.no, message.url, referrerUrl)
+  const pageState = registerDcbestSourcePage(sender, message.pageToken);
+  const tabId = getDcbestSourceTabId(sender);
+  const pageToken = pageState?.token || normalizeDcbestSourcePageToken(message.pageToken);
+  enqueueDcbestSourceGallery(message.no, message.url, referrerUrl, tabId, pageToken)
     .then(sendResponse)
     .catch((error) => sendResponse({
       ok: false,

@@ -27,6 +27,8 @@
   const FADE_MS = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ? 0 : 180;
   const CACHE_KEY = "dcbDcbestSourceCacheV1";
   const SOURCE_ALIAS_CACHE_KEY = "dcbDcbestSourceAliasCacheV1";
+  const FILTER_HOT_CACHE_KEY = "dcbDcbestFilterSettingsHotCacheV1";
+  const FILTER_HOT_CACHE_VERSION = 1;
   const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
   const SOURCE_ALIAS_TTL_MS = 30 * 24 * 60 * 60 * 1000;
   const SOURCE_RETRY_MS = 3 * 60 * 1000;
@@ -68,13 +70,16 @@
   let cache = Object.create(null);
   let sourceAliasCache = Object.create(null);
   let cacheLoaded = false;
+  let syncSettingsApplied = false;
   let cacheSaveTimer = null;
 
   let mutationObserver = null;
   let rankMutationObserver = null;
   let intersectionObserver = null;
   let scanTimer = null;
+  const pendingScanRoots = new Set();
   let queueRunning = false;
+  let pageToken = createPageToken();
   const queuedNos = new Set();
   const activeNos = new Set();
   const requestQueue = [];
@@ -88,6 +93,13 @@
   const mainAnalysisItemsByHost = new WeakMap();
   const activeMainAnalysisIndicators = new Set();
   let mainAnalysisPositionRaf = 0;
+
+  function createPageToken() {
+    try {
+      if (globalThis.crypto?.randomUUID) return crypto.randomUUID();
+    } catch (_) {}
+    return `dcb-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+  }
 
   function normalizeText(value) {
     return String(value || "")
@@ -312,11 +324,12 @@
   function getCandidateLinks(base = document) {
     if (!base?.querySelectorAll) return [];
 
-    const links = Array.from(base.querySelectorAll(
-      'a[href*="id=dcbest"][href*="no="]'
-    ));
+    const selector = 'a[href*="id=dcbest"][href*="no="]';
+    const links = [];
+    if (base instanceof Element && base.matches?.(selector)) links.push(base);
+    links.push(...base.querySelectorAll(selector));
 
-    return links.filter((link) => {
+    return Array.from(new Set(links)).filter((link) => {
       if (link.classList.contains("reply_numbox")) return false;
       if (link.closest(".reply_numbox")) return false;
       return !!getArticleNo(link);
@@ -580,6 +593,7 @@
 
     indicator = document.createElement("span");
     indicator.className = "dcb-dcbest-analysis-indicator";
+    indicator.setAttribute("data-dcb-dcbest-ui", "1");
     indicator.setAttribute("aria-live", "polite");
 
     const spinner = document.createElement("span");
@@ -657,6 +671,7 @@
 
     host = document.createElement("span");
     host.className = "dcb-dcbest-main-analysis-host";
+    host.setAttribute("data-dcb-dcbest-ui", "1");
     host.setAttribute("aria-live", "polite");
     host.style.cssText = [
       "all:initial",
@@ -892,10 +907,19 @@
     });
   }
 
+  function registerSourcePageSession() {
+    try {
+      chrome.runtime.sendMessage(
+        { type: "dcb.dcbestSourcePage", pageToken },
+        () => void chrome.runtime.lastError
+      );
+    } catch (_) {}
+  }
+
   function fetchSourceGallery(no, postUrl) {
     return new Promise((resolve) => {
       chrome.runtime.sendMessage(
-        { type: "dcb.dcbestSource", no, url: postUrl },
+        { type: "dcb.dcbestSource", no, url: postUrl, pageToken },
         (response) => {
           if (chrome.runtime.lastError) {
             resolve({ ok: false, gid: "" });
@@ -949,6 +973,11 @@
           result = { ok: false, gid: "" };
         } finally {
           activeNos.delete(no);
+        }
+
+        if (result?.stale) {
+          setAnalysisState(no, "off");
+          continue;
         }
 
         if (result?.rateLimited) {
@@ -1009,8 +1038,10 @@
       return;
     }
 
+    const startsImmediately = !queueRunning && requestQueue.length === 0;
     queuedNos.add(no);
     requestQueue.push(no);
+    if (startsImmediately) setAnalysisState(no, "analyzing");
     void runQueue();
   }
 
@@ -1074,11 +1105,30 @@
   }
 
   function scheduleScan(base = document) {
+    if (!base?.querySelectorAll) return;
+
+    if (base === document) {
+      pendingScanRoots.clear();
+      pendingScanRoots.add(document);
+    } else if (!pendingScanRoots.has(document)) {
+      // 이미 더 큰 subtree가 예약돼 있으면 중복 스캔하지 않는다.
+      for (const existing of Array.from(pendingScanRoots)) {
+        if (existing === base) return;
+        if (existing instanceof Node && base instanceof Node && existing.contains?.(base)) return;
+        if (existing instanceof Node && base instanceof Node && base.contains?.(existing)) {
+          pendingScanRoots.delete(existing);
+        }
+      }
+      pendingScanRoots.add(base);
+    }
+
     if (scanTimer) return;
     scanTimer = 1;
     const flush = () => {
       scanTimer = null;
-      scan(base);
+      const roots = Array.from(pendingScanRoots);
+      pendingScanRoots.clear();
+      roots.forEach((root) => scan(root));
     };
     if (typeof queueMicrotask === "function") queueMicrotask(flush);
     else Promise.resolve().then(flush);
@@ -1207,39 +1257,71 @@
   function setupMutationObserver() {
     mutationObserver?.disconnect();
     mutationObserver = new MutationObserver((records) => {
-      let shouldRescan = false;
       let rankPanelAdded = false;
 
       for (const record of records) {
         if (!record.addedNodes?.length) continue;
-        shouldRescan = true;
-        rankPanelAdded ||= Array.from(record.addedNodes).some((node) =>
-          node instanceof Element && (
+
+        for (const node of record.addedNodes) {
+          if (!(node instanceof Element) && !(node instanceof DocumentFragment)) continue;
+
+          // 확장 프로그램이 자체적으로 붙인 상태 UI 때문에 문서 전체를 다시 훑지 않는다.
+          if (node instanceof Element && (
+            node.getAttribute("data-dcb-dcbest-ui") === "1"
+            || node.closest?.('[data-dcb-dcbest-ui="1"]')
+          )) {
+            continue;
+          }
+
+          if (node instanceof Element && (
             node.matches?.("#dcbest_list_rank")
             || !!node.querySelector?.("#dcbest_list_rank")
-          )
-        );
+          )) {
+            rankPanelAdded = true;
+          }
+
+          const hasCandidate = node instanceof Element
+            ? (node.matches?.('a[href*="id=dcbest"][href*="no="]')
+              || !!node.querySelector?.('a[href*="id=dcbest"][href*="no="]'))
+            : !!node.querySelector?.('a[href*="id=dcbest"][href*="no="]');
+
+          if (hasCandidate) scheduleScan(node);
+        }
       }
 
       if (rankPanelAdded) {
         setupRankTabWatchers();
         scheduleRankRefresh();
       }
-      if (shouldRescan) scheduleScan(document);
     });
 
     const root = document.body || document.documentElement;
     if (root) mutationObserver.observe(root, { childList: true, subtree: true });
   }
 
+
+  function applyGallerySettings(conf = {}) {
+    galleryBlockEnabled = typeof conf.galleryBlockEnabled === "boolean"
+      ? conf.galleryBlockEnabled
+      : !!conf.enabled;
+
+    blockedGalleryIds = new Set(
+      (Array.isArray(conf.blockedIds) ? conf.blockedIds : [])
+        .map(normalizeGalleryId)
+        .filter(Boolean)
+    );
+  }
+
   function loadCache() {
     return new Promise((resolve) => {
       chrome.storage.local.get({
         [CACHE_KEY]: {},
-        [SOURCE_ALIAS_CACHE_KEY]: {}
+        [SOURCE_ALIAS_CACHE_KEY]: {},
+        [FILTER_HOT_CACHE_KEY]: null
       }, (result) => {
         const raw = result?.[CACHE_KEY];
         const rawAliases = result?.[SOURCE_ALIAS_CACHE_KEY];
+        const hot = result?.[FILTER_HOT_CACHE_KEY];
 
         cache = raw && typeof raw === "object" && !Array.isArray(raw)
           ? raw
@@ -1247,6 +1329,12 @@
         sourceAliasCache = rawAliases && typeof rawAliases === "object" && !Array.isArray(rawAliases)
           ? rawAliases
           : Object.create(null);
+
+        if (!syncSettingsApplied
+          && hot?.version === FILTER_HOT_CACHE_VERSION
+          && hot.data && typeof hot.data === "object") {
+          applyGallerySettings(hot.data);
+        }
 
         pruneCache();
         cacheLoaded = true;
@@ -1259,16 +1347,8 @@
     return new Promise((resolve) => {
       chrome.storage.sync.get(DEFAULTS, (conf) => {
         currentConfig = { ...DEFAULTS, ...(conf || {}) };
-        galleryBlockEnabled = typeof conf.galleryBlockEnabled === "boolean"
-          ? conf.galleryBlockEnabled
-          : !!conf.enabled;
-
-        blockedGalleryIds = new Set(
-          (Array.isArray(conf.blockedIds) ? conf.blockedIds : [])
-            .map(normalizeGalleryId)
-            .filter(Boolean)
-        );
-
+        syncSettingsApplied = true;
+        applyGallerySettings(currentConfig);
         rebuildActiveKeywordList(currentConfig);
         resolve();
       });
@@ -1280,6 +1360,7 @@
     setupIntersectionObserver();
     setupMutationObserver();
     setupRankTabWatchers();
+    registerSourcePageSession();
 
     // 메인/실베 제목 키워드는 원출처 캐시나 sync 저장소가 깨어날 때까지 기다리지 않는다.
     // local hot snapshot이 있으면 첫 paint 전에 가능한 한 빨리 목록을 정리한다.
@@ -1298,8 +1379,16 @@
       scheduleRankRefresh();
     });
 
-    await Promise.all([loadCache(), loadSettings()]);
+    // sync 읽기도 동시에 시작하되, local source/alias cache + gallery block hot snapshot이
+    // 먼저 준비되면 기다리지 않고 즉시 분석을 시작한다. sync가 더 먼저 끝난 경우에는
+    // 오래된 hot snapshot이 최신 설정을 되돌리지 않도록 syncSettingsApplied로 보호한다.
+    const syncSettingsPromise = loadSettings();
+    await loadCache();
     scan(document);
+    scheduleRankRefresh();
+
+    await syncSettingsPromise;
+    refreshExistingItems();
     scheduleRankRefresh();
   }
 
@@ -1318,15 +1407,64 @@
       && !changes.keywordHideTargets
     ) return;
 
-    loadSettings().then(() => {
-      requestQueue.length = 0;
-      queuedNos.clear();
-      setupIntersectionObserver();
-      refreshExistingItems();
-      scan(document);
-      scheduleRankRefresh();
+    // storage.onChanged가 이미 새 값을 주므로 sync를 다시 읽지 않는다.
+    const patch = {};
+    Object.entries(changes).forEach(([key, change]) => {
+      if (change && Object.prototype.hasOwnProperty.call(change, "newValue")) patch[key] = change.newValue;
     });
+    currentConfig = { ...currentConfig, ...patch };
+    applyGallerySettings(currentConfig);
+    rebuildActiveKeywordList(currentConfig);
+
+    requestQueue.length = 0;
+    queuedNos.clear();
+    setupIntersectionObserver();
+    refreshExistingItems();
+    scheduleScan(document);
+    scheduleRankRefresh();
   });
+
+  function resetSourceWorkForNavigation() {
+    const headNo = requestQueue[0] || "";
+    pageToken = createPageToken();
+    requestQueue.length = 0;
+    queuedNos.clear();
+    retryAfterByNo.clear();
+    if (headNo) setAnalysisState(headNo, "off");
+    activeNos.forEach((no) => setAnalysisState(no, "off"));
+    registerSourcePageSession();
+  }
+
+  function isPaginationInteraction(target) {
+    const control = target?.closest?.("a[href], button, [role='button']");
+    if (!(control instanceof Element)) return false;
+
+    const articleLink = control.closest?.('a[href*="id=dcbest"][href*="no="]');
+    if (articleLink) return false;
+
+    if (control.closest?.(".pagination, .paging, .page_num, .pageing, [class*='paging'], [class*='pagination'], [id*='paging']")) {
+      return true;
+    }
+
+    if (control instanceof HTMLAnchorElement && control.href) {
+      try {
+        const url = new URL(control.href, location.href);
+        return url.hostname === location.hostname
+          && url.searchParams.has("page")
+          && !url.searchParams.has("no");
+      } catch (_) {}
+    }
+
+    return false;
+  }
+
+  document.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    if (!isPaginationInteraction(event.target)) return;
+    // 페이지네이션을 누르는 순간 이전 페이지의 분석 작업을 양보한다.
+    // 실제 페이지 전환/AJAX 갱신은 DCInside 이벤트 핸들러가 그대로 처리한다.
+    resetSourceWorkForNavigation();
+  }, true);
 
   function applyLiveKeywordPatch(patch = {}) {
     currentConfig = { ...currentConfig, ...patch };
