@@ -47,7 +47,9 @@
         "*://*.dcinside.com/*",
         "*://*.dcinside.co.kr/*"
       ],
-      "js": ["src/shared/block-stats.js"],
+      "js": [
+        "src/shared/block-stats.js"
+      ],
       "run_at": "document_start",
       "all_frames": false
     },
@@ -62,7 +64,10 @@
         "*://gall.dcinside.com/mini/board/lists*",
         "*://gall.dcinside.com/person/board/lists*"
       ],
-      "js": ["src/shared/detection-config.js", "src/content/detection/text-detector.js"],
+      "js": [
+        "src/shared/detection-config.js",
+        "src/content/detection/text-detector.js"
+      ],
       "run_at": "document_idle",
       "all_frames": false
     },
@@ -169,9 +174,11 @@
         "*://gall.dcinside.com/person/board/view*"
       ],
       "js": [
+        "src/shared/keyword-settings-hot-cache.js",
+        "src/shared/keyword-matcher.js",
         "src/content/keyword/keyword-blocker.js"
       ],
-      "run_at": "document_end",
+      "run_at": "document_start",
       "all_frames": false
     },
     {
@@ -191,9 +198,10 @@
         "*://gall.dcinside.com/board/lists*"
       ],
       "js": [
+        "src/shared/keyword-settings-hot-cache.js",
         "src/content/gallery/dcbest-source-filter.js"
       ],
-      "run_at": "document_end",
+      "run_at": "document_start",
       "all_frames": false
     },
     {
@@ -370,7 +378,9 @@
         "src/content/user/uid-badge.js",
         "src/content/user/member-ip-view.js"
       ],
-      "css": ["src/content/appearance/comment-author.css"],
+      "css": [
+        "src/content/appearance/comment-author.css"
+      ],
       "run_at": "document_end",
       "all_frames": true
     },
@@ -420,9 +430,12 @@
         "*://gall.dcinside.com/person/board/view*"
       ],
       "js": [
+        "src/shared/keyword-settings-hot-cache.js",
+        "src/shared/keyword-matcher.js",
+        "src/content/list/list-filter.js",
         "src/content/keyword/keyword-hider.js"
       ],
-      "run_at": "document_end",
+      "run_at": "document_start",
       "all_frames": false
     },
     {

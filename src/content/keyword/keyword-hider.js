@@ -12,18 +12,7 @@
   const EXTRA_FOR_ATTR = "data-dcb-keyword-soft-extra-for";
   const ANONYMOUS_HIDDEN_CLASS = "dcb-anonymous-hidden";
   const ALLOW_SESSION_KEY = `dcb-keyword-soft-allow:${location.pathname}${location.search}`;
-  const LIST_ITEM_SELECTOR = [
-    ".gall_list tr.ub-content",
-    ".gall_list tr[data-no]",
-    ".gall_list tr.gall_tr",
-    "tr.ub-content",
-    "tr[data-no]",
-    "tr.gall_tr",
-    ".gall_list li.ub-content",
-    ".gall_list li.gall_item",
-    "li.gall_item",
-    ".gall_item"
-  ].join(",");
+  const listFilter = globalThis.DCBListFilter;
 
   const COMMENT_ITEM_SELECTOR = [
     "#focus_cmt li.ub-content",
@@ -57,13 +46,7 @@
   let nextSoftId = 1;
   let allowedKeys = loadAllowedKeys();
 
-  function normalizeText(value) {
-    return String(value || "")
-      .normalize("NFKC")
-      .toLowerCase()
-      .replace(/\s+/g, " ")
-      .trim();
-  }
+  const { normalizeText, prepareKeywords } = globalThis.DCBKeywordMatcher;
 
   function escapeHtml(value) {
     return String(value || "")
@@ -110,30 +93,8 @@
     }
   }
 
-  function prepareKeywords(list) {
-    if (!Array.isArray(list)) return [];
-
-    const seen = new Set();
-    const prepared = [];
-
-    list.forEach((raw) => {
-      const label = String(raw || "").normalize("NFKC").trim();
-      const needle = normalizeText(label);
-
-      if (!label || !needle || seen.has(needle)) return;
-
-      seen.add(needle);
-      prepared.push({ label, needle });
-    });
-
-    return prepared;
-  }
-
   function findKeyword(text) {
-    const haystack = normalizeText(text);
-    if (!haystack) return null;
-
-    return keywords.find((keyword) => haystack.includes(keyword.needle)) || null;
+    return globalThis.DCBKeywordMatcher.findKeyword(text, keywords);
   }
 
   function ensureStyle() {
@@ -249,29 +210,16 @@
   }
 
   function getListRows() {
-    return Array.from(document.querySelectorAll(LIST_ITEM_SELECTOR))
-      .filter((row, index, rows) => rows.indexOf(row) === index)
-      .filter((row) => !row.hasAttribute(PLACEHOLDER_ATTR));
+    return listFilter.collect(document);
   }
 
   function getListRowText(row) {
-    const selectors = [
-      ".gall_tit",
-      ".gall_subject",
-      ".subject",
-      ".title",
-      "a[href*='/view']"
-    ];
-    const text = selectors
-      .map((selector) => row.querySelector(selector)?.innerText || "")
-      .filter(Boolean)
-      .join(" ");
-    return text || row.innerText || "";
+    return listFilter.read(row)?.title || "";
   }
 
   function getListKey(row, keyword) {
     const no = row.getAttribute("data-no") || row.querySelector(".gall_num")?.textContent?.trim() || "";
-    const href = row.querySelector(".gall_tit a[href]")?.getAttribute("href") || "";
+    const href = listFilter.read(row)?.detailUrl || row.querySelector(".gall_tit a[href]")?.getAttribute("href") || "";
     const fallback = normalizeText(getListRowText(row)).slice(0, 120);
 
     return `list:${keyword.needle}:${no || href || fallback}`;
@@ -346,20 +294,7 @@
   function hideListRows() {
     if (!targets.listTitle) return;
 
-    getListRows().forEach((row) => {
-      if (isBlockedByAnonymousFilter(row)) return;
-
-      const keyword = findKeyword(getListRowText(row));
-      if (!keyword) return;
-
-      const key = getListKey(row, keyword);
-      if (allowedKeys.has(key)) return;
-
-      row.setAttribute(HIDDEN_ATTR, "1");
-      row.setAttribute(MATCH_ATTR, keyword.label);
-      globalThis.DCBBlockStats?.report?.(row, "keywords");
-      insertListPlaceholder(row, keyword, key);
-    });
+    getListRows().forEach(hideListRow);
   }
 
   function getArticleTitleText() {
@@ -512,9 +447,17 @@
   function hideListRow(row) {
     if (!targets.listTitle || !row || row.hasAttribute(PLACEHOLDER_ATTR) || isBlockedByAnonymousFilter(row)) return;
     const keyword = findKeyword(getListRowText(row));
-    if (!keyword) return;
-    const key = getListKey(row, keyword);
-    if (allowedKeys.has(key)) return;
+    const key = keyword ? getListKey(row, keyword) : "";
+    const id = row.getAttribute(ITEM_ID_ATTR);
+    const placeholder = row.previousElementSibling;
+    const ownPlaceholder = id && placeholder?.getAttribute("data-dcb-soft-for") === id ? placeholder : null;
+    if (!keyword || allowedKeys.has(key) || row.hasAttribute("data-dcb-list-hidden")) {
+      row.removeAttribute(HIDDEN_ATTR);
+      row.removeAttribute(MATCH_ATTR);
+      ownPlaceholder?.remove();
+      return;
+    }
+    if (ownPlaceholder && ownPlaceholder.dataset.dcbSoftKey !== key) ownPlaceholder.remove();
     row.setAttribute(HIDDEN_ATTR, "1");
     row.setAttribute(MATCH_ATTR, keyword.label);
     globalThis.DCBBlockStats?.report?.(row, "keywords");
@@ -538,23 +481,16 @@
       return;
     }
 
-    const roots = Array.from(pendingRoots).filter((root) => root?.isConnected !== false);
+    const roots = [...new Set(Array.from(pendingRoots, root => root?.nodeType === Node.TEXT_NODE ? root.parentElement : root))]
+      .filter((root) => root && root.isConnected !== false);
     pendingRoots.clear();
-    const minimal = roots.filter((root, index) => {
-      const element = root?.nodeType === Node.ELEMENT_NODE ? root : root?.parentElement;
-      if (!element) return false;
-      return !roots.some((other, otherIndex) => {
-        if (index === otherIndex) return false;
-        const parent = other?.nodeType === Node.ELEMENT_NODE ? other : other?.parentElement;
-        return !!parent?.contains?.(element);
-      });
-    });
+    const minimal = roots.filter(root => !roots.some(other => other !== root && other.contains?.(root)));
 
     const rows = new Set();
     const comments = new Set();
     let articleTouched = false;
     for (const root of minimal) {
-      collectScoped(root, LIST_ITEM_SELECTOR).forEach((node) => rows.add(node));
+      listFilter.collect(root).forEach((node) => rows.add(node));
       collectScoped(root, COMMENT_ITEM_SELECTOR).forEach((node) => comments.add(node));
       const element = root?.nodeType === Node.ELEMENT_NODE ? root : root?.parentElement;
       if (element?.closest?.(".write_div,.writing_view_box,.write_view,#dgn_content_de,.gallview_head,.view_head") ||
@@ -573,10 +509,12 @@
     if (validRoot) pendingRoots.add(root);
     if (scheduled) return;
     scheduled = true;
-    setTimeout(() => {
+    const flush = () => {
       if (pendingRoots.has(document)) applyKeywordHide();
       else processPendingRoots();
-    }, 120);
+    };
+    if (typeof queueMicrotask === "function") queueMicrotask(flush);
+    else Promise.resolve().then(flush);
   }
 
   function handleShowClick(event) {
@@ -627,8 +565,8 @@
       if (!target || !target.closest) return false;
       if (target.closest(`[${PLACEHOLDER_ATTR}="1"]`)) return true;
 
-      return Array.from(mutation.addedNodes || []).every((node) => {
-        if (!node || node.nodeType !== 1 || !node.closest) return true;
+      return mutation.type === "childList" && mutation.addedNodes.length > 0 && mutation.removedNodes.length === 0 && Array.from(mutation.addedNodes).every((node) => {
+        if (!node || node.nodeType !== 1 || !node.closest) return !node?.textContent?.trim();
         return !!node.closest(`[${PLACEHOLDER_ATTR}="1"]`);
       });
     });
@@ -636,6 +574,9 @@
 
   function startObserver() {
     if (observer) return;
+
+    const root = document.documentElement || document;
+    if (!root) return;
 
     observer = new MutationObserver((mutations) => {
       const anonymousVisibilityChanged = mutations.some((mutation) => {
@@ -662,6 +603,8 @@
           mutation.addedNodes.forEach((node) => {
             if (node?.nodeType === Node.ELEMENT_NODE || node?.nodeType === Node.TEXT_NODE) pendingRoots.add(node);
           });
+          const target = mutation.target;
+          if (target?.closest?.(`${listFilter.selector},${COMMENT_ITEM_SELECTOR}`)) pendingRoots.add(target);
         } else if (mutation.type === "characterData") {
           pendingRoots.add(mutation.target);
         }
@@ -669,21 +612,14 @@
       if (pendingRoots.size) scheduleApply(null);
     });
 
-    const start = () => {
-      if (!document.body) return;
-
-      observer.observe(document.body, {
-        childList: true,
-        subtree: true,
-        characterData: true,
-        attributes: true,
-        attributeOldValue: true,
-        attributeFilter: ["class"]
-      });
-    };
-
-    if (document.body) start();
-    else document.addEventListener("DOMContentLoaded", start, { once: true });
+    observer.observe(root, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+      attributes: true,
+      attributeOldValue: true,
+      attributeFilter: ["class"]
+    });
   }
 
   function stopObserver() {
@@ -693,44 +629,67 @@
     observer = null;
   }
 
+  function applySettings(config = {}) {
+    enabled = !!config.keywordHideEnabled;
+    keywords = prepareKeywords(config.hiddenKeywords);
+    targets = {
+      ...DEFAULTS.keywordHideTargets,
+      ...(config.keywordHideTargets || {})
+    };
+
+    if (enabled && keywords.length) startObserver();
+    else stopObserver();
+
+    applyKeywordHide({ reset: true });
+  }
+
   function loadSettingsAndApply() {
+    const hotCache = globalThis.DCBKeywordSettingsHotCache;
+    if (hotCache?.subscribe) {
+      hotCache.subscribe((config) => applySettings({ ...DEFAULTS, ...(config || {}) }));
+      return;
+    }
     if (!chrome?.storage?.sync) return;
-
-    chrome.storage.sync.get(DEFAULTS, (config) => {
-      enabled = !!config.keywordHideEnabled;
-      keywords = prepareKeywords(config.hiddenKeywords);
-      targets = {
-        ...DEFAULTS.keywordHideTargets,
-        ...(config.keywordHideTargets || {})
-      };
-
-      if (enabled && keywords.length) startObserver();
-      else stopObserver();
-
-      applyKeywordHide({ reset: true });
-    });
+    chrome.storage.sync.get(DEFAULTS, (config) => applySettings(config));
   }
 
   if (chrome?.storage?.onChanged) {
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== "sync") return;
+      if (!changes.keywordHideEnabled && !changes.hiddenKeywords && !changes.keywordHideTargets) return;
 
-      const touched =
-        changes.keywordHideEnabled ||
-        changes.hiddenKeywords ||
-        changes.keywordHideTargets;
+      if (changes.keywordHideEnabled) enabled = !!changes.keywordHideEnabled.newValue;
+      if (changes.hiddenKeywords) keywords = prepareKeywords(changes.hiddenKeywords.newValue);
+      if (changes.keywordHideTargets) {
+        targets = {
+          ...DEFAULTS.keywordHideTargets,
+          ...(changes.keywordHideTargets.newValue || {})
+        };
+      }
 
-      if (touched) loadSettingsAndApply();
+      if (enabled && keywords.length) startObserver();
+      else stopObserver();
+      applyKeywordHide({ reset: true });
     });
   }
 
-  document.addEventListener("click", handleShowClick, true);
+  chrome.runtime?.onMessage?.addListener((message) => {
+    if (message?.type !== "DCB_KEYWORD_HIDE_LIVE") return;
 
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", loadSettingsAndApply, { once: true });
-  } else {
-    loadSettingsAndApply();
-  }
+    applySettings({
+      keywordHideEnabled: message.enabled,
+      hiddenKeywords: message.hiddenKeywords,
+      keywordHideTargets: message.targets
+    });
+  });
+
+  document.addEventListener("click", handleShowClick, true);
+  document.addEventListener("dcb:list-filter-change", event => {
+    if (enabled && targets.listTitle) scheduleApply(event.target);
+  });
+
+  startObserver();
+  loadSettingsAndApply();
 
   window.addEventListener("load", () => scheduleApply(document), { once: true });
 })();

@@ -58,6 +58,7 @@
   let saveQueue = Promise.resolve();
   let pendingSaveCount = 0;
   let deferredStorageRefresh = false;
+  let stateMutationRevision = 0;
   let state = {
     keywordHideEnabled: DEFAULTS.keywordHideEnabled,
     hiddenKeywords: [...DEFAULTS.hiddenKeywords],
@@ -70,6 +71,24 @@
       chrome.storage &&
       chrome.storage.sync
     );
+  }
+
+  function notifyActiveTabKeywordHideState() {
+    if (!chrome?.tabs?.query || !chrome?.tabs?.sendMessage) return;
+
+    const message = {
+      type: "DCB_KEYWORD_HIDE_LIVE",
+      enabled: Boolean(state.keywordHideEnabled),
+      hiddenKeywords: [...state.hiddenKeywords],
+      targets: { ...state.keywordHideTargets }
+    };
+
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (chrome.runtime?.lastError) return;
+      const tabId = tabs?.[0]?.id;
+      if (!tabId) return;
+      chrome.tabs.sendMessage(tabId, message, () => void chrome.runtime?.lastError);
+    });
   }
 
   function $(id) {
@@ -166,21 +185,20 @@
   function loadState(callback) {
     if (!hasChromeStorage()) return;
 
-    const cached = uiCache?.read?.(DEFAULTS);
-    if (cached) {
-      applyStoredState(cached);
-      callback();
-    }
-
-    const finish = (config) => {
+    const requestedAtRevision = stateMutationRevision;
+    const applyIfCurrent = (config) => {
+      if (requestedAtRevision !== stateMutationRevision) return;
       applyStoredState({ ...DEFAULTS, ...(config || {}) });
       callback();
     };
 
+    const cached = uiCache?.read?.(DEFAULTS);
+    if (cached) applyIfCurrent(cached);
+
     if (uiCache?.ready) {
-      uiCache.ready.then(finish).catch(() => {});
+      uiCache.ready.then(applyIfCurrent).catch(() => {});
     } else {
-      chrome.storage.sync.get(DEFAULTS, finish);
+      chrome.storage.sync.get(DEFAULTS, applyIfCurrent);
     }
   }
 
@@ -188,6 +206,26 @@
     if (pendingSaveCount > 0 || !deferredStorageRefresh) return;
     deferredStorageRefresh = false;
     loadState(render);
+  }
+
+  function persistKeywordSettingsPatch(patch, callback) {
+    const done = typeof callback === "function" ? callback : () => {};
+    const fallback = () => {
+      chrome.storage.sync.set(patch, () => done(!chrome.runtime?.lastError));
+    };
+
+    if (!chrome?.runtime?.sendMessage) {
+      fallback();
+      return;
+    }
+
+    chrome.runtime.sendMessage({ type: "dcb.keywordSettings.patch", patch }, (response) => {
+      if (chrome.runtime?.lastError || response?.ok !== true) {
+        fallback();
+        return;
+      }
+      done(true);
+    });
   }
 
   function saveState(partial, message) {
@@ -199,6 +237,7 @@
       nextPartial.hiddenKeywords = normalizeKeywordList(nextPartial.hiddenKeywords);
     }
 
+    stateMutationRevision += 1;
     state = {
       ...state,
       ...nextPartial,
@@ -210,6 +249,7 @@
 
     uiCache?.merge?.(nextPartial);
     render();
+    notifyActiveTabKeywordHideState();
     setStatus(message || "저장 중...");
 
     const snapshot = { ...nextPartial };
@@ -222,8 +262,8 @@
 
     pendingSaveCount += 1;
     saveQueue = saveQueue.then(() => new Promise((resolve) => {
-      chrome.storage.sync.set(snapshot, () => {
-        const failed = !!chrome.runtime?.lastError;
+      persistKeywordSettingsPatch(snapshot, (saved) => {
+        const failed = !saved;
         pendingSaveCount = Math.max(0, pendingSaveCount - 1);
 
         if (failed) {

@@ -63,6 +63,7 @@
   let keywordList = [];
   let keywordTargets = { ...DEFAULTS.keywordBlockTargets };
   let keywordHideTargets = { ...DEFAULTS.keywordHideTargets };
+  let currentConfig = { ...DEFAULTS };
 
   let cache = Object.create(null);
   let sourceAliasCache = Object.create(null);
@@ -1074,10 +1075,13 @@
 
   function scheduleScan(base = document) {
     if (scanTimer) return;
-    scanTimer = setTimeout(() => {
+    scanTimer = 1;
+    const flush = () => {
       scanTimer = null;
       scan(base);
-    }, 100);
+    };
+    if (typeof queueMicrotask === "function") queueMicrotask(flush);
+    else Promise.resolve().then(flush);
   }
 
   function refreshExistingItems() {
@@ -1203,20 +1207,29 @@
   function setupMutationObserver() {
     mutationObserver?.disconnect();
     mutationObserver = new MutationObserver((records) => {
+      let shouldRescan = false;
+      let rankPanelAdded = false;
+
       for (const record of records) {
         if (!record.addedNodes?.length) continue;
-        scheduleScan(document);
-        break;
+        shouldRescan = true;
+        rankPanelAdded ||= Array.from(record.addedNodes).some((node) =>
+          node instanceof Element && (
+            node.matches?.("#dcbest_list_rank")
+            || !!node.querySelector?.("#dcbest_list_rank")
+          )
+        );
       }
+
+      if (rankPanelAdded) {
+        setupRankTabWatchers();
+        scheduleRankRefresh();
+      }
+      if (shouldRescan) scheduleScan(document);
     });
 
-    const observe = () => {
-      if (!document.body) return;
-      mutationObserver.observe(document.body, { childList: true, subtree: true });
-    };
-
-    if (document.body) observe();
-    else document.addEventListener("DOMContentLoaded", observe, { once: true });
+    const root = document.body || document.documentElement;
+    if (root) mutationObserver.observe(root, { childList: true, subtree: true });
   }
 
   function loadCache() {
@@ -1245,6 +1258,7 @@
   function loadSettings() {
     return new Promise((resolve) => {
       chrome.storage.sync.get(DEFAULTS, (conf) => {
+        currentConfig = { ...DEFAULTS, ...(conf || {}) };
         galleryBlockEnabled = typeof conf.galleryBlockEnabled === "boolean"
           ? conf.galleryBlockEnabled
           : !!conf.enabled;
@@ -1255,7 +1269,7 @@
             .filter(Boolean)
         );
 
-        rebuildActiveKeywordList(conf);
+        rebuildActiveKeywordList(currentConfig);
         resolve();
       });
     });
@@ -1266,6 +1280,24 @@
     setupIntersectionObserver();
     setupMutationObserver();
     setupRankTabWatchers();
+
+    // 메인/실베 제목 키워드는 원출처 캐시나 sync 저장소가 깨어날 때까지 기다리지 않는다.
+    // local hot snapshot이 있으면 첫 paint 전에 가능한 한 빨리 목록을 정리한다.
+    globalThis.DCBKeywordSettingsHotCache?.subscribe?.((conf) => {
+      currentConfig = {
+        ...currentConfig,
+        keywordBlockEnabled: !!conf.keywordBlockEnabled,
+        blockedKeywords: Array.isArray(conf.blockedKeywords) ? conf.blockedKeywords : [],
+        keywordBlockTargets: conf.keywordBlockTargets || DEFAULTS.keywordBlockTargets,
+        keywordHideEnabled: !!conf.keywordHideEnabled,
+        hiddenKeywords: Array.isArray(conf.hiddenKeywords) ? conf.hiddenKeywords : [],
+        keywordHideTargets: conf.keywordHideTargets || DEFAULTS.keywordHideTargets
+      };
+      rebuildActiveKeywordList(currentConfig);
+      scan(document);
+      scheduleRankRefresh();
+    });
+
     await Promise.all([loadCache(), loadSettings()]);
     scan(document);
     scheduleRankRefresh();
@@ -1296,9 +1328,33 @@
     });
   });
 
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", initialize, { once: true });
-  } else {
-    void initialize();
+  function applyLiveKeywordPatch(patch = {}) {
+    currentConfig = { ...currentConfig, ...patch };
+    rebuildActiveKeywordList(currentConfig);
+    refreshExistingItems();
+    scan(document);
+    scheduleRankRefresh();
   }
+
+  chrome.runtime?.onMessage?.addListener((message) => {
+    if (message?.type === "DCB_KEYWORD_BLOCK_LIVE") {
+      applyLiveKeywordPatch({
+        keywordBlockEnabled: !!message.enabled,
+        blockedKeywords: Array.isArray(message.blockedKeywords) ? message.blockedKeywords : [],
+        keywordBlockTargets: message.targets || DEFAULTS.keywordBlockTargets
+      });
+      return;
+    }
+
+    if (message?.type === "DCB_KEYWORD_HIDE_LIVE") {
+      applyLiveKeywordPatch({
+        keywordHideEnabled: !!message.enabled,
+        hiddenKeywords: Array.isArray(message.hiddenKeywords) ? message.hiddenKeywords : [],
+        keywordHideTargets: message.targets || DEFAULTS.keywordHideTargets
+      });
+    }
+  });
+
+  // 메인/실베도 document_start부터 DOM을 따라가되 원출처 요청은 기존 단일 큐를 유지한다.
+  void initialize();
 })();

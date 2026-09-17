@@ -43,6 +43,7 @@ let blockedKeywordState = [];
 let blockedKeywordWriteQueue = Promise.resolve();
 let blockedKeywordWritePending = 0;
 let blockedKeywordDeferredRefresh = false;
+let blockedKeywordMutationRevision = 0;
 const keywordListCountEl = document.getElementById("keywordListCount");
 const keywordTargetListTitle = document.getElementById("keywordTargetListTitle");
 const keywordTargetViewTitle = document.getElementById("keywordTargetViewTitle");
@@ -1098,6 +1099,7 @@ function normalizeKeywordList(list) {
 function refreshKeywordBlockState() {
   if (!chrome.storage || !chrome.storage.sync) return;
 
+  const requestedAtRevision = blockedKeywordMutationRevision;
   chrome.storage.sync.get(
     {
       keywordBlockEnabled: DEFAULTS.keywordBlockEnabled,
@@ -1110,14 +1112,40 @@ function refreshKeywordBlockState() {
       setChecked(keywordBlockToggle, !!conf.keywordBlockEnabled);
       renderKeywordTargets(conf.keywordBlockTargets || DEFAULTS.keywordBlockTargets);
       lockKeywordBlockUI(!conf.keywordBlockEnabled);
-      renderKeywordList(conf.blockedKeywords || []);
+
+      // 팝업을 연 직후 시작된 오래된 storage.get()이 등록 직후의
+      // optimistic UI를 덮어쓰지 않도록 로컬 mutation 이후의 응답만 반영한다.
+      if (requestedAtRevision === blockedKeywordMutationRevision && blockedKeywordWritePending === 0) {
+        renderKeywordList(conf.blockedKeywords || []);
+      }
     }
   );
 }
 
 function refreshBlockedKeywordListFromStorage() {
+  const requestedAtRevision = blockedKeywordMutationRevision;
   chrome.storage.sync.get({ blockedKeywords: [] }, ({ blockedKeywords }) => {
+    if (requestedAtRevision !== blockedKeywordMutationRevision || blockedKeywordWritePending > 0) return;
     renderKeywordList(blockedKeywords || []);
+  });
+}
+
+function persistKeywordSettingsPatch(patch, callback = () => {}) {
+  const finishFallback = () => {
+    chrome.storage.sync.set(patch, () => callback(!chrome.runtime?.lastError));
+  };
+
+  if (!chrome?.runtime?.sendMessage) {
+    finishFallback();
+    return;
+  }
+
+  chrome.runtime.sendMessage({ type: "dcb.keywordSettings.patch", patch }, (response) => {
+    if (chrome.runtime?.lastError || response?.ok !== true) {
+      finishFallback();
+      return;
+    }
+    callback(true);
   });
 }
 
@@ -1126,8 +1154,8 @@ function queueBlockedKeywordWrite(next) {
   blockedKeywordWritePending += 1;
 
   blockedKeywordWriteQueue = blockedKeywordWriteQueue.then(() => new Promise((resolve) => {
-    chrome.storage.sync.set({ blockedKeywords: snapshot }, () => {
-      const failed = !!chrome.runtime?.lastError;
+    persistKeywordSettingsPatch({ blockedKeywords: snapshot }, (saved) => {
+      const failed = !saved;
       blockedKeywordWritePending = Math.max(0, blockedKeywordWritePending - 1);
 
       if (failed) {
@@ -1149,7 +1177,10 @@ function saveKeywordList(mutator) {
   mutator(list);
   const next = normalizeKeywordList(list);
 
+  blockedKeywordMutationRevision += 1;
+  UI_SETTINGS_CACHE?.merge?.({ blockedKeywords: next });
   renderKeywordList(next);
+  notifyActiveTabKeywordBlockState();
   queueBlockedKeywordWrite(next);
 }
 
@@ -1199,19 +1230,37 @@ function getKeywordTargetsFromUI() {
   });
 }
 
+function notifyActiveTabKeywordBlockState() {
+  if (!chrome?.tabs?.query || !chrome?.tabs?.sendMessage) return;
+
+  const message = {
+    type: "DCB_KEYWORD_BLOCK_LIVE",
+    enabled: !!keywordBlockToggle?.checked,
+    blockedKeywords: blockedKeywordState.slice(),
+    targets: getKeywordTargetsFromUI()
+  };
+
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    if (chrome.runtime?.lastError) return;
+    const tabId = tabs?.[0]?.id;
+    if (!tabId) return;
+    chrome.tabs.sendMessage(tabId, message, () => void chrome.runtime?.lastError);
+  });
+}
+
 function saveKeywordTargets() {
   const next = getKeywordTargetsFromUI();
 
   // popup은 수명이 짧으므로 먼저 현재 화면을 확정 상태로 고정한다.
   renderKeywordTargets(next);
+  UI_SETTINGS_CACHE?.merge?.({ keywordBlockTargets: next });
+  notifyActiveTabKeywordBlockState();
 
-  chrome.storage.sync.set(
-    {
-      keywordBlockTargets: next
-    },
-    () => {
-      if (chrome.runtime.lastError) {
-        console.warn("[DCB] keywordBlockTargets save failed:", chrome.runtime.lastError.message);
+  persistKeywordSettingsPatch(
+    { keywordBlockTargets: next },
+    (saved) => {
+      if (!saved) {
+        console.warn("[DCB] keywordBlockTargets save failed");
 
         // 저장 실패 시 실제 저장값을 다시 읽어 UI와 저장소 상태를 맞춘다.
         chrome.storage.sync.get({ keywordBlockTargets: DEFAULTS.keywordBlockTargets }, (conf) => {
@@ -1586,7 +1635,9 @@ if (keywordBlockToggle) {
   keywordBlockToggle.onchange = (e) => {
     const on = !!e.target.checked;
     lockKeywordBlockUI(!on);
-    chrome.storage.sync.set({ keywordBlockEnabled: on });
+    UI_SETTINGS_CACHE?.merge?.({ keywordBlockEnabled: on });
+    notifyActiveTabKeywordBlockState();
+    persistKeywordSettingsPatch({ keywordBlockEnabled: on });
   };
 }
 

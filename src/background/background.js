@@ -21,6 +21,20 @@ const RULE_MAX_OFFSET = 20_000;         // 이 확장프로그램이 쓰는 동�
 const AREA_PICKER_MENU_ID = "dcb-area-picker-select";
 const USER_BLOCK_CONTEXT_MENU_ID = "dcb-user-block-context";
 const USER_MEMO_CONTEXT_MENU_ID = "dcb-user-memo-context";
+const KEYWORD_HOT_CACHE_KEY = "dcbKeywordSettingsHotCacheV1";
+const KEYWORD_HOT_CACHE_VERSION = 1;
+const KEYWORD_SYNC_DEFAULTS = Object.freeze({
+  keywordBlockEnabled: false,
+  blockedKeywords: [],
+  keywordBlockTargets: { listTitle: true, viewTitle: true, viewBody: true, comments: true },
+  keywordHideEnabled: false,
+  hiddenKeywords: [],
+  keywordHideTargets: { listTitle: true, viewTitle: true, viewBody: true, comments: true }
+});
+const KEYWORD_SYNC_KEYS = new Set(Object.keys(KEYWORD_SYNC_DEFAULTS));
+
+let keywordSettingsWriteQueue = Promise.resolve();
+let keywordHotCacheWriteQueue = Promise.resolve();
 
 let userBlockMutationQueue = Promise.resolve();
 let updateNoticeMutationQueue = Promise.resolve();
@@ -28,6 +42,76 @@ let updateNoticeMutationQueue = Promise.resolve();
 function queueUserBlockMutation(work) {
   const job = userBlockMutationQueue.then(work, work);
   userBlockMutationQueue = job.catch(() => {});
+  return job;
+}
+
+function normalizeKeywordSettingsPatch(patch = {}) {
+  const out = {};
+  for (const [key, value] of Object.entries(patch && typeof patch === "object" ? patch : {})) {
+    if (!KEYWORD_SYNC_KEYS.has(key)) continue;
+    if (key === "blockedKeywords" || key === "hiddenKeywords") {
+      out[key] = Array.isArray(value) ? value.map((item) => String(item || "").normalize("NFKC").trim()).filter(Boolean) : [];
+      continue;
+    }
+    if (key === "keywordBlockTargets" || key === "keywordHideTargets") {
+      const defaults = KEYWORD_SYNC_DEFAULTS[key];
+      out[key] = {
+        ...defaults,
+        ...(value && typeof value === "object" && !Array.isArray(value) ? value : {})
+      };
+      continue;
+    }
+    out[key] = !!value;
+  }
+  return out;
+}
+
+async function writeKeywordHotCache(patch = {}) {
+  const safePatch = normalizeKeywordSettingsPatch(patch);
+  if (!Object.keys(safePatch).length) return;
+
+  const job = keywordHotCacheWriteQueue.then(async () => {
+    const stored = await chrome.storage.local.get({ [KEYWORD_HOT_CACHE_KEY]: null });
+    const current = stored?.[KEYWORD_HOT_CACHE_KEY];
+    const currentData = current?.version === KEYWORD_HOT_CACHE_VERSION && current?.data && typeof current.data === "object"
+      ? current.data
+      : {};
+    const data = { ...KEYWORD_SYNC_DEFAULTS, ...currentData, ...safePatch };
+    if (safePatch.keywordBlockTargets) {
+      data.keywordBlockTargets = { ...KEYWORD_SYNC_DEFAULTS.keywordBlockTargets, ...(currentData.keywordBlockTargets || {}), ...safePatch.keywordBlockTargets };
+    }
+    if (safePatch.keywordHideTargets) {
+      data.keywordHideTargets = { ...KEYWORD_SYNC_DEFAULTS.keywordHideTargets, ...(currentData.keywordHideTargets || {}), ...safePatch.keywordHideTargets };
+    }
+    await chrome.storage.local.set({
+      [KEYWORD_HOT_CACHE_KEY]: {
+        version: KEYWORD_HOT_CACHE_VERSION,
+        updatedAt: Date.now(),
+        data
+      }
+    });
+  });
+  keywordHotCacheWriteQueue = job.catch(() => {});
+  return job;
+}
+
+async function seedKeywordHotCache() {
+  try {
+    const conf = await chrome.storage.sync.get(KEYWORD_SYNC_DEFAULTS);
+    await writeKeywordHotCache(conf);
+  } catch (_) {}
+}
+
+function queueKeywordSettingsPatch(patch = {}) {
+  const safePatch = normalizeKeywordSettingsPatch(patch);
+  const job = keywordSettingsWriteQueue.then(async () => {
+    if (!Object.keys(safePatch).length) return { ok: true };
+    // local hot cache를 먼저 갱신해 다음 navigation의 초기 필터가 sync wake-up을 기다리지 않는다.
+    await writeKeywordHotCache(safePatch);
+    await chrome.storage.sync.set(safePatch);
+    return { ok: true };
+  });
+  keywordSettingsWriteQueue = job.catch(() => {});
   return job;
 }
 const DCCON_BLOCK_CONTEXT_MENU_ID = "dcb-dccon-block-context";
@@ -1113,8 +1197,29 @@ chrome.storage.onChanged.addListener((c, area) => {
   ) {
     syncRules();
   }
+
+  if (area === "sync") {
+    const patch = {};
+    for (const key of KEYWORD_SYNC_KEYS) {
+      if (c[key]) patch[key] = c[key].newValue;
+    }
+    if (Object.keys(patch).length) void writeKeywordHotCache(patch);
+  }
 });
 
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message?.type !== "dcb.keywordSettings.patch") return;
+
+  queueKeywordSettingsPatch(message.patch || {})
+    .then((result) => sendResponse(result))
+    .catch((error) => sendResponse({ ok: false, error: error?.message || String(error) }));
+
+  return true;
+});
+
+chrome.runtime.onStartup?.addListener(() => { void seedKeywordHotCache(); });
+chrome.runtime.onInstalled?.addListener(() => { void seedKeywordHotCache(); });
+void seedKeywordHotCache();
 
 
 /* ───── 회원 활동량 조회: 전 탭 공통 속도 제한·중복 제거·회로 차단 ───── */
