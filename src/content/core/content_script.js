@@ -326,6 +326,9 @@ syncSettings(handleUrl);
   const OVERLAY_ID = "dcb-preview-overlay";
   const SHARE_ID = "dcbpv-share-popup";
   const CACHE_TTL = 2 * 60 * 1000;
+  const PREVIEW_COMMENT_MAX_POST_ATTEMPTS = 6;
+  const PREVIEW_COMMENT_MAX_GET_ATTEMPTS = 2;
+  const PREVIEW_THROTTLE_STATUSES = new Set([403, 429, 503]);
 
   const cache = new Map();
   let activeAbort = null;
@@ -2160,7 +2163,9 @@ syncSettings(handleUrl);
     }
 
     const errorMessage = response?.error || "백그라운드 fetch 브릿지에서 빈 응답을 받았습니다.";
-    throw new Error(errorMessage);
+    const error = new Error(errorMessage);
+    error.status = Number(response?.status || 0);
+    throw error;
   }
 
   async function fetchTextDirect(url, signal, request = {}){
@@ -2199,7 +2204,11 @@ syncSettings(handleUrl);
     const text = await response.text();
 
     if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    if (!response.ok) {
+      const error = new Error(`HTTP ${response.status}`);
+      error.status = Number(response.status || 0);
+      throw error;
+    }
 
     return {
       text,
@@ -2242,18 +2251,16 @@ syncSettings(handleUrl);
     let parsed = null;
     try { parsed = new URL(originalUrl, location.href); } catch (_) {}
 
+    // 미리보기 대상 문서의 값만 사용한다. 현재 열려 있는 디시 원문(document)의
+    // 댓글 토큰/게시물 번호를 빌려 쓰면 서로 다른 글의 요청이 섞일 수 있고,
+    // 원문 페이지의 댓글 동작과 미리보기 요청이 같은 세션에서 불필요하게 얽힌다.
     const id = parsed?.searchParams.get("id")
-      || textValueBySelector(doc, ["input[name='id']", "#id", "input[name='gallery_id']"])
-      || textValueBySelector(document, ["input[name='id']", "#id", "input[name='gallery_id']"]);
+      || textValueBySelector(doc, ["input[name='id']", "#id", "input[name='gallery_id']"]);
     const no = parsed?.searchParams.get("no")
       || textValueBySelector(doc, ["#no", "input[name='no']", "input[name='article_no']"]);
-    const securityToken = securityTokenFromHtml(doc) || securityTokenFromHtml(document);
-    const cmtId = textValueBySelector(doc, ["#cmt_id", "input[name='cmt_id']"])
-      || textValueBySelector(document, ["#cmt_id", "input[name='cmt_id']"])
-      || id;
-    const cmtNo = textValueBySelector(doc, ["#cmt_no", "input[name='cmt_no']"])
-      || textValueBySelector(document, ["#cmt_no", "input[name='cmt_no']"])
-      || no;
+    const securityToken = securityTokenFromHtml(doc);
+    const cmtId = textValueBySelector(doc, ["#cmt_id", "input[name='cmt_id']"]) || id;
+    const cmtNo = textValueBySelector(doc, ["#cmt_no", "input[name='cmt_no']"]) || no;
     const galleryType = previewGalleryTypeFromUrl(originalUrl);
 
     return { id, no, cmtId, cmtNo, securityToken, galleryType };
@@ -2440,24 +2447,22 @@ syncSettings(handleUrl);
       sort: "D"
     };
 
-    const baseVariants = [base, { ...base, sort: "N" }];
+    // 성공 가능성이 높은 최소 조합만 먼저 시도한다. 미리보기는 보조 기능이므로
+    // 파라미터 조합을 무제한 탐색해 DCinside의 세션/IP 요청 한도를 소모하지 않는다.
+    let baseVariants = [base, { ...base, sort: "N" }];
 
     if (info.galleryType === "mini") {
-      baseVariants.push(
+      baseVariants = [
         { ...base, board_type: "MI" },
-        { ...base, gall_type: "MI" },
-        { ...base, gallery_type: "MI" },
-        { ...base, mini: "Y" }
-      );
-    }
-
-    if (info.galleryType === "person") {
-      baseVariants.push(
+        { ...base, sort: "N", board_type: "MI" },
+        ...baseVariants
+      ];
+    } else if (info.galleryType === "person") {
+      baseVariants = [
         { ...base, board_type: "P" },
-        { ...base, gall_type: "P" },
-        { ...base, gallery_type: "P" },
-        { ...base, person: "Y" }
-      );
+        { ...base, sort: "N", board_type: "P" },
+        ...baseVariants
+      ];
     }
 
     const bodies = [];
@@ -2473,7 +2478,6 @@ syncSettings(handleUrl);
     for (const item of baseVariants) {
       if (info.securityToken) add({ ...item, e_s_n_o: info.securityToken });
       add(item);
-      add({ ...item, e_s_n_o: "" });
     }
 
     return bodies;
@@ -2777,32 +2781,50 @@ syncSettings(handleUrl);
       return html;
     };
 
+    let postAttempts = 0;
+    postLoop:
     for (const endpoint of endpoints) {
       for (const body of bodies) {
+        if (postAttempts >= PREVIEW_COMMENT_MAX_POST_ATTEMPTS) break postLoop;
+        postAttempts += 1;
         try {
           const html = await tryRequest("POST", endpoint, body);
           if (html) return { html, debug };
         } catch (error) {
           lastError = error;
-          const item = { method: "POST", endpoint, error: error?.message || String(error), body: safeCommentBodyForLog(body) };
+          const item = { method: "POST", endpoint, status: Number(error?.status || 0), error: error?.message || String(error), body: safeCommentBodyForLog(body) };
           debug.push(item);
           previewCommentLog(articleUrl, "error", item);
+          // 서버가 제한 신호를 보냈다면 미리보기 재시도를 즉시 중단한다.
+          // 원래 디시 페이지의 댓글 요청이 회복할 여지를 남기는 것이 우선이다.
+          if (PREVIEW_THROTTLE_STATUSES.has(Number(error?.status || 0))) {
+            error.commentDebug = debug;
+            throw error;
+          }
         }
       }
     }
 
-    // 일부 응답은 같은 파라미터를 GET query로 받을 때 HTML fragment를 반환한다.
-    // POST가 전부 비었을 때만 제한적으로 GET fallback을 시도한다.
-    for (const endpoint of endpoints.slice(0, 2)) {
-      for (const body of bodies.slice(0, 6)) {
+    // 일부 응답은 GET query에서만 fragment를 주므로 아주 소수만 fallback한다.
+    // POST/GET 조합을 광범위하게 순회하면 미리보기 한 번으로 요청이 수십 번 발생할 수 있다.
+    let getAttempts = 0;
+    getLoop:
+    for (const endpoint of endpoints.slice(0, 1)) {
+      for (const body of bodies) {
+        if (getAttempts >= PREVIEW_COMMENT_MAX_GET_ATTEMPTS) break getLoop;
+        getAttempts += 1;
         try {
           const html = await tryRequest("GET", endpoint, body);
           if (html) return { html, debug };
         } catch (error) {
           lastError = error;
-          const item = { method: "GET", endpoint, error: error?.message || String(error), body: safeCommentBodyForLog(body) };
+          const item = { method: "GET", endpoint, status: Number(error?.status || 0), error: error?.message || String(error), body: safeCommentBodyForLog(body) };
           debug.push(item);
           previewCommentLog(articleUrl, "error", item);
+          if (PREVIEW_THROTTLE_STATUSES.has(Number(error?.status || 0))) {
+            error.commentDebug = debug;
+            throw error;
+          }
         }
       }
     }
@@ -2885,16 +2907,9 @@ syncSettings(handleUrl);
 
       let endpointResult = null;
 
-      if (needsRenderedFrame) {
-        const frameResult = await fetchCommentsViaRenderedFrame(url, signal);
-        if (frameResult?.debug?.length) data.commentDebug = [...(data.commentDebug || []), ...frameResult.debug];
-        if (frameResult?.html) {
-          data.commentsHTML = frameResult.html;
-          const count = actualCommentItemCountFromHtml(frameResult.html);
-          data.commentTitle = `댓글${count ? ` ${count}개` : ""}`;
-        }
-      }
-
+      // 미리보기 자체의 AJAX를 먼저 사용한다. 숨겨진 실제 디시 페이지를 띄우면
+      // 그 페이지의 스크립트가 본문/댓글 요청을 추가로 발생시켜 같은 세션의
+      // 원래 디시 사용 경험까지 서버 제한의 영향을 받을 수 있다.
       if (!data?.commentsHTML || actualCommentItemCountFromHtml(data.commentsHTML) === 0) {
         const commentSourceHtml = data?.desktopRawHtml || data?.rawHtml || "";
         const articleDoc = new DOMParser().parseFromString(commentSourceHtml, "text/html");
@@ -2903,6 +2918,18 @@ syncSettings(handleUrl);
         if (endpointResult?.html) {
           data.commentsHTML = endpointResult.html;
           const count = actualCommentItemCountFromHtml(endpointResult.html);
+          data.commentTitle = `댓글${count ? ` ${count}개` : ""}`;
+        }
+      }
+
+      // 미니/인물갤에서 AJAX 방식으로 댓글을 얻지 못한 경우에만 마지막 수단으로
+      // 렌더링 iframe을 사용한다. 일반적인 미리보기에서는 네이티브 페이지 실행을 피한다.
+      if (needsRenderedFrame && (!data?.commentsHTML || actualCommentItemCountFromHtml(data.commentsHTML) === 0)) {
+        const frameResult = await fetchCommentsViaRenderedFrame(url, signal);
+        if (frameResult?.debug?.length) data.commentDebug = [...(data.commentDebug || []), ...frameResult.debug];
+        if (frameResult?.html) {
+          data.commentsHTML = frameResult.html;
+          const count = actualCommentItemCountFromHtml(frameResult.html);
           data.commentTitle = `댓글${count ? ` ${count}개` : ""}`;
         }
       }
