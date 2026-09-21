@@ -16,6 +16,9 @@
   const HIDDEN_ATTR = "data-dcb-hidden";
   const HIDDEN_GID_ATTR = "data-dcb-hidden-gid";
   const LINK_HIDDEN_ATTR = "data-dcb-link-hidden";
+  const DCBEST_ALARM_SELECTOR = ".rtbAlarmPopup";
+  const DCBEST_ALARM_HIDDEN_CLASS = "dcb-dcbest-alarm-hidden";
+  const DCBEST_ALARM_HIDDEN_ATTR = "data-dcb-dcbest-alarm-hidden";
 
   const SPECIAL_BLOCK_RULES = {
     dcbest: [
@@ -205,7 +208,8 @@
       style = document.createElement("style");
       style.id = STYLE_ID;
       style.textContent = `
-        .${HIDDEN_CLASS} {
+        .${HIDDEN_CLASS},
+        .${DCBEST_ALARM_HIDDEN_CLASS} {
           display: none !important;
           visibility: hidden !important;
         }
@@ -254,6 +258,33 @@
 
     link.setAttribute(LINK_HIDDEN_ATTR, "1");
     link.classList.remove("dcb-blocked-link", "dcb-blocked-link-clickable");
+  }
+
+  /* ───── 실시간베스트 알리미 차단 ───── */
+
+  function isDcbestAlarmBlockActive() {
+    return gBlockEnabled && builtinDcbestBlockEnabled;
+  }
+
+  function resetDcbestAlarmState() {
+    document.querySelectorAll(`.${DCBEST_ALARM_HIDDEN_CLASS}[${DCBEST_ALARM_HIDDEN_ATTR}="1"]`).forEach((popup) => {
+      popup.classList.remove(DCBEST_ALARM_HIDDEN_CLASS);
+      popup.removeAttribute(DCBEST_ALARM_HIDDEN_ATTR);
+    });
+  }
+
+  function blockDcbestAlarmPopups(base = document) {
+    if (!isDcbestAlarmBlockActive()) return;
+
+    queryWithin(base, DCBEST_ALARM_SELECTOR).forEach((popup) => {
+      popup.classList.add(DCBEST_ALARM_HIDDEN_CLASS);
+      popup.setAttribute(DCBEST_ALARM_HIDDEN_ATTR, "1");
+    });
+  }
+
+  function applyDcbestAlarmState(base = document, reset = false) {
+    if (reset || !isDcbestAlarmBlockActive()) resetDcbestAlarmState();
+    if (isDcbestAlarmBlockActive()) blockDcbestAlarmPopups(base);
   }
 
   /* ───── 숨길 대상 찾기 ───── */
@@ -444,6 +475,7 @@
       const base = options.base || document;
 
       if (options.reset === true) resetHiddenState();
+      applyDcbestAlarmState(base, options.reset === true);
 
       if (!gBlockEnabled || !linkWarnEnabled) {
         if (options.reset !== true) resetHiddenState();
@@ -491,7 +523,10 @@
       if (isApplying) return;
       records.forEach((record) => {
         record.addedNodes.forEach((node) => {
-          if (node.nodeType === 1 || node.nodeType === 11) scheduleApplyLinkWarnings(node);
+          if (node.nodeType !== 1 && node.nodeType !== 11) return;
+          // 실베 알리미는 화면에 번쩍 노출되지 않도록 observer 콜백에서 즉시 숨긴다.
+          blockDcbestAlarmPopups(node);
+          scheduleApplyLinkWarnings(node);
         });
       });
     });
