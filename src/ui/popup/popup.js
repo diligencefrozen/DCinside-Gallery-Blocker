@@ -261,7 +261,7 @@ function hideUpdateNoticeSoon() {
 function renderInstalledVersion(version) {
   if (!blockStatsVersionEl) return;
   const value = String(version || "").trim();
-  blockStatsVersionEl.textContent = value ? `설치 ${value}` : "";
+  blockStatsVersionEl.textContent = value ? `현재 버전 ${value}` : "";
   blockStatsVersionEl.hidden = !value;
   blockStatsVersionEl.title = value ? `현재 설치 버전 ${value}` : "";
 }
