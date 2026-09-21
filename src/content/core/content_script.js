@@ -2871,7 +2871,10 @@ syncSettings(handleUrl);
       }
     }
 
-    if (!data || isWeakPreviewData(data) || !data.writerHTML || !data.commentsHTML) {
+    // 댓글은 본문 렌더링 이후 별도의 AJAX 단계에서 가져온다.
+    // commentsHTML이 비었다는 이유만으로 데스크톱 본문을 한 번 더 기다리면
+    // 정상적인 모바일 본문도 표시가 늦어지므로, 본문 품질/작성자 정보가 부족할 때만 fallback한다.
+    if (!data || isWeakPreviewData(data) || !data.writerHTML) {
       try {
         const desktopResponse = await fetchText(url, signal, cacheMode);
         const desktopData = parseDesktopFallback(desktopResponse.text, url, desktopResponse.finalUrl || url);
