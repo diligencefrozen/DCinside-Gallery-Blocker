@@ -34,6 +34,8 @@ let activeBlockStatsTabId = null;
 let liveBlockSnapshotApplied = false;
 const updateNoticeEl = document.getElementById("updateNotice");
 const updateNoticeTitleEl = document.getElementById("updateNoticeTitle");
+const updateNoticeMessageEl = document.getElementById("updateNoticeMessage");
+const updateNoticeLinkEl = document.getElementById("updateNoticeLink");
 
 const keywordBlockToggle = document.getElementById("keywordBlockEnabled");
 const keywordInput = document.getElementById("keywordInput");
@@ -256,28 +258,79 @@ function hideUpdateNoticeSoon() {
   }, 4000);
 }
 
-function renderPublishedVersion(version) {
+function renderInstalledVersion(version) {
   if (!blockStatsVersionEl) return;
   const value = String(version || "").trim();
-  blockStatsVersionEl.textContent = value;
+  blockStatsVersionEl.textContent = value ? `설치 ${value}` : "";
   blockStatsVersionEl.hidden = !value;
+  blockStatsVersionEl.title = value ? `현재 설치 버전 ${value}` : "";
+}
+
+function resetUpdateNotice() {
+  if (updateNoticeTimer) {
+    clearTimeout(updateNoticeTimer);
+    updateNoticeTimer = null;
+  }
+  if (!updateNoticeEl) return;
+  updateNoticeEl.hidden = true;
+  updateNoticeEl.classList.remove("is-leaving", "is-outdated");
+  if (updateNoticeMessageEl) updateNoticeMessageEl.textContent = "";
+  if (updateNoticeLinkEl) {
+    updateNoticeLinkEl.hidden = true;
+    updateNoticeLinkEl.removeAttribute("href");
+  }
 }
 
 function renderUpdateNotice(notice) {
   if (!updateNoticeEl || !updateNoticeTitleEl) return;
   const publishedVersion = String(notice?.version || "").trim();
   if (!notice || !publishedVersion) {
-    updateNoticeEl.hidden = true;
+    resetUpdateNotice();
     return;
   }
 
-  // 먼저 이 버전을 확인한 것으로 저장한다. 저장에 성공한 단 하나의 Popup만 알림을 보여 준다.
+  if (notice.kind === "outdated") {
+    const installedVersion = String(notice.installedVersion || "").trim();
+    if (updateNoticeTimer) {
+      clearTimeout(updateNoticeTimer);
+      updateNoticeTimer = null;
+    }
+    updateNoticeTitleEl.textContent = "현재 구버전 소프트웨어를 사용 중입니다.";
+    if (updateNoticeMessageEl) {
+      updateNoticeMessageEl.textContent = installedVersion
+        ? `설치 버전 ${installedVersion} · 최신 버전 ${publishedVersion} — 업데이트를 권장합니다.`
+        : `최신 버전 ${publishedVersion}이 공개되었습니다. 업데이트를 권장합니다.`;
+    }
+    if (updateNoticeLinkEl) {
+      const releasesUrl = String(notice.releasesUrl || "").trim();
+      updateNoticeLinkEl.hidden = !releasesUrl;
+      if (releasesUrl) updateNoticeLinkEl.href = releasesUrl;
+      else updateNoticeLinkEl.removeAttribute("href");
+    }
+    updateNoticeEl.classList.remove("is-leaving");
+    updateNoticeEl.classList.add("is-outdated");
+    updateNoticeEl.hidden = false;
+    return;
+  }
+
+  if (notice.kind !== "updated") {
+    resetUpdateNotice();
+    return;
+  }
+
+  // 업데이트 완료 안내는 한 버전당 한 번만 표시한다. 설치 버전과 GitHub 최신 버전은 별개로 관리한다.
+  resetUpdateNotice();
   chrome.runtime.sendMessage(
     { type: "dcb.updateNotice.consume", version: publishedVersion },
     (result) => {
       if (chrome.runtime.lastError || !result?.ok || result.show !== true) return;
       updateNoticeTitleEl.textContent = `${publishedVersion}으로 업데이트되었습니다.`;
-      updateNoticeEl.classList.remove("is-leaving");
+      if (updateNoticeMessageEl) updateNoticeMessageEl.textContent = "현재 최신 버전입니다.";
+      if (updateNoticeLinkEl) {
+        updateNoticeLinkEl.hidden = true;
+        updateNoticeLinkEl.removeAttribute("href");
+      }
+      updateNoticeEl.classList.remove("is-leaving", "is-outdated");
       updateNoticeEl.hidden = false;
       hideUpdateNoticeSoon();
     }
@@ -287,7 +340,7 @@ function renderUpdateNotice(notice) {
 function loadReleaseStatus() {
   chrome.runtime.sendMessage({ type: "dcb.release.status" }, (result) => {
     if (chrome.runtime.lastError || !result?.ok) return;
-    renderPublishedVersion(result.publishedVersion);
+    renderInstalledVersion(result.installedVersion);
     renderUpdateNotice(result.updateNotice);
   });
 }
@@ -301,7 +354,7 @@ function renderBlockSummary(result = {}) {
     blockStatsCumulativeTotalEl.textContent = formatBlockCount(result.cumulative.total);
   }
   if (result.history) renderBlockHistory(result.history);
-  if (result.publishedVersion) renderPublishedVersion(result.publishedVersion);
+  if (result.installedVersion) renderInstalledVersion(result.installedVersion);
 }
 
 function loadLiveBlockSummary(tabId) {
@@ -331,7 +384,7 @@ function loadBlockSummary() {
         // 먼저 끝난 실시간 재집계가 더 최신이다. 그 뒤 도착한 저장 캐시로
         // 누적/일별 그래프를 되돌리지 말고, 별도 릴리스 정보만 반영한다.
         renderBlockSummary({
-          publishedVersion: result.publishedVersion
+          installedVersion: result.installedVersion
         });
       } else {
         renderBlockSummary(result);

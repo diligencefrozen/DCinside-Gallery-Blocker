@@ -347,21 +347,48 @@ async function resolveUpdateReleaseStatus() {
   }
 
   const publishedVersion = normalizePublishedVersion(published?.version);
+  const updateAvailable = !!installedVersion && !!publishedVersion
+    && comparePublishedVersions(publishedVersion, installedVersion) > 0;
+  const baseStatus = {
+    installedVersion,
+    publishedVersion,
+    updateAvailable,
+    source: published?.source || "",
+    releasesUrl: GITHUB_RELEASES_URL
+  };
+
+  // GitHub의 최신 공개 버전이 설치본보다 높다면, 설치된 실제 버전은 그대로 표시하고
+  // 별도의 지속 안내로 업데이트 필요 상태를 알린다.
+  if (updateAvailable) {
+    // 예전 업데이트 완료 알림이 남아 있어도, 더 최신 릴리스가 확인되면 구버전 안내가 우선한다.
+    chrome.storage.local.remove(UPDATE_NOTICE_KEY).catch(() => {});
+    return {
+      ...baseStatus,
+      updateNotice: {
+        kind: "outdated",
+        installedVersion,
+        version: publishedVersion,
+        releasesUrl: GITHUB_RELEASES_URL
+      }
+    };
+  }
+
+  // 업데이트 직후 알림은 GitHub의 공개 버전과 현재 설치 버전이 일치할 때만 한 번 표시한다.
   if (!pending || !publishedVersion || publishedVersion !== installedVersion) {
-    return { publishedVersion, updateNotice: null, source: published?.source || "" };
+    return { ...baseStatus, updateNotice: null };
   }
 
   const seenVersion = normalizePublishedVersion(stored[UPDATE_NOTICE_SEEN_VERSION_KEY]);
   if (seenVersion === publishedVersion) {
     chrome.storage.local.remove(UPDATE_NOTICE_KEY).catch(() => {});
-    return { publishedVersion, updateNotice: null, source: published?.source || "" };
+    return { ...baseStatus, updateNotice: null };
   }
 
   return {
-    publishedVersion,
-    source: published?.source || "",
+    ...baseStatus,
     updateNotice: {
-      version: publishedVersion,
+      kind: "updated",
+      version: installedVersion,
       previousVersion: String(pending.previousVersion || ""),
       updatedAt: Number(pending.updatedAt) || Date.now()
     }
@@ -948,7 +975,7 @@ chrome.runtime.onInstalled.addListener(async ({ reason, previousVersion }) => {
           updatedAt: Date.now()
         }
       });
-      // 표시할 버전명은 manifest가 아니라 GitHub Releases/Tags에서 확인한다.
+      // 현재 설치 버전 표시는 manifest를 사용하고, GitHub 조회는 최신 버전 비교에만 사용한다.
       fetchGithubPublishedVersion({ force: true }).catch(() => {});
     } catch (_) {}
   }
@@ -1635,8 +1662,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const checkpointKey = Number.isInteger(tabId) ? blockStatsCheckpointKey(tabId) : "";
     const localDefaults = {
       [BLOCK_STATS_TOTAL_KEY]: emptyBlockStats(),
-      [BLOCK_STATS_HISTORY_KEY]: null,
-      [GITHUB_VERSION_CACHE_KEY]: null
+      [BLOCK_STATS_HISTORY_KEY]: null
     };
     if (checkpointKey) localDefaults[checkpointKey] = null;
     Promise.all([
@@ -1656,13 +1682,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const storedToken = normalizePageId(storedPageValue?.pageId);
         if (storedToken && !pageBlockTokens.get(tabId)) pageBlockTokens.set(tabId, storedToken);
       }
-      const cachedRelease = normalizeGithubVersionCache(localStored[GITHUB_VERSION_CACHE_KEY]);
       sendResponse({
         ok: true,
         page,
         cumulative: normalizeBlockStats(localStored[BLOCK_STATS_TOTAL_KEY]),
         history: normalizeBlockStatsHistory(localStored[BLOCK_STATS_HISTORY_KEY]),
-        publishedVersion: cachedRelease?.version || ""
+        installedVersion: normalizePublishedVersion(chrome.runtime.getManifest().version)
       });
     }).catch(() => sendResponse({ ok: false }));
     return true;
