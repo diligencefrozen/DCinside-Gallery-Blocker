@@ -41,6 +41,7 @@
   let targets = { ...DEFAULTS.keywordHideTargets };
   let observer = null;
   let scheduled = false;
+  let resetRequested = false;
   let suppressObserver = false;
   const pendingRoots = new Set();
   let nextSoftId = 1;
@@ -560,17 +561,23 @@
     if (articleTouched) hideArticleIfNeeded();
   }
 
-  function scheduleApply(root = document) {
+  function scheduleApply(root = document, { reset = false } = {}) {
     const validRoot = root === document || root?.nodeType === Node.ELEMENT_NODE || root?.nodeType === Node.TEXT_NODE || root?.nodeType === Node.DOCUMENT_FRAGMENT_NODE;
     if (validRoot) pendingRoots.add(root);
+    if (reset) resetRequested = true;
     if (scheduled) return;
     scheduled = true;
+
+    // Let DCinside finish the current list-rendering burst before inspecting
+    // rows. This prevents keyword soft-hide work from delaying first paint.
     const flush = () => {
-      if (pendingRoots.has(document)) applyKeywordHide();
+      const shouldReset = resetRequested;
+      resetRequested = false;
+      if (shouldReset || pendingRoots.has(document)) applyKeywordHide({ reset: shouldReset });
       else processPendingRoots();
     };
-    if (typeof queueMicrotask === "function") queueMicrotask(flush);
-    else Promise.resolve().then(flush);
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(flush);
+    else setTimeout(flush, 32);
   }
 
   function handleShowClick(event) {
@@ -696,7 +703,9 @@
     if (enabled && keywords.length) startObserver();
     else stopObserver();
 
-    applyKeywordHide({ reset: true });
+    // A full rescan is still required after settings changes, but defer it to
+    // the next frame so it does not compete with DCinside's initial render.
+    scheduleApply(document, { reset: true });
   }
 
   function loadSettingsAndApply() {
@@ -725,7 +734,7 @@
 
       if (enabled && keywords.length) startObserver();
       else stopObserver();
-      applyKeywordHide({ reset: true });
+      scheduleApply(document, { reset: true });
     });
   }
 
@@ -744,8 +753,12 @@
     if (enabled && targets.listTitle) scheduleApply(event.target);
   });
 
-  startObserver();
+  // Do not observe the page before settings are known. If soft-hide is
+  // disabled, observing every list mutation is pure overhead. When enabled,
+  // applySettings() starts the observer and schedules a full catch-up scan.
   loadSettingsAndApply();
 
-  window.addEventListener("load", () => scheduleApply(document), { once: true });
+  window.addEventListener("load", () => {
+    if (enabled && keywords.length) scheduleApply(document);
+  }, { once: true });
 })();

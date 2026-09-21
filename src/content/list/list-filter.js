@@ -23,6 +23,7 @@
   let keywords = [];
   let blockedIds = new Set();
   let timer = 0;
+  let observer = null;
 
   function galleryLink(raw) {
     try {
@@ -189,9 +190,73 @@
   function schedule(root) {
     if (root) pendingRoots.add(root);
     if (timer || !pendingRoots.size) return;
-    timer = 1;
-    if (typeof queueMicrotask === "function") queueMicrotask(processPending);
-    else Promise.resolve().then(processPending);
+
+    // DCinside builds list rows in several small DOM mutations. Running a full
+    // filter pass in a microtask for every burst competes with the site's own
+    // first paint. Yield one frame so those mutations can be coalesced.
+    if (typeof requestAnimationFrame === "function") {
+      timer = requestAnimationFrame(processPending);
+    } else {
+      timer = setTimeout(processPending, 32);
+    }
+  }
+
+  function filterActive() {
+    const keywordActive = settings.keywordBlockEnabled
+      && settings.keywordBlockTargets?.listTitle !== false
+      && keywords.length > 0;
+    const galleryActive = galleryEnabled() && blockedIds.size > 0;
+    return keywordActive || galleryActive;
+  }
+
+  function clearOwnHides() {
+    document.querySelectorAll(`[${HIDDEN_ATTR}]`).forEach((element) => setHidden(element, null));
+    document.querySelectorAll(`[${SHADOW_ATTR}]`).forEach((element) => element.removeAttribute(SHADOW_ATTR));
+    pendingRoots.clear();
+  }
+
+  function startObserver() {
+    if (observer || !filterActive()) return;
+    const root = document.documentElement || document;
+    if (!root) return;
+
+    observer = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        const target = mutation.target.nodeType === Node.TEXT_NODE ? mutation.target.parentElement : mutation.target;
+        if (target?.closest?.("[data-dcb-keyword-soft-placeholder],#dcb-list-filter-style")) continue;
+        if (mutation.type === "childList") {
+          mutation.addedNodes.forEach((node) => schedule(node));
+          const entry = target?.closest?.(ROW_SELECTOR)
+            || target?.closest?.(".besttxt,.txt_box")
+            || target?.closest?.("li")?.querySelector(MAIN_TITLE_SELECTOR);
+          if (entry) schedule(entry);
+        } else schedule(target);
+      }
+    });
+
+    observer.observe(root, {
+      subtree: true,
+      childList: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: ["href", "data-no"]
+    });
+  }
+
+  function stopObserver() {
+    if (!observer) return;
+    observer.disconnect();
+    observer = null;
+  }
+
+  function syncObserver() {
+    if (filterActive()) {
+      startObserver();
+      schedule(document);
+    } else {
+      stopObserver();
+      clearOwnHides();
+    }
   }
 
   function applyKeywordHotSettings(config = {}) {
@@ -205,7 +270,7 @@
       }
     };
     keywords = matcher.prepareKeywords(settings.blockedKeywords);
-    schedule(document);
+    syncObserver();
   }
 
   function loadSettings() {
@@ -213,7 +278,7 @@
       settings = config;
       keywords = matcher.prepareKeywords(config.blockedKeywords);
       blockedIds = new Set((Array.isArray(config.blockedIds) ? config.blockedIds : []).map(blockedGalleryId).filter(Boolean));
-      schedule(document);
+      syncObserver();
     });
   }
 
@@ -226,29 +291,6 @@
     }
     globalThis.DCBBlockStats?.registerSelector?.("list-filter-keywords", `[${HIDDEN_ATTR}="keywords"]`, "keywords");
     globalThis.DCBBlockStats?.registerSelector?.("list-filter-galleries", `[${HIDDEN_ATTR}="galleries"]`, "galleries");
-    const observer = new MutationObserver((mutations) => {
-      for (const mutation of mutations) {
-        const target = mutation.target.nodeType === Node.TEXT_NODE ? mutation.target.parentElement : mutation.target;
-        if (target?.closest?.("[data-dcb-keyword-soft-placeholder],#dcb-list-filter-style")) continue;
-        if (mutation.type === "childList") {
-          mutation.addedNodes.forEach((node) => schedule(node));
-          const entry = target?.closest?.(ROW_SELECTOR)
-            || target?.closest?.(".besttxt,.txt_box")
-            || target?.closest?.("li")?.querySelector(MAIN_TITLE_SELECTOR);
-          if (entry) schedule(entry);
-        } else schedule(target);
-      }
-    });
-    const root = document.documentElement || document;
-    if (root) {
-      observer.observe(root, {
-        subtree: true,
-        childList: true,
-        characterData: true,
-        attributes: true,
-        attributeFilter: ["href", "data-no"]
-      });
-    }
     const hotCache = globalThis.DCBKeywordSettingsHotCache;
     hotCache?.subscribe?.((config) => applyKeywordHotSettings(config));
     loadSettings();
@@ -272,9 +314,10 @@
       }
     };
     keywords = matcher.prepareKeywords(settings.blockedKeywords);
-    collect(document).forEach(evaluate);
+    syncObserver();
   });
 
-  // document_start부터 DOM 증가분을 관찰한다.
+  // Register immediately, then enable DOM observation only after settings show
+  // that list filtering is actually active.
   start();
 })();

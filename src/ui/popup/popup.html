@@ -217,6 +217,12 @@
   .update-notice-copy{flex:1 1 auto;min-width:0}
   .update-notice-copy strong{display:block;color:#d9ffe5;font-size:11.5px;line-height:1.4}
   .update-notice-copy span{display:block;margin-top:2px;color:#a9dbb7;font-size:11px;line-height:1.4}
+  .update-notice-link{display:inline-flex;margin-top:6px;color:#b8cbff;font-size:11px;font-weight:800;line-height:1.35;text-decoration:none}
+  .update-notice-link:hover{text-decoration:underline}
+  .update-notice.is-outdated{border-color:rgba(251,191,36,.34);background:rgba(245,158,11,.10)}
+  .update-notice.is-outdated .update-notice-copy strong{color:#fff0bd}
+  .update-notice.is-outdated .update-notice-copy span{color:#e4c983}
+  .update-notice.is-outdated .update-notice-link{color:#ffd66b}
   .update-notice.is-leaving{opacity:0;transform:translateY(-4px)}
 
   .quick-gallery-panel{
@@ -1148,7 +1154,8 @@
     <div class="update-notice" id="updateNotice" hidden>
       <div class="update-notice-copy">
         <strong id="updateNoticeTitle"></strong>
-        <span>현재 최신 버전입니다.</span>
+        <span id="updateNoticeMessage"></span>
+        <a class="update-notice-link" id="updateNoticeLink" target="_blank" rel="noopener noreferrer" hidden>GitHub 릴리스에서 업데이트 확인 ↗</a>
       </div>
     </div>
   </section>
