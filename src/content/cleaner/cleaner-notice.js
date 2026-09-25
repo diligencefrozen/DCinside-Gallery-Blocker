@@ -197,27 +197,28 @@
     }
   }
 
-  function loadAndApply() {
-    chrome.storage.sync.get(DEFAULTS, ({ noticeBlockEnabled }) => {
-      enabled = noticeBlockEnabled !== false;
+  async function loadAndApply() {
+    const critical = globalThis.DCBCriticalFilter;
+    let raw;
+    if (critical?.ready) {
+      await critical.ready;
+      raw = critical.getSnapshot?.()?.sync;
+    }
+    if (!raw) raw = await chrome.storage.sync.get(DEFAULTS);
+    enabled = raw.noticeBlockEnabled !== false;
 
-      if (enabled) {
-        ensureStyle();
-        scheduleApply();
-        startObserver();
-      } else {
-        stopObserver();
-        clearStyle();
-        clearMarks();
-      }
-    });
+    if (enabled) {
+      ensureStyle();
+      scheduleApply();
+      startObserver();
+    } else {
+      stopObserver();
+      clearStyle();
+      clearMarks();
+    }
   }
 
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", loadAndApply, { once: true });
-  } else {
-    loadAndApply();
-  }
+  loadAndApply();
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "sync" || !changes.noticeBlockEnabled) return;

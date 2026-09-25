@@ -745,6 +745,7 @@
 
   function mutationMayContainDccon(node) {
     if (!(node instanceof Element)) return false;
+    if (node.closest?.("[data-dcb-owned]")) return false;
     if (node.matches?.(EMPTY_ROW_SELECTOR) || node.closest?.(EMPTY_ROW_SELECTOR)) return true;
     if (node.matches?.(HIDDEN_SELECTOR) || node.closest?.(HIDDEN_SELECTOR)) return true;
     if (node.closest?.(COMMENT_ROW_SELECTOR)?.querySelector?.(HIDDEN_SELECTOR)) return true;

@@ -1235,6 +1235,7 @@
       node &&
       node.nodeType === 1 &&
       (
+        node.closest?.("[data-dcb-owned]") ||
         node.id === MODAL_ID ||
         node.id === STYLE_ID ||
         node.classList?.contains(TRIGGER_CLASS) ||

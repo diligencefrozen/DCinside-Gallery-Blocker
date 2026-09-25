@@ -36,6 +36,7 @@ const updateNoticeEl = document.getElementById("updateNotice");
 const updateNoticeTitleEl = document.getElementById("updateNoticeTitle");
 const updateNoticeMessageEl = document.getElementById("updateNoticeMessage");
 const updateNoticeLinkEl = document.getElementById("updateNoticeLink");
+const popupMainEl = document.querySelector(".popup-main");
 
 const keywordBlockToggle = document.getElementById("keywordBlockEnabled");
 const keywordInput = document.getElementById("keywordInput");
@@ -69,6 +70,10 @@ const userBlockManageBtn = document.getElementById("userBlockManageBtn");
 const userBlockManager = document.getElementById("userBlockManager");
 const userBlockOffHint = document.getElementById("userBlockOffHint");
 const userBlockStatus = document.getElementById("userBlockStatus");
+const uidSearchInput = document.getElementById("uidSearchInput");
+const uidTypeFilters = document.getElementById("uidTypeFilters");
+const popupTabs = [...document.querySelectorAll("[data-popup-tab]")];
+const popupPanels = [...document.querySelectorAll("[data-popup-panel]")];
 
 const toggleHideMain = document.getElementById("toggleHideMain");
 const toggleHideGall = document.getElementById("toggleHideGall");
@@ -151,6 +156,35 @@ const UI_SETTINGS_CACHE = globalThis.DCBUiSettingsCache;
 let userBlockEnabledState = true;
 let userBlockTriggerModeState = "instant";
 let userBlockHoverHintEnabledState = true;
+let uidListState = [];
+let uidFilterState = "all";
+
+function selectPopupTab(name, { focus = false } = {}) {
+  const selected = popupTabs.find((tab) => tab.dataset.popupTab === name) || popupTabs[0];
+  if (!selected) return;
+  popupTabs.forEach((tab) => {
+    const active = tab === selected;
+    tab.setAttribute("aria-selected", String(active));
+    tab.tabIndex = active ? 0 : -1;
+  });
+  popupPanels.forEach((panel) => { panel.hidden = panel.dataset.popupPanel !== selected.dataset.popupTab; });
+  if (focus) selected.focus();
+}
+
+popupTabs.forEach((tab, index) => {
+  tab.addEventListener("click", () => selectPopupTab(tab.dataset.popupTab));
+  tab.addEventListener("keydown", (event) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    let next = index;
+    if (event.key === 'ArrowLeft') next = (index - 1 + popupTabs.length) % popupTabs.length;
+    if (event.key === 'ArrowRight') next = (index + 1) % popupTabs.length;
+    if (event.key === 'Home') next = 0;
+    if (event.key === 'End') next = popupTabs.length - 1;
+    selectPopupTab(popupTabs[next].dataset.popupTab, { focus: true });
+  });
+});
+selectPopupTab("quick");
 
 const BLOCK_STATS_LABELS = Object.freeze({
   comments: "댓글",
@@ -246,6 +280,22 @@ function renderBlockHistory(history = null) {
 
 let updateNoticeTimer = null;
 
+function syncPopupContentRail() {
+  if (!popupMainEl) return;
+  const scrollbarWidth = Math.max(0, popupMainEl.offsetWidth - popupMainEl.clientWidth);
+  document.documentElement.style.setProperty("--popup-scrollbar-width", `${scrollbarWidth}px`);
+}
+
+syncPopupContentRail();
+if (popupMainEl && globalThis.ResizeObserver) {
+  new ResizeObserver(syncPopupContentRail).observe(popupMainEl);
+}
+window.addEventListener("resize", syncPopupContentRail);
+
+function showUpdateNoticeLink(candidate, label) {
+  return globalThis.DCBPopupReleaseLink?.configure(updateNoticeLinkEl, candidate, label);
+}
+
 function hideUpdateNoticeSoon() {
   if (!updateNoticeEl) return;
   if (updateNoticeTimer) clearTimeout(updateNoticeTimer);
@@ -302,10 +352,10 @@ function renderUpdateNotice(notice) {
         : `최신 버전 ${publishedVersion}이 공개되었습니다. 업데이트를 권장합니다.`;
     }
     if (updateNoticeLinkEl) {
-      const releasesUrl = String(notice.releasesUrl || "").trim();
-      updateNoticeLinkEl.hidden = !releasesUrl;
-      if (releasesUrl) updateNoticeLinkEl.href = releasesUrl;
-      else updateNoticeLinkEl.removeAttribute("href");
+      showUpdateNoticeLink(
+        notice.releaseUrl || notice.releasesUrl,
+        "GitHub에서 업데이트 보기 ↗"
+      );
     }
     updateNoticeEl.classList.remove("is-leaving");
     updateNoticeEl.classList.add("is-outdated");
@@ -341,7 +391,23 @@ function loadReleaseStatus() {
   chrome.runtime.sendMessage({ type: "dcb.release.status" }, (result) => {
     if (chrome.runtime.lastError || !result?.ok) return;
     renderInstalledVersion(result.installedVersion);
-    renderUpdateNotice(result.updateNotice);
+    if (result.updateNotice) {
+      renderUpdateNotice(result.updateNotice);
+      return;
+    }
+    resetUpdateNotice();
+    if (!updateNoticeEl || !updateNoticeTitleEl) return;
+    const version = String(result.publishedVersion || result.installedVersion || "").trim();
+    updateNoticeTitleEl.textContent = result.lastErrorAt
+      ? "최근 업데이트 확인에 실패했습니다."
+      : `✓ 최신 버전 ${version}`;
+    if (updateNoticeMessageEl) {
+      updateNoticeMessageEl.textContent = result.lastErrorAt
+        ? "마지막 정상 확인 결과를 유지하고 있습니다."
+        : "공개 GitHub Release 기준";
+    }
+    showUpdateNoticeLink(result.releaseUrl);
+    updateNoticeEl.hidden = false;
   });
 }
 
@@ -967,44 +1033,56 @@ function setUserBlockStatus(text, isError = false) {
 }
 
 function getUidTokenKind(token) {
-  const text = String(token || "").trim();
-  if (/^nick\s*[:=]/i.test(text)) return "NICK";
-  return /^\d{1,3}(?:\.\d{1,3}){1,3}$/.test(text) ? "IP" : "UID";
+  return globalThis.DCBUserBlockList?.kindOf(token) || "UID";
+}
+
+function getUidTokenLabel(token) {
+  return globalThis.DCBUserBlockList?.labelOf(token) || String(token || "").trim();
+}
+
+function uidKindLabel(kind) {
+  return kind === "UID" ? "ID" : kind === "NICK" ? "닉네임" : "IP";
+}
+
+function filteredUidList() {
+  return globalThis.DCBUserBlockList?.prepare(uidListState, {
+    filter: uidFilterState,
+    query: uidSearchInput?.value || ""
+  }) || [];
 }
 
 function renderUidList(list) {
   if (!uidListEl) return;
 
-  const uids = Array.isArray(list) ? list : [];
-  renderedUidCount = uids.length;
+  uidListState = Array.isArray(list) ? [...list] : [];
+  renderedUidCount = uidListState.length;
 
-  if (uidListCountEl) uidListCountEl.textContent = `${uids.length}개`;
-  if (userBlockManageBtn) userBlockManageBtn.textContent = `차단 목록 · 해제 (${uids.length})`;
-  if (clearUidListBtn) clearUidListBtn.disabled = uidListMutationInFlight || !uids.length;
-
-  const currentTokens = Array.from(uidListEl.querySelectorAll("button[data-token]"), (button) => button.dataset.token || "");
-  const currentButtonsHealthy = Array.from(uidListEl.querySelectorAll("button[data-token]"))
-    .every((button) => !button.disabled && button.textContent === "차단 해제");
-  const alreadyRendered = uidListEl.children.length > 0 && (
-    (uids.length === 0 && !!uidListEl.querySelector(".uid-empty"))
-    || (
-      currentButtonsHealthy
-      && currentTokens.length === uids.length
-      && currentTokens.every((token, index) => token === uids[index])
-    )
-  );
-  if (alreadyRendered) return;
+  if (uidListCountEl) uidListCountEl.textContent = `${uidListState.length}개`;
+  if (userBlockManageBtn) userBlockManageBtn.textContent = `차단 목록 · 해제 (${uidListState.length})`;
+  if (clearUidListBtn) clearUidListBtn.disabled = uidListMutationInFlight || !uidListState.length;
+  const counts = globalThis.DCBUserBlockList?.counts(uidListState) || { all: 0, UID: 0, IP: 0, NICK: 0 };
+  for (const kind of ["all", "UID", "IP", "NICK"]) {
+    const count = counts[kind];
+    const output = uidTypeFilters?.querySelector(`[data-uid-count="${kind}"]`);
+    if (output) output.textContent = String(count);
+  }
 
   uidListEl.innerHTML = "";
 
-  if (!uids.length) {
+  const visible = filteredUidList();
+  if (!uidListState.length || !visible.length) {
     const li = document.createElement("li");
-    li.innerHTML = `<span class="uid-empty">등록된 UID/IP/닉네임 차단 대상이 없습니다.</span>`;
+    const empty = document.createElement("span");
+    empty.className = "uid-empty";
+    empty.textContent = uidListState.length
+      ? "검색 조건과 일치하는 차단 대상이 없습니다."
+      : "등록된 사용자 차단 대상이 없습니다.";
+    li.appendChild(empty);
     uidListEl.appendChild(li);
     return;
   }
 
-  uids.forEach((uid) => {
+  visible.forEach(({ token, kind: tokenKind, label }) => {
     const li = document.createElement("li");
 
     const left = document.createElement("span");
@@ -1012,18 +1090,19 @@ function renderUidList(list) {
 
     const kind = document.createElement("span");
     kind.className = "uid-kind";
-    kind.textContent = getUidTokenKind(uid);
+    kind.textContent = uidKindLabel(tokenKind);
 
     const code = document.createElement("code");
-    code.textContent = uid;
+    code.textContent = label;
+    code.title = label;
 
     const btn = document.createElement("button");
     btn.className = "btn btn-danger";
     btn.type = "button";
-    btn.dataset.token = uid;
+    btn.dataset.token = token;
     btn.textContent = "차단 해제";
-    btn.title = `${uid} 차단 해제`;
-    btn.setAttribute("aria-label", `${uid} 차단 해제`);
+    btn.title = `${label} 차단 해제`;
+    btn.setAttribute("aria-label", `${uidKindLabel(tokenKind)} ${label} 차단 해제`);
 
     left.append(kind, code);
     li.append(left, btn);
@@ -1885,8 +1964,20 @@ if (uidListEl) {
   });
 }
 
+uidSearchInput?.addEventListener("input", () => renderUidList(uidListState));
+uidTypeFilters?.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-uid-filter]");
+  if (!button) return;
+  uidFilterState = button.dataset.uidFilter || "all";
+  uidTypeFilters.querySelectorAll("button[data-uid-filter]").forEach((item) => {
+    item.setAttribute("aria-pressed", String(item === button));
+  });
+  renderUidList(uidListState);
+});
+
 if (userBlockManageBtn && userBlockManager) {
   userBlockManageBtn.addEventListener("click", () => {
+    selectPopupTab("manage");
     userBlockManager.scrollIntoView({ behavior: "smooth", block: "start" });
     userBlockManager.focus({ preventScroll: true });
   });

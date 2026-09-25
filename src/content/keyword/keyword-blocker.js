@@ -474,11 +474,13 @@
 
       if (!target || !target.closest) return false;
 
+      if (target.closest("[data-dcb-owned]")) return true;
+
       if (target.closest(`#${ARTICLE_OVERLAY_ID}`)) return true;
 
       return m.type === "childList" && m.addedNodes.length > 0 && m.removedNodes.length === 0 && Array.from(m.addedNodes).every((node) => {
         if (!node || node.nodeType !== 1 || !node.closest) return true;
-        return node.id === ARTICLE_OVERLAY_ID || !!node.closest(`#${ARTICLE_OVERLAY_ID}`);
+        return node.id === ARTICLE_OVERLAY_ID || !!node.closest(`#${ARTICLE_OVERLAY_ID}`) || !!node.closest("[data-dcb-owned]");
       });
     });
   }

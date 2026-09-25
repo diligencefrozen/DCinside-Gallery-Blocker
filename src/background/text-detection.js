@@ -80,6 +80,29 @@
     return result?.ok && Array.isArray(result.results) && result.results.length === count && result.results.every(item =>
       item && Number.isFinite(item.score) && item.score >= 0 && item.score <= 1);
   }
+  function expandLongPosts(items) {
+    const expanded = [];
+    const groups = [];
+    for (const item of items) {
+      const start = expanded.length;
+      const body = String(item.body || "");
+      if (item.kind !== "post" || body.length <= 1800) {
+        expanded.push(item);
+      } else {
+        const chunkSize = Math.ceil(body.length / 3);
+        for (let offset = 0; offset < body.length && expanded.length < start + 3; offset += chunkSize) {
+          expanded.push({ ...item, title: offset === 0 ? item.title : "", body: body.slice(offset, offset + chunkSize) });
+        }
+      }
+      groups.push({ start, count: expanded.length - start });
+    }
+    return { expanded, groups };
+  }
+  function collapseChunkResults(results, groups) {
+    return groups.map(({ start, count }) => ({
+      score: Math.max(...results.slice(start, start + count).map((item) => item.score))
+    }));
+  }
   async function hasRuntimeDocument() {
     if (typeof chrome.runtime.getContexts === "function") {
       const contexts = await chrome.runtime.getContexts({
@@ -164,6 +187,14 @@
       statusReady.then(() => respond(status));
       return true;
     }
+    if (message?.type === "DCB_DETECTION_RETRY" && sender.id === chrome.runtime.id) {
+      if (queued) { respond({ ok: false, error: "busy" }); return; }
+      runtimeRetryAt = 0;
+      runtimeFailure = "";
+      setStatus("idle");
+      prewarmRuntime().then(respond, () => respond({ ok: false, error: "runtime-unavailable" }));
+      return true;
+    }
     if (message?.type !== "DCB_DETECT_TEXT") return;
     if (!authorized(sender) || !Array.isArray(message.items) || message.items.length > 4) {
       respond({ ok: false, error: "invalid-request" });
@@ -187,17 +218,18 @@
       if (Date.now() >= runtimeRetryAt) {
         setStatus(status.state === "ready" ? "analyzing" : "loading", { mode: "model" });
         let result;
+        const { expanded, groups } = expandLongPosts(items);
         try {
           await ensureRuntime();
-          result = await chrome.runtime.sendMessage({ type: "DCB_INFERENCE", target: "detection-offscreen", items });
+          result = await chrome.runtime.sendMessage({ type: "DCB_INFERENCE", target: "detection-offscreen", items: expanded });
         } catch (error) {
           result = { ok: false, error: failureReason(error) };
         }
-        if (validModelResult(result, items.length)) {
+        if (validModelResult(result, expanded.length)) {
           runtimeRetryAt = 0;
           runtimeFailure = "";
           setStatus("ready", { mode: "model" });
-          return { ...result, mode: "model" };
+          return { ...result, results: collapseChunkResults(result.results, groups), mode: "model" };
         }
         runtimeFailure = failureReason(result?.ok ? "invalid-result" : result);
         runtimeRetryAt = Date.now() + runtimeRetryMs;

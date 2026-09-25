@@ -320,8 +320,9 @@
     roots.forEach((root) => void scanScope(root));
   }
 
-  function queueIncrementalScan(root) {
+  function queueIncrementalScan(root, allowOwned = false) {
     if (!root || (root.nodeType !== Node.ELEMENT_NODE && root.nodeType !== Node.DOCUMENT_FRAGMENT_NODE)) return;
+    if (!allowOwned && root instanceof Element && root.closest?.("[data-dcb-owned]")) return;
     pendingRoots.add(root);
     if (incrementalTimer) return;
     incrementalTimer = setTimeout(flushIncrementalScans, 80);
@@ -362,7 +363,7 @@
       clearTarget(target);
       delete target.dataset.dcbAccountActivityPeek;
     });
-    if (preview) queueIncrementalScan(preview);
+    if (preview) queueIncrementalScan(preview, true);
   });
 
   installStyle();

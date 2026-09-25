@@ -185,6 +185,10 @@
   function markDirty(record) {
     if (!record) return;
     removePresentation(record);
+    // A hidden result can have been reported out of range while its visible
+    // placeholder was on screen. Re-evaluate after revealing the edited node
+    // so the mutation is not stranded until a future intersection callback.
+    record.inRange = visible(record.node, 350);
     queued.delete(record.node);
     deferred.delete(record);
     record.version += 1;
@@ -452,7 +456,7 @@
 
   function ownedNode(node) {
     const element = node?.nodeType === Node.ELEMENT_NODE ? node : node?.parentElement;
-    return !!element?.closest?.(`[${PLACEHOLDER_ATTR}], #${STYLE_ID}`);
+    return !!element?.closest?.(`[${PLACEHOLDER_ATTR}], #${STYLE_ID}, [data-dcb-owned]`);
   }
 
   function onMutations(mutations) {
@@ -541,7 +545,10 @@
     clearAll();
     // Toggling or changing settings is also an explicit retry of model loading.
     for (const [key, result] of cache) if (result.mode === 'basic') cache.delete(key);
-    if (!settings.enabled || (!settings.posts && !settings.comments)) return;
+    if (!settings.enabled || (!settings.posts && !settings.comments)) {
+      cache.clear();
+      return;
+    }
     // Start the local inference runtime while the page is still building so the first
     // visible post/comment does not have to pay the full cold-start cost.
     chrome.runtime.sendMessage({ type: 'DCB_DETECTION_PREWARM' }).catch(() => {});
@@ -569,6 +576,23 @@
     observer.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
     initialDiscover();
   }
+
+  document.addEventListener('dcb-preview-content', (event) => {
+    if (!settings.enabled) return;
+    const root = event?.detail?.root;
+    if (!(root instanceof Element)) return;
+    discoverIn(root);
+    // An open preview is already an explicitly visible surface. Do not wait for a
+    // second page-level IntersectionObserver delivery after the preview pipeline
+    // has handed us its owned subtree.
+    for (const record of records.values()) {
+      if (root === record.node || root.contains(record.node)) {
+        record.inRange = true;
+        consider(record);
+      }
+    }
+    scheduleBatch();
+  });
 
   function handleReveal(event) {
     const button = event.target?.closest?.('[data-dcb-text-detection-action="show"]');

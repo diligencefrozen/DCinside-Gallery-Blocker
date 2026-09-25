@@ -1183,33 +1183,48 @@
   let incrementalTimer = null;
   const pendingRoots = new Set();
 
-  function apply() {
+  async function readConfiguration() {
+    const critical = globalThis.DCBCriticalFilter;
+    if (critical?.ready) {
+      await critical.ready;
+      const snapshot = critical.getSnapshot?.();
+      if (snapshot) {
+        return migrate({
+          ...DEFAULTS,
+          ...snapshot.sync,
+          blockedUids: Array.isArray(snapshot.tokens) ? snapshot.tokens : []
+        });
+      }
+    }
+
+    const raw = await chrome.storage.sync.get(DEFAULTS);
+    const conf = migrate(raw);
+    try {
+      conf.blockedUids = await readBlockedUids();
+    } catch (_) {
+      conf.blockedUids = [];
+    }
+    return conf;
+  }
+
+  async function apply() {
     const generation = ++applyGeneration;
-    chrome.storage.sync.get(DEFAULTS, async (raw) => {
-      const conf = migrate(raw);
+    const conf = await readConfiguration();
+    if (generation !== applyGeneration) return;
 
-      try {
-        conf.blockedUids = await readBlockedUids();
-      } catch (_) {
-        conf.blockedUids = [];
-      }
+    activeConf = conf;
+    activeMatcher = buildMatcher(conf.blockedUids || []);
+    ensureStyle().textContent = buildCss(conf);
+    pendingRoots.clear();
 
-      if (generation !== applyGeneration) return;
+    if (!conf.userBlockEnabled) {
+      clearDomBlocks();
+      applyUnblockControls(activeMatcher, document, true);
+      return;
+    }
 
-      activeConf = conf;
-      activeMatcher = buildMatcher(conf.blockedUids || []);
-      ensureStyle().textContent = buildCss(conf);
-      pendingRoots.clear();
-
-      if (!conf.userBlockEnabled) {
-        clearDomBlocks();
-        applyUnblockControls(activeMatcher, document, true);
-        return;
-      }
-
-      clearUnblockControls();
-      applyDomBlocks(activeMatcher, document, { reset: true });
-    });
+    clearUnblockControls();
+    applyDomBlocks(activeMatcher, document, { reset: true });
   }
 
   function scheduleApply(delay = 80) {
@@ -1224,7 +1239,7 @@
   function isInternalUiNode(node) {
     if (!(node instanceof Element)) return false;
     return !!node.closest?.(
-      `[data-dcb-owned='userblock'], .${UNBLOCK_HOST_CLASS}, .${UNBLOCK_BUTTON_CLASS}, ` +
+      `[data-dcb-owned], .${UNBLOCK_HOST_CLASS}, .${UNBLOCK_BUTTON_CLASS}, ` +
       ".dcibx-actions, .dcibx-notice, .dcibx-overlay, #dcb-area-picker-overlay, #dcb-area-picker-guide"
     );
   }
@@ -1259,11 +1274,7 @@
     incrementalTimer = setTimeout(flushIncrementalRoots, 60);
   }
 
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", apply, { once: true });
-  } else {
-    apply();
-  }
+  apply();
 
   function requestUserBlockRemoval(tokens) {
     return new Promise((resolve, reject) => {

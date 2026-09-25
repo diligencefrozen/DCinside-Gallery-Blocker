@@ -73,3 +73,18 @@ test('settings pages do not use a render-blocking Google Fonts stylesheet', () =
     assert.match(html, /ui-settings-cache\.js/);
   }
 });
+
+test('popup separates its scrollable main area from the compact donation footer and exposes accessible tabs', () => {
+  const html = read('src/ui/popup/popup.html');
+  const mainStart = html.indexOf('<main class="popup-main">');
+  const mainEnd = html.indexOf('</main>', mainStart);
+  const footerStart = html.indexOf('<footer class="popup-footer">');
+  const donationStart = html.indexOf('<section class="donation-card"');
+  assert.ok(mainStart >= 0 && mainEnd > mainStart);
+  assert.ok(footerStart > mainEnd && donationStart > footerStart);
+  assert.doesNotMatch(html.slice(footerStart, html.indexOf('</footer>', footerStart)), /position\s*:\s*(?:fixed|sticky)/i);
+  assert.match(html, /\.popup-main\{[^}]*overflow-y:auto/);
+  assert.match(html, /role="tablist"/);
+  assert.equal((html.match(/role="tab"/g) || []).length, 3);
+  assert.match(html, /<button id="openOptions">고급 설정 열기<\/button>/);
+});

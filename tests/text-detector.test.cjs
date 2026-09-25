@@ -8,7 +8,13 @@ before(async () => {
   browser = await chromium.launch({ headless: true,
     ...(process.env.DCB_TEST_BROWSER ? { executablePath: process.env.DCB_TEST_BROWSER } : {}) });
 });
-after(async () => { await browser?.close(); });
+after(async () => {
+  if (!browser) return;
+  await Promise.race([
+    browser.close(),
+    new Promise(resolve => { const timer = setTimeout(resolve, 5000); timer.unref?.(); })
+  ]);
+});
 
 async function fixture(html, settings = { enabled: true }) {
   const page = await browser.newPage({ viewport: { width: 1200, height: 1000 } });
@@ -21,11 +27,18 @@ async function fixture(html, settings = { enabled: true }) {
     window.detectionSettings = initial;
     window.chrome = {
       storage: {
-        sync: { get: (_defaults, callback) => callback({ dcbTextDetection: initial }) },
+        sync: {
+          get: (_defaults, callback) => {
+            const value = { dcbTextDetection: initial };
+            callback?.(value);
+            return Promise.resolve(value);
+          }
+        },
         onChanged: { addListener: (listener) => listeners.push(listener) }
       },
       runtime: {
         sendMessage: (message) => {
+          if (message.type === 'DCB_DETECTION_PREWARM') return Promise.resolve({ ok: true });
           window.requests.push(structuredClone(message));
           return new Promise((resolve) => resolveRequests.push(resolve));
         }
@@ -69,7 +82,7 @@ test('is opt in and sends only bounded text from post and comment bodies', async
     <div class="cmt_info"><p class="usertxt">짧아요</p></div>
     <form><div class="write_div">전송하면 안 되는 편집 중인 게시글입니다.</div><p class="reply_txt">작성 중인 댓글입니다.</p></form>
     <div class="comment_txt" contenteditable="true">편집 중인 입력 값입니다.</div>
-  `, { enabled: false });
+  `, { enabled: false, posts: true, comments: true });
   try {
     await page.waitForTimeout(260);
     assert.equal(await page.evaluate(() => window.requests.length), 0);
@@ -98,8 +111,8 @@ test('is opt in and sends only bounded text from post and comment bodies', async
       document.querySelector('.title_subject').textContent = '제'.repeat(800);
       document.querySelector('.write_div').textContent = '본문 '.repeat(3000);
     });
-    const next = await waitRequests(page, 2);
-    const post = next[1].items.find((item) => item.kind === 'post');
+    await page.waitForFunction(() => window.requests.slice(1).some(message => message.items.some(item => item.kind === 'post')));
+    const post = await page.evaluate(() => window.requests.slice(1).flatMap(message => message.items).find(item => item.kind === 'post'));
     assert.equal(post.title.length, 500);
     assert.equal(post.body.length, 6000);
   } finally { await page.close(); }
@@ -142,14 +155,20 @@ test('discovers dynamic preview comments with the preview title and waits for of
   try {
     await page.waitForTimeout(260);
     assert.equal(await page.evaluate(() => window.requests.length), 0);
-    await page.evaluate(() => {
-      document.querySelector('#host').innerHTML = '<div id="dcb-preview-overlay"><h3 class="dcbpv-title">미리보기 게시글 제목입니다</h3><article class="dcbpv-article">게시글 분석 설정은 꺼져 있습니다.</article><div class="dcbpv-comment-item" data-uid="private-account"><div class="dcbpv-comment-meta">작성자 이름과 아이디</div><div class="dcbpv-comment-body"><p class="usertxt">동적으로 삽입된 미리보기 댓글입니다.</p></div></div></div>';
-    });
+    await page.evaluate(() => new Promise(resolve => {
+      document.querySelector('#host').innerHTML = '<div id="dcb-preview-overlay" data-dcb-owned="preview"><h3 class="dcbpv-title">미리보기 게시글 제목입니다</h3><article class="dcbpv-article">게시글 분석 설정은 꺼져 있습니다.</article><div class="dcbpv-comment-item" data-uid="private-account"><div class="dcbpv-comment-meta">작성자 이름과 아이디</div><div class="dcbpv-comment-body"><p class="usertxt">동적으로 삽입된 미리보기 댓글입니다.</p></div></div></div>';
+      requestAnimationFrame(() => {
+        document.dispatchEvent(new CustomEvent('dcb-preview-content', { detail: { root: document.querySelector('#dcb-preview-overlay') } }));
+        resolve();
+      });
+    }));
     const messages = await waitRequests(page, 1);
     assert.equal(messages[0].items.length, 1);
     assert.equal(messages[0].items[0].title, '미리보기 게시글 제목입니다');
     assert.equal(messages[0].items[0].kind, 'comment');
     assert.equal(messages[0].items[0].body, '동적으로 삽입된 미리보기 댓글입니다.');
+    await page.waitForTimeout(120);
+    assert.equal(await page.evaluate(() => window.requests.length), 1, 'owned preview is handled only by its explicit pipeline');
     await respond(page, 0);
     await page.waitForSelector(`#dcb-preview-overlay ${placeholderSelector}`);
     await page.locator('#far').scrollIntoViewIfNeeded();

@@ -1,10 +1,11 @@
 import { cp, mkdir, lstat, mkdtemp, realpath, rename, rm, stat } from "node:fs/promises";
 import { join, dirname, basename } from "node:path";
 import { fileURLToPath } from "node:url";
-import { modelFile, verifyModel } from "./model-artifact.mjs";
+import { modelFile, tokenizerFile, verifyModel, verifyTokenizer } from "./model-artifact.mjs";
 
 const root = new URL("../", import.meta.url);
 await verifyModel(modelFile);
+await verifyTokenizer(tokenizerFile);
 await import("./build-detector.mjs");
 for (const name of ["inference-worker.js", "ort-wasm-simd-threaded.mjs", "ort-wasm-simd-threaded.wasm"]) {
   await stat(new URL(`vendor/detector/${name}`, root));

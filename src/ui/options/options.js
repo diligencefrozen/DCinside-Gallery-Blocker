@@ -156,7 +156,7 @@ const BACKUP_DEFAULTS = {
   dcbFontCustomFamily: "",
   dcbFontScale: 100,
   dcbApplyFontToDc: false,
-  dcbTextDetection: { enabled: false, posts: true, comments: true, sensitivity: "careful" }
+  dcbTextDetection: { enabled: false, posts: false, comments: true, sensitivity: "careful" }
 };
 
 const PERSISTENT_LOCAL_BACKUP_KEYS = [

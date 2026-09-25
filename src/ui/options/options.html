@@ -1001,13 +1001,13 @@
     </div>
   </section>
 
-  <section class="dcb-detection-card" data-text-detection-settings aria-label="공격적 표현 감지 설정">
+  <section class="dcb-detection-card" data-text-detection-settings aria-label="기기 내 AI 표현 필터 실험 기능 설정">
     <div class="dcb-detection-heading">
-      <strong>공격적 표현 감지</strong>
-      <label class="switch" aria-label="공격적 표현 감지 사용"><input type="checkbox" data-detection-field="enabled"><span class="slider"></span></label>
+      <strong>🧪 기기 내 AI 표현 필터 · 실험 기능</strong>
+      <label class="switch" aria-label="기기 내 AI 표현 필터 사용"><input type="checkbox" data-detection-field="enabled"><span class="slider"></span></label>
     </div>
     <p>
-      불쾌감을 줄 수 있는 공격적인 표현을 기기 안에서 찾아 가립니다.
+      공격적 표현이 의심되는 글과 댓글을 기기 안에서 자동으로 접습니다. 일부 표현을 잘못 판단할 수 있습니다.
       필요하면 “이번만 보기”로 다시 볼 수 있습니다.
       글과 댓글은 외부로 보내지 않습니다.
     </p>
@@ -1018,22 +1018,24 @@
     <label class="dcb-detection-sensitivity">
       감지 수준
       <select data-detection-field="sensitivity">
-        <option value="careful">낮음 · 확실한 표현만</option>
-        <option value="balanced">보통</option>
-        <option value="sensitive">높음 · 더 넓게 감지</option>
+        <option value="careful">낮음 · 오탐을 줄이고 명확한 표현 위주</option>
+        <option value="balanced">보통 · 탐지와 오탐의 균형</option>
+        <option value="sensitive">높음 · 넓게 감지, 오탐 가능성 증가</option>
       </select>
     </label>
+    <p><strong data-detection-state-label>READY</strong> · <span data-detection-model>모델 정보를 불러오는 중입니다.</span></p>
     <details>
-      <summary>알아두세요</summary>
+      <summary>개인정보와 한계</summary>
       <p>
         감지 결과가 항상 정확한 것은 아닙니다.
-        이 표시만으로 작성자의 성향이나 글을 쓴 의도를 단정할 수는 없습니다.
+        문장의 표현만 보조적으로 분류하며 작성자의 성격·의도·신원을 판단하거나 신고·계정 조치를 수행하지 않습니다.
         이 기능은 댓글을 기준으로 만들었으며, 게시글 본문 감지는 아직 시험 중입니다.
-        글이 길면 앞부분만 검사할 수 있습니다.
+        긴 글은 최대 3개 구간으로 확인합니다. 모델과 실행 엔진은 현재 확장 프로그램에 포함되어 별도 다운로드·삭제 대상이 아닙니다.
       </p>
       <p><a href="../../../docs/text-detection.html" target="_blank" rel="noopener">자세한 사용 안내</a></p>
     </details>
     <p data-detection-status role="status" aria-live="polite">설정을 불러오는 중입니다.</p>
+    <button type="button" data-detection-retry>기기 내 AI 다시 시도</button>
   </section>
 
   <section class="card stack font-card">

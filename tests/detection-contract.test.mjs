@@ -39,11 +39,15 @@ test("settings are opt-in, thresholds reject invalid outputs, input contract is 
   assert.equal(config.normalize(null).enabled, false);
   assert.equal(config.normalize({ enabled: "true", sensitivity: "toString" }).sensitivity, "careful");
   assert.equal(config.normalize({ enabled: "true" }).enabled, false);
-  assert.equal(config.isFlagged(0.65, {}), true);
-  assert.equal(config.isFlagged(0.64, {}), false);
-  assert.equal(config.isFlagged(0.45, { sensitivity: "sensitive" }), true);
+  assert.equal(config.normalize(null).posts, false);
+  assert.equal(config.normalize(null).comments, true);
+  assert.deepEqual({ ...config.model }, { id: "conflict-int8", version: "1.0.0", delivery: "bundled", onnxBytes: 2404471 });
+  assert.equal(config.isFlagged(0.86, {}), true);
+  assert.equal(config.isFlagged(0.85, {}), false);
+  assert.equal(config.isFlagged(0.49, { sensitivity: "sensitive" }), true);
   for (const invalid of [NaN, Infinity, -1, 2, "0.9", null]) assert.equal(config.isFlagged(invalid, {}), false);
-  assert.match(config.modelText("a".repeat(800), "b".repeat(7000)), /^제목: a{500}\n댓글: b{6000}$/);
+  assert.equal(config.modelText("", "  좋은\n하루  "), "좋은 하루");
+  assert.equal(Array.from(config.modelText("a".repeat(800), "b".repeat(7000))).length, 256);
 });
 
 test("disabled feature and disabled target never start inference", async () => {
@@ -79,9 +83,28 @@ test("missing model runtime falls back to a disclosed conservative detector", as
   assert.equal(reply.ok, true);
   assert.equal(reply.mode, "basic");
   assert.equal(reply.reason, "model-unavailable");
-  assert.ok(reply.results[0].score >= app.config.thresholds.careful);
+  assert.equal(app.config.isFlagged(reply.results[0].score, {}, "basic"), true);
   assert.ok(app.config.fallbackScore("산책", "오늘은 날씨가 좋습니다.") < app.config.thresholds.sensitive);
   assert.ok(app.config.fallbackScore("청소", "집 앞 쓰레기를 치우고 자료를 뒤져 봤습니다.") < app.config.thresholds.sensitive);
   assert.ok(app.config.fallbackScore("연극", "미친놈 연기를 꽤 잘했습니다.") < app.config.thresholds.careful);
   assert.ok(app.config.fallbackScore("환경", "코너에서 쓰레기 문제가 너무 심하다고 말했습니다.") < app.config.thresholds.careful);
+});
+
+test("long posts use at most three bounded chunks and return the maximum score", async () => {
+  const app = fixture({ posts: true });
+  const reply = await app.request({
+    type: "DCB_DETECT_TEXT",
+    items: [{ kind: "post", title: "긴 글", body: "문장 ".repeat(1100) }]
+  });
+  const inference = app.calls.find(call => call.type === "DCB_INFERENCE");
+  assert.equal(inference.items.length, 3);
+  assert.equal(reply.results.length, 1);
+  assert.equal(reply.results[0].score, 0.8);
+});
+
+test("manual retry reuses the guarded prewarm path", async () => {
+  const app = fixture();
+  const reply = await app.request({ type: "DCB_DETECTION_RETRY" });
+  assert.equal(reply.ok, true);
+  assert.equal(app.calls.filter(call => call.type === "DCB_INFERENCE").length, 1);
 });

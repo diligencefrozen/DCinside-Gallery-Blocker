@@ -546,6 +546,7 @@
       node &&
       node.nodeType === 1 &&
       (
+        node.closest?.("[data-dcb-owned]") ||
         node.id === STYLE_ID ||
         node.classList?.contains(BADGE) ||
         node.closest?.(`.${BADGE}`)

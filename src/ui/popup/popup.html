@@ -8,23 +8,36 @@
     --neon:#4f7cff;
     --dark:#0d1117;
     --light:#ffffff;
+    --popup-content-padding:18px;
+    --popup-scrollbar-width:0px;
+    --popup-card-border:rgba(148,163,184,.22);
+    --popup-card-radius:14px;
+    --popup-card-background:linear-gradient(180deg,rgba(15,23,42,.98),rgba(12,18,31,.94));
+    --donation-cta-background:#252d4c;
   }
   *{box-sizing:border-box;margin:0;padding:0}
   html{
     width:400px;
+    max-height:600px;
     background:var(--dark);
     overflow:hidden;
   }
   body{
     width:400px;
+    height:600px;
     max-height:600px;
-    padding:18px;
-    overflow-y:auto;
-    overflow-x:hidden;
+    overflow:hidden;
     background:var(--dark);color:var(--light);
     font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-    display:flex;flex-direction:column;gap:18px;
+    display:flex;flex-direction:column;
   }
+  .popup-main{flex:1 1 auto;min-height:0;padding:18px var(--popup-content-padding);overflow-y:auto;overflow-x:hidden;display:flex;flex-direction:column;gap:18px;scrollbar-gutter:stable}
+  .popup-footer{flex:0 0 auto;padding:10px calc(var(--popup-content-padding) + var(--popup-scrollbar-width)) 12px var(--popup-content-padding);border-top:1px solid rgba(96,165,250,.2);background:#142640}
+  .popup-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;padding:4px;border:1px solid rgba(148,163,184,.18);border-radius:12px;background:#101722}
+  .popup-tab{min-width:0;padding:7px 5px;border:0;border-radius:8px;color:#9fb0c8;background:transparent;font-size:12px;white-space:nowrap;box-shadow:none}
+  .popup-tab:hover,.popup-tab[aria-selected="true"]{color:#fff;background:#24385f;box-shadow:none}
+  .popup-tab-panel{display:flex;flex-direction:column;gap:18px}
+  .popup-tab-panel[hidden]{display:none!important}
   h1{font-size:18px;letter-spacing:.5px;text-shadow:0 0 6px var(--neon)}
   .switch{
     position:relative;
@@ -159,9 +172,13 @@
     padding:8px 9px;
     font-size:12px;
   }
+  .uid-search{width:100%;padding:8px 10px;border:1px solid #444;border-radius:8px;background:#111827;color:var(--light)}
+  .uid-filters{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px}
+  .uid-filter{min-width:0;padding:6px 4px;border-color:rgba(148,163,184,.24);font-size:11px;white-space:nowrap}
+  .uid-filter[aria-pressed="true"]{background:#31569a;color:#fff;box-shadow:none}
   ul#uidList{list-style:none;display:flex;flex-direction:column;gap:6px;max-height:150px;margin:0;padding:0;overflow:auto}
   ul#uidList li{display:flex;justify-content:space-between;align-items:center;gap:8px;border:1px solid #333;border-radius:8px;padding:6px 8px;background:#151a22}
-  ul#uidList code{opacity:.96;word-break:break-all}
+  ul#uidList code{min-width:0;overflow:hidden;opacity:.96;text-overflow:ellipsis;white-space:nowrap}
   .uid-list-left{display:flex;align-items:center;gap:6px;min-width:0}
   .uid-kind{
     flex:0 0 auto;
@@ -212,13 +229,18 @@
   .block-breakdown{display:flex;flex-wrap:wrap;gap:5px;min-height:20px}
   .block-breakdown-chip{display:inline-flex;align-items:center;gap:4px;padding:4px 7px;border-radius:999px;background:#172033;color:#c8d7ef;font-size:11px;line-height:1.3;font-weight:750}
   .block-breakdown-empty{color:#91a1b8;font-size:11px;line-height:1.4}
+  .block-summary-details{border-top:1px solid rgba(148,163,184,.12);padding-top:7px}
+  .block-summary-details>summary{cursor:pointer;color:#a9bad3;font-size:11.5px;font-weight:800}
+  .block-summary-details[open]>summary{margin-bottom:8px}
+  .block-summary-details .block-history{margin-bottom:8px}
   .update-notice{display:flex;align-items:flex-start;gap:9px;padding:9px 10px;border:1px solid rgba(74,222,128,.24);border-radius:11px;background:rgba(34,197,94,.08);opacity:1;transform:translateY(0);transition:opacity .18s ease,transform .18s ease}
   .update-notice[hidden]{display:none!important}
   .update-notice-copy{flex:1 1 auto;min-width:0}
   .update-notice-copy strong{display:block;color:#d9ffe5;font-size:11.5px;line-height:1.4}
   .update-notice-copy span{display:block;margin-top:2px;color:#a9dbb7;font-size:11px;line-height:1.4}
-  .update-notice-link{display:inline-flex;margin-top:6px;color:#b8cbff;font-size:11px;font-weight:800;line-height:1.35;text-decoration:none}
-  .update-notice-link:hover{text-decoration:underline}
+  .update-notice-link{display:flex;width:100%;margin-top:6px;padding:6px 8px;border:1px solid rgba(147,197,253,.2);border-radius:8px;color:#b8cbff;background:rgba(30,41,59,.38);font-size:11px;font-weight:800;line-height:1.35;text-decoration:none;cursor:pointer}
+  .update-notice-link:hover{border-color:rgba(147,197,253,.48);background:rgba(30,58,108,.45);text-decoration:underline}
+  .update-notice-link:focus-visible{outline:2px solid #93c5fd;outline-offset:2px;text-decoration:underline}
   .update-notice.is-outdated{border-color:rgba(251,191,36,.34);background:rgba(245,158,11,.10)}
   .update-notice.is-outdated .update-notice-copy strong{color:#fff0bd}
   .update-notice.is-outdated .update-notice-copy span{color:#e4c983}
@@ -905,15 +927,16 @@
   }
 
   .donation-card{
-    display:flex;
-    flex-direction:column;
-    gap:10px;
-    padding:13px;
-    border:1px solid rgba(148,163,184,.22);
-    border-left:3px solid rgba(244,114,182,.72);
-    border-radius:16px;
-    background:linear-gradient(135deg, rgba(16,23,34,.98), rgba(30,20,38,.94));
-    box-shadow:0 10px 22px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.035);
+    display:grid;
+    grid-template-columns:minmax(0,1fr) auto;
+    align-items:center;
+    gap:8px 12px;
+    width:100%;
+    padding:12px 13px;
+    border:1px solid var(--popup-card-border);
+    border-radius:var(--popup-card-radius);
+    background:var(--popup-card-background);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.035);
   }
   .donation-head{
     display:flex;
@@ -936,7 +959,7 @@
     letter-spacing:-.02em;
   }
   .donation-copy span{
-    color:#c4b5fd;
+    color:#93a4bd;
     font-size:11px;
     line-height:1.38;
   }
@@ -957,6 +980,7 @@
     white-space:nowrap;
   }
   .donation-message{
+    display:none;
     margin:0;
     color:#dbe7f5;
     font-size:12px;
@@ -969,26 +993,27 @@
   }
   .donation-button{
     flex:1 1 auto;
-    min-height:36px;
+    min-height:32px;
     display:inline-flex;
     align-items:center;
     justify-content:center;
     padding:0 12px;
-    border:1px solid transparent;
+    border:1px solid rgba(148,163,184,.28);
     border-radius:10px;
-    background:#f8fafc;
-    color:#0f172a;
+    background:var(--donation-cta-background);
+    color:#f8fafc;
     font-size:12.5px;
     font-weight:850;
     letter-spacing:-.01em;
     text-decoration:none;
-    box-shadow:0 8px 18px rgba(244,114,182,.16);
+    box-shadow:none;
     transition:background .18s ease,border-color .18s ease,color .18s ease,box-shadow .18s ease,transform .18s ease;
   }
   .donation-button:hover{
-    background:#ffffff;
-    color:#0f172a;
-    box-shadow:0 10px 22px rgba(244,114,182,.24);
+    background:#303b68;
+    color:#ffffff;
+    border-color:rgba(147,197,253,.52);
+    box-shadow:none;
     transform:translateY(-1px);
   }
   .donation-small-link{
@@ -999,10 +1024,12 @@
     text-decoration:none;
   }
   .donation-small-link:hover{color:#f8fafc;text-decoration:underline;}
+  .popup-footer .donation-badge{display:none}
 
   @media (max-height:620px){
-    body{max-height:560px}
+    html,body{height:560px;max-height:560px}
   }
+  .donation-button:focus-visible{outline:2px solid #a5b4fc;outline-offset:2px;background:#303b68;border-color:rgba(196,181,253,.58)}
 
   .switch.is-busy{opacity:.72;pointer-events:none}
   .switch input:disabled + .slider{cursor:wait}
@@ -1049,6 +1076,20 @@
   .quick-toggle-panel{overflow:visible}
   .quick-toggle-panel .row{border:0;background:transparent}
   .quick-toggle-grid select{width:180px;font-size:12px;letter-spacing:-.02em}
+  .quick-toggle-grid .user-block-mode-row{
+    grid-template-columns:minmax(0,1fr);
+    gap:6px;
+  }
+  .quick-toggle-grid .user-block-mode-row > span{
+    overflow:visible;
+    text-overflow:clip;
+  }
+  .quick-toggle-grid .user-block-mode-row select{
+    width:100%;
+    max-width:none;
+    padding-right:36px;
+    font-size:13.5px;
+  }
 
   .media-essentials-card{
     display:flex;
@@ -1130,6 +1171,7 @@
 </style>
 </head>
 <body>
+<main class="popup-main">
   <h1>디시갤 차단기</h1>
 
   <section class="block-summary-card" aria-label="차단 현황">
@@ -1141,6 +1183,8 @@
       <div class="block-stat"><span>현재 페이지</span><strong id="blockStatsPageTotal">0</strong></div>
       <div class="block-stat"><span>누적 차단</span><strong id="blockStatsCumulativeTotal">0</strong></div>
     </div>
+    <details class="block-summary-details">
+      <summary>차단 현황 자세히</summary>
     <div class="block-history" aria-label="최근 7일 차단 그래프">
       <div class="block-history-head">
         <span>최근 7일</span>
@@ -1151,28 +1195,24 @@
     <div class="block-breakdown" id="blockStatsBreakdown" aria-label="현재 페이지 차단 종류">
       <span class="block-breakdown-empty">현재 페이지에서 차단된 요소가 없습니다.</span>
     </div>
+    </details>
     <div class="update-notice" id="updateNotice" hidden>
       <div class="update-notice-copy">
         <strong id="updateNoticeTitle"></strong>
         <span id="updateNoticeMessage"></span>
-        <a class="update-notice-link" id="updateNoticeLink" target="_blank" rel="noopener noreferrer" hidden>GitHub 릴리스에서 업데이트 확인 ↗</a>
+        <a class="update-notice-link" id="updateNoticeLink" href="https://github.com/diligencefrozen/DCinside-Gallery-Blocker/releases" target="_blank" rel="noopener noreferrer" hidden>GitHub 릴리스에서 업데이트 확인 ↗</a>
       </div>
     </div>
   </section>
 
-  <section class="donation-card" aria-label="개발자 후원">
-    <div class="donation-head">
-      <div class="donation-copy">
-        <strong>💝 개발자 후원하기</strong>
-        <span>모든 기능은 그대로 무료로 제공됩니다.</span>
-      </div>
-      <span class="donation-badge">Toonation</span>
+  <div class="quick-gallery-panel" id="quickGalleryPanel" aria-label="현재 갤러리 빠른 차단">
+    <div class="quick-gallery-head">
+      <span>현재 갤러리</span>
+      <code class="quick-gallery-id" id="currentGalleryId">감지 안 됨</code>
     </div>
-    <p class="donation-message">디시갤 차단기 유지보수와 개선 작업이 계속 이어질 수 있도록 응원해주세요.</p>
-    <div class="donation-actions">
-      <a class="donation-button" href="https://toon.at/donate/dcb0617" target="_blank" rel="noopener noreferrer">커피 한 잔으로 응원하기 ↗</a>
-    </div>
-  </section>
+    <button id="blockCurrentGalleryBtn" type="button" disabled>현재 갤러리 차단</button>
+    <p class="quick-gallery-status" id="blockCurrentGalleryStatus">갤러리 페이지에서 팝업을 열면 바로 차단할 수 있습니다.</p>
+  </div>
 
   <div class="quick-toggle-panel" aria-label="자주 쓰는 차단 스위치">
     <div class="quick-toggle-head">
@@ -1187,7 +1227,7 @@
           <span class="slider"></span>
         </label>
       </div>
-      <label class="row" for="userBlockTriggerMode">
+      <label class="row user-block-mode-row" for="userBlockTriggerMode">
         <span>사용자 차단 방식</span>
         <select id="userBlockTriggerMode" title="사용자 차단 방식">
           <option value="instant">우클릭 즉시 차단/해제</option>
@@ -1231,6 +1271,13 @@
     </div>
   </div>
 
+  <div class="popup-tabs" role="tablist" aria-label="팝업 설정 구분">
+    <button class="popup-tab" id="popupTabQuick" type="button" role="tab" aria-selected="true" aria-controls="popupPanelQuick" data-popup-tab="quick">빠른 설정</button>
+    <button class="popup-tab" id="popupTabManage" type="button" role="tab" aria-selected="false" aria-controls="popupPanelManage" data-popup-tab="manage" tabindex="-1">차단 관리</button>
+    <button class="popup-tab" id="popupTabDisplay" type="button" role="tab" aria-selected="false" aria-controls="popupPanelDisplay" data-popup-tab="display" tabindex="-1">화면 · 편의</button>
+  </div>
+
+  <div class="popup-tab-panel" id="popupPanelManage" role="tabpanel" aria-labelledby="popupTabManage" data-popup-panel="manage" hidden>
   <section class="media-essentials-card" aria-label="이미지 차단 옵션">
     <div class="media-essentials-head">
       <div class="media-essentials-copy">
@@ -1319,12 +1366,24 @@
       <button id="clearUidListBtn" class="mini-btn btn-danger" type="button" title="사용자 차단 목록 전체 해제">전체해제</button>
     </div>
 
+    <input class="uid-search" id="uidSearchInput" type="search" placeholder="ID / IP / 닉네임 검색..." aria-label="사용자 차단 목록 검색">
+    <div class="uid-filters" id="uidTypeFilters" aria-label="사용자 차단 유형 필터">
+      <button class="uid-filter" type="button" data-uid-filter="all" aria-pressed="true">전체 <span data-uid-count="all">0</span></button>
+      <button class="uid-filter" type="button" data-uid-filter="UID" aria-pressed="false">ID <span data-uid-count="UID">0</span></button>
+      <button class="uid-filter" type="button" data-uid-filter="IP" aria-pressed="false">IP <span data-uid-count="IP">0</span></button>
+      <button class="uid-filter" type="button" data-uid-filter="NICK" aria-pressed="false">닉네임 <span data-uid-count="NICK">0</span></button>
+    </div>
+
     <ul id="uidList"></ul>
     <div class="user-block-status" id="userBlockStatus" role="status" aria-live="polite"></div>
     <div class="muted">* UID는 갤로그 사용자 ID, 비회원은 IP 앞부분(예: <code>39.7</code>)입니다. 한글/특수문자 닉네임은 <code>무갤러</code>처럼 입력해도 <code>nick:무갤러</code>로 관리됩니다.</div>
     <div class="muted">* 사용자 차단을 OFF로 둔 상태에서도 이 목록의 <strong>차단 해제</strong> 버튼을 사용할 수 있습니다.</div>
     <div class="muted">* 사용자 차단 목록은 브라우저 로컬 저장소에만 보관되며 외부 서버로 전송되지 않습니다.</div>
   </section>
+
+  </div>
+
+  <div class="popup-tab-panel" id="popupPanelQuick" role="tabpanel" aria-labelledby="popupTabQuick" data-popup-panel="quick">
 
   <div class="theme-panel" aria-label="다크모드 설정">
     <span class="theme-mark" aria-hidden="true">◐</span>
@@ -1355,15 +1414,6 @@
     </label>
   </label>
   <p class="hint" style="font-size:11px;opacity:0.85;margin-top:-16px">실시간베스트를 보고 싶다면 끄세요. 내가 차단한 갤러리는 그대로 차단됩니다.</p>
-
-  <div class="quick-gallery-panel" id="quickGalleryPanel" aria-label="현재 갤러리 빠른 차단">
-    <div class="quick-gallery-head">
-      <span>현재 갤러리</span>
-      <code class="quick-gallery-id" id="currentGalleryId">감지 안 됨</code>
-    </div>
-    <button id="blockCurrentGalleryBtn" type="button" disabled>현재 갤러리 차단</button>
-    <p class="quick-gallery-status" id="blockCurrentGalleryStatus">갤러리 페이지에서 팝업을 열면 바로 차단할 수 있습니다.</p>
-  </div>
 
   <label class="row">
     <span style="min-width:110px;">차단 방식</span>
@@ -1470,19 +1520,21 @@
   </label>
   <p class="hint">게시글 제목을 마우스 오른쪽 버튼으로 클릭해 본문·댓글·영상을 확인합니다. 기본으로 켜져 있습니다.</p>
 
-  <section class="dcb-detection-card" data-text-detection-settings aria-label="공격적 표현 감지 설정">
+  <section class="dcb-detection-card" data-text-detection-settings aria-label="기기 내 AI 표현 필터 실험 기능 설정">
     <div class="dcb-detection-heading">
-      <strong>공격적 표현 감지</strong>
-      <label class="switch" aria-label="공격적 표현 감지 사용"><input type="checkbox" data-detection-field="enabled"><span class="slider"></span></label>
+      <strong>🧪 기기 내 AI 표현 필터 · 실험 기능</strong>
+      <label class="switch" aria-label="기기 내 AI 표현 필터 사용"><input type="checkbox" data-detection-field="enabled"><span class="slider"></span></label>
     </div>
-    <p>불쾌감을 줄 수 있는 공격적인 표현을 기기 안에서 찾아 가립니다. 필요하면 “이번만 보기”로 다시 볼 수 있습니다. 글과 댓글은 외부로 보내지 않습니다.</p>
+    <p>공격적 표현이 의심되는 글과 댓글을 기기 안에서 자동으로 접습니다. 일부 표현을 잘못 판단할 수 있으며, 글과 댓글은 외부로 보내지 않습니다.</p>
     <div class="dcb-detection-options">
       <label><input type="checkbox" data-detection-field="comments">댓글</label>
       <label><input type="checkbox" data-detection-field="posts">게시글 본문 · 시험 기능</label>
     </div>
-    <label class="dcb-detection-sensitivity">감지 수준<select data-detection-field="sensitivity"><option value="careful">낮음 · 확실한 표현만</option><option value="balanced">보통</option><option value="sensitive">높음 · 더 넓게 감지</option></select></label>
-    <details><summary>알아두세요</summary><p>감지 결과가 항상 정확한 것은 아닙니다. 문제가 없는 글이 가려지거나 공격적인 표현을 놓칠 수도 있습니다. 이 표시만으로 작성자의 성향이나 글을 쓴 의도를 단정할 수는 없습니다. 이 기능은 댓글을 기준으로 만들었으며, 게시글 본문 감지는 아직 시험 중입니다. 글이 길면 앞부분만 검사할 수 있습니다.</p><p><a href="../../../docs/text-detection.html" target="_blank" rel="noopener">자세한 사용 안내</a></p></details>
+    <label class="dcb-detection-sensitivity">감지 수준<select data-detection-field="sensitivity"><option value="careful">낮음 · 오탐을 줄이고 명확한 표현 위주</option><option value="balanced">보통 · 균형 있게 감지</option><option value="sensitive">높음 · 넓게 감지, 오탐 가능성 증가</option></select></label>
+    <p><strong data-detection-state-label>READY</strong> · <span data-detection-model>모델 정보를 불러오는 중입니다.</span></p>
+    <details><summary>개인정보와 한계</summary><p>이 기능은 문장의 표현만 보조적으로 분류합니다. 작성자의 성격·의도·신원을 판단하거나 신고·계정 조치를 수행하지 않습니다. 오탐과 누락이 있을 수 있으며 긴 게시글은 최대 3개 구간으로 확인합니다.</p><p>모델과 실행 엔진은 현재 확장 프로그램에 함께 포함되어 있어 별도 다운로드·삭제 대상이 아닙니다. 기능을 끄면 worker·DOM 검사·추론 캐시를 시작하지 않습니다.</p><p><a href="../../../docs/text-detection.html" target="_blank" rel="noopener">자세한 사용 안내</a></p></details>
     <p data-detection-status role="status" aria-live="polite">설정을 불러오는 중입니다.</p>
+    <button type="button" data-detection-retry>기기 내 AI 다시 시도</button>
   </section>
 
   <hr class="divider">
@@ -1563,6 +1615,10 @@
     <ul id="hideKeywordList"></ul>
   </div>
   <p class="hint">기존 키워드 차단과 달리, 차단된 항목을 “계속 보기”로 다시 열 수 있습니다.</p>
+
+  </div>
+
+  <div class="popup-tab-panel" id="popupPanelDisplay" role="tabpanel" aria-labelledby="popupTabDisplay" data-popup-panel="display" hidden>
 
   <hr class="divider">
 
@@ -1752,7 +1808,26 @@
   <div class="dcb-font-actions"><button type="button" id="dcbFontReset">기본값 복원</button><small>끄면 원래 글꼴·크기로 돌아갑니다. 메뉴와 버튼은 원래 크기를 유지합니다.</small></div>
   </div>
 
-  <button id="openOptions">설정 메뉴 열기</button>
+  </div>
+
+  <button id="openOptions">고급 설정 열기</button>
+</main>
+
+<footer class="popup-footer">
+  <section class="donation-card" aria-label="개발자 후원">
+    <div class="donation-head">
+      <div class="donation-copy">
+        <strong>💝 개발자 후원하기</strong>
+        <span>모든 기능은 그대로 무료로 제공됩니다.</span>
+      </div>
+      <span class="donation-badge">Toonation</span>
+    </div>
+    <p class="donation-message">디시갤 차단기 유지보수와 개선 작업이 계속 이어질 수 있도록 응원해주세요.</p>
+    <div class="donation-actions">
+      <a class="donation-button" href="https://toon.at/donate/dcb0617" target="_blank" rel="noopener noreferrer">커피 한 잔으로 응원하기 ↗</a>
+    </div>
+  </section>
+</footer>
 
   <script src="../shared/ui-settings-cache.js"></script>
 <script src="../../content/appearance/font-config.js"></script>
@@ -1760,6 +1835,8 @@
   <script src="../../shared/storage/user-block-store.js"></script>
   <script src="../../shared/storage/dccon-block-store.js"></script>
   <script src="../../shared/block-stats-history.js"></script>
+  <script src="user-block-list.js"></script>
+  <script src="release-link.js"></script>
   <script src="popup.js"></script>
   <script src="../shared/dccon-block-options.js"></script>
   <script src="../shared/keyword-hide-ui.js"></script>

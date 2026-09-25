@@ -89,6 +89,24 @@ const server = http.createServer((request, response) => {
   ]));
   assert.deepEqual(cached, first);
   const cachedMs = Date.now() - cachedStart;
+  const categoryInputs = [
+    { label: 'benign', kind: 'comment', title: '', body: '오늘 자료 정리 잘 봤습니다. 고맙습니다.' },
+    { label: 'insult', kind: 'comment', title: '', body: '너는 정말 한심한 인간이다.' },
+    { label: 'threat', kind: 'comment', title: '', body: '찾아가서 가만두지 않겠다.' },
+    { label: 'quoted-context', kind: 'comment', title: '', body: '기사에서 “가만두지 않겠다”는 발언을 인용해 비판했다.' },
+    { label: 'indirect-hostility', kind: 'comment', title: '', body: '그런 사람들은 여기서 사라졌으면 좋겠다.' }
+  ];
+  const categoryStart = Date.now();
+  const categoryBatches = await page.evaluate(async (items) => Promise.all([
+    requestInference(items.slice(0, 4).map(({ label, ...item }) => item)),
+    requestInference(items.slice(4).map(({ label, ...item }) => item))
+  ]), categoryInputs);
+  assert.ok(categoryBatches.every(result => result.ok), JSON.stringify({ categoryBatches, errors }));
+  const categoryResults = categoryBatches.flatMap(result => result.results);
+  assert.equal(categoryResults.length, categoryInputs.length);
+  assert.ok(categoryResults.every(item => Number.isFinite(item.score) && item.score >= 0 && item.score <= 1));
+  const categories = categoryInputs.map((item, index) => ({ label: item.label, score: categoryResults[index].score }));
+  const categoryMs = Date.now() - categoryStart;
   const longStart = Date.now();
   const long = await page.evaluate(() => requestInference([
     { kind: 'comment', title: '긴 댓글', body: '내용이 길어도 정해진 토큰 길이 안에서 분석합니다. '.repeat(200).slice(0, 6000) },
@@ -117,7 +135,7 @@ const server = http.createServer((request, response) => {
   const recovered = await page.evaluate(() => requestInference([{ kind: 'comment', title: '', body: '시간 제한 이후에도 정상적으로 분석합니다.' }]));
   assert.equal(recovered.ok, true, 'a timeout does not leave the queue stuck');
   assert.equal(outsideRequests.length, 0);
-  console.log(JSON.stringify({ ok: true, firstMs, cachedMs, longMs, first, long, idleCleanup: true, timeoutRecovery: true, files, warnings: errors }, null, 2));
+  console.log(JSON.stringify({ ok: true, firstMs, cachedMs, categoryMs, longMs, categories, first, long, idleCleanup: true, timeoutRecovery: true, files, warnings: errors }, null, 2));
 })().catch(error => { console.error(error); process.exitCode = 1; }).finally(async () => {
   await browser?.close();
   server.closeAllConnections();

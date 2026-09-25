@@ -1,7 +1,7 @@
 /*****************************************************************
  * Bootstrap shared modules
  *****************************************************************/
-importScripts("../shared/block-stats-history.js");
+importScripts("../shared/block-stats-history.js", "../shared/release-version.js");
 try {
   importScripts("../shared/storage/user-block-store.js");
 } catch (error) {
@@ -195,12 +195,12 @@ const BLOCK_STATS_HISTORY_KEY = "dcbBlockStatsHistory";
 const UPDATE_NOTICE_KEY = "dcbUpdateNotice";
 const UPDATE_NOTICE_SEEN_VERSION_KEY = "dcbUpdateNoticeSeenVersion";
 const GITHUB_VERSION_CACHE_KEY = "dcbGithubPublishedVersion";
+const GITHUB_RELEASE_ERROR_KEY = "dcbGithubReleaseLastErrorAt";
 const GITHUB_RELEASE_API = "https://api.github.com/repos/diligencefrozen/DCinside-Gallery-Blocker/releases/latest";
-const GITHUB_TAGS_API = "https://api.github.com/repos/diligencefrozen/DCinside-Gallery-Blocker/tags?per_page=100";
 const GITHUB_RELEASES_URL = "https://github.com/diligencefrozen/DCinside-Gallery-Blocker/releases";
-const GITHUB_TAGS_URL = "https://github.com/diligencefrozen/DCinside-Gallery-Blocker/tags";
 const GITHUB_VERSION_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const GITHUB_PENDING_RETRY_MS = 10 * 60 * 1000;
+const GITHUB_RELEASE_ALARM = "dcbGithubReleaseCheck";
 const BLOCK_STATS_SESSION_PREFIX = "dcbBlockStatsPage:";
 const BLOCK_STATS_CHECKPOINT_PREFIX = "dcbBlockStatsCheckpoint:";
 const IMAGE_BYTES_TIMEOUT_MS = 12_000;
@@ -232,18 +232,11 @@ function norm(v) {
 }
 
 function normalizePublishedVersion(value) {
-  const raw = String(value || "").trim().replace(/^refs\/tags\//i, "").replace(/^v(?=\d)/i, "");
-  return /^\d+\.\d+\.\d+\.\d+$/.test(raw) ? raw : "";
+  return globalThis.DCBReleaseVersion.normalize(value);
 }
 
 function comparePublishedVersions(a, b) {
-  const aa = normalizePublishedVersion(a).split(".").map(Number);
-  const bb = normalizePublishedVersion(b).split(".").map(Number);
-  for (let i = 0; i < Math.max(aa.length, bb.length); i += 1) {
-    const diff = (aa[i] || 0) - (bb[i] || 0);
-    if (diff) return diff;
-  }
-  return 0;
+  return globalThis.DCBReleaseVersion.compare(a, b);
 }
 
 async function fetchGithubJson(url) {
@@ -270,10 +263,12 @@ function normalizeGithubVersionCache(value) {
   if (!version) return null;
   return {
     version,
-    source: value.source === "tag" ? "tag" : "release",
+    source: "release",
     checkedAt: Number(value.checkedAt) || 0,
-    releasesUrl: GITHUB_RELEASES_URL,
-    tagsUrl: GITHUB_TAGS_URL
+    lastErrorAt: Number(value.lastErrorAt) || 0,
+    releaseUrl: /^https:\/\/github\.com\/diligencefrozen\/DCinside-Gallery-Blocker\/releases\//.test(String(value.releaseUrl || ""))
+      ? String(value.releaseUrl)
+      : GITHUB_RELEASES_URL
   };
 }
 
@@ -286,48 +281,41 @@ async function fetchGithubPublishedVersion({ maxAgeMs = GITHUB_VERSION_CACHE_TTL
 
   if (!force && cached && Date.now() - cached.checkedAt < maxAgeMs) return cached;
 
-  const candidates = [];
-  const [releaseResult, tagsResult] = await Promise.allSettled([
-    fetchGithubJson(GITHUB_RELEASE_API),
-    fetchGithubJson(GITHUB_TAGS_API)
-  ]);
-
-  if (releaseResult.status === "fulfilled") {
-    const release = releaseResult.value;
+  try {
+    const release = await fetchGithubJson(GITHUB_RELEASE_API);
     const version = !release?.draft && !release?.prerelease
       ? normalizePublishedVersion(release?.tag_name || release?.name)
       : "";
-    if (version) candidates.push({ version, source: "release" });
-  }
-
-  if (tagsResult.status === "fulfilled" && Array.isArray(tagsResult.value)) {
-    for (const tag of tagsResult.value) {
-      const version = normalizePublishedVersion(tag?.name);
-      if (version) candidates.push({ version, source: "tag" });
+    if (!version) throw new Error("GitHub latest release is not a public numeric release");
+    const next = {
+      version,
+      source: "release",
+      checkedAt: Date.now(),
+      lastErrorAt: 0,
+      releaseUrl: String(release?.html_url || GITHUB_RELEASES_URL)
+    };
+    try {
+      await chrome.storage.local.set({ [GITHUB_VERSION_CACHE_KEY]: next });
+      await chrome.storage.local.remove(GITHUB_RELEASE_ERROR_KEY);
+    } catch (_) {}
+    return next;
+  } catch (error) {
+    const lastErrorAt = Date.now();
+    if (cached) {
+      cached.lastErrorAt = lastErrorAt;
+      try { await chrome.storage.local.set({ [GITHUB_VERSION_CACHE_KEY]: cached }); } catch (_) {}
     }
+    try { await chrome.storage.local.set({ [GITHUB_RELEASE_ERROR_KEY]: lastErrorAt }); } catch (_) {}
+    throw error;
   }
-
-  if (!candidates.length) return cached;
-  candidates.sort((a, b) => comparePublishedVersions(b.version, a.version));
-  const best = candidates[0];
-  const next = {
-    version: best.version,
-    source: best.source,
-    checkedAt: Date.now(),
-    releasesUrl: GITHUB_RELEASES_URL,
-    tagsUrl: GITHUB_TAGS_URL
-  };
-  try {
-    await chrome.storage.local.set({ [GITHUB_VERSION_CACHE_KEY]: next });
-  } catch (_) {}
-  return next;
 }
 
 async function resolveUpdateReleaseStatus() {
   const stored = await chrome.storage.local.get({
     [UPDATE_NOTICE_KEY]: null,
     [UPDATE_NOTICE_SEEN_VERSION_KEY]: "",
-    [GITHUB_VERSION_CACHE_KEY]: null
+    [GITHUB_VERSION_CACHE_KEY]: null,
+    [GITHUB_RELEASE_ERROR_KEY]: 0
   }).catch(() => ({}));
   const pending = stored[UPDATE_NOTICE_KEY] && typeof stored[UPDATE_NOTICE_KEY] === "object"
     ? stored[UPDATE_NOTICE_KEY]
@@ -354,7 +342,9 @@ async function resolveUpdateReleaseStatus() {
     publishedVersion,
     updateAvailable,
     source: published?.source || "",
-    releasesUrl: GITHUB_RELEASES_URL
+    checkedAt: Number(published?.checkedAt) || 0,
+    lastErrorAt: Number(stored[GITHUB_RELEASE_ERROR_KEY] || published?.lastErrorAt) || 0,
+    releaseUrl: published?.releaseUrl || GITHUB_RELEASES_URL
   };
 
   // GitHub의 최신 공개 버전이 설치본보다 높다면, 설치된 실제 버전은 그대로 표시하고
@@ -368,7 +358,7 @@ async function resolveUpdateReleaseStatus() {
         kind: "outdated",
         installedVersion,
         version: publishedVersion,
-        releasesUrl: GITHUB_RELEASES_URL
+        releaseUrl: published?.releaseUrl || GITHUB_RELEASES_URL
       }
     };
   }
@@ -586,8 +576,40 @@ function badgeTextForCount(total) {
   return String(count);
 }
 
+let releaseUpdateBadgeActive = false;
+
+async function paintReleaseBadge(tabId) {
+  const target = Number.isInteger(tabId) ? { tabId } : {};
+  await chrome.action.setBadgeText({ ...target, text: "UP" }).catch(() => {});
+  await chrome.action.setBadgeBackgroundColor({ ...target, color: "#d97706" }).catch(() => {});
+  try { await chrome.action.setBadgeTextColor?.({ ...target, color: "#ffffff" }); } catch (_) {}
+}
+
+async function applyReleaseUpdateBadge(updateAvailable) {
+  releaseUpdateBadgeActive = updateAvailable === true;
+  const tabs = await chrome.tabs.query({}).catch(() => []);
+  if (releaseUpdateBadgeActive) {
+    await paintReleaseBadge();
+    await Promise.all(tabs.map((tab) => paintReleaseBadge(tab.id)));
+    return;
+  }
+  await chrome.action.setBadgeText({ text: "" }).catch(() => {});
+  await Promise.all(tabs.map((tab) => setCountBadge(tab.id)));
+}
+
+async function refreshReleaseStatusAndBadge(options = {}) {
+  if (options.force) await fetchGithubPublishedVersion({ force: true }).catch(() => null);
+  const status = await resolveUpdateReleaseStatus();
+  await applyReleaseUpdateBadge(status?.updateAvailable);
+  return status;
+}
+
 async function setCountBadge(tabId, stats = null) {
   if (!Number.isInteger(tabId) || tabId < 0) return;
+  if (releaseUpdateBadgeActive) {
+    await paintReleaseBadge(tabId);
+    return;
+  }
   let current = stats || pageBlockStats.get(tabId);
   if (!current) {
     try {
@@ -1312,13 +1334,22 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 chrome.runtime.onStartup?.addListener(() => {
   void seedKeywordHotCache();
   void seedDcbestFilterHotCache();
+  chrome.alarms?.create(GITHUB_RELEASE_ALARM, { delayInMinutes: 1, periodInMinutes: 360 });
+  void refreshReleaseStatusAndBadge();
 });
 chrome.runtime.onInstalled?.addListener(() => {
   void seedKeywordHotCache();
   void seedDcbestFilterHotCache();
+  chrome.alarms?.create(GITHUB_RELEASE_ALARM, { delayInMinutes: 1, periodInMinutes: 360 });
+  void refreshReleaseStatusAndBadge({ force: true });
+});
+chrome.alarms?.onAlarm.addListener((alarm) => {
+  if (alarm?.name === GITHUB_RELEASE_ALARM) void refreshReleaseStatusAndBadge({ force: true });
 });
 void seedKeywordHotCache();
 void seedDcbestFilterHotCache();
+chrome.alarms?.create(GITHUB_RELEASE_ALARM, { delayInMinutes: 1, periodInMinutes: 360 });
+void refreshReleaseStatusAndBadge();
 
 
 /* ───── 회원 활동량 조회: 전 탭 공통 속도 제한·중복 제거·회로 차단 ───── */
@@ -1694,7 +1725,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message?.type === "dcb.release.status") {
-    resolveUpdateReleaseStatus()
+    refreshReleaseStatusAndBadge()
       .then((result) => sendResponse({ ok: true, ...(result || {}) }))
       .catch(() => sendResponse({ ok: false }));
     return true;

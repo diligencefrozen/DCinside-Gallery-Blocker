@@ -382,7 +382,7 @@ const IP_PREFIX_SOURCE = `1=11,0,LG%ED%97%AC%EB%A1%9C%EB%B9%84%EC%A0%84|16,0,%EB
     return !!(
       node &&
       node.nodeType === 1 &&
-      (node.id === STYLE_ID || node.classList?.contains(BADGE_CLASS) || node.closest?.(`.${BADGE_CLASS}`))
+      (node.closest?.("[data-dcb-owned]") || node.id === STYLE_ID || node.classList?.contains(BADGE_CLASS) || node.closest?.(`.${BADGE_CLASS}`))
     );
   }
 

@@ -12,7 +12,6 @@
     "test:extension": "node tests/extension-integration.cjs"
   },
   "dependencies": {
-    "@huggingface/transformers": "3.8.1",
     "onnxruntime-web": "1.27.0"
   },
   "devDependencies": {

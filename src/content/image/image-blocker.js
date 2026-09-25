@@ -700,7 +700,7 @@
   function isOwnedUiNode(node) {
     if (!(node instanceof Element)) return false;
     return !!node.closest?.(
-      `.${UI}-actions,.${UI}-notice,.${UI}-overlay,[data-dcb-owned='image-blocker']`
+      `.${UI}-actions,.${UI}-notice,.${UI}-overlay,[data-dcb-owned]`
     );
   }
 

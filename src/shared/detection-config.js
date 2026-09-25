@@ -1,19 +1,29 @@
 (function (scope) {
   "use strict";
   const key = "dcbTextDetection";
-  const defaults = Object.freeze({ enabled: false, posts: true, comments: true, sensitivity: "careful" });
-  const thresholds = Object.freeze({ careful: 0.65, balanced: 0.55, sensitive: 0.45 });
+  const defaults = Object.freeze({ enabled: false, posts: false, comments: true, sensitivity: "careful" });
+  const model = Object.freeze({
+    id: "conflict-int8",
+    version: "1.0.0",
+    delivery: "bundled",
+    onnxBytes: 2404471
+  });
+  // Selected on the training pipeline's validation split, never on evaluation examples.
+  const thresholds = Object.freeze({ careful: 0.86, balanced: 0.66, sensitive: 0.49 });
+  const basicThresholds = Object.freeze({ careful: 0.65, balanced: 0.55, sensitive: 0.45 });
   function normalize(input) {
     const value = input && typeof input === "object" ? input : {};
     return {
       enabled: value.enabled === true,
-      posts: value.posts !== false,
+      posts: value.posts === true,
       comments: value.comments !== false,
       sensitivity: Object.hasOwn(thresholds, value.sensitivity) ? value.sensitivity : defaults.sensitivity
     };
   }
   function modelText(title, body) {
-    return `제목: ${String(title || "").trim().slice(0, 500)}\n댓글: ${String(body || "").trim().slice(0, 6000)}`;
+    const text = (title ? `제목: ${title} 댓글: ` : "") + String(body || "");
+    // Python training uses Unicode code points rather than UTF-16 code units.
+    return Array.from(text.normalize("NFKC").replace(/[\s\u0085\u001c-\u001f]+/gu, " ").trim().toLowerCase()).slice(0, 256).join("");
   }
   function fallbackScore(title, body) {
     const text = `${String(title || "")} ${String(body || "")}`.replace(/\s+/g, " ");
@@ -40,8 +50,9 @@
     if (hostileHits === 1 || contextualHostile) return directed || contextualHostile ? 0.72 : 0.52;
     return 0.08;
   }
-  function isFlagged(score, settings) {
-    return typeof score === "number" && Number.isFinite(score) && score >= thresholds[normalize(settings).sensitivity] && score <= 1;
+  function isFlagged(score, settings, mode = "model") {
+    const limits = mode === "basic" ? basicThresholds : thresholds;
+    return typeof score === "number" && Number.isFinite(score) && score >= limits[normalize(settings).sensitivity] && score <= 1;
   }
-  scope.DCBTextDetection = Object.freeze({ key, defaults, thresholds, normalize, modelText, fallbackScore, isFlagged });
+  scope.DCBTextDetection = Object.freeze({ key, defaults, thresholds, model, normalize, modelText, fallbackScore, isFlagged });
 })(globalThis);

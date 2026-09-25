@@ -326,12 +326,19 @@ syncSettings(handleUrl);
   const OVERLAY_ID = "dcb-preview-overlay";
   const SHARE_ID = "dcbpv-share-popup";
   const CACHE_TTL = 2 * 60 * 1000;
+  const CACHE_MAX_ENTRIES = 32;
+  const PREVIEW_ACTIVATION_DELAY = 90;
   const PREVIEW_COMMENT_MAX_POST_ATTEMPTS = 6;
   const PREVIEW_COMMENT_MAX_GET_ATTEMPTS = 2;
   const PREVIEW_THROTTLE_STATUSES = new Set([403, 429, 503]);
 
   const cache = new Map();
   let activeAbort = null;
+  let activeRequestKey = "";
+  let activeOpenPromise = null;
+  let previewLoadingTimer = 0;
+  let previewActivationTimer = 0;
+  let pendingPreviewUrl = "";
   let currentPreviewData = null;
   let previewDcconObserver = null;
   let previewDcconTimer = 0;
@@ -344,6 +351,42 @@ syncSettings(handleUrl);
   let previewRequestVersion = 0;
   let previewReturnFocus = null;
   let previewScrollLock = null;
+  let previewActivationQueuedAt = 0;
+  let nextPreviewActivationMs = 0;
+  let activePreviewTrace = null;
+  let lastPreviewTrace = null;
+
+  const previewNow = () => performance.now?.() || Date.now();
+
+  function beginPreviewTrace(url, key, cacheHit = false){
+    activePreviewTrace = {
+      url,
+      key,
+      cacheHit,
+      startedAt: previewNow(),
+      activationMs: nextPreviewActivationMs || 0,
+      fetchMs: 0,
+      parseMs: 0,
+      processMs: 0,
+      renderMs: 0,
+      imageMs: 0,
+      completedMs: 0
+    };
+    nextPreviewActivationMs = 0;
+    return activePreviewTrace;
+  }
+
+  function addPreviewPhase(phase, startedAt, trace = activePreviewTrace){
+    if (!trace || !Object.prototype.hasOwnProperty.call(trace, phase)) return;
+    trace[phase] += Math.max(0, previewNow() - startedAt);
+  }
+
+  function completePreviewTrace(trace = activePreviewTrace){
+    if (!trace) return;
+    trace.completedMs = Math.max(0, previewNow() - trace.startedAt);
+    lastPreviewTrace = { ...trace };
+    if (activePreviewTrace === trace) activePreviewTrace = null;
+  }
 
   const escapeText = (value) => String(value ?? "").replace(/[&<>'"]/g, (ch) => ({
     "&": "&amp;",
@@ -359,6 +402,85 @@ syncSettings(handleUrl);
     try { return new URL(value || "", baseUrl || location.href).href; }
     catch (_) { return value || ""; }
   };
+
+  function previewCacheKey(value){
+    try {
+      const url = new URL(value, location.href);
+      const id = url.searchParams.get("id") || "";
+      const no = url.searchParams.get("no") || "";
+      if (url.hostname === "gall.dcinside.com" && id && no) {
+        return `${previewGalleryTypeFromUrl(url.href)}:${id}:${no}`;
+      }
+      url.hash = "";
+      return url.href;
+    } catch (_) {
+      return String(value || "");
+    }
+  }
+
+  function readPreviewCache(url){
+    const key = previewCacheKey(url);
+    const cached = cache.get(key);
+    if (!cached) return null;
+    if (Date.now() - cached.time >= CACHE_TTL) {
+      cache.delete(key);
+      return null;
+    }
+    cache.delete(key);
+    cache.set(key, cached);
+    return cached.data;
+  }
+
+  function writePreviewCache(url, data){
+    const key = previewCacheKey(url);
+    cache.delete(key);
+    cache.set(key, { time: Date.now(), data });
+    while (cache.size > CACHE_MAX_ENTRIES) cache.delete(cache.keys().next().value);
+  }
+
+  function clearPreviewLoadingTimer(){
+    if (!previewLoadingTimer) return;
+    clearTimeout(previewLoadingTimer);
+    previewLoadingTimer = 0;
+  }
+
+  function cancelScheduledPreview(){
+    if (previewActivationTimer) clearTimeout(previewActivationTimer);
+    previewActivationTimer = 0;
+    pendingPreviewUrl = "";
+    previewActivationQueuedAt = 0;
+  }
+
+  function schedulePreviewOpen(url){
+    cancelScheduledPreview();
+    if (!url || !previewEnabled) return;
+    pendingPreviewUrl = url;
+    previewActivationQueuedAt = previewNow();
+    previewActivationTimer = setTimeout(() => {
+      const nextUrl = pendingPreviewUrl;
+      nextPreviewActivationMs = previewActivationQueuedAt
+        ? Math.max(0, previewNow() - previewActivationQueuedAt)
+        : 0;
+      previewActivationTimer = 0;
+      pendingPreviewUrl = "";
+      previewActivationQueuedAt = 0;
+      if (previewEnabled && nextUrl) openPreview(nextUrl);
+    }, PREVIEW_ACTIVATION_DELAY);
+  }
+
+  function previewPerformanceSnapshot(){
+    return {
+      cacheSize: cache.size,
+      cacheKeys: Array.from(cache.keys()),
+      requestKey: activeRequestKey,
+      requestPending: !!activeOpenPromise,
+      loadingPending: !!previewLoadingTimer,
+      activationPending: !!previewActivationTimer,
+      overlayConnected: !!document.getElementById(OVERLAY_ID),
+      currentTrace: activePreviewTrace ? { ...activePreviewTrace } : null,
+      lastTrace: lastPreviewTrace ? { ...lastPreviewTrace } : null
+    };
+  }
 
   function emitPreviewState(open){
     window.isPreviewOpen = !!open;
@@ -560,23 +682,11 @@ syncSettings(handleUrl);
     }
   }
 
-  function mountPreview(overlay){
-    const isNewSession = !previewScrollLock;
-    if (!previewScrollLock) {
-      previewReturnFocus = document.activeElement;
-      previewScrollLock = {
-        value: document.documentElement.style.getPropertyValue("overflow"),
-        priority: document.documentElement.style.getPropertyPriority("overflow")
-      };
-      document.documentElement.style.setProperty("overflow", "hidden");
-    }
-    if (isNewSession) overlay.classList.add("dcbpv-enter");
-    document.documentElement.appendChild(overlay);
-    (overlay.querySelector("[data-act='close']") || overlay.querySelector(".dcbpv-panel"))?.focus({ preventScroll: true });
-    emitPreviewState(true);
+  function emitPreviewContent(root){
+    document.dispatchEvent(new CustomEvent("dcb-preview-content", { detail: { root: root || null } }));
   }
 
-  function closePreview({ preserveSession = false } = {}){
+  function resetPreviewSurface(){
     stopPreviewDcconObserver();
     previewMovieRequests.forEach((controller) => controller.abort());
     previewMovieRequests.clear();
@@ -588,12 +698,104 @@ syncSettings(handleUrl);
     }
     const overlay = document.getElementById(OVERLAY_ID);
     (previewMediaSettleTimers.get(overlay) || []).forEach(clearTimeout);
+    if (overlay) {
+      previewMediaSettleTimers.delete(overlay);
+      overlay.classList.remove("dcbpv-enter");
+      overlay.removeAttribute("data-dcbpv-url");
+      overlay.removeAttribute("data-dcbpv-error-url");
+      overlay.replaceChildren();
+    }
+    return overlay;
+  }
+
+  function handlePreviewOverlayClick(event){
+    const overlay = event.currentTarget;
+    const data = currentPreviewData;
+    const menu = event.target.closest("[data-dcbpv-user-menu='1']");
+    const menuAction = event.target.closest("[data-dcbpv-menu-act]")?.dataset?.dcbpvMenuAct;
+    if (menuAction && menu) {
+      event.preventDefault();
+      event.stopPropagation();
+      handlePreviewUserMenuAction(menu, menuAction);
+      return;
+    }
+
+    const previewWriterTarget = event.target.closest(".dcbpv-writer-ref .nickname, .dcbpv-writer-ref .ip");
+    if (previewWriterTarget && data) {
+      event.preventDefault();
+      event.stopPropagation();
+      openPreviewUserMenu(previewWriterTarget, data);
+      return;
+    }
+
+    if (!menu) closePreviewUserMenu(overlay);
+    const revealButton = event.target.closest("[data-dcbpv-reveal]");
+    if (revealButton && data) {
+      const key = revealButton.dataset.dcbpvReveal;
+      if (key === "article") {
+        const body = overlay.querySelector(".dcbpv-article");
+        if (body?.dataset.dcbpvOriginalHtml) body.innerHTML = body.dataset.dcbpvOriginalHtml;
+        revealButton.closest(".dcbpv-filter-note")?.remove();
+        settlePreviewMedia(overlay, data.fetchedUrl || data.url);
+        return;
+      }
+      const row = overlay.querySelector(`.dcbpv-comment-item[data-dcbpv-soft-key="${CSS.escape ? CSS.escape(key) : key}"]`);
+      row?.classList.remove("dcbpv-filter-hidden");
+      revealButton.closest(".dcbpv-filter-note")?.remove();
+      summarizeHiddenComments(overlay);
+      return;
+    }
+
+    if (event.target === overlay) return closePreview();
+    const act = event.target.closest("[data-act]")?.dataset.act;
+    if (!act) return;
+    if (act === "close") return closePreview();
+    if (act === "retry") return openPreview(overlay.dataset.dcbpvErrorUrl, { force: true });
+    if (!data) return;
+    if (act === "open") return window.open(data.url, "_blank", "noopener");
+    if (act === "report" && data.reportUrl) return window.open(data.reportUrl, "_blank", "noopener");
+    if (act === "reload") return openPreview(data.url, { force: true });
+    if (act === "share") return showShare(data);
+  }
+
+  function previewOverlay(){
+    let overlay = document.getElementById(OVERLAY_ID);
+    if (overlay) return overlay;
+    overlay = document.createElement("div");
+    overlay.id = OVERLAY_ID;
+    overlay.dataset.dcbOwned = "preview";
+    overlay.addEventListener("click", handlePreviewOverlayClick);
+    return overlay;
+  }
+
+  function mountPreview(overlay){
+    const isNewSession = !previewScrollLock;
+    if (!previewScrollLock) {
+      previewReturnFocus = document.activeElement;
+      previewScrollLock = {
+        value: document.documentElement.style.getPropertyValue("overflow"),
+        priority: document.documentElement.style.getPropertyPriority("overflow")
+      };
+      document.documentElement.style.setProperty("overflow", "hidden");
+    }
+    if (isNewSession) overlay.classList.add("dcbpv-enter");
+    if (!overlay.isConnected) document.documentElement.appendChild(overlay);
+    (overlay.querySelector("[data-act='close']") || overlay.querySelector(".dcbpv-panel"))?.focus({ preventScroll: true });
+    emitPreviewState(true);
+  }
+
+  function closePreview({ preserveSession = false } = {}){
+    const overlay = resetPreviewSurface();
     if (overlay) overlay.remove();
     currentPreviewData = null;
     if (preserveSession) return;
+    clearPreviewLoadingTimer();
+    cancelScheduledPreview();
     previewRequestVersion += 1;
     activeAbort?.abort();
     activeAbort = null;
+    activeRequestKey = "";
+    activeOpenPromise = null;
     if (previewScrollLock) {
       const { value, priority } = previewScrollLock;
       if (value) document.documentElement.style.setProperty("overflow", value, priority);
@@ -607,9 +809,8 @@ syncSettings(handleUrl);
 
   function renderLoading(){
     installPreviewCss();
-    closePreview({ preserveSession: true });
-    const overlay = document.createElement("div");
-    overlay.id = OVERLAY_ID;
+    const overlay = resetPreviewSurface() || previewOverlay();
+    currentPreviewData = null;
     overlay.innerHTML = `
       <section class="dcbpv-panel dcbpv-loading-panel" role="dialog" aria-modal="true" aria-label="게시글 미리보기 불러오는 중" tabindex="-1">
         <div class="dcbpv-center" role="status" aria-live="polite">
@@ -619,17 +820,14 @@ syncSettings(handleUrl);
           </div>
         </div>
       </section>`;
-    overlay.addEventListener("click", (event) => {
-      if (event.target === overlay) closePreview();
-    });
     mountPreview(overlay);
   }
 
   function renderError(message, url){
     installPreviewCss();
-    closePreview({ preserveSession: true });
-    const overlay = document.createElement("div");
-    overlay.id = OVERLAY_ID;
+    const overlay = resetPreviewSurface() || previewOverlay();
+    currentPreviewData = null;
+    overlay.dataset.dcbpvErrorUrl = url;
     overlay.innerHTML = `
       <section class="dcbpv-panel" role="dialog" aria-modal="true" aria-label="미리보기를 열 수 없습니다" tabindex="-1">
         <div class="dcbpv-center">
@@ -645,12 +843,6 @@ syncSettings(handleUrl);
           </div>
         </div>
       </section>`;
-    overlay.addEventListener("click", (event) => {
-      if (event.target === overlay) return closePreview();
-      const act = event.target.closest("[data-act]")?.dataset.act;
-      if (act === "close") closePreview();
-      if (act === "retry") openPreview(url, { force: true });
-    });
     mountPreview(overlay);
   }
 
@@ -1053,7 +1245,7 @@ syncSettings(handleUrl);
       if (wasDccon || (isInComment && (/dccon\.php/i.test(gifUrl) || mp4Url))) {
         img.classList.add("dcbpv-dccon");
       }
-      img.loading = "eager";
+      img.loading = "lazy";
       img.decoding = "async";
       img.referrerPolicy = "unsafe-url";
       img.removeAttribute("width");
@@ -2015,6 +2207,7 @@ syncSettings(handleUrl);
   }
 
   function parsePreviewDocument(html, originalUrl, fetchedUrl, mode){
+    const parseStartedAt = previewNow();
     const doc = new DOMParser().parseFromString(html, "text/html");
     const baseUrl = fetchedUrl || originalUrl;
     normalizeDcMedia(doc, baseUrl);
@@ -2035,7 +2228,7 @@ syncSettings(handleUrl);
     const commentCount = collectCommentItems(doc, root).length;
     const expectedComments = commentCountFromText(doc, root);
 
-    return {
+    const result = {
       url: originalUrl,
       fetchedUrl: baseUrl,
       title,
@@ -2050,6 +2243,8 @@ syncSettings(handleUrl);
       desktopRawHtml: mode === "desktop" ? html : "",
       reportUrl: buildReportUrl(originalUrl, gallId, articleNo, title)
     };
+    addPreviewPhase("parseMs", parseStartedAt);
+    return result;
   }
 
   function parseMobilePreview(html, originalUrl, fetchedUrl){
@@ -2142,6 +2337,7 @@ syncSettings(handleUrl);
     if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
 
     const options = typeof request === "string" ? { cache: request } : (request || {});
+    const fetchStartedAt = previewNow();
     const response = await sendRuntimeFetchMessage({
       type: "dcb.fetchText",
       url,
@@ -2153,6 +2349,7 @@ syncSettings(handleUrl);
       referrer: options.referrer || undefined
     });
 
+    addPreviewPhase("fetchMs", fetchStartedAt);
     if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
     if (response?.ok) {
       return {
@@ -2200,8 +2397,10 @@ syncSettings(handleUrl);
       } catch (_) {}
     }
 
+    const fetchStartedAt = previewNow();
     const response = await fetch(url, init);
     const text = await response.text();
+    addPreviewPhase("fetchMs", fetchStartedAt);
 
     if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
     if (!response.ok) {
@@ -2837,8 +3036,8 @@ syncSettings(handleUrl);
   }
 
   async function loadPreview(url, { force = false, onArticleReady = null } = {}){
-    const cached = cache.get(url);
-    if (!force && cached && Date.now() - cached.time < CACHE_TTL) return cached.data;
+    const cached = !force ? readPreviewCache(url) : null;
+    if (cached) return cached;
 
     if (activeAbort) activeAbort.abort();
     activeAbort = new AbortController();
@@ -2951,11 +3150,11 @@ syncSettings(handleUrl);
     }
 
     if (signal.aborted) throw new DOMException("Aborted", "AbortError");
-    cache.set(url, { time: Date.now(), data });
+    writePreviewCache(url, data);
     return data;
   }
 
-  function settlePreviewMedia(root, baseUrl, articleUrl = currentPreviewData?.url || baseUrl){
+  function settlePreviewMedia(root, baseUrl, articleUrl = currentPreviewData?.url || baseUrl, trace = activePreviewTrace){
     if (!root) return;
 
     // 성능 보호: 이미지 정규화는 DOM을 많이 건드리므로 overlay 1개당 짧게 묶어서 실행합니다.
@@ -2966,6 +3165,7 @@ syncSettings(handleUrl);
 
     const run = () => {
       if (!document.documentElement.contains(root)) return;
+      const imageStartedAt = previewNow();
       normalizeDcMedia(root, baseUrl);
       root.querySelectorAll(".dcbpv-movie-wrap").forEach((wrapper) => {
         const link = wrapper.querySelector(".dcbpv-movie-note a");
@@ -2975,6 +3175,8 @@ syncSettings(handleUrl);
       root.querySelectorAll("iframe.dcbpv-poll-frame").forEach((iframe) => {
         loadPreviewPoll(iframe, articleUrl);
       });
+      addPreviewPhase("imageMs", imageStartedAt, trace);
+      if (lastPreviewTrace?.key === trace?.key) lastPreviewTrace = { ...trace };
     };
 
     run();
@@ -3479,8 +3681,9 @@ syncSettings(handleUrl);
     } catch (_) {}
   }
 
-  async function applyPreviewFeatureBridge(overlay, data){
+  async function applyPreviewFeatureBridge(overlay, data, trace = activePreviewTrace){
     if (!overlay || !data) return;
+    const processStartedAt = previewNow();
     ensurePreviewFilterStyle();
     const conf = await previewSettings();
     if (!document.documentElement.contains(overlay)) return;
@@ -3580,6 +3783,8 @@ syncSettings(handleUrl);
 
     cascadePreviewBlockedReplies(overlay);
     summarizeHiddenComments(overlay);
+    addPreviewPhase("processMs", processStartedAt, trace);
+    if (lastPreviewTrace?.key === trace?.key) lastPreviewTrace = { ...trace };
   }
 
   function previewCommentHtml(data, commentsPending = false){
@@ -3608,21 +3813,22 @@ syncSettings(handleUrl);
 
     if (commentTitle) commentTitle.textContent = data.commentTitle || "댓글";
     commentRoot.innerHTML = previewCommentHtml(data, false);
-    settlePreviewMedia(commentRoot, data.fetchedUrl || data.url, data.url);
-    applyPreviewFeatureBridge(overlay, data);
+    const trace = activePreviewTrace;
+    settlePreviewMedia(commentRoot, data.fetchedUrl || data.url, data.url, trace);
+    applyPreviewFeatureBridge(overlay, data, trace);
+    emitPreviewContent(commentRoot);
     return true;
   }
 
   function renderPreview(data, { commentsPending = false } = {}){
-    currentPreviewData = data;
+    const renderStartedAt = previewNow();
+    const trace = activePreviewTrace;
     installPreviewCss();
-    closePreview({ preserveSession: true });
+    const overlay = resetPreviewSurface() || previewOverlay();
     currentPreviewData = data;
 
     const commentEmptyHtml = previewCommentHtml(data, commentsPending);
 
-    const overlay = document.createElement("div");
-    overlay.id = OVERLAY_ID;
     overlay.dataset.dcbpvUrl = data.url;
     overlay.innerHTML = `
       <section class="dcbpv-panel" role="dialog" aria-modal="true" aria-label="디시 게시글 미리보기" tabindex="-1">
@@ -3658,56 +3864,12 @@ syncSettings(handleUrl);
         </nav>
       </section>`;
 
-    overlay.addEventListener("click", (event) => {
-      const menu = event.target.closest("[data-dcbpv-user-menu='1']");
-      const menuAction = event.target.closest("[data-dcbpv-menu-act]")?.dataset?.dcbpvMenuAct;
-      if (menuAction && menu) {
-        event.preventDefault();
-        event.stopPropagation();
-        handlePreviewUserMenuAction(menu, menuAction);
-        return;
-      }
-
-      const previewWriterTarget = event.target.closest(".dcbpv-writer-ref .nickname, .dcbpv-writer-ref .ip");
-      if (previewWriterTarget) {
-        event.preventDefault();
-        event.stopPropagation();
-        openPreviewUserMenu(previewWriterTarget, data);
-        return;
-      }
-
-      if (!menu) closePreviewUserMenu(overlay);
-
-      const revealButton = event.target.closest("[data-dcbpv-reveal]");
-      if (revealButton) {
-        const key = revealButton.dataset.dcbpvReveal;
-        if (key === "article") {
-          const body = overlay.querySelector(".dcbpv-article");
-          if (body?.dataset.dcbpvOriginalHtml) body.innerHTML = body.dataset.dcbpvOriginalHtml;
-          revealButton.closest(".dcbpv-filter-note")?.remove();
-          settlePreviewMedia(overlay, data.fetchedUrl || data.url);
-          return;
-        }
-        const row = overlay.querySelector(`.dcbpv-comment-item[data-dcbpv-soft-key="${CSS.escape ? CSS.escape(key) : key}"]`);
-        row?.classList.remove("dcbpv-filter-hidden");
-        revealButton.closest(".dcbpv-filter-note")?.remove();
-        summarizeHiddenComments(overlay);
-        return;
-      }
-      if (event.target === overlay) return closePreview();
-      const act = event.target.closest("[data-act]")?.dataset.act;
-      if (!act) return;
-      if (act === "close") return closePreview();
-      if (act === "open") return window.open(data.url, "_blank", "noopener");
-      if (act === "report" && data.reportUrl) return window.open(data.reportUrl, "_blank", "noopener");
-      if (act === "reload") return openPreview(data.url, { force: true });
-      if (act === "share") return showShare(data);
-    });
-
     mountPreview(overlay);
-    settlePreviewMedia(overlay, data.fetchedUrl || data.url);
-    applyPreviewFeatureBridge(overlay, data);
+    settlePreviewMedia(overlay, data.fetchedUrl || data.url, data.url, trace);
+    applyPreviewFeatureBridge(overlay, data, trace);
     emitPreviewState(true);
+    emitPreviewContent(overlay);
+    addPreviewPhase("renderMs", renderStartedAt, trace);
   }
 
   function showShare(data){
@@ -3771,7 +3933,7 @@ syncSettings(handleUrl);
       renderPreview(data);
       requestAnimationFrame(() => {
         const currentOverlay = document.getElementById(OVERLAY_ID);
-        if (!currentOverlay || currentOverlay === scheduledOverlay) return;
+        if (!currentOverlay) return;
         const scroller = currentOverlay.querySelector(".dcbpv-scroll");
         if (scroller) scroller.scrollTop = scrollTop;
       });
@@ -3797,49 +3959,72 @@ syncSettings(handleUrl);
   });
 
   async function openPreview(url, options = {}){
-    if (!url) return;
+    if (!url || !previewEnabled) return;
+    const requestKey = previewCacheKey(url);
+    const cached = !options.force ? readPreviewCache(url) : null;
+    if (cached) {
+      const trace = beginPreviewTrace(url, requestKey, true);
+      activeAbort?.abort();
+      const requestVersion = ++previewRequestVersion;
+      activeRequestKey = "";
+      activeOpenPromise = null;
+      clearPreviewLoadingTimer();
+      if (requestVersion === previewRequestVersion) renderPreview(cached);
+      completePreviewTrace(trace);
+      return cached;
+    }
+    if (!options.force && activeOpenPromise && activeRequestKey === requestKey) return activeOpenPromise;
+    const trace = beginPreviewTrace(url, requestKey, false);
+
     activeAbort?.abort();
     const requestVersion = ++previewRequestVersion;
-
-    const cached = !options.force ? cache.get(url) : null;
-    if (cached && Date.now() - cached.time < CACHE_TTL) {
-      renderPreview(cached.data);
-      return;
-    }
-
+    activeRequestKey = requestKey;
     let articleRendered = false;
-    let loadingTimer = setTimeout(() => {
-      loadingTimer = 0;
+    clearPreviewLoadingTimer();
+    previewLoadingTimer = setTimeout(() => {
+      previewLoadingTimer = 0;
       if (requestVersion === previewRequestVersion && !articleRendered) renderLoading();
     }, 140);
 
     const clearLoadingTimer = () => {
-      if (!loadingTimer) return;
-      clearTimeout(loadingTimer);
-      loadingTimer = 0;
+      if (requestVersion === previewRequestVersion) clearPreviewLoadingTimer();
     };
 
-    try {
-      const data = await loadPreview(url, {
-        ...options,
-        onArticleReady: (partialData, state = {}) => {
-          if (requestVersion !== previewRequestVersion) return;
-          articleRendered = true;
-          clearLoadingTimer();
-          renderPreview(partialData, { commentsPending: state.commentsPending !== false });
+    const task = (async () => {
+      try {
+        const data = await loadPreview(url, {
+          ...options,
+          onArticleReady: (partialData, state = {}) => {
+            if (requestVersion !== previewRequestVersion) return;
+            articleRendered = true;
+            clearLoadingTimer();
+            renderPreview(partialData, { commentsPending: state.commentsPending !== false });
+          }
+        });
+        clearLoadingTimer();
+        if (requestVersion !== previewRequestVersion) return;
+        if (articleRendered) {
+          if (!updatePreviewComments(data)) renderPreview(data);
+        } else {
+          renderPreview(data);
         }
-      });
-      clearLoadingTimer();
-      if (requestVersion !== previewRequestVersion) return;
-      if (articleRendered) {
-        if (!updatePreviewComments(data)) renderPreview(data);
-      } else {
-        renderPreview(data);
+        completePreviewTrace(trace);
+        return data;
+      } catch (error) {
+        clearLoadingTimer();
+        if (requestVersion !== previewRequestVersion || error?.name === "AbortError") return;
+        renderError(error?.message || "알 수 없는 오류", url);
+        completePreviewTrace(trace);
       }
-    } catch (error) {
-      clearLoadingTimer();
-      if (requestVersion !== previewRequestVersion || error?.name === "AbortError") return;
-      renderError(error?.message || "알 수 없는 오류", url);
+    })();
+    activeOpenPromise = task;
+    try {
+      return await task;
+    } finally {
+      if (activeOpenPromise === task) {
+        activeOpenPromise = null;
+        activeRequestKey = "";
+      }
     }
   }
 
@@ -3896,7 +4081,7 @@ syncSettings(handleUrl);
     if (!url) return;
     event.preventDefault();
     event.stopPropagation();
-    openPreview(url);
+    schedulePreviewOpen(url);
   }, true);
 
   document.addEventListener("keydown", (event) => {

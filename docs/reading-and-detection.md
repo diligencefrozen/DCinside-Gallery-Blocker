@@ -1,6 +1,8 @@
-# Local text detection: development and packaging
+# Local AI expression filter: development and packaging
 
-The optional aggressive-expression detector runs entirely in the browser. The repository includes the verified ONNX model, tokenizer files, and the pinned browser inference runtime required to use the feature from a normal source checkout.
+The opt-in expression filter runs entirely in the browser. It folds text that may contain aggressive, insulting, or threatening expressions; it does not judge an author, trigger reports, or take account action. The repository includes the verified ONNX model, tokenizer files, and the pinned browser inference runtime required to use the feature from a normal source checkout.
+
+The current delivery mode is `bundled`: no remote JavaScript, WASM, or arbitrary ONNX graph is downloaded. Because Chrome cannot delete immutable files from an installed extension package, a separate “model delete” control would not recover space and is intentionally not exposed. When the feature is off, the inference worker and content observer remain stopped.
 
 ## Tracked model
 

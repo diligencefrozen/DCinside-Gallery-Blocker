@@ -11,8 +11,11 @@ const statsSource = fs.readFileSync('src/shared/block-stats.js', 'utf8');
 const historySource = fs.readFileSync('src/shared/block-stats-history.js', 'utf8');
 
 test('block stats helper loads before normal content scripts', () => {
+  const statsIndex = manifest.content_scripts.findIndex(entry => entry.js?.includes('src/shared/block-stats.js'));
   assert.equal(manifest.content_scripts[0].run_at, 'document_start');
-  assert.deepEqual(manifest.content_scripts[0].js, ['src/shared/block-stats.js']);
+  assert.ok(manifest.content_scripts[0].js.includes('src/content/core/critical-filter-bootstrap.js'));
+  assert.equal(statsIndex, 1, 'first-paint filtering is the only bootstrap allowed before block statistics');
+  assert.equal(manifest.content_scripts[statsIndex].run_at, 'document_start');
   assert.match(statsSource, /MutationObserver/);
   assert.match(statsSource, /dcb\.stats\.sync/);
 });
@@ -79,15 +82,21 @@ test('rolling history keeps a seven-day window and adds only new daily counts', 
   assert.equal(recent.at(-1).isToday, true);
 });
 
-test('update notice is update-only, GitHub-sourced, one-shot per version, and auto-hides', () => {
+test('update notice uses public releases, background alarms, exact links, and a persistent outdated state', () => {
   assert.match(background, /reason === "update"/);
   assert.match(background, /previousVersion/);
   assert.match(background, /UPDATE_NOTICE_KEY/);
   assert.match(background, /UPDATE_NOTICE_SEEN_VERSION_KEY/);
   assert.match(background, /api\.github\.com\/repos\/diligencefrozen\/DCinside-Gallery-Blocker\/releases\/latest/);
-  assert.match(background, /api\.github\.com\/repos\/diligencefrozen\/DCinside-Gallery-Blocker\/tags\?per_page=100/);
+  assert.doesNotMatch(background, /tags\?per_page=100/);
+  assert.match(background, /release\?\.draft/);
+  assert.match(background, /release\?\.prerelease/);
+  assert.match(background, /release\?\.html_url/);
+  assert.match(background, /chrome\.alarms/);
+  assert.ok(manifest.permissions.includes('alarms'));
+  assert.match(background, /text:\s*"UP"/);
   assert.match(background, /publishedVersion !== installedVersion/);
-  assert.match(popupHtml, /현재 최신 버전입니다\./);
+  assert.match(popupJs, /✓ 최신 버전/);
   assert.doesNotMatch(popupHtml, />7\.3\.39\.2026</);
   assert.match(popupJs, /dcb\.release\.status/);
   assert.match(popupJs, /dcb\.updateNotice\.consume/);
@@ -96,8 +105,9 @@ test('update notice is update-only, GitHub-sourced, one-shot per version, and au
   assert.match(background, /show:\s*false/);
   assert.match(background, /show:\s*true/);
   assert.match(popupJs, /result\.show !== true/);
-  assert.match(popupJs, /setTimeout\(\(\) => \{/);
-  assert.match(popupJs, /4000/);
+  const outdatedStart = popupJs.indexOf('notice.kind === "outdated"');
+  const updatedStart = popupJs.indexOf('notice.kind !== "updated"', outdatedStart);
+  assert.doesNotMatch(popupJs.slice(outdatedStart, updatedStart), /hideUpdateNoticeSoon/);
   assert.doesNotMatch(popupHtml, /dismissUpdateNotice/);
 });
 
@@ -214,7 +224,7 @@ test('comment-heavy filters avoid full-document rescans on every mutation', () =
 
   assert.match(keywordHider, /processPendingRoots/);
   assert.match(keywordHider, /collectScoped/);
-  assert.match(keywordHider, /applyKeywordHide\(\{ reset: true \}\)/);
+  assert.match(keywordHider, /scheduleApply\(document, \{ reset: true \}\)/);
 });
 
 test('usage counters are local runtime data, not part of settings backup', () => {
