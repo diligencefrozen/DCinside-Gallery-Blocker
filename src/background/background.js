@@ -1652,6 +1652,56 @@ chrome.storage.onChanged.addListener((c, area) => {
   }
 });
 
+async function commitBackupImportCaches() {
+  // storage.onChanged에서 예약된 이전 critical-cache 작업이 성공 알림 뒤에
+  // 늦게 실행되지 않도록 취소하고, import의 최종 저장 상태로 다시 만든다.
+  if (criticalFilterHotCacheTimer) {
+    clearTimeout(criticalFilterHotCacheTimer);
+    criticalFilterHotCacheTimer = null;
+  }
+
+  // 사용자 차단 저장 작업이 진행 중이었다면 끝난 뒤 critical snapshot을 만든다.
+  await userBlockMutationQueue.catch(() => {});
+
+  // 각 cache writer는 자체 queue를 사용하므로, storage.onChanged로 이미 들어온
+  // patch와 순서를 보장하면서 최종 sync 값을 마지막에 덮어쓴다.
+  const sync = await chrome.storage.sync.get(null);
+  const jobs = [
+    seedRuntimeSettingsHotCache(),
+    writeKeywordHotCache(sync),
+    writeDcbestFilterHotCache(sync),
+    seedCriticalFilterHotCache()
+  ];
+  await Promise.all(jobs);
+
+  // 각 queue에 뒤따라 붙은 동일 import patch까지 모두 비운 뒤 완료를 응답한다.
+  await Promise.all([
+    runtimeSettingsHotCacheWriteQueue,
+    keywordHotCacheWriteQueue,
+    dcbestFilterHotCacheWriteQueue,
+    criticalFilterHotCacheWriteQueue
+  ].map((job) => Promise.resolve(job).catch(() => {})));
+
+  // storage.onChanged가 먼저 시작한 DNR 동기화가 있더라도 마지막에 최종 상태를
+  // 한 번 더 적용해 백업 완료 시점의 규칙과 저장 설정을 일치시킨다.
+  await syncRules();
+
+  return { ok: true, committedAt: Date.now() };
+}
+
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message?.type !== "dcb.backupImport.commit") return undefined;
+
+  commitBackupImportCaches()
+    .then((result) => sendResponse(result))
+    .catch((error) => {
+      console.error("[DCB] backup import cache commit failed", error);
+      sendResponse({ ok: false, error: error?.message || String(error) });
+    });
+
+  return true;
+});
+
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== "dcb.keywordSettings.patch") return;
 

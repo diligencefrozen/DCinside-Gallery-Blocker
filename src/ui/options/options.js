@@ -906,6 +906,27 @@ async function restoreUserBlockTokens(tokens) {
   return setStoredUidList(tokens || []);
 }
 
+function commitBackupImportCaches() {
+  return new Promise((resolve, reject) => {
+    try {
+      chrome.runtime.sendMessage({ type: "dcb.backupImport.commit" }, (response) => {
+        const lastError = chrome.runtime?.lastError;
+        if (lastError) {
+          reject(new Error(lastError.message || "backup cache commit failed"));
+          return;
+        }
+        if (!response?.ok) {
+          reject(new Error(response?.error || "backup cache commit failed"));
+          return;
+        }
+        resolve(response);
+      });
+    } catch (error) {
+      reject(error);
+    }
+  });
+}
+
 function importSettingsFromFile(file) {
   if (!file) return;
 
@@ -926,6 +947,10 @@ function importSettingsFromFile(file) {
       if (blockedUids !== null) jobs.push(restoreUserBlockTokens(blockedUids));
 
       await Promise.all(jobs);
+
+      // 저장소 쓰기와 background hot cache 갱신은 서로 다른 비동기 작업이다.
+      // 성공 알림 전에 모든 런타임/초기 필터 캐시와 DNR을 최종 정합화한다.
+      await commitBackupImportCaches();
 
       if (local[QUICK_BLOCK_POSITION_KEY]) {
         broadcastQuickBlockPosition(local[QUICK_BLOCK_POSITION_KEY]);
