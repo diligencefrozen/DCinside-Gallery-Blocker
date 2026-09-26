@@ -2,9 +2,10 @@
  * feature-loader.js
  *
  * Firefox/Chromium common lazy feature loader.
- * The manifest only injects first-paint critical code. Optional feature files
- * are requested after document_idle and injected one group at a time, yielding
- * between groups so a refresh is not monopolized by extension startup work.
+ * The manifest only injects first-paint critical code. Optional Firefox features
+ * are planned from the shared settings snapshot and injected in a handful of
+ * batches. This keeps refresh work distributed without making every feature wait
+ * for its own message/executeScript round trip.
  */
 (() => {
   "use strict";
@@ -87,27 +88,68 @@
   function waitIdle(timeout = 200) {
     return new Promise((resolve) => {
       if (typeof requestIdleCallback === "function") requestIdleCallback(() => resolve(), { timeout });
-      else setTimeout(resolve, 32);
+      else setTimeout(resolve, 24);
     });
   }
 
-  async function inject(id, phase) {
-    if (loaded.has(id)) return;
-    if (phase === "visual") await waitFrame();
-    else if (phase === "normal") await new Promise((r) => setTimeout(r, 12));
-    else if (phase === "idle") await waitIdle(220);
-    else await waitIdle(500);
+  async function waitForBatch(batch) {
+    if (batch === "visual") {
+      await waitFrame();
+      return;
+    }
+    if (batch === "normal") {
+      await waitFrame();
+      return;
+    }
+    if (batch === "idle") {
+      await waitIdle(140);
+      return;
+    }
+    if (batch === "background") {
+      await waitIdle(240);
+      return;
+    }
+    // preview is intentionally isolated because content_script.js is by far the
+    // heaviest optional file. Keep it away from the author-badge/filter batches.
+    await waitIdle(420);
+  }
 
+  function createBatches(items) {
+    const batches = { visual: [], normal: [], idle: [], background: [], preview: [] };
+    for (const item of items) {
+      if (!item || loaded.has(item.id)) continue;
+      if (item.id === "preview") batches.preview.push(item);
+      else if (item.phase === "visual") batches.visual.push(item);
+      else if (item.phase === "normal") batches.normal.push(item);
+      else if (item.phase === "idle") batches.idle.push(item);
+      else batches.background.push(item);
+    }
+    return batches;
+  }
+
+  async function injectBatch(items, batch) {
+    const pending = items.filter((item) => !loaded.has(item.id));
+    if (!pending.length) return;
+    await waitForBatch(batch);
+
+    const features = pending.map((item) => item.id);
     const started = performance.now();
     try {
-      const response = await api.runtime.sendMessage({ type: "dcb:lazy-inject", feature: id });
-      if (response?.ok) {
-        loaded.add(id);
-        const elapsed = performance.now() - started;
-        if (elapsed > 30) console.debug(`[DCB perf] ${id}: ${elapsed.toFixed(1)}ms`);
+      const response = await api.runtime.sendMessage({
+        type: "dcb:lazy-inject-batch",
+        features
+      });
+      if (!response?.ok) return;
+      const injected = Array.isArray(response.features) && response.features.length
+        ? response.features
+        : features;
+      for (const id of injected) loaded.add(id);
+      const elapsed = performance.now() - started;
+      if (elapsed > 30) {
+        console.debug(`[DCB perf] ${batch} batch (${injected.length}): ${elapsed.toFixed(1)}ms`);
       }
     } catch (error) {
-      console.warn("[DCB] lazy feature injection failed:", id, error);
+      console.warn("[DCB] lazy feature batch injection failed:", batch, features, error);
     }
   }
 
@@ -118,9 +160,12 @@
       do {
         rerun = false;
         const settings = await cache.get(null);
-        for (const item of desired(settings)) {
-          if (!loaded.has(item.id)) await inject(item.id, item.phase);
-        }
+        const batches = createBatches(desired(settings));
+        await injectBatch(batches.visual, "visual");
+        await injectBatch(batches.normal, "normal");
+        await injectBatch(batches.idle, "idle");
+        await injectBatch(batches.background, "background");
+        await injectBatch(batches.preview, "preview");
       } while (rerun);
     } finally {
       running = false;

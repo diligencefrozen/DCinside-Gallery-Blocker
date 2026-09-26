@@ -13,7 +13,7 @@
   if (globalThis.DCBContentScriptProfiles) return;
 
   globalThis.DCBContentScriptProfiles = Object.freeze({
-    version: 1,
+    version: 2,
     chrome: Object.freeze([
     {
         "id": "dcb-profile-chrome-00",
@@ -25,7 +25,9 @@
         "js": [
             "src/shared/runtime-settings-cache.js",
             "src/shared/startup-scheduler.js",
-            "src/shared/dom-mutation-bus.js"
+            "src/shared/dom-mutation-bus.js",
+            "src/content/appearance/font-config.js",
+            "src/content/appearance/font-bootstrap.js"
         ],
         "runAt": "document_start"
     },
@@ -108,7 +110,6 @@
         ],
         "persistAcrossSessions": true,
         "js": [
-            "src/content/appearance/font-config.js",
             "src/content/appearance/font-manager.js"
         ],
         "runAt": "document_end",
@@ -528,7 +529,9 @@
         "js": [
             "src/shared/runtime-settings-cache.js",
             "src/shared/startup-scheduler.js",
-            "src/shared/dom-mutation-bus.js"
+            "src/shared/dom-mutation-bus.js",
+            "src/content/appearance/font-config.js",
+            "src/content/appearance/font-bootstrap.js"
         ],
         "runAt": "document_start"
     },

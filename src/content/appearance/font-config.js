@@ -2,6 +2,7 @@
  * font-config.js — Google Fonts 기반 공통 글꼴 설정
  *****************************************************************/
 (() => {
+  if (window.DCBFont) return;
   const DEFAULT_FONT_FAMILY = "Noto Sans KR";
   const DEFAULT_FONT_SCALE = 100;
   const MIN_FONT_SCALE = 90;

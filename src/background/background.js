@@ -102,24 +102,20 @@ async function ensureDcbContentScriptProfile({ force = false } = {}) {
       const managedIds = managed.map((item) => String(item?.id || "")).filter(Boolean).sort();
       const exactRegistration = managedIds.length === desiredIds.length
         && desiredIds.every((id, index) => managedIds[index] === id);
+      let storedProfileState = null;
+      try {
+        const stored = await DCB_EXT_API.storage.local.get({ [DCB_CONTENT_PROFILE_STATE_KEY]: null });
+        storedProfileState = stored?.[DCB_CONTENT_PROFILE_STATE_KEY] || null;
+      } catch (_) {}
+      const exactProfileVersion = storedProfileState?.browserFamily === browserFamily
+        && Number(storedProfileState?.profileVersion) === profileVersion
+        && Number(storedProfileState?.scriptCount) === desired.length;
 
-      if (!force && exactRegistration) {
+      // IDs alone are not enough: a release can change files/runAt while keeping
+      // the same registration IDs. A profile version bump forces one clean
+      // re-registration, including during about:debugging Reload.
+      if (!force && exactRegistration && exactProfileVersion) {
         dcbContentProfileVerifiedInThisBackground = true;
-        try {
-          const stored = await DCB_EXT_API.storage.local.get({ [DCB_CONTENT_PROFILE_STATE_KEY]: null });
-          const state = stored?.[DCB_CONTENT_PROFILE_STATE_KEY];
-          if (state?.browserFamily !== browserFamily || Number(state?.profileVersion) !== profileVersion || Number(state?.scriptCount) !== desired.length) {
-            await DCB_EXT_API.storage.local.set({
-              [DCB_CONTENT_PROFILE_STATE_KEY]: {
-                browserFamily,
-                profileVersion,
-                registeredAt: Number(state?.registeredAt || Date.now()),
-                verifiedAt: Date.now(),
-                scriptCount: desired.length
-              }
-            });
-          }
-        } catch (_) {}
         return { ok: true, browserFamily, cached: true, verified: true };
       }
 
@@ -160,8 +156,8 @@ async function ensureDcbContentScriptProfile({ force = false } = {}) {
 // untouched after a single getRegisteredContentScripts() check.
 queueMicrotask(() => { void ensureDcbContentScriptProfile(); });
 
-// Lazy content-feature injection. Keeps optional Firefox/Chromium content code
-// out of the refresh critical path and injects enabled features one at a time.
+// Lazy content-feature injection. Keeps optional Firefox content code out of the
+// refresh critical path and injects enabled features in a few ordered batches.
 const DCB_LAZY_FEATURE_FILES = Object.freeze({
   "block-stats": ["src/shared/block-stats.js"],
   "keyword-core": ["src/shared/keyword-settings-hot-cache.js", "src/shared/keyword-matcher.js"],
@@ -187,7 +183,7 @@ const DCB_LAZY_FEATURE_FILES = Object.freeze({
   "quick-block": ["src/content/gallery/gallery-quick-block.js"],
   "ctx-probe": ["src/content/user/ctx-probe.js"],
   "dcbest-source": ["src/shared/keyword-settings-hot-cache.js", "src/content/gallery/dcbest-source-filter.js"],
-  "font": ["src/content/appearance/font-config.js", "src/content/appearance/font-manager.js"],
+  "font": ["src/content/appearance/font-manager.js"],
   "link-blocker": ["src/content/gallery/link-blocker.js"],
   "area-picker": ["src/content/tools/area-picker.js"],
   "theme-bridge": ["src/content/appearance/dc-theme-bridge.js"],
@@ -206,7 +202,9 @@ function isDcbContentSender(sender) {
 const DCB_FIREFOX_BOOTSTRAP_COMMON = Object.freeze([
   "src/shared/runtime-settings-cache.js",
   "src/shared/startup-scheduler.js",
-  "src/shared/dom-mutation-bus.js"
+  "src/shared/dom-mutation-bus.js",
+  "src/content/appearance/font-config.js",
+  "src/content/appearance/font-bootstrap.js"
 ]);
 
 function getDcbFirefoxBootstrapFiles(sender) {
@@ -250,6 +248,43 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   };
   run().then(sendResponse, (error) => {
     console.warn("[DCB] Firefox bootstrap injection failed", error);
+    sendResponse({ ok: false, error: String(error?.message || error) });
+  });
+  return true;
+});
+
+function getDcbLazyFeatureBatchFiles(features) {
+  const accepted = [];
+  const files = [];
+  const seen = new Set();
+  for (const rawFeature of Array.isArray(features) ? features : []) {
+    const feature = String(rawFeature || "");
+    const featureFiles = DCB_LAZY_FEATURE_FILES[feature];
+    if (!featureFiles || accepted.includes(feature)) continue;
+    accepted.push(feature);
+    for (const file of featureFiles) {
+      if (seen.has(file)) continue;
+      seen.add(file);
+      files.push(file);
+    }
+  }
+  return { accepted, files };
+}
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type !== "dcb:lazy-inject-batch") return undefined;
+  const { accepted, files } = getDcbLazyFeatureBatchFiles(message.features);
+  const tabId = sender?.tab?.id;
+  const frameId = Number.isInteger(sender?.frameId) ? sender.frameId : 0;
+  if (!accepted.length || !files.length || !Number.isInteger(tabId) || !isDcbContentSender(sender) || !DCB_EXT_API.scripting?.executeScript) {
+    sendResponse({ ok: false, error: "unsupported" });
+    return undefined;
+  }
+  DCB_EXT_API.scripting.executeScript({
+    target: { tabId, frameIds: [frameId] },
+    files
+  }).then(() => sendResponse({ ok: true, features: accepted })).catch((error) => {
+    console.warn("[DCB] lazy batch injection failed", accepted, error);
     sendResponse({ ok: false, error: String(error?.message || error) });
   });
   return true;

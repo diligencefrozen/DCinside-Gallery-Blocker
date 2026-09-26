@@ -2219,14 +2219,17 @@ syncSettings(handleUrl);
     const articleNo = articleNumberFrom(originalUrl, doc);
     const gallId = galleryIdFrom(originalUrl);
     let commentsHTML = buildCommentsHTML(doc, root, baseUrl);
-
-    if (!commentsHTML) {
-      const plainComments = textBetweenMarkers(doc, /댓글\s*영역|전체\s*댓글/, /하단\s*갤러리\s*리스트\s*영역|전체글\s*개념글|글쓰기\s*\n|갤러리\s*리스트\s*번호/);
-      commentsHTML = plainBlockToHtml(plainComments);
-    }
-
     const commentCount = collectCommentItems(doc, root).length;
     const expectedComments = commentCountFromText(doc, root);
+
+    // 디시 PC 문서는 댓글 수만 서버 HTML에 표시하고 실제 댓글 목록은 AJAX로 채우는 경우가 많다.
+    // 특히 미니/인물 갤러리의 "전체 댓글 0개" UI 텍스트를 실제 댓글로 오인하지 않는다.
+    if (!commentsHTML && expectedComments <= 0) {
+      const plainComments = textBetweenMarkers(doc, /댓글\s*영역|전체\s*댓글/, /하단\s*갤러리\s*리스트\s*영역|전체글\s*개념글|글쓰기\s*\n|갤러리\s*리스트\s*번호/);
+      if (plainComments && !/전체\s*댓글\s*0\s*개/.test(plainComments)) {
+        commentsHTML = plainBlockToHtml(plainComments);
+      }
+    }
 
     const result = {
       url: originalUrl,
@@ -2446,6 +2449,21 @@ syncSettings(handleUrl);
     return "";
   }
 
+  function previewGallTypeCode(galleryType){
+    if (galleryType === "minor") return "M";
+    if (galleryType === "mini") return "MI";
+    if (galleryType === "person") return "PR";
+    return "G";
+  }
+
+  function previewCommentSortFromHtml(doc){
+    const checked = doc?.querySelector?.('.comment_sort input[type="radio"]:checked')?.value;
+    if (String(checked || "").trim()) return String(checked).trim();
+    const sortType = doc?.querySelector?.('.comment_wrap')?.dataset?.sortType;
+    if (String(sortType || "").trim()) return String(sortType).trim() === "I" ? "D" : String(sortType).trim();
+    return "D";
+  }
+
   function previewRequestInfo(originalUrl, doc){
     let parsed = null;
     try { parsed = new URL(originalUrl, location.href); } catch (_) {}
@@ -2461,8 +2479,13 @@ syncSettings(handleUrl);
     const cmtId = textValueBySelector(doc, ["#cmt_id", "input[name='cmt_id']"]) || id;
     const cmtNo = textValueBySelector(doc, ["#cmt_no", "input[name='cmt_no']"]) || no;
     const galleryType = previewGalleryTypeFromUrl(originalUrl);
+    const boardType = textValueBySelector(doc, ["#board_type", "input[name='board_type']"]);
+    const gallType = textValueBySelector(doc, ["#_GALLTYPE_", "input[name='_GALLTYPE_']"])
+      || previewGallTypeCode(galleryType);
+    const secretArticleKey = textValueBySelector(doc, ["#secret_article_key", "input[name='secret_article_key']"]);
+    const sort = previewCommentSortFromHtml(doc);
 
-    return { id, no, cmtId, cmtNo, securityToken, galleryType };
+    return { id, no, cmtId, cmtNo, securityToken, galleryType, boardType, gallType, secretArticleKey, sort };
   }
 
   function commentCountFromText(doc, root){
@@ -2610,75 +2633,50 @@ syncSettings(handleUrl);
 
   function commentEndpointCandidates(articleUrl){
     let protocol = "https:";
-    let path = "";
     try {
       const u = new URL(articleUrl, location.href);
       protocol = /^https?:$/.test(u.protocol) ? u.protocol : "https:";
-      path = u.pathname || "";
     } catch (_) {}
 
-    const endpoints = [
-      `${protocol}//gall.dcinside.com/board/comment`,
-      `${protocol}//gall.dcinside.com/board/comment/`
+    // 현재 PC 댓글 AJAX는 메인/마이너/미니/인물 모두 공통 /board/comment/를 사용하고,
+    // 갤러리 종류는 _GALLTYPE_ / board_type 파라미터로 구분한다.
+    return [
+      `${protocol}//gall.dcinside.com/board/comment/`,
+      `${protocol}//gall.dcinside.com/board/comment`
     ];
-
-    // 메인/마이너에서 성공하던 기본 endpoint를 먼저 쓰고,
-    // 미니/인물 전용 endpoint는 실패 시 fallback으로만 시도한다.
-    if (/\/mini\//i.test(path)) {
-      endpoints.push(`${protocol}//gall.dcinside.com/mini/board/comment`);
-      endpoints.push(`${protocol}//gall.dcinside.com/mini/board/comment/`);
-    }
-    if (/\/person\//i.test(path)) {
-      endpoints.push(`${protocol}//gall.dcinside.com/person/board/comment`);
-      endpoints.push(`${protocol}//gall.dcinside.com/person/board/comment/`);
-    }
-
-    return Array.from(new Set(endpoints));
   }
 
   function commentRequestBodies(info){
     const base = {
-      comment_page: "1",
       id: info.id,
       no: info.no,
       cmt_id: info.cmtId || info.id,
       cmt_no: info.cmtNo || info.no,
-      sort: "D"
+      focus_cno: "",
+      focus_pno: "",
+      e_s_n_o: info.securityToken || "",
+      comment_page: "1",
+      sort: info.sort || "D",
+      prevCnt: "",
+      board_type: info.boardType || "",
+      _GALLTYPE_: info.gallType || previewGallTypeCode(info.galleryType),
+      secret_article_key: info.secretArticleKey || ""
     };
 
-    // 성공 가능성이 높은 최소 조합만 먼저 시도한다. 미리보기는 보조 기능이므로
-    // 파라미터 조합을 무제한 탐색해 DCinside의 세션/IP 요청 한도를 소모하지 않는다.
-    let baseVariants = [base, { ...base, sort: "N" }];
-
-    if (info.galleryType === "mini") {
-      baseVariants = [
-        { ...base, board_type: "MI" },
-        { ...base, sort: "N", board_type: "MI" },
-        ...baseVariants
-      ];
-    } else if (info.galleryType === "person") {
-      baseVariants = [
-        { ...base, board_type: "P" },
-        { ...base, sort: "N", board_type: "P" },
-        ...baseVariants
-      ];
-    }
+    // 현재 문서에서 읽은 정렬값을 우선 사용하고, 서버 응답이 비어 있는 경우에만
+    // 반대 정렬값을 한 번 더 시도한다. 갤러리 타입 파라미터는 절대 제거하지 않는다.
+    const variants = [base];
+    const altSort = base.sort === "N" ? "D" : "N";
+    variants.push({ ...base, sort: altSort });
 
     const bodies = [];
     const seen = new Set();
-    const add = (params) => {
+    for (const params of variants) {
       const body = new URLSearchParams(params).toString();
-      if (!seen.has(body)) {
-        seen.add(body);
-        bodies.push(body);
-      }
-    };
-
-    for (const item of baseVariants) {
-      if (info.securityToken) add({ ...item, e_s_n_o: info.securityToken });
-      add(item);
+      if (seen.has(body)) continue;
+      seen.add(body);
+      bodies.push(body);
     }
-
     return bodies;
   }
 
@@ -2849,8 +2847,11 @@ syncSettings(handleUrl);
 
       const deadlines = [0, 350, 800, 1400, 2300, 3400, 4800];
       let lastText = "";
+      let previousDeadline = 0;
 
-      for (const delay of deadlines) {
+      for (const deadline of deadlines) {
+        const delay = Math.max(0, deadline - previousDeadline);
+        previousDeadline = deadline;
         if (delay) await waitMs(delay, signal);
         if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
 
