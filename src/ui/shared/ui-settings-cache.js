@@ -35,7 +35,19 @@
   }
 
   function replace(value) {
-    snapshot = { ...safeObject(value) };
+    const next = { ...safeObject(value) };
+
+    // options/popup 초기화 직후 시작된 storage.sync.get(null)이 아직 끝나지 않은
+    // 상태에서 백업을 가져오면, 그 오래된 응답이 뒤늦게 도착해 방금 가져온
+    // 설정 화면을 되돌릴 수 있다. replace는 전체 스냅샷 교체이므로 기존/신규
+    // 키 모두를 dirty로 표시해 초기 read보다 항상 우선하도록 한다.
+    if (!initialSyncSettled) {
+      new Set([...Object.keys(snapshot), ...Object.keys(next)]).forEach((key) => {
+        initialDirtyKeys.add(key);
+      });
+    }
+
+    snapshot = next;
     persist();
     return { ...snapshot };
   }

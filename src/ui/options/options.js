@@ -906,6 +906,42 @@ async function restoreUserBlockTokens(tokens) {
   return setStoredUidList(tokens || []);
 }
 
+function backupValueEqual(a, b) {
+  if (Object.is(a, b)) return true;
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+    return a.every((value, index) => backupValueEqual(value, b[index]));
+  }
+  if (a && b && typeof a === "object" && typeof b === "object") {
+    const aKeys = Object.keys(a).sort();
+    const bKeys = Object.keys(b).sort();
+    if (aKeys.length !== bKeys.length) return false;
+    return aKeys.every((key, index) => key === bKeys[index] && backupValueEqual(a[key], b[key]));
+  }
+  return false;
+}
+
+async function writeSyncBackupVerified(sync, maxAttempts = 2) {
+  const entries = Object.entries(sync || {});
+  if (!entries.length) return;
+  const keys = entries.map(([key]) => key);
+  let lastMismatch = [];
+
+  for (let attempt = 0; attempt < Math.max(1, maxAttempts); attempt += 1) {
+    const patch = attempt === 0
+      ? sync
+      : Object.fromEntries(lastMismatch.map((key) => [key, sync[key]]));
+
+    if (Object.keys(patch).length) await chrome.storage.sync.set(patch);
+
+    const stored = await chrome.storage.sync.get(keys);
+    lastMismatch = keys.filter((key) => !backupValueEqual(stored[key], sync[key]));
+    if (!lastMismatch.length) return;
+  }
+
+  throw new Error(`backup sync verify failed: ${lastMismatch.join(", ")}`);
+}
+
 function commitBackupImportCaches() {
   return new Promise((resolve, reject) => {
     try {
@@ -942,7 +978,7 @@ function importSettingsFromFile(file) {
       applyOptionsSettings({ ...BACKUP_DEFAULTS, ...sync }, { refreshAsync: false });
 
       const jobs = [];
-      if (Object.keys(sync).length) jobs.push(chrome.storage.sync.set(sync));
+      if (Object.keys(sync).length) jobs.push(writeSyncBackupVerified(sync));
       if (chrome.storage.local && Object.keys(local).length) jobs.push(chrome.storage.local.set(local));
       if (blockedUids !== null) jobs.push(restoreUserBlockTokens(blockedUids));
 
