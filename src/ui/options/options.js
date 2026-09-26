@@ -921,31 +921,42 @@ function backupValueEqual(a, b) {
   return false;
 }
 
-async function writeSyncBackupVerified(sync, maxAttempts = 2) {
+async function writeSyncBackup(sync) {
+  if (!Object.keys(sync || {}).length) return;
+  // storage.sync.set() 완료만 사용자 대기 경로에 둔다. set()이 성공하면 데이터는
+  // 이미 로컬 extension storage에 반영되어 있으며, read-after-write 검증은 아래의
+  // 비동기 보정 작업에서 수행한다. 같은 값을 즉시 다시 읽는 IPC 왕복을 피한다.
+  await chrome.storage.sync.set(sync);
+}
+
+async function verifySyncBackupEventually(sync, maxAttempts = 2) {
   const entries = Object.entries(sync || {});
   if (!entries.length) return;
   const keys = entries.map(([key]) => key);
-  let lastMismatch = [];
+  let lastMismatch = keys;
 
   for (let attempt = 0; attempt < Math.max(1, maxAttempts); attempt += 1) {
-    const patch = attempt === 0
-      ? sync
-      : Object.fromEntries(lastMismatch.map((key) => [key, sync[key]]));
-
-    if (Object.keys(patch).length) await chrome.storage.sync.set(patch);
-
-    const stored = await chrome.storage.sync.get(keys);
-    lastMismatch = keys.filter((key) => !backupValueEqual(stored[key], sync[key]));
-    if (!lastMismatch.length) return;
+    try {
+      const stored = await chrome.storage.sync.get(lastMismatch);
+      lastMismatch = lastMismatch.filter((key) => !backupValueEqual(stored[key], sync[key]));
+      if (!lastMismatch.length) return;
+      await chrome.storage.sync.set(Object.fromEntries(lastMismatch.map((key) => [key, sync[key]])));
+    } catch (error) {
+      if (attempt + 1 >= Math.max(1, maxAttempts)) throw error;
+    }
   }
 
-  throw new Error(`backup sync verify failed: ${lastMismatch.join(", ")}`);
+  if (lastMismatch.length) throw new Error(`backup sync verify failed: ${lastMismatch.join(", ")}`);
 }
 
-function commitBackupImportCaches() {
+function commitBackupImportCaches(sync, blockedUids) {
   return new Promise((resolve, reject) => {
     try {
-      chrome.runtime.sendMessage({ type: "dcb.backupImport.commit" }, (response) => {
+      chrome.runtime.sendMessage({
+        type: "dcb.backupImport.commit",
+        sync: sync && typeof sync === "object" ? sync : {},
+        blockedUids: Array.isArray(blockedUids) ? blockedUids : null
+      }, (response) => {
         const lastError = chrome.runtime?.lastError;
         if (lastError) {
           reject(new Error(lastError.message || "backup cache commit failed"));
@@ -977,25 +988,49 @@ function importSettingsFromFile(file) {
       UI_SETTINGS_CACHE?.replace?.(sync);
       applyOptionsSettings({ ...BACKUP_DEFAULTS, ...sync }, { refreshAsync: false });
 
-      const jobs = [];
-      if (Object.keys(sync).length) jobs.push(writeSyncBackupVerified(sync));
-      if (chrome.storage.local && Object.keys(local).length) jobs.push(chrome.storage.local.set(local));
-      if (blockedUids !== null) jobs.push(restoreUserBlockTokens(blockedUids));
-
-      await Promise.all(jobs);
-
-      // 저장소 쓰기와 background hot cache 갱신은 서로 다른 비동기 작업이다.
-      // 성공 알림 전에 모든 런타임/초기 필터 캐시와 DNR을 최종 정합화한다.
-      await commitBackupImportCaches();
-
-      if (local[QUICK_BLOCK_POSITION_KEY]) {
-        broadcastQuickBlockPosition(local[QUICK_BLOCK_POSITION_KEY]);
+      const originalImportLabel = importBtn?.textContent || "백업 불러오기";
+      if (importBtn) {
+        importBtn.disabled = true;
+        importBtn.textContent = "불러오는 중…";
       }
 
-      refreshUidList(0);
-      renderMemoList();
-      document.dispatchEvent(new CustomEvent("dcb:keyword-hide-ui-refresh"));
-      alert("백업을 불러왔습니다.");
+      try {
+        const jobs = [];
+        if (Object.keys(sync).length) jobs.push(writeSyncBackup(sync));
+        if (chrome.storage.local && Object.keys(local).length) jobs.push(chrome.storage.local.set(local));
+        if (blockedUids !== null) jobs.push(restoreUserBlockTokens(blockedUids));
+
+        await Promise.all(jobs);
+
+        // 이미 파싱한 백업 스냅샷을 background에 그대로 넘긴다. background는 sync를
+        // 다시 읽지 않고 runtime/keyword/dcbest/critical 캐시를 한 번의 local read/write로
+        // 확정한다. DNR 및 read-after-write 보정은 사용자 대기 경로에서 제외한다.
+        await commitBackupImportCaches(sync, blockedUids);
+
+        if (local[QUICK_BLOCK_POSITION_KEY]) {
+          broadcastQuickBlockPosition(local[QUICK_BLOCK_POSITION_KEY]);
+        }
+
+        alert("백업을 불러왔습니다.");
+
+        // 목록/메모 다시 그리기와 sync 검증은 백업 적용 완료 이후 수행한다. 사용자가
+        // 성공 알림을 기다리는 시간에는 포함하지 않는다.
+        setTimeout(() => {
+          try {
+            refreshUidList(0);
+            renderMemoList();
+            document.dispatchEvent(new CustomEvent("dcb:keyword-hide-ui-refresh"));
+          } catch (_) {}
+        }, 0);
+        void verifySyncBackupEventually(sync).catch((error) => {
+          console.warn("[DCB] backup sync background verification failed", error);
+        });
+      } finally {
+        if (importBtn) {
+          importBtn.disabled = false;
+          importBtn.textContent = originalImportLabel;
+        }
+      }
     } catch (err) {
       console.error("[DCB] backup import failed", err);
       alert("백업 파일을 불러오지 못했습니다. JSON 형식을 확인해 주세요.");

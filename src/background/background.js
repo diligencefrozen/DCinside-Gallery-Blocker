@@ -1652,47 +1652,126 @@ chrome.storage.onChanged.addListener((c, area) => {
   }
 });
 
-async function commitBackupImportCaches() {
-  // storage.onChanged에서 예약된 이전 critical-cache 작업이 성공 알림 뒤에
-  // 늦게 실행되지 않도록 취소하고, import의 최종 저장 상태로 다시 만든다.
+function validHotCacheData(entry, version) {
+  return entry?.version === version && entry?.data && typeof entry.data === "object"
+    ? entry.data
+    : {};
+}
+
+async function commitBackupImportCaches(syncPatch = {}, blockedUids = null) {
+  // 백업 데이터는 options에서 이미 한 번 파싱했다. 여기서 storage.sync를 다시
+  // 읽지 않고 전달받은 스냅샷을 그대로 hot cache에 반영한다.
+  const safeSyncPatch = syncPatch && typeof syncPatch === "object" && !Array.isArray(syncPatch)
+    ? syncPatch
+    : {};
+
   if (criticalFilterHotCacheTimer) {
     clearTimeout(criticalFilterHotCacheTimer);
     criticalFilterHotCacheTimer = null;
   }
 
-  // 사용자 차단 저장 작업이 진행 중이었다면 끝난 뒤 critical snapshot을 만든다.
-  await userBlockMutationQueue.catch(() => {});
-
-  // 각 cache writer는 자체 queue를 사용하므로, storage.onChanged로 이미 들어온
-  // patch와 순서를 보장하면서 최종 sync 값을 마지막에 덮어쓴다.
-  const sync = await chrome.storage.sync.get(null);
-  const jobs = [
-    seedRuntimeSettingsHotCache(),
-    writeKeywordHotCache(sync),
-    writeDcbestFilterHotCache(sync),
-    seedCriticalFilterHotCache()
-  ];
-  await Promise.all(jobs);
-
-  // 각 queue에 뒤따라 붙은 동일 import patch까지 모두 비운 뒤 완료를 응답한다.
+  // storage.onChanged가 먼저 만든 patch 작업만 짧게 비운다. 이후 캐시는 네 종류를
+  // local.get 1회 + local.set 1회로 함께 확정한다.
   await Promise.all([
+    userBlockMutationQueue,
     runtimeSettingsHotCacheWriteQueue,
     keywordHotCacheWriteQueue,
     dcbestFilterHotCacheWriteQueue,
     criticalFilterHotCacheWriteQueue
   ].map((job) => Promise.resolve(job).catch(() => {})));
 
-  // storage.onChanged가 먼저 시작한 DNR 동기화가 있더라도 마지막에 최종 상태를
-  // 한 번 더 적용해 백업 완료 시점의 규칙과 저장 설정을 일치시킨다.
-  await syncRules();
+  const stored = await chrome.storage.local.get([
+    RUNTIME_SETTINGS_HOT_CACHE_KEY,
+    KEYWORD_HOT_CACHE_KEY,
+    DCBEST_FILTER_HOT_CACHE_KEY,
+    CRITICAL_FILTER_HOT_CACHE_KEY
+  ]);
+  const stamp = Date.now();
 
-  return { ok: true, committedAt: Date.now() };
+  const runtimeData = {
+    ...validHotCacheData(stored[RUNTIME_SETTINGS_HOT_CACHE_KEY], RUNTIME_SETTINGS_HOT_CACHE_VERSION),
+    ...safeSyncPatch
+  };
+
+  const keywordCurrent = validHotCacheData(stored[KEYWORD_HOT_CACHE_KEY], KEYWORD_HOT_CACHE_VERSION);
+  const keywordPatch = normalizeKeywordSettingsPatch(safeSyncPatch);
+  const keywordData = { ...KEYWORD_SYNC_DEFAULTS, ...keywordCurrent, ...keywordPatch };
+  if (keywordPatch.keywordBlockTargets) {
+    keywordData.keywordBlockTargets = {
+      ...KEYWORD_SYNC_DEFAULTS.keywordBlockTargets,
+      ...(keywordCurrent.keywordBlockTargets || {}),
+      ...keywordPatch.keywordBlockTargets
+    };
+  }
+  if (keywordPatch.keywordHideTargets) {
+    keywordData.keywordHideTargets = {
+      ...KEYWORD_SYNC_DEFAULTS.keywordHideTargets,
+      ...(keywordCurrent.keywordHideTargets || {}),
+      ...keywordPatch.keywordHideTargets
+    };
+  }
+
+  const dcbestCurrent = validHotCacheData(stored[DCBEST_FILTER_HOT_CACHE_KEY], DCBEST_FILTER_HOT_CACHE_VERSION);
+  const dcbestData = {
+    ...DCBEST_FILTER_SYNC_DEFAULTS,
+    ...dcbestCurrent,
+    ...normalizeDcbestFilterHotPatch(safeSyncPatch)
+  };
+
+  const criticalCurrent = validHotCacheData(stored[CRITICAL_FILTER_HOT_CACHE_KEY], CRITICAL_FILTER_HOT_CACHE_VERSION);
+  const criticalSync = {
+    ...CRITICAL_FILTER_SYNC_DEFAULTS,
+    ...(criticalCurrent.sync && typeof criticalCurrent.sync === "object" ? criticalCurrent.sync : {})
+  };
+  for (const key of CRITICAL_FILTER_SYNC_KEYS) {
+    if (!Object.prototype.hasOwnProperty.call(safeSyncPatch, key)) continue;
+    const value = safeSyncPatch[key];
+    if (key === "userBlockEnabled" || key === "noticeBlockEnabled" || key === "showMemberIpInfo") {
+      criticalSync[key] = value !== false;
+    } else if (key === "hideForeignIpEnabled") {
+      criticalSync[key] = value === true;
+    }
+  }
+  const criticalTokens = Array.isArray(blockedUids)
+    ? normalizeUserBlockList(blockedUids)
+    : (Array.isArray(criticalCurrent.tokens) ? criticalCurrent.tokens : []);
+
+  await chrome.storage.local.set({
+    [RUNTIME_SETTINGS_HOT_CACHE_KEY]: {
+      version: RUNTIME_SETTINGS_HOT_CACHE_VERSION,
+      updatedAt: stamp,
+      data: runtimeData
+    },
+    [KEYWORD_HOT_CACHE_KEY]: {
+      version: KEYWORD_HOT_CACHE_VERSION,
+      updatedAt: stamp,
+      data: keywordData
+    },
+    [DCBEST_FILTER_HOT_CACHE_KEY]: {
+      version: DCBEST_FILTER_HOT_CACHE_VERSION,
+      updatedAt: stamp,
+      data: dcbestData
+    },
+    [CRITICAL_FILTER_HOT_CACHE_KEY]: {
+      version: CRITICAL_FILTER_HOT_CACHE_VERSION,
+      updatedAt: stamp,
+      data: { sync: criticalSync, tokens: criticalTokens }
+    }
+  });
+
+  // DNR은 storage.onChanged에서도 동기화된다. 사용자에게 완료를 알리는 임계 경로에는
+  // 넣지 않고 한 번 더 보정만 예약한다.
+  setTimeout(() => {
+    void syncRules().catch((error) => console.warn("[DCB] delayed backup DNR sync failed", error));
+  }, 0);
+
+  return { ok: true, committedAt: stamp };
 }
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== "dcb.backupImport.commit") return undefined;
 
-  commitBackupImportCaches()
+  commitBackupImportCaches(message.sync, message.blockedUids)
     .then((result) => sendResponse(result))
     .catch((error) => {
       console.error("[DCB] backup import cache commit failed", error);
