@@ -1,12 +1,10 @@
 (() => {
   "use strict";
   const config = globalThis.DCBTextDetection;
-  const page = "src/offscreen/detection.html";
   const statusKey = "dcbDetectionStatus";
   const runtimeRetryMs = 5 * 60_000;
   const settingsHotKey = 'dcbTextDetectionHotCacheV1';
   const settingsHotVersion = 1;
-  let creating;
   let queued = 0;
   let chain = Promise.resolve();
   let status = { state: "idle" };
@@ -17,6 +15,7 @@
   let runtimeFailure = "";
   let detectionSettings = config.normalize();
   let warming;
+  let runtimeChain = Promise.resolve();
   const statusReady = Promise.resolve(chrome.storage.session.get?.(statusKey)).then(stored => {
     const saved = stored?.[statusKey];
     if (!statusRevision && saved && typeof saved.state === "string") status = saved;
@@ -64,7 +63,7 @@
     chrome.storage.session.set({ [statusKey]: status }).catch(() => {});
   }
   function failureReason(error) {
-    const reason = typeof error === "string" ? error : error?.error;
+    const reason = typeof error === "string" ? error : (error?.error || error?.code);
     return ["model-missing", "invalid-model", "runtime-init-failed", "model-unavailable", "model-timeout", "runtime-unavailable", "invalid-result", "busy"].includes(reason)
       ? reason : "runtime-unavailable";
   }
@@ -103,39 +102,28 @@
       score: Math.max(...results.slice(start, start + count).map((item) => item.score))
     }));
   }
-  async function hasRuntimeDocument() {
-    if (typeof chrome.runtime.getContexts === "function") {
-      const contexts = await chrome.runtime.getContexts({
-        contextTypes: ["OFFSCREEN_DOCUMENT"],
-        documentUrls: [chrome.runtime.getURL(page)]
-      });
-      return contexts.length > 0;
-    }
-    return typeof chrome.offscreen.hasDocument === "function" && await chrome.offscreen.hasDocument();
+  function invokeRuntime(items) {
+    const run = runtimeChain.then(async () => {
+      const runtime = globalThis.DCBLocalInference;
+      if (!runtime || typeof runtime.analyze !== "function") {
+        throw Object.assign(new Error("runtime-unavailable"), { code: "runtime-unavailable" });
+      }
+      return runtime.analyze(items);
+    });
+    runtimeChain = run.catch(() => {});
+    return run;
+  }
+  async function releaseRuntime() {
+    try { await runtimeChain; } catch (_) {}
+    try { await globalThis.DCBLocalInference?.release?.(); } catch (_) {}
   }
   function releaseWhenIdle(delay = 300_000) {
     clearTimeout(idleTimer);
     idleTimer = setTimeout(async () => {
       if (queued) return;
-      try {
-        if (await hasRuntimeDocument()) await chrome.offscreen.closeDocument();
-        setStatus("idle");
-      } catch { /* The document may already have closed with the browser. */ }
+      await releaseRuntime();
+      setStatus("idle");
     }, delay);
-  }
-  async function ensureRuntime() {
-    if (!creating) {
-      creating = (async () => {
-        if (!await hasRuntimeDocument()) {
-          await chrome.offscreen.createDocument({
-            url: page,
-            reasons: ["WORKERS"],
-            justification: "게시글과 댓글을 외부 전송 없이 기기 내 모델로 분석합니다."
-          });
-        }
-      })().finally(() => { creating = undefined; });
-    }
-    return creating;
   }
   async function prewarmRuntime() {
     await settingsReady;
@@ -146,12 +134,9 @@
         if (Date.now() < runtimeRetryAt) return { ok: false, error: runtimeFailure || "runtime-unavailable" };
         setStatus("loading", { mode: "model" });
         try {
-          await ensureRuntime();
-          const result = await chrome.runtime.sendMessage({
-            type: "DCB_INFERENCE",
-            target: "detection-offscreen",
-            items: [{ kind: "comment", title: "", body: "runtime warmup" }]
-          });
+          const result = await invokeRuntime([
+            { kind: "comment", title: "", body: "runtime warmup" }
+          ]);
           if (validModelResult(result, 1)) {
             runtimeRetryAt = 0;
             runtimeFailure = "";
@@ -220,8 +205,7 @@
         let result;
         const { expanded, groups } = expandLongPosts(items);
         try {
-          await ensureRuntime();
-          result = await chrome.runtime.sendMessage({ type: "DCB_INFERENCE", target: "detection-offscreen", items: expanded });
+          result = await invokeRuntime(expanded);
         } catch (error) {
           result = { ok: false, error: failureReason(error) };
         }

@@ -1,15 +1,4 @@
 /*****************************************************************
- * Bootstrap shared modules
- *****************************************************************/
-importScripts("../shared/block-stats-history.js", "../shared/release-version.js");
-try {
-  importScripts("../shared/storage/user-block-store.js");
-} catch (error) {
-  console.warn("[DCB] User block store bootstrap failed:", error);
-}
-importScripts("../shared/detection-config.js", "text-detection.js");
-
-/*****************************************************************
  * background.js
  *****************************************************************/
 
@@ -40,10 +29,21 @@ const DCBEST_FILTER_SYNC_DEFAULTS = Object.freeze({
   blockedIds: []
 });
 const DCBEST_FILTER_SYNC_KEYS = new Set(Object.keys(DCBEST_FILTER_SYNC_DEFAULTS));
+const CRITICAL_FILTER_HOT_CACHE_KEY = "dcbCriticalFilterHotCacheV1";
+const CRITICAL_FILTER_HOT_CACHE_VERSION = 2;
+const CRITICAL_FILTER_SYNC_DEFAULTS = Object.freeze({
+  userBlockEnabled: true,
+  noticeBlockEnabled: true,
+  hideForeignIpEnabled: false,
+  showMemberIpInfo: true
+});
+const CRITICAL_FILTER_SYNC_KEYS = new Set(Object.keys(CRITICAL_FILTER_SYNC_DEFAULTS));
 
 let keywordSettingsWriteQueue = Promise.resolve();
 let keywordHotCacheWriteQueue = Promise.resolve();
 let dcbestFilterHotCacheWriteQueue = Promise.resolve();
+let criticalFilterHotCacheWriteQueue = Promise.resolve();
+let criticalFilterHotCacheTimer = null;
 
 let userBlockMutationQueue = Promise.resolve();
 let updateNoticeMutationQueue = Promise.resolve();
@@ -159,6 +159,41 @@ async function seedDcbestFilterHotCache() {
     const conf = await chrome.storage.sync.get(DCBEST_FILTER_SYNC_DEFAULTS);
     await writeDcbestFilterHotCache(conf);
   } catch (_) {}
+}
+
+async function seedCriticalFilterHotCache() {
+  const job = criticalFilterHotCacheWriteQueue.then(async () => {
+    const [sync, tokens] = await Promise.all([
+      chrome.storage.sync.get(CRITICAL_FILTER_SYNC_DEFAULTS),
+      globalThis.DCBUserBlockStore?.getAllTokensReadOnly?.() || Promise.resolve([])
+    ]);
+
+    await chrome.storage.local.set({
+      [CRITICAL_FILTER_HOT_CACHE_KEY]: {
+        version: CRITICAL_FILTER_HOT_CACHE_VERSION,
+        updatedAt: Date.now(),
+        data: {
+          sync: {
+            userBlockEnabled: sync.userBlockEnabled !== false,
+            noticeBlockEnabled: sync.noticeBlockEnabled !== false,
+            hideForeignIpEnabled: sync.hideForeignIpEnabled === true,
+            showMemberIpInfo: sync.showMemberIpInfo !== false
+          },
+          tokens: Array.isArray(tokens) ? tokens : []
+        }
+      }
+    });
+  });
+  criticalFilterHotCacheWriteQueue = job.catch(() => {});
+  return job;
+}
+
+function scheduleCriticalFilterHotCacheSeed(delay = 25) {
+  if (criticalFilterHotCacheTimer) clearTimeout(criticalFilterHotCacheTimer);
+  criticalFilterHotCacheTimer = setTimeout(() => {
+    criticalFilterHotCacheTimer = null;
+    void seedCriticalFilterHotCache();
+  }, Math.max(0, Number(delay) || 0));
 }
 
 function queueKeywordSettingsPatch(patch = {}) {
@@ -507,7 +542,7 @@ function normalizeUserBlockList(values) {
 async function normalizeStoredUserBlockList() {
   try {
     if (!globalThis.DCBUserBlockStore) return;
-    await DCBUserBlockStore.migrateLegacyToBuckets();
+    await globalThis.DCBUserBlockStore.migrateLegacyToBuckets();
   } catch (_) {
     // storage 정리는 보조 기능이므로 실패해도 핵심 차단 흐름은 유지한다.
   }
@@ -528,13 +563,13 @@ function emptyBlockStats() {
 }
 
 function normalizeBlockStatsHistory(value) {
-  return DCBBlockStatsHistory.normalize(value);
+  return globalThis.DCBBlockStatsHistory.normalize(value);
 }
 
 function addBlockStatsHistory(value, counts) {
   // 누적 통계와 같은 입력 제한을 적용해야 그래프 합계도 항상 누적 증가량과 일치한다.
   const increment = mergeBlockStats(emptyBlockStats(), counts).total;
-  return DCBBlockStatsHistory.add(value, increment);
+  return globalThis.DCBBlockStatsHistory.add(value, increment);
 }
 
 function normalizeBlockStats(value) {
@@ -1318,6 +1353,14 @@ chrome.storage.onChanged.addListener((c, area) => {
       if (c[key]) dcbestPatch[key] = c[key].newValue;
     }
     if (Object.keys(dcbestPatch).length) void writeDcbestFilterHotCache(dcbestPatch);
+
+    if ([...CRITICAL_FILTER_SYNC_KEYS].some((key) => c[key])) {
+      scheduleCriticalFilterHotCacheSeed();
+    }
+  }
+
+  if (area === "local" && globalThis.DCBUserBlockStore?.isRelevantChange?.(c)) {
+    scheduleCriticalFilterHotCacheSeed();
   }
 });
 
@@ -1334,12 +1377,14 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 chrome.runtime.onStartup?.addListener(() => {
   void seedKeywordHotCache();
   void seedDcbestFilterHotCache();
+  void seedCriticalFilterHotCache();
   chrome.alarms?.create(GITHUB_RELEASE_ALARM, { delayInMinutes: 1, periodInMinutes: 360 });
   void refreshReleaseStatusAndBadge();
 });
 chrome.runtime.onInstalled?.addListener(() => {
   void seedKeywordHotCache();
   void seedDcbestFilterHotCache();
+  void seedCriticalFilterHotCache();
   chrome.alarms?.create(GITHUB_RELEASE_ALARM, { delayInMinutes: 1, periodInMinutes: 360 });
   void refreshReleaseStatusAndBadge({ force: true });
 });
@@ -1348,6 +1393,7 @@ chrome.alarms?.onAlarm.addListener((alarm) => {
 });
 void seedKeywordHotCache();
 void seedDcbestFilterHotCache();
+void seedCriticalFilterHotCache();
 chrome.alarms?.create(GITHUB_RELEASE_ALARM, { delayInMinutes: 1, periodInMinutes: 360 });
 void refreshReleaseStatusAndBadge();
 
@@ -2374,16 +2420,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 /* ───── 사용자 즉시 차단/해제 ───── */
 function matchingBlockedUserTokens(storedTokens, candidates) {
-  const normalizedCandidates = DCBUserBlockStore.normalizeList(candidates);
-  const exactKeys = new Set(normalizedCandidates.map((value) => DCBUserBlockStore.makeBlockKey(value)).filter(Boolean));
+  const normalizedCandidates = globalThis.DCBUserBlockStore.normalizeList(candidates);
+  const exactKeys = new Set(normalizedCandidates.map((value) => globalThis.DCBUserBlockStore.makeBlockKey(value)).filter(Boolean));
   const nickHaystacks = normalizedCandidates
     .filter((value) => /^nick\s*[:=]/i.test(value))
     .map((value) => value.replace(/^nick\s*[:=]\s*/i, "").toLowerCase());
   const seen = new Set();
 
   return (Array.isArray(storedTokens) ? storedTokens : []).filter((stored) => {
-    const normalized = DCBUserBlockStore.normalizeToken(stored);
-    const key = DCBUserBlockStore.makeBlockKey(normalized);
+    const normalized = globalThis.DCBUserBlockStore.normalizeToken(stored);
+    const key = globalThis.DCBUserBlockStore.makeBlockKey(normalized);
     if (!normalized || !key || seen.has(key)) return false;
 
     const nickNeedle = /^nick\s*[:=]/i.test(normalized)
@@ -2409,19 +2455,19 @@ async function toggleBlockedUserToken(token, candidates = []) {
     userBlockEnabled: true
   });
 
-  const normalizedToken = DCBUserBlockStore.normalizeToken(token);
-  const normalizedCandidates = DCBUserBlockStore.normalizeList([
+  const normalizedToken = globalThis.DCBUserBlockStore.normalizeToken(token);
+  const normalizedCandidates = globalThis.DCBUserBlockStore.normalizeList([
     normalizedToken,
     ...(Array.isArray(candidates) ? candidates : [])
   ]);
-  const storedTokens = await DCBUserBlockStore.getAllTokens();
+  const storedTokens = await globalThis.DCBUserBlockStore.getAllTokens();
   const matchedTokens = matchingBlockedUserTokens(storedTokens, normalizedCandidates);
   let res;
 
   if (matchedTokens.length) {
-    res = await DCBUserBlockStore.removeTokens(matchedTokens);
+    res = await globalThis.DCBUserBlockStore.removeTokens(matchedTokens);
   } else {
-    const added = await DCBUserBlockStore.addToken(normalizedToken);
+    const added = await globalThis.DCBUserBlockStore.addToken(normalizedToken);
     res = {
       ...added,
       removed: false,
@@ -2449,7 +2495,7 @@ async function removeBlockedUserToken(token) {
     };
   }
 
-  return DCBUserBlockStore.removeToken(token);
+  return globalThis.DCBUserBlockStore.removeToken(token);
 }
 
 async function removeBlockedUserTokens(tokens) {
@@ -2469,7 +2515,7 @@ async function removeBlockedUserTokens(tokens) {
     };
   }
 
-  return DCBUserBlockStore.removeTokens(tokens);
+  return globalThis.DCBUserBlockStore.removeTokens(tokens);
 }
 
 async function mutateUserBlockList(message) {
@@ -2482,7 +2528,7 @@ async function mutateUserBlockList(message) {
   }
 
   if (message.type === "dcb.userBlockAdd") {
-    return DCBUserBlockStore.addToken(message.token);
+    return globalThis.DCBUserBlockStore.addToken(message.token);
   }
 
   if (message.type === "dcb.userBlockSetAll") {
@@ -2493,12 +2539,12 @@ async function mutateUserBlockList(message) {
         message: "사용자 차단 목록 형식이 올바르지 않습니다."
       };
     }
-    const tokens = await DCBUserBlockStore.setAllTokens(message.tokens);
+    const tokens = await globalThis.DCBUserBlockStore.setAllTokens(message.tokens);
     return { ok: true, tokens, count: tokens.length };
   }
 
   if (message.type === "dcb.userBlockClear") {
-    const tokens = await DCBUserBlockStore.clearAllTokens();
+    const tokens = await globalThis.DCBUserBlockStore.clearAllTokens();
     return { ok: true, tokens, count: 0 };
   }
 

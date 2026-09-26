@@ -19,8 +19,7 @@
     "declarativeNetRequest",
     "contextMenus",
     "alarms",
-    "unlimitedStorage",
-    "offscreen"
+    "unlimitedStorage"
   ],
   "host_permissions": [
     "*://gall.dcinside.com/*",
@@ -35,13 +34,17 @@
     "rule_resources": []
   },
   "background": {
-    "service_worker": "src/background/background.js"
+    "service_worker": "src/background/background-entry.js",
+    "scripts": [
+      "src/background/background-entry.js"
+    ],
+    "type": "module"
   },
   "options_page": "src/ui/options/options.html",
   "content_security_policy": {
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://gall.dcinside.com https://gallog.dcinside.com https://m.dcinside.com https://www.dcinside.com https://search.dcinside.com https://api.github.com;"
   },
-  "minimum_chrome_version": "116",
+  "minimum_chrome_version": "121",
   "content_scripts": [
     {
       "matches": [
@@ -51,8 +54,7 @@
         "*://gall.dcinside.com/person/board/lists*"
       ],
       "js": [
-        "src/shared/storage/user-block-store.js",
-        "src/shared/ip-network-classifier.js",
+        "src/shared/ip-network-fast-classifier.js",
         "src/content/core/critical-filter-bootstrap.js"
       ],
       "run_at": "document_start",
@@ -174,7 +176,6 @@
         "*://gall.dcinside.com/person/board/view*"
       ],
       "js": [
-        "src/shared/ip-network-classifier.js",
         "src/content/core/content_script.js"
       ],
       "run_at": "document_start"
@@ -311,7 +312,7 @@
         "src/shared/storage/user-block-store.js",
         "src/content/user/cleaner-userblock.js"
       ],
-      "run_at": "document_start",
+      "run_at": "document_end",
       "all_frames": false
     },
     {
@@ -330,7 +331,7 @@
         "src/content/cleaner/cleaner-foreign-ip.js",
         "src/content/cleaner/cleaner-anonymous.js"
       ],
-      "run_at": "document_start",
+      "run_at": "document_end",
       "all_frames": true
     },
     {
@@ -377,7 +378,7 @@
       "js": [
         "src/content/cleaner/cleaner-notice.js"
       ],
-      "run_at": "document_start",
+      "run_at": "document_end",
       "all_frames": true
     },
     {
@@ -472,5 +473,16 @@
       "run_at": "document_start",
       "all_frames": false
     }
-  ]
+  ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "@dcinside-gallery-blocker.diligencefrozen",
+      "strict_min_version": "140.0",
+      "data_collection_permissions": {
+        "required": [
+          "websiteContent"
+        ]
+      }
+    }
+  }
 }

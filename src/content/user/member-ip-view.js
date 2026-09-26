@@ -9,6 +9,9 @@
   const classifier = globalThis.DCBIpNetworkClassifier;
   if (!classifier) return;
   const { normalizeIpText, describeIpFragment } = classifier;
+  let enabled = false;
+  let scheduled = false;
+  const pendingRoots = new Set();
 
   function unwrapIpToken(raw) {
     return String(raw || "")
@@ -88,6 +91,7 @@
       .${BADGE_CLASS}[data-tone="mobile"]{--member-ip-bg:rgba(59, 130, 246, .11);--member-ip-fg:#285ba9;--member-ip-ring:rgba(59, 130, 246, .24);}
       .${BADGE_CLASS}[data-tone="risk"]{--member-ip-bg:rgba(239, 68, 68, .10);--member-ip-fg:#a83b3b;--member-ip-ring:rgba(239, 68, 68, .24);}
       .${BADGE_CLASS}[data-tone="foreign"]{--member-ip-bg:rgba(148, 163, 184, .16);--member-ip-fg:#566173;--member-ip-ring:rgba(148, 163, 184, .26);}
+      .${BADGE_CLASS}[data-tone="loading"]{--member-ip-bg:rgba(148, 163, 184, .11);--member-ip-fg:#6b7280;--member-ip-ring:rgba(148, 163, 184, .22);}
       .gall_list td.gall_writer .${BADGE_CLASS},
       .gall_list td.ub-writer .${BADGE_CLASS},
       td.gall_writer.ub-writer[data-loc="list"] .${BADGE_CLASS},
@@ -120,40 +124,58 @@
     root.querySelectorAll?.(`.${BADGE_CLASS}`).forEach((el) => el.remove());
   }
 
-  function hasExistingBadge(ipEl) {
-    const next = ipEl.nextElementSibling;
-    return !!(next && next.classList && next.classList.contains(BADGE_CLASS));
+  function getExistingBadge(ipEl) {
+    const next = ipEl?.nextElementSibling;
+    return next && next.classList?.contains(BADGE_CLASS) ? next : null;
   }
 
-  function createMemberIpBadge(ip) {
+  function hasExistingBadge(ipEl) {
+    return !!getExistingBadge(ipEl);
+  }
+
+  function applyMemberIpBadgeInfo(tag, ip) {
     const info = describeIpFragment(ip);
-    const tag = document.createElement("span");
     tag.className = BADGE_CLASS;
     tag.dataset.tone = info.tone;
     tag.dataset.ip = ip;
     tag.title = info.title;
     tag.textContent = info.label;
+    tag.removeAttribute("data-dcb-fast-badge");
+    tag.removeAttribute("data-dcb-loading-badge");
+    tag.removeAttribute("data-dcb-owned");
     return tag;
+  }
+
+  function createMemberIpBadge(ip) {
+    return applyMemberIpBadgeInfo(document.createElement("span"), ip);
   }
 
   function attachMemberIpBadge(ipEl) {
     if (!(ipEl instanceof Element)) return;
     if (ipEl.closest?.(`.${BADGE_CLASS}`)) return;
-    if (hasExistingBadge(ipEl)) return;
     if (shouldSkipIpElement(ipEl)) return;
 
     const ip = normalizeIpText(ipEl.textContent || "");
     if (!ip) return;
 
+    const existing = getExistingBadge(ipEl);
+    if (existing) {
+      if (existing.hasAttribute("data-dcb-fast-badge")) applyMemberIpBadgeInfo(existing, ip);
+      return;
+    }
     ipEl.insertAdjacentElement("afterend", createMemberIpBadge(ip));
   }
 
   function attachMemberIpBadgeFromWriter(writer) {
     if (!(writer instanceof Element)) return;
-    if (writer.querySelector?.(`.${BADGE_CLASS}`)) return;
 
     const ip = normalizeIpText(writer.getAttribute("data-ip") || writer.getAttribute("data-memo-ip") || "");
     if (!ip) return;
+    const existing = writer.querySelector?.(`.${BADGE_CLASS}`);
+    if (existing) {
+      if (existing.hasAttribute("data-dcb-fast-badge")) applyMemberIpBadgeInfo(existing, ip);
+      return;
+    }
 
     const anchor = writer.querySelector?.(".ip,.writer_ip");
     if (anchor) {
@@ -175,24 +197,36 @@
     else writer.appendChild(createMemberIpBadge(ip));
   }
 
+  const IP_SELECTOR = ".ip,.writer_ip";
+  const WRITER_IP_SELECTOR = ".gall_writer[data-ip],.ub-writer[data-ip],.gall_writer[data-memo-ip],.ub-writer[data-memo-ip]";
+
   function refreshMemberIpBadges(root = document) {
     if (!enabled) {
       removeMemberIpBadges(root);
-      removeBadgeStyle();
+      if (root === document) removeBadgeStyle();
       return;
     }
 
     ensureBadgeStyle();
-    root.querySelectorAll?.(".ip,.writer_ip").forEach(attachMemberIpBadge);
-    root.querySelectorAll?.(".gall_writer[data-ip],.ub-writer[data-ip],.gall_writer[data-memo-ip],.ub-writer[data-memo-ip]").forEach(attachMemberIpBadgeFromWriter);
+    if (root instanceof Element) {
+      if (root.matches?.(IP_SELECTOR)) attachMemberIpBadge(root);
+      if (root.matches?.(WRITER_IP_SELECTOR)) attachMemberIpBadgeFromWriter(root);
+    }
+    root.querySelectorAll?.(IP_SELECTOR).forEach(attachMemberIpBadge);
+    root.querySelectorAll?.(WRITER_IP_SELECTOR).forEach(attachMemberIpBadgeFromWriter);
   }
 
   function scheduleMemberIpScan(root = document) {
+    if (root) pendingRoots.add(root);
     if (scheduled) return;
     scheduled = true;
     requestAnimationFrame(() => {
       scheduled = false;
-      refreshMemberIpBadges(root);
+      const roots = [...pendingRoots];
+      pendingRoots.clear();
+      roots.forEach((candidate) => {
+        if (candidate === document || candidate?.isConnected !== false) refreshMemberIpBadges(candidate);
+      });
     });
   }
 
@@ -204,21 +238,36 @@
     );
   }
 
-  function shouldReact(mutations) {
+  function collectMutationRoots(mutations) {
+    const roots = new Set();
     for (const mutation of mutations) {
       if (isOwnNode(mutation.target)) continue;
-      if (mutation.type === "characterData") return true;
+
+      if (mutation.type === "characterData") {
+        const parent = mutation.target?.parentElement;
+        if (parent && !isOwnNode(parent)) roots.add(parent);
+        continue;
+      }
+
+      if (mutation.type === "attributes") {
+        if (mutation.target instanceof Element) roots.add(mutation.target);
+        continue;
+      }
+
       for (const node of mutation.addedNodes) {
         if (isOwnNode(node)) continue;
-        if (node.nodeType === 1 && (node.matches?.(".ip,.writer_ip,.gall_writer[data-ip],.ub-writer[data-ip],.gall_writer[data-memo-ip],.ub-writer[data-memo-ip]") || node.querySelector?.(".ip,.writer_ip,.gall_writer[data-ip],.ub-writer[data-ip],.gall_writer[data-memo-ip],.ub-writer[data-memo-ip]"))) return true;
+        if (!(node instanceof Element)) continue;
+        if (node.matches?.(IP_SELECTOR) || node.matches?.(WRITER_IP_SELECTOR) || node.querySelector?.(`${IP_SELECTOR},${WRITER_IP_SELECTOR}`)) {
+          roots.add(node);
+        }
       }
     }
-    return false;
+    return roots;
   }
 
   const observer = new MutationObserver((mutations) => {
     if (!enabled) return;
-    if (shouldReact(mutations)) scheduleMemberIpScan(document);
+    collectMutationRoots(mutations).forEach((root) => scheduleMemberIpScan(root));
   });
 
   function refreshWithCurrentState(root = document) {
@@ -242,28 +291,39 @@
 
   function boot() {
     try {
+      const hotSnapshot = globalThis.DCBCriticalFilter?.getSnapshot?.();
+      const hotEnabled = hotSnapshot?.sync?.showMemberIpInfo;
+      if (hotSnapshot?.memberIpSettingKnown === true && typeof hotEnabled === "boolean") {
+        enabled = hotEnabled;
+        refreshMemberIpBadges(document);
+      }
+
       chrome.storage.sync.get({ [STORAGE_KEY]: true }, (conf) => {
         enabled = !!conf[STORAGE_KEY];
+        globalThis.DCBCriticalFilter?.setMemberIpBadgeSetting?.(enabled);
         refreshMemberIpBadges(document);
       });
 
       chrome.storage.onChanged.addListener((changes, area) => {
         if (area !== "sync" || !changes[STORAGE_KEY]) return;
         enabled = !!changes[STORAGE_KEY].newValue;
+        globalThis.DCBCriticalFilter?.setMemberIpBadgeSetting?.(enabled);
         refreshMemberIpBadges(document);
       });
     } catch (_) {
       refreshMemberIpBadges(document);
     }
 
-    if (document.body) {
-      observer.observe(document.body, { childList: true, subtree: true, characterData: true });
-    }
+    // The manifest injects this at document_end so badge work stays off the
+    // first-paint critical path. Observe incrementally from that point onward.
+    observer.observe(document, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: ["data-ip", "data-memo-ip"]
+    });
   }
 
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", boot, { once: true });
-  } else {
-    boot();
-  }
+  boot();
 })();

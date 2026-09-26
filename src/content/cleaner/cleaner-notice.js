@@ -202,7 +202,8 @@
     let raw;
     if (critical?.ready) {
       await critical.ready;
-      raw = critical.getSnapshot?.()?.sync;
+      const snapshot = critical.getSnapshot?.();
+      if (snapshot?.reason === "hot-ready") raw = snapshot.sync;
     }
     if (!raw) raw = await chrome.storage.sync.get(DEFAULTS);
     enabled = raw.noticeBlockEnabled !== false;

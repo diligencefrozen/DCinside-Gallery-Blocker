@@ -3355,7 +3355,7 @@ syncSettings(handleUrl);
 
   function filterNote(kind, label, revealKey = ""){
     const isDanger = kind === "user" || kind === "keyword-block";
-    const title = kind === "user" ? "차단한 사용자 콘텐츠" : kind === "anonymous" ? "비회원 콘텐츠 숨김" : kind === "foreign" ? "해외 IP 또는 우회망 후보 콘텐츠 숨김" : kind === "dccon" ? "디시콘 댓글 숨김" : kind === "dory" ? "댓글돌이 댓글 숨김" : kind === "keyword-hide" ? "숨김 키워드가 포함된 콘텐츠" : "차단 키워드가 포함된 콘텐츠";
+    const title = kind === "user" ? "차단한 사용자 콘텐츠" : kind === "anonymous" ? "비회원 콘텐츠 숨김" : kind === "foreign" ? "해외 또는 우회 접속 IP로 확인되어 숨김 처리되었습니다." : kind === "dccon" ? "디시콘 댓글 숨김" : kind === "dory" ? "댓글돌이 댓글 숨김" : kind === "keyword-hide" ? "숨김 키워드가 포함된 콘텐츠" : "차단 키워드가 포함된 콘텐츠";
     const chip = label ? `<span class="dcbpv-filter-chip" title="${escapeText(label)}">${escapeText(label)}</span>` : "";
     const reveal = revealKey ? `<button type="button" class="dcbpv-filter-reveal" data-dcbpv-reveal="${escapeText(revealKey)}">이번만 보기</button>` : "";
     return `<div class="dcbpv-filter-note${isDanger ? " danger" : ""}"><span>${title}</span>${chip}${reveal}</div>`;

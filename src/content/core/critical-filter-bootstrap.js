@@ -14,7 +14,11 @@
   const USER_BLOCKED_CLASS = "dcb-userblock-hidden";
   const NOTICE_BLOCKED_CLASS = "dcb-notice-blocked";
   const FOREIGN_IP_BLOCKED_CLASS = "dcb-foreign-ip-hidden";
-  const WATCHDOG_MS = 1800;
+  const MEMBER_IP_BADGE_CLASS = "dc-member-ip-chip";
+  const FAST_BADGE_ATTR = "data-dcb-fast-badge";
+  const WATCHDOG_MS = 80;
+  const HOT_CACHE_KEY = "dcbCriticalFilterHotCacheV1";
+  const HOT_CACHE_VERSION = 2;
   const OWNED_SELECTOR = "[data-dcb-owned]";
   const ROW_SELECTOR = [
     ".gall_list tbody tr",
@@ -42,11 +46,13 @@
 
   const state = {
     phase: "pending",
-    sync: { userBlockEnabled: true, noticeBlockEnabled: true, hideForeignIpEnabled: false },
+    sync: { userBlockEnabled: true, noticeBlockEnabled: true, hideForeignIpEnabled: false, showMemberIpInfo: false },
     tokens: [],
     matcher: null,
     completedAt: 0,
-    reason: ""
+    reason: "",
+    memberIpSettingKnown: false,
+    memberIpViewReady: false
   };
   let observer = null;
   let reloadGeneration = 0;
@@ -67,15 +73,31 @@
       style.id = STYLE_ID;
       style.dataset.dcbOwned = "critical-filter";
       style.textContent = `
-        html.${ROOT_CLASS} .gall_list tr:has(.gall_writer),
-        html.${ROOT_CLASS} .gall_list tr:has(.ub-writer),
-        html.${ROOT_CLASS} .gall_list li:has(.gall_writer),
-        html.${ROOT_CLASS} .gall_list li:has(.ub-writer) {
+        html.${ROOT_CLASS} .gall_list tbody tr,
+        html.${ROOT_CLASS} .gall_list tr.ub-content,
+        html.${ROOT_CLASS} .gall_list tr[data-no],
+        html.${ROOT_CLASS} .gall_list tr.gall_tr,
+        html.${ROOT_CLASS} .gall_list li.ub-content,
+        html.${ROOT_CLASS} .gall_list li.gall_item {
           visibility: hidden !important;
         }
         .${USER_BLOCKED_CLASS}, .${NOTICE_BLOCKED_CLASS}, .${FOREIGN_IP_BLOCKED_CLASS} {
           display: none !important;
         }
+        .${MEMBER_IP_BADGE_CLASS}{
+          --member-ip-bg:rgba(76,99,255,.09);--member-ip-fg:#3446a8;--member-ip-ring:rgba(76,99,255,.22);
+          display:inline-flex!important;align-items:center!important;gap:3px!important;max-width:42px!important;height:13px!important;
+          margin:0 0 0 1px!important;padding:0 2px!important;border:1px solid var(--member-ip-ring)!important;border-radius:8px!important;
+          background:linear-gradient(180deg,rgba(255,255,255,.78),rgba(255,255,255,.52)),var(--member-ip-bg)!important;
+          box-shadow:0 1px 2px rgba(15,23,42,.06),inset 0 1px 0 rgba(255,255,255,.55)!important;color:var(--member-ip-fg)!important;
+          font:800 8px/1.1 Arial,Helvetica,sans-serif!important;letter-spacing:-.35px!important;white-space:nowrap!important;
+          vertical-align:baseline!important;overflow:hidden!important;text-overflow:ellipsis!important;box-sizing:border-box!important;
+        }
+        .${MEMBER_IP_BADGE_CLASS}::before{content:""!important;flex:0 0 4px!important;width:4px!important;height:4px!important;border-radius:50%!important;background:currentColor!important;opacity:.78!important;}
+        .${MEMBER_IP_BADGE_CLASS}[data-tone="wired"]{--member-ip-bg:rgba(38,166,91,.10);--member-ip-fg:#257247;--member-ip-ring:rgba(38,166,91,.24);}
+        .${MEMBER_IP_BADGE_CLASS}[data-tone="mobile"]{--member-ip-bg:rgba(59,130,246,.11);--member-ip-fg:#285ba9;--member-ip-ring:rgba(59,130,246,.24);}
+        .${MEMBER_IP_BADGE_CLASS}[data-tone="risk"]{--member-ip-bg:rgba(239,68,68,.10);--member-ip-fg:#a83b3b;--member-ip-ring:rgba(239,68,68,.24);}
+        .${MEMBER_IP_BADGE_CLASS}[data-tone="foreign"]{--member-ip-bg:rgba(148,163,184,.16);--member-ip-fg:#566173;--member-ip-ring:rgba(148,163,184,.26);}
       `;
       root.appendChild(style);
     }
@@ -146,10 +168,10 @@
     return { uid, ip, nick };
   }
 
-  function userMatches(writer) {
+  function userMatches(writer, tokens = null) {
     const matcher = state.matcher;
     if (!matcher || state.sync.userBlockEnabled === false) return false;
-    const { uid, ip, nick } = writerTokens(writer);
+    const { uid, ip, nick } = tokens || writerTokens(writer);
     return (uid && matcher.uids.has(uid)) || (ip && matcher.ips.has(ip)) ||
       (nick && matcher.nicks.some((needle) => nick.includes(needle)));
   }
@@ -167,22 +189,110 @@
     });
   }
 
-  function isForeignNetworkWriter(writer) {
+  function isForeignNetworkWriter(writer, tokens = null) {
     if (state.sync.hideForeignIpEnabled !== true) return false;
-    const classifier = globalThis.DCBIpNetworkClassifier;
+    const classifier = globalThis.DCBFastIpNetworkClassifier;
     if (!classifier) return false;
-    const rawIp = [attr(writer, "data-ip"), attr(writer, "data-memo-ip")].filter(Boolean).join(" ");
+    const rawIp = tokens?.ip || [attr(writer, "data-ip"), attr(writer, "data-memo-ip")].filter(Boolean).join(" ");
     const category = classifier.classify(rawIp).category;
     return category === "foreign" || category === "anonymizer" || category === "relay";
+  }
+
+  function applyLoadingMemberIpBadge(tag, ip) {
+    tag.className = MEMBER_IP_BADGE_CLASS;
+    tag.setAttribute(FAST_BADGE_ATTR, "1");
+    tag.setAttribute("data-dcb-loading-badge", "1");
+    tag.dataset.dcbOwned = "member-ip-fast";
+    tag.dataset.tone = "loading";
+    tag.dataset.ip = ip;
+    tag.title = "IP 정보 판정 중";
+    tag.textContent = "로딩 중";
+    return tag;
+  }
+
+  function createLoadingMemberIpBadge(ip) {
+    return applyLoadingMemberIpBadge(document.createElement("span"), ip);
+  }
+
+  function applyFastMemberIpBadge(tag, ip) {
+    const classifier = globalThis.DCBFastIpNetworkClassifier;
+    if (!classifier?.describeIpFragment) return applyLoadingMemberIpBadge(tag, ip);
+    const info = classifier.describeIpFragment(ip);
+    tag.className = MEMBER_IP_BADGE_CLASS;
+    tag.setAttribute(FAST_BADGE_ATTR, "1");
+    tag.removeAttribute("data-dcb-loading-badge");
+    tag.dataset.dcbOwned = "member-ip-fast";
+    tag.dataset.tone = info.tone;
+    tag.dataset.ip = ip;
+    tag.title = info.title;
+    tag.textContent = info.label;
+    return tag;
+  }
+
+  function createFastMemberIpBadge(ip) {
+    return applyFastMemberIpBadge(document.createElement("span"), ip);
+  }
+
+  function placeMemberIpBadge(writer, tag, ip) {
+    const anchors = [...(writer.querySelectorAll?.(".ip,.writer_ip") || [])];
+    const anchor = anchors.find((node) => normalizeIp(node.textContent || "") === ip);
+    if (anchor) {
+      anchor.insertAdjacentElement("afterend", tag);
+      return;
+    }
+    const after = writer.querySelector?.(":scope > .writer_nikcon") || writer.querySelector?.(":scope > .nickname") || writer.querySelector?.(".writer_nikcon,.nickname");
+    if (after) after.insertAdjacentElement("afterend", tag);
+    else writer.appendChild(tag);
+  }
+
+  function attachLoadingMemberIpBadge(writer, tokens = null) {
+    if (!(writer instanceof Element)) return;
+    const ip = (tokens || writerTokens(writer)).ip;
+    if (!ip) return;
+    const existing = writer.querySelector?.(`.${MEMBER_IP_BADGE_CLASS}`);
+    if (existing) return;
+    placeMemberIpBadge(writer, createLoadingMemberIpBadge(ip), ip);
+  }
+
+  function attachFastMemberIpBadge(writer, tokens = null) {
+    if (!(writer instanceof Element) || state.sync.showMemberIpInfo !== true) return;
+    const ip = (tokens || writerTokens(writer)).ip;
+    if (!ip) return;
+    const existing = writer.querySelector?.(`.${MEMBER_IP_BADGE_CLASS}`);
+    if (existing) {
+      if (existing.hasAttribute("data-dcb-loading-badge")) applyFastMemberIpBadge(existing, ip);
+      return;
+    }
+    placeMemberIpBadge(writer, createFastMemberIpBadge(ip), ip);
+  }
+
+  function syncFastMemberIpBadges(row, writers, getTokens) {
+    if (state.memberIpViewReady) return;
+    if (!state.memberIpSettingKnown) {
+      writers.forEach((writer) => attachLoadingMemberIpBadge(writer, getTokens(writer)));
+      return;
+    }
+    if (state.sync.showMemberIpInfo === true) {
+      writers.forEach((writer) => attachFastMemberIpBadge(writer, getTokens(writer)));
+      return;
+    }
+    row.querySelectorAll?.(`.${MEMBER_IP_BADGE_CLASS}[${FAST_BADGE_ATTR}="1"]`).forEach((node) => node.remove());
   }
 
   function processRow(row) {
     if (!(row instanceof Element) || row.closest(OWNED_SELECTOR)) return;
     const writers = row.matches?.(WRITER_SELECTOR) ? [row] : [...row.querySelectorAll(WRITER_SELECTOR)];
-    const blockedUser = writers.some(userMatches);
+    const tokenCache = new Map();
+    const getTokens = (writer) => {
+      if (!tokenCache.has(writer)) tokenCache.set(writer, writerTokens(writer));
+      return tokenCache.get(writer);
+    };
+    const blockedUser = state.sync.userBlockEnabled === false ? false : writers.some((writer) => userMatches(writer, getTokens(writer)));
     row.classList.toggle(USER_BLOCKED_CLASS, !!blockedUser);
     row.classList.toggle(NOTICE_BLOCKED_CLASS, isNoticeRow(row));
-    row.classList.toggle(FOREIGN_IP_BLOCKED_CLASS, writers.some(isForeignNetworkWriter));
+    const blockedForeign = state.sync.hideForeignIpEnabled === true && writers.some((writer) => isForeignNetworkWriter(writer, getTokens(writer)));
+    row.classList.toggle(FOREIGN_IP_BLOCKED_CLASS, !!blockedForeign);
+    syncFastMemberIpBadges(row, writers, getTokens);
   }
 
   function processRoot(root) {
@@ -195,11 +305,11 @@
   function finish(reason) {
     if (state.phase !== "pending") return;
     if (reason === "watchdog") {
-      state.sync = { userBlockEnabled: false, noticeBlockEnabled: false, hideForeignIpEnabled: false };
+      state.sync = { userBlockEnabled: false, noticeBlockEnabled: false, hideForeignIpEnabled: false, showMemberIpInfo: false };
       state.tokens = [];
       state.matcher = buildMatcher([]);
     }
-    state.phase = reason === "ready" ? "ready" : "error";
+    state.phase = reason === "watchdog" || reason === "hot-error" ? "error" : "ready";
     state.reason = reason;
     state.completedAt = performance.now?.() || Date.now();
     processRoot(document);
@@ -215,37 +325,55 @@
       sync: { ...state.sync },
       tokens: [...state.tokens],
       completedAt: state.completedAt,
-      reason: state.reason
+      reason: state.reason,
+      memberIpSettingKnown: state.memberIpSettingKnown
     };
+  }
+
+  function applyHotRecord(record) {
+    const data = record?.version === HOT_CACHE_VERSION && record?.data && typeof record.data === "object"
+      ? record.data
+      : null;
+    if (!data) return false;
+
+    const sync = data.sync && typeof data.sync === "object" ? data.sync : {};
+    state.sync = {
+      userBlockEnabled: sync.userBlockEnabled !== false,
+      noticeBlockEnabled: sync.noticeBlockEnabled !== false,
+      hideForeignIpEnabled: sync.hideForeignIpEnabled === true,
+      showMemberIpInfo: sync.showMemberIpInfo !== false
+    };
+    state.tokens = Array.isArray(data.tokens) ? data.tokens : [];
+    state.matcher = buildMatcher(state.tokens);
+    state.memberIpSettingKnown = true;
+    return true;
   }
 
   async function loadState({ initial = false } = {}) {
     const generation = ++reloadGeneration;
     try {
-      const [sync, tokens] = await Promise.all([
-        chrome.storage.sync.get({ userBlockEnabled: true, noticeBlockEnabled: true, hideForeignIpEnabled: false }),
-        globalThis.DCBUserBlockStore?.getAllTokensReadOnly?.() ||
-          chrome.storage.local.get({ blockedUids: [] }).then((value) => value.blockedUids || [])
-      ]);
+      const stored = await chrome.storage.local.get({ [HOT_CACHE_KEY]: null });
       if (generation !== reloadGeneration) return;
-      state.sync = {
-        userBlockEnabled: sync.userBlockEnabled !== false,
-        noticeBlockEnabled: sync.noticeBlockEnabled !== false,
-        hideForeignIpEnabled: sync.hideForeignIpEnabled === true
-      };
-      state.tokens = Array.isArray(tokens) ? tokens : [];
-      state.matcher = buildMatcher(state.tokens);
-      if (initial && state.phase === "pending") finish("ready");
-      else {
-        if (initial) state.phase = "ready";
-        processRoot(document);
+      const readyFromHotCache = applyHotRecord(stored?.[HOT_CACHE_KEY]);
+
+      if (!readyFromHotCache) {
+        // Never hold first paint for a cold/missing cache. The background worker
+        // seeds this snapshot and the full cleaners reconcile after document_end.
+        state.sync = { userBlockEnabled: false, noticeBlockEnabled: false, hideForeignIpEnabled: false, showMemberIpInfo: false };
+        state.tokens = [];
+        state.matcher = buildMatcher([]);
+        state.memberIpSettingKnown = false;
       }
+
+      if (initial && state.phase === "pending") finish(readyFromHotCache ? "hot-ready" : "hot-miss");
+      else processRoot(document);
     } catch (_) {
       if (generation !== reloadGeneration) return;
-      state.sync = { userBlockEnabled: false, noticeBlockEnabled: false, hideForeignIpEnabled: false };
+      state.sync = { userBlockEnabled: false, noticeBlockEnabled: false, hideForeignIpEnabled: false, showMemberIpInfo: false };
       state.tokens = [];
       state.matcher = buildMatcher([]);
-      if (initial && state.phase === "pending") finish("storage-error");
+      state.memberIpSettingKnown = false;
+      if (initial && state.phase === "pending") finish("hot-error");
       else processRoot(document);
     }
   }
@@ -268,7 +396,16 @@
     });
   }
 
-  globalThis.DCBCriticalFilter = { ready, getSnapshot, processRoot };
+  function setMemberIpBadgeSetting(enabled) {
+    state.memberIpSettingKnown = true;
+    state.memberIpViewReady = true;
+    state.sync.showMemberIpInfo = !!enabled;
+    if (!enabled) {
+      document.querySelectorAll?.(`.${MEMBER_IP_BADGE_CLASS}[${FAST_BADGE_ATTR}="1"]`).forEach((node) => node.remove());
+    }
+  }
+
+  globalThis.DCBCriticalFilter = { ready, getSnapshot, processRoot, setMemberIpBadgeSetting };
   mark("start");
 
   function begin() {
@@ -291,10 +428,6 @@
   }
 
   chrome.storage.onChanged.addListener((changes, area) => {
-    const relevantSync = area === "sync" && (changes.userBlockEnabled || changes.noticeBlockEnabled || changes.hideForeignIpEnabled || changes.blockedUids);
-    const relevantLocal = area === "local" && (
-      globalThis.DCBUserBlockStore?.isRelevantChange?.(changes) || changes.blockedUids
-    );
-    if (relevantSync || relevantLocal) loadState();
+    if (area === "local" && changes[HOT_CACHE_KEY]) loadState();
   });
 })();

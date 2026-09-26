@@ -1532,7 +1532,7 @@
     </div>
     <label class="dcb-detection-sensitivity">감지 수준<select data-detection-field="sensitivity"><option value="careful">낮음 · 오탐을 줄이고 명확한 표현 위주</option><option value="balanced">보통 · 균형 있게 감지</option><option value="sensitive">높음 · 넓게 감지, 오탐 가능성 증가</option></select></label>
     <p><strong data-detection-state-label>READY</strong> · <span data-detection-model>모델 정보를 불러오는 중입니다.</span></p>
-    <details><summary>개인정보와 한계</summary><p>이 기능은 문장의 표현만 보조적으로 분류합니다. 작성자의 성격·의도·신원을 판단하거나 신고·계정 조치를 수행하지 않습니다. 오탐과 누락이 있을 수 있으며 긴 게시글은 최대 3개 구간으로 확인합니다.</p><p>모델과 실행 엔진은 현재 확장 프로그램에 함께 포함되어 있어 별도 다운로드·삭제 대상이 아닙니다. 기능을 끄면 worker·DOM 검사·추론 캐시를 시작하지 않습니다.</p><p><a href="../../../docs/text-detection.html" target="_blank" rel="noopener">자세한 사용 안내</a></p></details>
+    <details><summary>개인정보와 한계</summary><p>이 기능은 문장의 표현만 보조적으로 분류합니다. 작성자의 성격·의도·신원을 판단하거나 신고·계정 조치를 수행하지 않습니다. 오탐과 누락이 있을 수 있으며 긴 게시글은 최대 3개 구간으로 확인합니다.</p><p>모델과 실행 엔진은 현재 확장 프로그램에 함께 포함되어 있어 별도 다운로드·삭제 대상이 아닙니다. 기능을 끄면 로컬 분석 런타임·DOM 검사·추론 캐시를 시작하지 않습니다.</p><p><a href="../../../docs/text-detection.html" target="_blank" rel="noopener">자세한 사용 안내</a></p></details>
     <p data-detection-status role="status" aria-live="polite">설정을 불러오는 중입니다.</p>
     <button type="button" data-detection-retry>기기 내 AI 다시 시도</button>
   </section>
@@ -1704,7 +1704,7 @@
       <span class="slider"></span>
     </label>
   </label>
-  <p class="hint">해외 IP 및 Tor·프록시 등 익명화/우회 네트워크 후보 작성자의 게시물과 댓글을 숨깁니다.</p>
+  <p class="hint">해외 IP와 Tor·프록시 등 우회 접속 IP로 작성된 게시물과 댓글을 숨깁니다.</p>
 
   <label class="row">
     <span style="min-width:110px;">비회원 게시물과 댓글 숨기기</span>

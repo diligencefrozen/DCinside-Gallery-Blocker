@@ -1188,7 +1188,7 @@
     if (critical?.ready) {
       await critical.ready;
       const snapshot = critical.getSnapshot?.();
-      if (snapshot) {
+      if (snapshot?.reason === "hot-ready") {
         return migrate({
           ...DEFAULTS,
           ...snapshot.sync,
