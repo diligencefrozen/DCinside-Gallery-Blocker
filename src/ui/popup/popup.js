@@ -82,6 +82,7 @@ const toggleHideSearch = document.getElementById("toggleHideSearch");
 const toggleUidBadge = document.getElementById("toggleUidBadge");
 const showMemberIpInfoToggle = document.getElementById("showMemberIpInfo");
 const hideAnonymousToggle = document.getElementById("hideAnonymousEnabled");
+const hideForeignIpToggle = document.getElementById("hideForeignIpEnabled");
 const gamemecaBlockToggle = document.getElementById("gamemecaBlockEnabled");
 const doryBlockToggle = document.getElementById("doryBlockEnabled");
 const noticeBlockToggle = document.getElementById("noticeBlockEnabled");
@@ -136,6 +137,7 @@ const DEFAULTS = {
   showUidBadge: false,
   showMemberIpInfo: true,
   hideAnonymousEnabled: false,
+  hideForeignIpEnabled: false,
   gamemecaBlockEnabled: true,
   doryBlockEnabled: true,
   noticeBlockEnabled: true,
@@ -1564,6 +1566,7 @@ function applyPopupSettings(conf = {}, { refreshAsync = true } = {}) {
     showUidBadge,
     showMemberIpInfo,
     hideAnonymousEnabled,
+    hideForeignIpEnabled,
     gamemecaBlockEnabled,
     doryBlockEnabled,
     noticeBlockEnabled,
@@ -1617,6 +1620,7 @@ function applyPopupSettings(conf = {}, { refreshAsync = true } = {}) {
   setChecked(toggleUidBadge, showUidBadge);
   setChecked(showMemberIpInfoToggle, showMemberIpInfo);
   setChecked(hideAnonymousToggle, hideAnonymousEnabled);
+  setChecked(hideForeignIpToggle, hideForeignIpEnabled);
   setChecked(gamemecaBlockToggle, gamemecaBlockEnabled);
   setChecked(doryBlockToggle, doryBlockEnabled);
   setChecked(noticeBlockToggle, noticeBlockEnabled);
@@ -2028,6 +2032,9 @@ if (showMemberIpInfoToggle) {
 if (hideAnonymousToggle) {
   hideAnonymousToggle.onchange = (e) => chrome.storage.sync.set({ hideAnonymousEnabled: !!e.target.checked });
 }
+if (hideForeignIpToggle) {
+  hideForeignIpToggle.onchange = (e) => chrome.storage.sync.set({ hideForeignIpEnabled: !!e.target.checked });
+}
 if (gamemecaBlockToggle) {
   gamemecaBlockToggle.onchange = (e) => chrome.storage.sync.set({ gamemecaBlockEnabled: !!e.target.checked });
 }
@@ -2179,6 +2186,7 @@ chrome.storage.onChanged.addListener((c, a) => {
     if (c.showUidBadge) setChecked(toggleUidBadge, c.showUidBadge.newValue);
     if (c.showMemberIpInfo) setChecked(showMemberIpInfoToggle, c.showMemberIpInfo.newValue);
     if (c.hideAnonymousEnabled) setChecked(hideAnonymousToggle, c.hideAnonymousEnabled.newValue);
+    if (c.hideForeignIpEnabled) setChecked(hideForeignIpToggle, c.hideForeignIpEnabled.newValue);
     if (c.gamemecaBlockEnabled) setChecked(gamemecaBlockToggle, c.gamemecaBlockEnabled.newValue);
     if (c.doryBlockEnabled) setChecked(doryBlockToggle, c.doryBlockEnabled.newValue);
     if (c.noticeBlockEnabled) setChecked(noticeBlockToggle, c.noticeBlockEnabled.newValue);

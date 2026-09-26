@@ -13,6 +13,7 @@
   const STYLE_ID = "dcb-critical-filter-style";
   const USER_BLOCKED_CLASS = "dcb-userblock-hidden";
   const NOTICE_BLOCKED_CLASS = "dcb-notice-blocked";
+  const FOREIGN_IP_BLOCKED_CLASS = "dcb-foreign-ip-hidden";
   const WATCHDOG_MS = 1800;
   const OWNED_SELECTOR = "[data-dcb-owned]";
   const ROW_SELECTOR = [
@@ -41,7 +42,7 @@
 
   const state = {
     phase: "pending",
-    sync: { userBlockEnabled: true, noticeBlockEnabled: true },
+    sync: { userBlockEnabled: true, noticeBlockEnabled: true, hideForeignIpEnabled: false },
     tokens: [],
     matcher: null,
     completedAt: 0,
@@ -72,7 +73,7 @@
         html.${ROOT_CLASS} .gall_list li:has(.ub-writer) {
           visibility: hidden !important;
         }
-        .${USER_BLOCKED_CLASS}, .${NOTICE_BLOCKED_CLASS} {
+        .${USER_BLOCKED_CLASS}, .${NOTICE_BLOCKED_CLASS}, .${FOREIGN_IP_BLOCKED_CLASS} {
           display: none !important;
         }
       `;
@@ -166,12 +167,22 @@
     });
   }
 
+  function isForeignNetworkWriter(writer) {
+    if (state.sync.hideForeignIpEnabled !== true) return false;
+    const classifier = globalThis.DCBIpNetworkClassifier;
+    if (!classifier) return false;
+    const rawIp = [attr(writer, "data-ip"), attr(writer, "data-memo-ip")].filter(Boolean).join(" ");
+    const category = classifier.classify(rawIp).category;
+    return category === "foreign" || category === "anonymizer" || category === "relay";
+  }
+
   function processRow(row) {
     if (!(row instanceof Element) || row.closest(OWNED_SELECTOR)) return;
     const writers = row.matches?.(WRITER_SELECTOR) ? [row] : [...row.querySelectorAll(WRITER_SELECTOR)];
     const blockedUser = writers.some(userMatches);
     row.classList.toggle(USER_BLOCKED_CLASS, !!blockedUser);
     row.classList.toggle(NOTICE_BLOCKED_CLASS, isNoticeRow(row));
+    row.classList.toggle(FOREIGN_IP_BLOCKED_CLASS, writers.some(isForeignNetworkWriter));
   }
 
   function processRoot(root) {
@@ -184,7 +195,7 @@
   function finish(reason) {
     if (state.phase !== "pending") return;
     if (reason === "watchdog") {
-      state.sync = { userBlockEnabled: false, noticeBlockEnabled: false };
+      state.sync = { userBlockEnabled: false, noticeBlockEnabled: false, hideForeignIpEnabled: false };
       state.tokens = [];
       state.matcher = buildMatcher([]);
     }
@@ -212,14 +223,15 @@
     const generation = ++reloadGeneration;
     try {
       const [sync, tokens] = await Promise.all([
-        chrome.storage.sync.get({ userBlockEnabled: true, noticeBlockEnabled: true }),
+        chrome.storage.sync.get({ userBlockEnabled: true, noticeBlockEnabled: true, hideForeignIpEnabled: false }),
         globalThis.DCBUserBlockStore?.getAllTokensReadOnly?.() ||
           chrome.storage.local.get({ blockedUids: [] }).then((value) => value.blockedUids || [])
       ]);
       if (generation !== reloadGeneration) return;
       state.sync = {
         userBlockEnabled: sync.userBlockEnabled !== false,
-        noticeBlockEnabled: sync.noticeBlockEnabled !== false
+        noticeBlockEnabled: sync.noticeBlockEnabled !== false,
+        hideForeignIpEnabled: sync.hideForeignIpEnabled === true
       };
       state.tokens = Array.isArray(tokens) ? tokens : [];
       state.matcher = buildMatcher(state.tokens);
@@ -230,7 +242,7 @@
       }
     } catch (_) {
       if (generation !== reloadGeneration) return;
-      state.sync = { userBlockEnabled: false, noticeBlockEnabled: false };
+      state.sync = { userBlockEnabled: false, noticeBlockEnabled: false, hideForeignIpEnabled: false };
       state.tokens = [];
       state.matcher = buildMatcher([]);
       if (initial && state.phase === "pending") finish("storage-error");
@@ -279,7 +291,7 @@
   }
 
   chrome.storage.onChanged.addListener((changes, area) => {
-    const relevantSync = area === "sync" && (changes.userBlockEnabled || changes.noticeBlockEnabled || changes.blockedUids);
+    const relevantSync = area === "sync" && (changes.userBlockEnabled || changes.noticeBlockEnabled || changes.hideForeignIpEnabled || changes.blockedUids);
     const relevantLocal = area === "local" && (
       globalThis.DCBUserBlockStore?.isRelevantChange?.(changes) || changes.blockedUids
     );

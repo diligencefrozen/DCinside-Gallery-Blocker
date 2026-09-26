@@ -103,9 +103,11 @@ async function fixture(settings = {}, local = {}) {
     });
   }, { sync: { showUidBadge: true, userMemoEnabled: true, showMemberIpInfo: true, ...settings },
     local: { userMemos: { [`uid:${longUid}`]: { memo: longMemo, color: '#506e9c' } }, ...local } });
-  for (const file of ['appearance/font-config.js', 'user/uid-badge.js', 'user/member-ip-view.js', 'user/user-memo.js', 'appearance/font-manager.js']) {
+  for (const file of ['appearance/font-config.js', 'user/uid-badge.js', 'user/user-memo.js', 'appearance/font-manager.js']) {
     await page.addScriptTag({ path: path.join(root, 'src/content', file) });
   }
+  await page.addScriptTag({ path: path.join(root, 'src/shared/ip-network-classifier.js') });
+  await page.addScriptTag({ path: path.join(root, 'src/content/user/member-ip-view.js') });
   await settle(page);
   return page;
 }

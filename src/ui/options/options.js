@@ -95,7 +95,7 @@ const BACKUP_KEYS = [
   "hideMainEnabled", "hideGallEnabled", "hideSearchEnabled",
   "enabled", "galleryBlockEnabled", "builtinDcbestBlockEnabled", "blockMode", "quickBlockButtonPosition", "quickBlockButtonPositionSavedAt", "autoRefreshEnabled",
   "autoRefreshInterval", "delay", "showUidBadge", "showMemberIpInfo", "linkWarnEnabled", "hideDCGray",
-  "previewEnabled", "hideAnonymousEnabled", "gamemecaBlockEnabled", "doryBlockEnabled", "noticeBlockEnabled", "compactListEnabled",
+  "previewEnabled", "hideAnonymousEnabled", "hideForeignIpEnabled", "gamemecaBlockEnabled", "doryBlockEnabled", "noticeBlockEnabled", "compactListEnabled",
   "userMemoEnabled", "userMemos",
   IMAGE_BLOCK_CONFIG_KEY, IMAGE_BLOCK_RECORD_KEY, IMAGE_BLOCK_AUTHOR_TARGET_KEY, IMAGE_ACCOUNT_RULE_KEY,
   DCCON_BLOCK_STATE_KEY,
@@ -135,6 +135,7 @@ const BACKUP_DEFAULTS = {
   hideDCGray: undefined,
   previewEnabled: true,
   hideAnonymousEnabled: false,
+  hideForeignIpEnabled: false,
   gamemecaBlockEnabled: true,
   doryBlockEnabled: true,
   noticeBlockEnabled: true,
@@ -231,6 +232,7 @@ const hideImgCommentEl = document.getElementById("hideImgComment");
 const hideDcconEl = document.getElementById("hideDccon");
 const hideTextConEl = document.getElementById("hideTextCon");
 const hideAnonymousEl = document.getElementById("hideAnonymousEnabled");
+const hideForeignIpEl = document.getElementById("hideForeignIpEnabled");
 const gamemecaBlockEnabledEl = document.getElementById("gamemecaBlockEnabled");
 const doryBlockEnabledEl = document.getElementById("doryBlockEnabled");
 const noticeBlockEnabledEl = document.getElementById("noticeBlockEnabled");
@@ -1987,6 +1989,12 @@ if (hideAnonymousEl) {
   });
 }
 
+if (hideForeignIpEl) {
+  hideForeignIpEl.addEventListener("change", e => {
+    chrome.storage.sync.set({ hideForeignIpEnabled: !!e.target.checked });
+  });
+}
+
 if (gamemecaBlockEnabledEl) {
   gamemecaBlockEnabledEl.addEventListener("change", e => {
     chrome.storage.sync.set({ gamemecaBlockEnabled: !!e.target.checked });
@@ -2147,6 +2155,7 @@ function applyOptionsSettings(conf = {}, { refreshAsync = true } = {}) {
     hideTextCon = false,
     previewEnabled = true,
     hideAnonymousEnabled = false,
+    hideForeignIpEnabled = false,
     gamemecaBlockEnabled = true,
     doryBlockEnabled = true,
     noticeBlockEnabled = true,
@@ -2199,6 +2208,7 @@ function applyOptionsSettings(conf = {}, { refreshAsync = true } = {}) {
   if (hideTextConEl) hideTextConEl.checked = !!hideTextCon;
   if (previewEnabledEl) previewEnabledEl.checked = !!previewEnabled;
   if (hideAnonymousEl) hideAnonymousEl.checked = !!hideAnonymousEnabled;
+  if (hideForeignIpEl) hideForeignIpEl.checked = !!hideForeignIpEnabled;
   if (gamemecaBlockEnabledEl) gamemecaBlockEnabledEl.checked = gamemecaBlockEnabled !== false;
   if (doryBlockEnabledEl) doryBlockEnabledEl.checked = doryBlockEnabled !== false;
   if (noticeBlockEnabledEl) noticeBlockEnabledEl.checked = noticeBlockEnabled !== false;
@@ -2355,6 +2365,9 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
     if (changes.hideAnonymousEnabled && hideAnonymousEl) {
       hideAnonymousEl.checked = !!changes.hideAnonymousEnabled.newValue;
+    }
+    if (changes.hideForeignIpEnabled && hideForeignIpEl) {
+      hideForeignIpEl.checked = !!changes.hideForeignIpEnabled.newValue;
     }
 
     if (changes.gamemecaBlockEnabled && gamemecaBlockEnabledEl) {

@@ -3195,6 +3195,7 @@ syncSettings(handleUrl);
     showUidBadge: false,
     showMemberIpInfo: true,
     hideAnonymousEnabled: false,
+    hideForeignIpEnabled: false,
     doryBlockEnabled: true,
     keywordBlockEnabled: false,
     blockedKeywords: [],
@@ -3347,9 +3348,14 @@ syncSettings(handleUrl);
     return !!previewIpPrefix(meta.ip, { allowDateLike: true });
   }
 
+  function previewIsForeignNetwork(meta){
+    const category = globalThis.DCBIpNetworkClassifier?.classify?.(meta?.ip || "").category;
+    return category === "foreign" || category === "anonymizer" || category === "relay";
+  }
+
   function filterNote(kind, label, revealKey = ""){
     const isDanger = kind === "user" || kind === "keyword-block";
-    const title = kind === "user" ? "차단한 사용자 콘텐츠" : kind === "anonymous" ? "비회원 콘텐츠 숨김" : kind === "dccon" ? "디시콘 댓글 숨김" : kind === "dory" ? "댓글돌이 댓글 숨김" : kind === "keyword-hide" ? "숨김 키워드가 포함된 콘텐츠" : "차단 키워드가 포함된 콘텐츠";
+    const title = kind === "user" ? "차단한 사용자 콘텐츠" : kind === "anonymous" ? "비회원 콘텐츠 숨김" : kind === "foreign" ? "해외 IP 또는 우회망 후보 콘텐츠 숨김" : kind === "dccon" ? "디시콘 댓글 숨김" : kind === "dory" ? "댓글돌이 댓글 숨김" : kind === "keyword-hide" ? "숨김 키워드가 포함된 콘텐츠" : "차단 키워드가 포함된 콘텐츠";
     const chip = label ? `<span class="dcbpv-filter-chip" title="${escapeText(label)}">${escapeText(label)}</span>` : "";
     const reveal = revealKey ? `<button type="button" class="dcbpv-filter-reveal" data-dcbpv-reveal="${escapeText(revealKey)}">이번만 보기</button>` : "";
     return `<div class="dcbpv-filter-note${isDanger ? " danger" : ""}"><span>${title}</span>${chip}${reveal}</div>`;
@@ -3715,6 +3721,10 @@ syncSettings(handleUrl);
       replaceSectionWithNote(articleSection, filterNote("anonymous", authorMeta.ip || authorMeta.nick));
       replaceSectionWithNote(commentsSection, filterNote("anonymous", authorMeta.ip || authorMeta.nick));
     }
+    if (conf.hideForeignIpEnabled && previewIsForeignNetwork(authorMeta)) {
+      replaceSectionWithNote(articleSection, filterNote("foreign", authorMeta.ip || authorMeta.nick));
+      replaceSectionWithNote(commentsSection, filterNote("foreign", authorMeta.ip || authorMeta.nick));
+    }
 
     const blockKeywords = previewKeywords(conf.blockedKeywords);
     const hideKeywords = previewKeywords(conf.hiddenKeywords);
@@ -3757,6 +3767,10 @@ syncSettings(handleUrl);
       if (conf.hideAnonymousEnabled && previewIsAnonymous(meta, row)) {
         row.classList.add("dcbpv-filter-hidden");
         row.dataset.dcbpvBlockedReason = "anonymous";
+      }
+      if (conf.hideForeignIpEnabled && previewIsForeignNetwork(meta)) {
+        row.classList.add("dcbpv-filter-hidden");
+        row.dataset.dcbpvBlockedReason = "foreign";
       }
       const text = commentText(row);
       if (conf.keywordBlockEnabled && blockTargets.comments) {
@@ -3944,7 +3958,7 @@ syncSettings(handleUrl);
     if (!currentPreviewData || area !== "sync" && area !== "local") return;
     const keys = new Set([
       "userBlockEnabled", "includeGray", "hideDCGray", "blockedUids", "hideComment", "hideImgComment", "hideDccon", "hideTextCon",
-      "showUidBadge", "hideAnonymousEnabled", "doryBlockEnabled", "keywordBlockEnabled", "blockedKeywords", "keywordBlockTargets",
+      "showUidBadge", "hideAnonymousEnabled", "hideForeignIpEnabled", "doryBlockEnabled", "keywordBlockEnabled", "blockedKeywords", "keywordBlockTargets",
       "keywordHideEnabled", "hiddenKeywords", "keywordHideTargets"
     ]);
     const knownSettingChanged = Object.keys(changes || {}).some((key) => keys.has(key));

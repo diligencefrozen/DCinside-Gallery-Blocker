@@ -150,6 +150,7 @@ test('critical bootstrap is first in the manifest and uses document_start', () =
   assert.equal(entry.all_frames, false);
   assert.deepEqual(entry.js, [
     'src/shared/storage/user-block-store.js',
+    'src/shared/ip-network-classifier.js',
     'src/content/core/critical-filter-bootstrap.js'
   ]);
 });

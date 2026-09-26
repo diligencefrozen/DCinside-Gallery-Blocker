@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "디시갤 차단기",
   "short_name": "디시갤 차단기",
-  "version": "7.3.42.2026",
+  "version": "7.3.43.2026",
   "description": "갤러리, 글, 댓글, 유저까지, 보고 싶지 않은 콘텐츠를 차단합니다",
   "icons": {
     "16": "icons/16.png",
@@ -52,6 +52,7 @@
       ],
       "js": [
         "src/shared/storage/user-block-store.js",
+        "src/shared/ip-network-classifier.js",
         "src/content/core/critical-filter-bootstrap.js"
       ],
       "run_at": "document_start",
@@ -173,6 +174,7 @@
         "*://gall.dcinside.com/person/board/view*"
       ],
       "js": [
+        "src/shared/ip-network-classifier.js",
         "src/content/core/content_script.js"
       ],
       "run_at": "document_start"
@@ -324,6 +326,8 @@
         "*://gall.dcinside.com/person/board/view*"
       ],
       "js": [
+        "src/shared/ip-network-classifier.js",
+        "src/content/cleaner/cleaner-foreign-ip.js",
         "src/content/cleaner/cleaner-anonymous.js"
       ],
       "run_at": "document_start",
@@ -392,6 +396,7 @@
       ],
       "js": [
         "src/content/user/uid-badge.js",
+        "src/shared/ip-network-classifier.js",
         "src/content/user/member-ip-view.js"
       ],
       "css": [
