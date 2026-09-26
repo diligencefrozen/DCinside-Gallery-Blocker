@@ -79,8 +79,9 @@ cleaner-dccon.js - 디시콘 / 텍스트콘 숨기기
   let textStyleNode = null;
   let hideDccon = false;
   let hideTextCon = false;
-  let observer = null;
+  let unsubscribeDomBus = null;
   let debounceTimer = null;
+  const pendingScopes = new Set();
 
   const ensureStyle = (id, css, currentNode) => {
     if (currentNode?.isConnected) return currentNode;
@@ -225,50 +226,45 @@ cleaner-dccon.js - 디시콘 / 텍스트콘 숨기기
     return false;
   };
 
+  const flushPendingScopes = () => {
+    debounceTimer = null;
+    if (!hideDccon && !hideTextCon) return;
+    syncStyles();
+    const scopes = pendingScopes.size ? Array.from(pendingScopes) : [document];
+    pendingScopes.clear();
+    scopes.forEach((scope) => hideExistingElements(scope));
+  };
+
+  const handleDomMutations = (mutations) => {
+    for (const mutation of mutations) {
+      if (mutation.type === 'childList') {
+        for (const node of mutation.addedNodes || []) {
+          if (mutationMayContainRelevantContent(node)) pendingScopes.add(node);
+        }
+      } else if (mutation.type === 'attributes' && mutationMayContainRelevantContent(mutation.target)) {
+        pendingScopes.add(mutation.target);
+      }
+    }
+    if (!pendingScopes.size) return;
+    if (debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(flushPendingScopes, 120);
+  };
+
   const stopObserver = () => {
-    observer?.disconnect();
-    observer = null;
+    unsubscribeDomBus?.();
+    unsubscribeDomBus = null;
+    pendingScopes.clear();
     if (debounceTimer) clearTimeout(debounceTimer);
     debounceTimer = null;
   };
 
   const startObserver = () => {
-    if (observer || (!hideDccon && !hideTextCon)) return;
-
-    const pendingScopes = new Set();
-    const flush = () => {
-      debounceTimer = null;
-      if (!hideDccon && !hideTextCon) return;
-      syncStyles();
-      const scopes = pendingScopes.size ? Array.from(pendingScopes) : [document];
-      pendingScopes.clear();
-      scopes.forEach((scope) => hideExistingElements(scope));
-    };
-
-    observer = new MutationObserver((mutations) => {
-      for (const mutation of mutations) {
-        if (mutation.type === 'childList') {
-          for (const node of mutation.addedNodes || []) {
-            if (mutationMayContainRelevantContent(node)) pendingScopes.add(node);
-          }
-        } else if (mutation.type === 'attributes' && mutationMayContainRelevantContent(mutation.target)) {
-          pendingScopes.add(mutation.target);
-        }
-      }
-      if (!pendingScopes.size) return;
-      if (debounceTimer) clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(flush, 120);
-    });
-
-    const observeRoot = document.documentElement || document.body;
-    if (observeRoot) {
-      observer.observe(observeRoot, {
-        childList: true,
-        subtree: true,
-        attributes: true,
-        attributeFilter: ['src', 'class', 'data-src', 'data-original', 'data-gif', 'data-mp4', 'reqpath']
-      });
-    }
+    if (unsubscribeDomBus || (!hideDccon && !hideTextCon) || !globalThis.DCBDomMutationBus) return;
+    unsubscribeDomBus = globalThis.DCBDomMutationBus.subscribe(
+      "cleaner-dccon",
+      handleDomMutations,
+      { types: ["childList", "attributes"], attributes: ['src', 'class', 'data-src', 'data-original', 'data-gif', 'data-mp4', 'reqpath'] }
+    );
   };
 
   const applySettings = (next = {}) => {
@@ -285,7 +281,7 @@ cleaner-dccon.js - 디시콘 / 텍스트콘 숨기기
     }
   };
 
-  chrome.storage.sync.get({ hideDccon: false, hideTextCon: false }, (settings) => {
+  globalThis.DCBRuntimeSettingsCache.get({ hideDccon: false, hideTextCon: false }, (settings) => {
     applySettings(settings);
   });
 

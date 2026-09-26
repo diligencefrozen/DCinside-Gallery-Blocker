@@ -38,7 +38,7 @@ function startObserver(selectors) {
 
 /* 설정 적용 */
 function apply() {
-  chrome.storage.sync.get(
+  globalThis.DCBRuntimeSettingsCache.get(
     { hideSearchEnabled: true, removeSelectorsSearch: [] },
     ({ hideSearchEnabled, removeSelectorsSearch }) => {
       const sels = (removeSelectorsSearch || []).map(s => s.trim()).filter(Boolean);

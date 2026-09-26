@@ -542,7 +542,7 @@
   }
 
   function storageGet(defaults) {
-    return new Promise((resolve) => chrome.storage.sync.get(defaults, resolve));
+    return new Promise((resolve) => globalThis.DCBRuntimeSettingsCache.get(defaults, resolve));
   }
 
   function storageSet(patch) {

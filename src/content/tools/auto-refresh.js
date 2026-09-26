@@ -27,6 +27,12 @@
   const FAILURE_LIMIT = 3;
   const THROTTLE_STATUSES = new Set([403, 429, 503]);
   const COUNTDOWN_ID = "dcb-auto-refresh-countdown";
+
+  function notifyCountdownChanged() {
+    try {
+      document.dispatchEvent(new CustomEvent("dcb-auto-refresh-ui-change"));
+    } catch (_) {}
+  }
   const ANIMATION_ID = "dcb-countdown-animation";
 
   const $ = (selector, root = document) => root.querySelector(selector);
@@ -67,6 +73,7 @@
     ensureAnimation();
     countdownElement = document.createElement("div");
     countdownElement.id = COUNTDOWN_ID;
+    countdownElement.setAttribute("data-dcb-owned", "auto-refresh");
     countdownElement.style.cssText = `
       position: fixed;
       bottom: 20px;
@@ -117,18 +124,23 @@
       </div>
       <div style="margin-top:6px;color:#9ca3af;font-size:11px;line-height:1.35;">${small} · ${refreshInterval}초 주기</div>
     `;
+    notifyCountdownChanged();
   }
 
   function showCountdown(){
     createCountdownUI();
     if (countdownElement) {
       countdownElement.style.display = autoRefreshEnabled ? "block" : "none";
+    notifyCountdownChanged();
       updateCountdown();
     }
   }
 
   function hideCountdown(){
-    if (countdownElement) countdownElement.style.display = "none";
+    if (countdownElement) {
+      countdownElement.style.display = "none";
+      notifyCountdownChanged();
+    }
   }
 
   function stopCountdown(){
@@ -425,8 +437,10 @@
     else stopCountdown();
   }
 
-  chrome.storage.sync.get({ autoRefreshEnabled: false, autoRefreshInterval: 60 }, ({ autoRefreshEnabled, autoRefreshInterval }) => {
-    applySettings(autoRefreshEnabled, autoRefreshInterval);
+  globalThis.DCBRuntimeSettingsCache.get({ autoRefreshEnabled: false, autoRefreshInterval: 60 }, ({ autoRefreshEnabled, autoRefreshInterval }) => {
+    const run = () => applySettings(autoRefreshEnabled, autoRefreshInterval);
+    if (globalThis.DCBStartupScheduler) globalThis.DCBStartupScheduler.schedule("auto-refresh:init", run, "background");
+    else setTimeout(run, 100);
   });
 
   chrome.storage.onChanged.addListener((changes, area) => {

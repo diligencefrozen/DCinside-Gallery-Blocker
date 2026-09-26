@@ -29,6 +29,7 @@
   const HOT_SETTINGS_KEY = 'dcbTextDetectionHotCacheV1';
   const HOT_SETTINGS_VERSION = 1;
   const ALLOW_SESSION_KEY = `dcb-text-detection-allow:${location.pathname}${location.search}`;
+  const IS_LIST_PAGE = /\/board\/lists(?:\/|$)/.test(location.pathname);
 
   const records = new Map();
   const recordsById = new Map();
@@ -50,6 +51,7 @@
   let viewportObserver = null;
   let fallbackTimer = 0;
   let settingsChanged = false;
+  let previewRuntimeRequested = false;
 
   function loadAllowedKeys() {
     try {
@@ -528,6 +530,7 @@
     viewportObserver?.disconnect();
     observer = viewportObserver = null;
     document.getElementById(STYLE_ID)?.remove();
+    previewRuntimeRequested = false;
   }
 
   function sameSettings(a, b) {
@@ -549,8 +552,12 @@
       cache.clear();
       return;
     }
-    // Start the local inference runtime while the page is still building so the first
-    // visible post/comment does not have to pay the full cold-start cost.
+    // 목록 페이지에는 판정할 본문/댓글이 없다. Firefox에서는 document_start의
+    // 전역 MutationObserver + background prewarm 조합이 새로고침마다 큰 비용이 될 수 있다.
+    // 목록에서는 미리보기 이벤트가 실제로 들어올 때까지 완전히 유휴 상태로 둔다.
+    if (IS_LIST_PAGE) return;
+
+    // view 페이지에서만 로컬 런타임을 미리 준비한다.
     chrome.runtime.sendMessage({ type: 'DCB_DETECTION_PREWARM' }).catch(() => {});
     if (!document.documentElement) {
       document.addEventListener('DOMContentLoaded', () => apply(settings), { once: true });
@@ -581,6 +588,11 @@
     if (!settings.enabled) return;
     const root = event?.detail?.root;
     if (!(root instanceof Element)) return;
+    if (!previewRuntimeRequested) {
+      previewRuntimeRequested = true;
+      chrome.runtime.sendMessage({ type: 'DCB_DETECTION_PREWARM' }).catch(() => {});
+    }
+    ensureStyle();
     discoverIn(root);
     // An open preview is already an explicitly visible surface. Do not wait for a
     // second page-level IntersectionObserver delivery after the preview pipeline
@@ -636,7 +648,7 @@
     } catch (_) {}
 
     try {
-      const values = await chrome.storage.sync.get({ [Config.key]: Config.defaults });
+      const values = await globalThis.DCBRuntimeSettingsCache.get({ [Config.key]: Config.defaults });
       const synced = Config.normalize(values[Config.key]);
       writeHotSettings(synced);
       if (!settingsChanged) apply(synced);

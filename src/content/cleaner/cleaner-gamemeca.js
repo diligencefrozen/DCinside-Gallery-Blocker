@@ -12,8 +12,7 @@
   };
 
   let enabled = true;
-  let observer = null;
-  let scheduled = false;
+  let unsubscribeDomBus = null;
 
   function normalizeNick(value) {
     return String(value || "")
@@ -141,75 +140,68 @@
     );
   }
 
-  function applyBlock() {
-    scheduled = false;
+  function processWriter(writer) {
+    if (!writer || writer.nodeType !== 1) return;
+    const matched = writerMatches(writer);
+    const commentContainer = findCommentContainer(writer);
+    const listContainer = findListContainer(writer);
+    const viewContainer = findViewContainer(writer);
+    for (const container of [commentContainer, listContainer, viewContainer]) {
+      if (container) container.classList.toggle(BLOCKED_CLASS, matched);
+    }
+  }
 
+  function processRoot(root) {
+    if (!enabled || !root) return;
+    const element = root.nodeType === Node.ELEMENT_NODE ? root : root.parentElement;
+    if (!element || element.closest?.("[data-dcb-owned]")) return;
+    const writers = new Set();
+    const closest = element.matches?.(".gall_writer, .ub-writer")
+      ? element
+      : element.closest?.(".gall_writer, .ub-writer");
+    if (closest) writers.add(closest);
+    element.querySelectorAll?.(".gall_writer, .ub-writer").forEach((writer) => writers.add(writer));
+    writers.forEach(processWriter);
+  }
+
+  function applyBlock() {
     if (!enabled) {
       clearStyle();
       clearMarks();
       return;
     }
-
     ensureStyle();
-    clearMarks();
-
-    document.querySelectorAll(".gall_writer, .ub-writer").forEach((writer) => {
-      if (!writerMatches(writer)) return;
-
-      const commentContainer = findCommentContainer(writer);
-      if (commentContainer) {
-        markBlocked(commentContainer);
-        return;
-      }
-
-      const listContainer = findListContainer(writer);
-      if (listContainer) {
-        markBlocked(listContainer);
-        return;
-      }
-
-      const viewContainer = findViewContainer(writer);
-      if (viewContainer) {
-        markBlocked(viewContainer);
-      }
-    });
-  }
-
-  function scheduleApply() {
-    if (scheduled) return;
-    scheduled = true;
-    requestAnimationFrame(applyBlock);
+    document.querySelectorAll(".gall_writer, .ub-writer").forEach(processWriter);
   }
 
   function startObserver() {
-    if (observer) return;
-
-    observer = new MutationObserver(() => scheduleApply());
-
-    const observe = () => {
-      if (document.body) {
-        observer.observe(document.body, { childList: true, subtree: true });
-      }
-    };
-
-    if (document.body) observe();
-    else document.addEventListener("DOMContentLoaded", observe, { once: true });
+    if (unsubscribeDomBus || !globalThis.DCBDomMutationBus) return;
+    unsubscribeDomBus = globalThis.DCBDomMutationBus.subscribe(
+      "cleaner-gamemeca",
+      (records) => {
+        const roots = new Set();
+        for (const record of records) {
+          roots.add(record.target);
+          if (record.type === "childList") record.addedNodes.forEach((node) => roots.add(node));
+        }
+        roots.forEach(processRoot);
+      },
+      { types: ["childList", "attributes"], attributes: ["data-nick", "data-uid", "data-user-id", "data-userid", "data-user_id", "data-memo-uid", "title"] }
+    );
   }
 
   function stopObserver() {
-    if (observer) {
-      observer.disconnect();
-      observer = null;
-    }
+    unsubscribeDomBus?.();
+    unsubscribeDomBus = null;
   }
 
   function loadAndApply() {
-    chrome.storage.sync.get(DEFAULTS, ({ gamemecaBlockEnabled }) => {
+    globalThis.DCBRuntimeSettingsCache.get(DEFAULTS, ({ gamemecaBlockEnabled }) => {
       enabled = gamemecaBlockEnabled !== false;
 
       if (enabled) {
         ensureStyle();
-        scheduleApply();
+        applyBlock();
         startObserver();
       } else {
         stopObserver();
@@ -232,7 +224,7 @@
 
     if (enabled) {
       ensureStyle();
-      scheduleApply();
+      applyBlock();
       startObserver();
     } else {
       stopObserver();

@@ -1197,7 +1197,7 @@
       }
     }
 
-    const raw = await chrome.storage.sync.get(DEFAULTS);
+    const raw = await globalThis.DCBRuntimeSettingsCache.get(DEFAULTS);
     const conf = migrate(raw);
     try {
       conf.blockedUids = await readBlockedUids();
@@ -1328,7 +1328,7 @@
     }
   }, true);
 
-  const mo = new MutationObserver((records) => {
+  function handleDomMutations(records) {
     records.forEach((record) => {
       if (record.type === "attributes") {
         queueIncrementalApply(record.target);
@@ -1338,21 +1338,16 @@
         if (node.nodeType === 1 || node.nodeType === 11) queueIncrementalApply(node);
       });
     });
-  });
+  }
 
-  const startMO = () => {
-    if (document.body) {
-      mo.observe(document.body, {
-        childList: true,
-        subtree: true,
-        attributes: true,
-        attributeFilter: ["data-uid", "data-full-uid", "data-ip", "data-nick", "data-memo-uid", "data-memo-ip", "title", "href"]
-      });
-    } else {
-      document.addEventListener("DOMContentLoaded", startMO, { once: true });
+  globalThis.DCBDomMutationBus?.subscribe(
+    "cleaner-userblock",
+    handleDomMutations,
+    {
+      types: ["childList", "attributes"],
+      attributes: ["data-uid", "data-full-uid", "data-ip", "data-nick", "data-memo-uid", "data-memo-ip", "title", "href"]
     }
-  };
-  startMO();
+  );
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === "local" && globalThis.DCBUserBlockStore?.isRelevantChange?.(changes)) {

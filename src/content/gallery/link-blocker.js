@@ -46,7 +46,7 @@
   let linkWarnEnabled = true;
   let builtinDcbestBlockEnabled = true;
   let blockedSet = new Set([BUILTIN_DCBEST_ID]);
-  let observer = null;
+  let unsubscribeDomBus = null;
   let scanTimer = null;
   let isApplying = false;
   const pendingRoots = new Set();
@@ -144,7 +144,7 @@
   /* ───── 설정 동기화 ───── */
 
   function syncSettings(cb) {
-    chrome.storage.sync.get(
+    globalThis.DCBRuntimeSettingsCache.get(
       {
         galleryBlockEnabled: undefined,
         enabled: true,
@@ -185,7 +185,7 @@
     }
 
     if (chg.blockedIds || chg.builtinDcbestBlockEnabled) {
-      chrome.storage.sync.get(
+      globalThis.DCBRuntimeSettingsCache.get(
         { builtinDcbestBlockEnabled: true, blockedIds: [] },
         ({ builtinDcbestBlockEnabled: builtinEnabled, blockedIds }) => {
           builtinDcbestBlockEnabled = builtinEnabled !== false;
@@ -517,27 +517,24 @@
   }
 
   function startObserver() {
-    observer?.disconnect();
-
-    observer = new MutationObserver((records) => {
-      if (isApplying) return;
-      records.forEach((record) => {
-        record.addedNodes.forEach((node) => {
-          if (node.nodeType !== 1 && node.nodeType !== 11) return;
-          // 실베 알리미는 화면에 번쩍 노출되지 않도록 observer 콜백에서 즉시 숨긴다.
-          blockDcbestAlarmPopups(node);
-          scheduleApplyLinkWarnings(node);
+    unsubscribeDomBus?.();
+    unsubscribeDomBus = null;
+    if (!globalThis.DCBDomMutationBus) return;
+    unsubscribeDomBus = globalThis.DCBDomMutationBus.subscribe(
+      "link-blocker",
+      (records) => {
+        if (isApplying) return;
+        records.forEach((record) => {
+          if (record.type !== "childList") return;
+          record.addedNodes.forEach((node) => {
+            if (node.nodeType !== 1 && node.nodeType !== 11) return;
+            blockDcbestAlarmPopups(node);
+            scheduleApplyLinkWarnings(node);
+          });
         });
-      });
-    });
-
-    const observe = () => {
-      if (!document.body) return;
-      observer.observe(document.body, { childList: true, subtree: true });
-    };
-
-    if (document.body) observe();
-    else document.addEventListener("DOMContentLoaded", observe, { once: true });
+      },
+      { types: ["childList"] }
+    );
   }
 
   /*

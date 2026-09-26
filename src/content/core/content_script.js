@@ -51,7 +51,7 @@ function updateBlockedSet(blockedIds = userBlockedIds, builtinEnabled = builtinD
 
 /* ───── storage → 메모리 ───── */
 function syncSettings(cb){
-  chrome.storage.sync.get(
+  globalThis.DCBRuntimeSettingsCache.get(
     {
       galleryBlockEnabled: undefined,  // 신규 키
       enabled            : true,       // 구버전 호환

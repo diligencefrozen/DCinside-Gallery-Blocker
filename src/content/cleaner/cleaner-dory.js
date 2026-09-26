@@ -12,8 +12,7 @@
   };
 
   let enabled = true;
-  let observer = null;
-  let scheduled = false;
+  let unsubscribeDomBus = null;
 
   function normalizeNick(value) {
     return String(value || "")
@@ -147,66 +146,79 @@
     el.classList.add(BLOCKED_CLASS);
   }
 
-  function applyBlock() {
-    scheduled = false;
+  const COMMENT_CONTAINER_SELECTOR = [
+    "#focus_cmt li", ".comment_wrap li", ".cmt_list li", ".reply_box li", ".reply_list li",
+    ".dccon_comment_box li", "li.ub-content", "li[id^='comment_li_']", "li.dory",
+    "#dcb-preview-overlay .dcbpv-comment-item"
+  ].join(",");
 
+  const DORY_CANDIDATE_SELECTOR = '.dory, .comment_dory, .dory_txt, .nickname.cmtboy, .issuefeed, [class*="issuefeed"], [id*="issuefeed"], [data-type*="issuefeed"], [data-comment-type*="issuefeed"], .gall_writer, .ub-writer';
+
+  function containerHasDory(container) {
+    if (!container || container.nodeType !== 1) return false;
+    if (nodeLooksLikeDory(container)) return true;
+    return Array.from(container.querySelectorAll?.(DORY_CANDIDATE_SELECTOR) || []).some(nodeLooksLikeDory);
+  }
+
+  function evaluateContainer(container) {
+    if (!container) return;
+    container.classList.toggle(BLOCKED_CLASS, enabled && containerHasDory(container));
+  }
+
+  function processRoot(root) {
+    if (!enabled || !root) return;
+    const element = root.nodeType === Node.ELEMENT_NODE ? root : root.parentElement;
+    if (!element || element.closest?.("[data-dcb-owned]")) return;
+    const containers = new Set();
+    const direct = element.matches?.(COMMENT_CONTAINER_SELECTOR) ? element : element.closest?.(COMMENT_CONTAINER_SELECTOR);
+    if (direct) containers.add(direct);
+    element.querySelectorAll?.(COMMENT_CONTAINER_SELECTOR).forEach((container) => containers.add(container));
+    const markerContainer = findCommentContainer(element);
+    if (markerContainer) containers.add(markerContainer);
+    containers.forEach(evaluateContainer);
+  }
+
+  function applyBlock() {
     if (!enabled) {
       clearStyle();
       clearMarks();
       return;
     }
-
     ensureStyle();
-    clearMarks();
-
-    document
-      .querySelectorAll(
-        '.dory, .comment_dory, .dory_txt, .nickname.cmtboy, .issuefeed, [class*="issuefeed"], [id*="issuefeed"], [data-type*="issuefeed"], [data-comment-type*="issuefeed"], .gall_writer, .ub-writer'
-      )
-      .forEach((node) => {
-        if (!nodeLooksLikeDory(node)) return;
-
-        const container = findCommentContainer(node);
-        if (container) markBlocked(container);
-      });
-  }
-
-  function scheduleApply() {
-    if (scheduled) return;
-    scheduled = true;
-    requestAnimationFrame(applyBlock);
+    document.querySelectorAll(COMMENT_CONTAINER_SELECTOR).forEach(evaluateContainer);
   }
 
   function startObserver() {
-    if (observer) return;
-
-    observer = new MutationObserver(() => scheduleApply());
-
-    const observe = () => {
-      if (document.documentElement) {
-        // 페이지 미리보기는 body 밖, html 바로 아래에 추가된다.
-        observer.observe(document.documentElement, { childList: true, subtree: true });
-      }
-    };
-
-    if (document.documentElement) observe();
-    else document.addEventListener("DOMContentLoaded", observe, { once: true });
+    if (unsubscribeDomBus || !globalThis.DCBDomMutationBus) return;
+    unsubscribeDomBus = globalThis.DCBDomMutationBus.subscribe(
+      "cleaner-dory",
+      (records) => {
+        const roots = new Set();
+        for (const record of records) {
+          roots.add(record.target);
+          if (record.type === "childList") {
+            record.addedNodes.forEach((node) => roots.add(node));
+            if (record.removedNodes.length) roots.add(record.target);
+          }
+        }
+        roots.forEach(processRoot);
+      },
+      { types: ["childList", "attributes"], attributes: ["class", "id", "data-type", "data-comment-type", "data-kind", "data-role", "data-nick", "data-uid", "data-memo-uid"] }
+    );
   }
 
   function stopObserver() {
-    if (observer) {
-      observer.disconnect();
-      observer = null;
-    }
+    unsubscribeDomBus?.();
+    unsubscribeDomBus = null;
   }
 
   function loadAndApply() {
-    chrome.storage.sync.get(DEFAULTS, ({ doryBlockEnabled }) => {
+    globalThis.DCBRuntimeSettingsCache.get(DEFAULTS, ({ doryBlockEnabled }) => {
       enabled = doryBlockEnabled !== false;
 
       if (enabled) {
         ensureStyle();
-        scheduleApply();
+        applyBlock();
         startObserver();
       } else {
         stopObserver();
@@ -229,7 +241,7 @@
 
     if (enabled) {
       ensureStyle();
-      scheduleApply();
+      applyBlock();
       startObserver();
     } else {
       stopObserver();

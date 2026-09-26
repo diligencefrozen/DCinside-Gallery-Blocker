@@ -89,7 +89,7 @@
   }
 
   try {
-    chrome.storage.sync.get(
+    globalThis.DCBRuntimeSettingsCache.get(
       {
         userBlockEnabled: true,
         userBlockTriggerMode: "instant",

@@ -155,7 +155,7 @@
     async initialize() {
       try {
         const [syncData, localData] = await Promise.all([
-          chrome.storage.sync.get({ [SETTINGS_KEY]: DEFAULT_SETTINGS }),
+          globalThis.DCBRuntimeSettingsCache.get({ [SETTINGS_KEY]: DEFAULT_SETTINGS }),
           chrome.storage.local.get({ [CACHE_KEY]: {} })
         ]);
         this.settings = normalizeSettings(syncData[SETTINGS_KEY]);

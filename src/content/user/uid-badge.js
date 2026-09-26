@@ -424,7 +424,10 @@
     if (!tools) {
       tools = document.createElement("span");
       tools.className = WRITER_TOOLS_CLASS;
+      tools.setAttribute("data-dcb-owned", "1");
     }
+
+    tools.setAttribute("data-dcb-owned", "1");
 
     const listMode = isListWriter(writer);
     const addbox = listMode ? getListAddbox(writer) : writer.querySelector(":scope > .addbox");
@@ -486,6 +489,7 @@
     if (!span) {
       span = document.createElement("span");
       span.className = BADGE;
+      span.setAttribute("data-dcb-owned", "1");
     }
 
     const listMode = isListWriter(writer);
@@ -524,9 +528,11 @@
 
   try {
     if (chrome && chrome.storage && chrome.storage.sync) {
-      chrome.storage.sync.get({ showUidBadge: false }, ({ showUidBadge }) => {
+      globalThis.DCBRuntimeSettingsCache.get({ showUidBadge: false }, ({ showUidBadge }) => {
         showEnabled = !!showUidBadge;
-        scan();
+        const run = () => scan();
+        if (globalThis.DCBStartupScheduler) globalThis.DCBStartupScheduler.schedule("uid-badge:init", run, "normal");
+        else setTimeout(run, 24);
       });
 
       chrome.storage.onChanged.addListener((changes, area) => {
@@ -554,69 +560,56 @@
     );
   }
 
-  function shouldReactToMutations(mutations) {
-    for (const m of mutations) {
-      if (isUidOwnNode(m.target)) continue;
+  const pendingWriters = new Set();
 
-      for (const n of m.addedNodes) {
-        if (isUidOwnNode(n)) continue;
-        if (n.nodeType === 1) {
-          if (
-            n.matches?.(WRITER_SELECTOR) ||
-            n.querySelector?.(WRITER_SELECTOR) ||
-            n.classList?.contains(MEMO_TRIGGER_CLASS) ||
-            n.querySelector?.(`.${MEMO_TRIGGER_CLASS}`)
-          ) {
-            return true;
-          }
-        }
-      }
-
-      for (const n of m.removedNodes) {
-        if (isUidOwnNode(n)) continue;
-        if (n.nodeType === 1) {
-          if (
-            n.matches?.(WRITER_SELECTOR) ||
-            n.querySelector?.(WRITER_SELECTOR) ||
-            n.classList?.contains(MEMO_TRIGGER_CLASS) ||
-            n.querySelector?.(`.${MEMO_TRIGGER_CLASS}`)
-          ) {
-            return true;
-          }
-        }
-      }
-    }
-
-    return false;
+  function collectWritersFromNode(node) {
+    if (!(node instanceof Element) || isUidOwnNode(node)) return;
+    const closest = node.matches?.(WRITER_SELECTOR) ? node : node.closest?.(WRITER_SELECTOR);
+    if (closest) pendingWriters.add(closest);
+    node.querySelectorAll?.(WRITER_SELECTOR).forEach((writer) => pendingWriters.add(writer));
   }
 
   let scheduled = false;
-  const mo = new MutationObserver((mutations) => {
-    if (!shouldReactToMutations(mutations)) return;
-    if (scheduled) return;
+  function handleDomMutations(mutations) {
+    if (!showEnabled) return;
+    for (const m of mutations) {
+      if (isUidOwnNode(m.target)) continue;
+      collectWritersFromNode(m.target);
+      if (m.type === "childList") m.addedNodes.forEach(collectWritersFromNode);
+    }
+    if (!pendingWriters.size || scheduled) return;
 
     scheduled = true;
     requestAnimationFrame(() => {
       scheduled = false;
-      scan();
+      const writers = [...pendingWriters];
+      pendingWriters.clear();
+      ensureStyle();
+      writers.forEach((writer) => { if (writer.isConnected) placeBadge(writer); });
     });
-  });
+  }
+
+  let unsubscribeDomBus = null;
+  function startDomWatch() {
+    if (unsubscribeDomBus || !globalThis.DCBDomMutationBus) return;
+    unsubscribeDomBus = globalThis.DCBDomMutationBus.subscribe(
+      "uid-badge",
+      handleDomMutations,
+      { types: ["childList", "attributes"], attributes: ["data-uid", "data-full-uid", "data-memo-uid", "title", "href"] }
+    );
+  }
 
   if (document.readyState === "loading") {
     document.addEventListener(
       "DOMContentLoaded",
       () => {
         scan();
-        if (document.body) {
-          mo.observe(document.body, { childList: true, subtree: true });
-        }
+        startDomWatch();
       },
       { once: true }
     );
   } else {
     scan();
-    if (document.body) {
-      mo.observe(document.body, { childList: true, subtree: true });
-    }
+    startDomWatch();
   }
 })();

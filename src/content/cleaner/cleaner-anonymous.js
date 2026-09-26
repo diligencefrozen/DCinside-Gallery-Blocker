@@ -244,7 +244,7 @@
 
   /* 설정값 읽어 적용 */
   function apply() {
-    chrome.storage.sync.get(
+    globalThis.DCBRuntimeSettingsCache.get(
       { hideAnonymousEnabled: false },
       ({ hideAnonymousEnabled }) => {
         hideEnabled = !!hideAnonymousEnabled;

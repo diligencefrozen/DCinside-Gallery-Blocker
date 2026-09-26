@@ -31,6 +31,290 @@ const DCBEST_FILTER_SYNC_DEFAULTS = Object.freeze({
 const DCBEST_FILTER_SYNC_KEYS = new Set(Object.keys(DCBEST_FILTER_SYNC_DEFAULTS));
 const CRITICAL_FILTER_HOT_CACHE_KEY = "dcbCriticalFilterHotCacheV1";
 const CRITICAL_FILTER_HOT_CACHE_VERSION = 2;
+const RUNTIME_SETTINGS_HOT_CACHE_KEY = "dcbRuntimeSettingsHotCacheV1";
+const RUNTIME_SETTINGS_HOT_CACHE_VERSION = 1;
+let runtimeSettingsHotCacheWriteQueue = Promise.resolve();
+
+const DCB_CONTENT_PROFILE_STATE_KEY = "dcbContentScriptProfileV1";
+let dcbContentProfileVerifiedInThisBackground = false;
+let dcbContentProfileEnsurePromise = null;
+const DCB_EXT_API = typeof browser !== "undefined" ? browser : chrome;
+
+async function detectDcbBrowserFamily() {
+  try {
+    if (typeof browser !== "undefined" && browser?.runtime?.getBrowserInfo) {
+      const info = await browser.runtime.getBrowserInfo();
+      if (/firefox/i.test(String(info?.name || ""))) return "firefox";
+    }
+  } catch (_) {}
+  return "chrome";
+}
+
+async function ensureDcbContentScriptProfile({ force = false } = {}) {
+  if (!force && dcbContentProfileVerifiedInThisBackground) {
+    return { ok: true, cached: true, verified: true };
+  }
+  if (!force && dcbContentProfileEnsurePromise) return dcbContentProfileEnsurePromise;
+
+  const job = (async () => {
+    const profiles = globalThis.DCBContentScriptProfiles;
+    if (!profiles || !DCB_EXT_API.scripting?.registerContentScripts || !DCB_EXT_API.scripting?.getRegisteredContentScripts) {
+      return { ok: false, error: "scripting-unavailable" };
+    }
+
+    const browserFamily = await detectDcbBrowserFamily();
+    const profileVersion = Number(profiles.version || 0);
+    const desired = Array.isArray(profiles[browserFamily]) ? profiles[browserFamily] : [];
+    if (!desired.length) return { ok: false, error: "profile-empty", browserFamily };
+
+    const desiredIds = desired.map((item) => String(item?.id || "")).filter(Boolean).sort();
+
+    try {
+      // Firefox uses the static manifest bridge instead of relying on dynamic
+      // registered content scripts. This is robust across about:debugging Reload.
+      if (browserFamily === "firefox") {
+        const registered = await DCB_EXT_API.scripting.getRegisteredContentScripts();
+        const managedIds = registered
+          .map((item) => String(item?.id || ""))
+          .filter((id) => id.startsWith("dcb-profile-"));
+        if (managedIds.length) {
+          await DCB_EXT_API.scripting.unregisterContentScripts({ ids: managedIds });
+        }
+        await DCB_EXT_API.storage.local.set({
+          [DCB_CONTENT_PROFILE_STATE_KEY]: {
+            browserFamily,
+            profileVersion,
+            registeredAt: Date.now(),
+            verifiedAt: Date.now(),
+            scriptCount: 0,
+            mode: "static-firefox-bridge"
+          }
+        });
+        dcbContentProfileVerifiedInThisBackground = true;
+        return { ok: true, browserFamily, staticBridge: true, verified: true };
+      }
+
+      // IMPORTANT: do not trust storage.local as proof that dynamic content
+      // scripts still exist. Firefox temporary-addon Reload (and some update
+      // paths) can clear registered scripts while preserving extension storage.
+      const registered = await DCB_EXT_API.scripting.getRegisteredContentScripts();
+      const managed = registered.filter((item) => String(item?.id || "").startsWith("dcb-profile-"));
+      const managedIds = managed.map((item) => String(item?.id || "")).filter(Boolean).sort();
+      const exactRegistration = managedIds.length === desiredIds.length
+        && desiredIds.every((id, index) => managedIds[index] === id);
+
+      if (!force && exactRegistration) {
+        dcbContentProfileVerifiedInThisBackground = true;
+        try {
+          const stored = await DCB_EXT_API.storage.local.get({ [DCB_CONTENT_PROFILE_STATE_KEY]: null });
+          const state = stored?.[DCB_CONTENT_PROFILE_STATE_KEY];
+          if (state?.browserFamily !== browserFamily || Number(state?.profileVersion) !== profileVersion || Number(state?.scriptCount) !== desired.length) {
+            await DCB_EXT_API.storage.local.set({
+              [DCB_CONTENT_PROFILE_STATE_KEY]: {
+                browserFamily,
+                profileVersion,
+                registeredAt: Number(state?.registeredAt || Date.now()),
+                verifiedAt: Date.now(),
+                scriptCount: desired.length
+              }
+            });
+          }
+        } catch (_) {}
+        return { ok: true, browserFamily, cached: true, verified: true };
+      }
+
+      if (managedIds.length) {
+        await DCB_EXT_API.scripting.unregisterContentScripts({ ids: managedIds });
+      }
+      await DCB_EXT_API.scripting.registerContentScripts(desired);
+      await DCB_EXT_API.storage.local.set({
+        [DCB_CONTENT_PROFILE_STATE_KEY]: {
+          browserFamily,
+          profileVersion,
+          registeredAt: Date.now(),
+          verifiedAt: Date.now(),
+          scriptCount: desired.length
+        }
+      });
+      dcbContentProfileVerifiedInThisBackground = true;
+      console.info(`[DCB] content profile registered: ${browserFamily} (${desired.length})`);
+      return { ok: true, browserFamily, registered: true };
+    } catch (error) {
+      dcbContentProfileVerifiedInThisBackground = false;
+      console.error("[DCB] content profile registration failed", browserFamily, error);
+      return { ok: false, browserFamily, error: String(error?.message || error) };
+    }
+  })();
+
+  if (!force) dcbContentProfileEnsurePromise = job;
+  try {
+    return await job;
+  } finally {
+    if (!force && dcbContentProfileEnsurePromise === job) dcbContentProfileEnsurePromise = null;
+  }
+}
+
+// Validate dynamic registrations whenever this background context is created.
+// This makes Firefox temporary-addon Reload/self-restart recover without relying
+// on onInstalled/onStartup firing again. Existing valid registrations are left
+// untouched after a single getRegisteredContentScripts() check.
+queueMicrotask(() => { void ensureDcbContentScriptProfile(); });
+
+// Lazy content-feature injection. Keeps optional Firefox/Chromium content code
+// out of the refresh critical path and injects enabled features one at a time.
+const DCB_LAZY_FEATURE_FILES = Object.freeze({
+  "block-stats": ["src/shared/block-stats.js"],
+  "keyword-core": ["src/shared/keyword-settings-hot-cache.js", "src/shared/keyword-matcher.js"],
+  "list-filter": ["src/content/list/list-filter.js"],
+  "keyword-hider": ["src/content/keyword/keyword-hider.js"],
+  "keyword-blocker": ["src/content/keyword/keyword-blocker.js"],
+  "uid-badge": ["src/content/user/uid-badge.js"],
+  "ip-core": ["src/shared/ip-network-classifier.js"],
+  "member-ip": ["src/content/user/member-ip-view.js"],
+  "user-memo": ["src/content/user/user-memo.js"],
+  "notice-cleaner": ["src/content/cleaner/cleaner-notice.js"],
+  "user-block": ["src/shared/storage/user-block-store.js", "src/content/user/cleaner-userblock.js"],
+  "foreign-anonymous": ["src/content/cleaner/cleaner-foreign-ip.js", "src/content/cleaner/cleaner-anonymous.js"],
+  "gamemeca": ["src/content/cleaner/cleaner-gamemeca.js"],
+  "dory": ["src/content/cleaner/cleaner-dory.js"],
+  "dccon": ["src/content/dccon/cleaner-dccon.js", "src/shared/storage/dccon-block-store.js", "src/content/dccon/dccon-blocker.js"],
+  "comment-cleaner": ["src/content/cleaner/cleaner-comment.js"],
+  "img-comment-cleaner": ["src/content/cleaner/cleaner-img-comment.js"],
+  "auto-refresh": ["src/content/tools/auto-refresh.js"],
+  "image-tools": ["src/content/image/image-account-filter.js", "src/content/user/account-activity-blocker.js", "src/content/image/image-blocker.js"],
+  "text-detector": ["src/shared/detection-config.js", "src/content/detection/text-detector.js"],
+  "preview": ["src/content/core/content_script.js"],
+  "quick-block": ["src/content/gallery/gallery-quick-block.js"],
+  "ctx-probe": ["src/content/user/ctx-probe.js"],
+  "dcbest-source": ["src/shared/keyword-settings-hot-cache.js", "src/content/gallery/dcbest-source-filter.js"],
+  "font": ["src/content/appearance/font-config.js", "src/content/appearance/font-manager.js"],
+  "link-blocker": ["src/content/gallery/link-blocker.js"],
+  "area-picker": ["src/content/tools/area-picker.js"],
+  "theme-bridge": ["src/content/appearance/dc-theme-bridge.js"],
+  "compact-list": ["src/content/appearance/compact-list.js"]
+});
+
+function isDcbContentSender(sender) {
+  try {
+    const u = new URL(sender?.url || sender?.tab?.url || "");
+    return u.hostname === "gall.dcinside.com" || u.hostname === "www.dcinside.com" || u.hostname === "search.dcinside.com" || u.hostname.endsWith(".dcinside.com") || u.hostname.endsWith(".dcinside.co.kr");
+  } catch (_) {
+    return false;
+  }
+}
+
+const DCB_FIREFOX_BOOTSTRAP_COMMON = Object.freeze([
+  "src/shared/runtime-settings-cache.js",
+  "src/shared/startup-scheduler.js",
+  "src/shared/dom-mutation-bus.js"
+]);
+
+function getDcbFirefoxBootstrapFiles(sender) {
+  let url;
+  try { url = new URL(sender?.url || sender?.tab?.url || ""); } catch (_) { return []; }
+  const files = [...DCB_FIREFOX_BOOTSTRAP_COMMON];
+  if (url.hostname === "gall.dcinside.com") {
+    if (/^\/(?:mgallery\/|mini\/|person\/)?board\/lists/.test(url.pathname)) {
+      files.push("src/shared/ip-network-fast-classifier.js", "src/content/core/critical-filter-bootstrap.js");
+    }
+    files.push("src/content/gallery/access-guard.js", "src/content/cleaner/cleaner-gall.js");
+  } else if (url.hostname === "www.dcinside.com") {
+    files.push("src/content/cleaner/cleaner.js");
+  } else if (url.hostname === "search.dcinside.com") {
+    files.push("src/content/cleaner/cleaner-search.js");
+  }
+  files.push("src/content/core/feature-loader.js");
+  return [...new Set(files)];
+}
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type !== "dcb:firefox-bootstrap") return undefined;
+  const tabId = sender?.tab?.id;
+  const frameId = Number.isInteger(sender?.frameId) ? sender.frameId : 0;
+  const files = getDcbFirefoxBootstrapFiles(sender);
+  if (!Number.isInteger(tabId) || !files.length || !isDcbContentSender(sender) || !DCB_EXT_API.scripting?.executeScript) {
+    sendResponse({ ok: false, error: "unsupported" });
+    return undefined;
+  }
+  const run = async () => {
+    await DCB_EXT_API.scripting.executeScript({ target: { tabId, frameIds: [frameId] }, files });
+    if (sender?.url?.includes("gall.dcinside.com")) {
+      try {
+        await DCB_EXT_API.scripting.insertCSS({
+          target: { tabId, frameIds: [frameId] },
+          files: ["src/content/appearance/comment-author.css"]
+        });
+      } catch (_) {}
+    }
+    return { ok: true };
+  };
+  run().then(sendResponse, (error) => {
+    console.warn("[DCB] Firefox bootstrap injection failed", error);
+    sendResponse({ ok: false, error: String(error?.message || error) });
+  });
+  return true;
+});
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type !== "dcb:lazy-inject") return undefined;
+  const feature = String(message.feature || "");
+  const files = DCB_LAZY_FEATURE_FILES[feature];
+  const tabId = sender?.tab?.id;
+  const frameId = Number.isInteger(sender?.frameId) ? sender.frameId : 0;
+  if (!files || !Number.isInteger(tabId) || !isDcbContentSender(sender) || !DCB_EXT_API.scripting?.executeScript) {
+    sendResponse({ ok: false, error: "unsupported" });
+    return undefined;
+  }
+  DCB_EXT_API.scripting.executeScript({
+    target: { tabId, frameIds: [frameId] },
+    files
+  }).then(() => sendResponse({ ok: true })).catch((error) => {
+    console.warn("[DCB] lazy injection failed", feature, error);
+    sendResponse({ ok: false, error: String(error?.message || error) });
+  });
+  return true;
+});
+
+async function seedRuntimeSettingsHotCache() {
+  const job = runtimeSettingsHotCacheWriteQueue.then(async () => {
+    const data = await chrome.storage.sync.get(null);
+    await chrome.storage.local.set({
+      [RUNTIME_SETTINGS_HOT_CACHE_KEY]: {
+        version: RUNTIME_SETTINGS_HOT_CACHE_VERSION,
+        updatedAt: Date.now(),
+        data: data && typeof data === "object" ? data : {}
+      }
+    });
+  });
+  runtimeSettingsHotCacheWriteQueue = job.catch(() => {});
+  return job;
+}
+
+async function patchRuntimeSettingsHotCache(changes = {}) {
+  const patchEntries = Object.entries(changes || {});
+  if (!patchEntries.length) return;
+  const job = runtimeSettingsHotCacheWriteQueue.then(async () => {
+    const stored = await chrome.storage.local.get({ [RUNTIME_SETTINGS_HOT_CACHE_KEY]: null });
+    const current = stored?.[RUNTIME_SETTINGS_HOT_CACHE_KEY];
+    const data = current?.version === RUNTIME_SETTINGS_HOT_CACHE_VERSION
+      && current?.data && typeof current.data === "object"
+      ? { ...current.data }
+      : {};
+    for (const [key, change] of patchEntries) {
+      if (typeof change?.newValue === "undefined") delete data[key];
+      else data[key] = change.newValue;
+    }
+    await chrome.storage.local.set({
+      [RUNTIME_SETTINGS_HOT_CACHE_KEY]: {
+        version: RUNTIME_SETTINGS_HOT_CACHE_VERSION,
+        updatedAt: Date.now(),
+        data
+      }
+    });
+  });
+  runtimeSettingsHotCacheWriteQueue = job.catch(() => {});
+  return job;
+}
 const CRITICAL_FILTER_SYNC_DEFAULTS = Object.freeze({
   userBlockEnabled: true,
   noticeBlockEnabled: true,
@@ -1221,9 +1505,11 @@ chrome.runtime.onInstalled.addListener(async ({ reason, previousVersion }) => {
   syncRules();
 });
 
-/* 서비스워커가 재시작될 때도 우클릭 메뉴를 안정적으로 재구성 */
-resetContextMenus();
-queueUserBlockMutation(() => normalizeStoredUserBlockList());
+/*
+ * MV3 background는 Chrome 서비스워커와 Firefox event page 모두 유휴 상태에서
+ * 내려갔다가 다시 생성될 수 있다. 컨텍스트 메뉴/저장소 정규화 같은 무거운
+ * 초기화는 background가 깨어날 때마다 반복하지 않고 설치/브라우저 시작 때만 한다.
+ */
 
 /* ───── DNR 규칙 생성 ───── */
 function makeRules(ids) {
@@ -1324,9 +1610,7 @@ async function syncRules() {
   console.log(`[DNR] hard access rules synced: ${rules.length}`);
 }
 
-/* 최초 + 스토리지 변경 감지 */
-syncRules();
-
+/* 저장소 변경 시에만 DNR 규칙을 다시 계산한다. 동적 규칙은 background 재기동 사이에도 유지된다. */
 chrome.storage.onChanged.addListener((c, area) => {
   if (
     area === "sync" &&
@@ -1342,6 +1626,10 @@ chrome.storage.onChanged.addListener((c, area) => {
   }
 
   if (area === "sync") {
+    // Mirror the full sync setting state into one local hot snapshot. Content
+    // scripts read this single snapshot instead of waking storage.sync independently.
+    void patchRuntimeSettingsHotCache(c);
+
     const patch = {};
     for (const key of KEYWORD_SYNC_KEYS) {
       if (c[key]) patch[key] = c[key].newValue;
@@ -1375,6 +1663,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 });
 
 chrome.runtime.onStartup?.addListener(() => {
+  void ensureDcbContentScriptProfile();
+  // Firefox MV3 event page는 페이지 탐색/메시지로 여러 번 다시 생성될 수 있으므로
+  // 브라우저 시작 이벤트에서만 세션성 초기화를 수행한다.
+  resetContextMenus();
+  void queueUserBlockMutation(() => normalizeStoredUserBlockList()).catch(() => {});
+  void syncRules().catch(() => {});
+  void seedRuntimeSettingsHotCache();
   void seedKeywordHotCache();
   void seedDcbestFilterHotCache();
   void seedCriticalFilterHotCache();
@@ -1382,6 +1677,11 @@ chrome.runtime.onStartup?.addListener(() => {
   void refreshReleaseStatusAndBadge();
 });
 chrome.runtime.onInstalled?.addListener(() => {
+  // Dynamic registrations are cleared on extension updates in Firefox, so rebuild the profile.
+  void ensureDcbContentScriptProfile({ force: true });
+  // 설치/업데이트 직후에는 onInstalled 본체의 마이그레이션과 별개로 캐시를 최종 정합화한다.
+  void queueUserBlockMutation(() => normalizeStoredUserBlockList()).catch(() => {});
+  void seedRuntimeSettingsHotCache();
   void seedKeywordHotCache();
   void seedDcbestFilterHotCache();
   void seedCriticalFilterHotCache();
@@ -1391,11 +1691,6 @@ chrome.runtime.onInstalled?.addListener(() => {
 chrome.alarms?.onAlarm.addListener((alarm) => {
   if (alarm?.name === GITHUB_RELEASE_ALARM) void refreshReleaseStatusAndBadge({ force: true });
 });
-void seedKeywordHotCache();
-void seedDcbestFilterHotCache();
-void seedCriticalFilterHotCache();
-chrome.alarms?.create(GITHUB_RELEASE_ALARM, { delayInMinutes: 1, periodInMinutes: 360 });
-void refreshReleaseStatusAndBadge();
 
 
 /* ───── 회원 활동량 조회: 전 탭 공통 속도 제한·중복 제거·회로 차단 ───── */
@@ -1409,29 +1704,31 @@ let accountSignalGuard = {
   consecutiveFailures: 0
 };
 
-const accountSignalGuardReady = (async () => {
-  try {
-    const stored = await chrome.storage.local.get({
-      [ACCOUNT_SIGNAL_GUARD_KEY]: accountSignalGuard
-    });
-    const value = stored[ACCOUNT_SIGNAL_GUARD_KEY];
-    if (value && typeof value === "object") {
-      accountSignalGuard = {
-        requestTimes: Array.isArray(value.requestTimes)
-          ? value.requestTimes.map(Number).filter(Number.isFinite)
-          : [],
-        cooldownUntil: Math.max(0, Number(value.cooldownUntil) || 0),
-        consecutiveFailures: Math.max(0, Number.parseInt(value.consecutiveFailures, 10) || 0)
-      };
-    }
-  } catch (_) {
-    accountSignalGuard = {
-      requestTimes: [],
-      cooldownUntil: 0,
-      consecutiveFailures: 0
-    };
+let accountSignalGuardReady;
+function ensureAccountSignalGuardReady() {
+  if (!accountSignalGuardReady) {
+    accountSignalGuardReady = (async () => {
+      try {
+        const stored = await chrome.storage.local.get({
+          [ACCOUNT_SIGNAL_GUARD_KEY]: accountSignalGuard
+        });
+        const value = stored[ACCOUNT_SIGNAL_GUARD_KEY];
+        if (value && typeof value === "object") {
+          accountSignalGuard = {
+            requestTimes: Array.isArray(value.requestTimes)
+              ? value.requestTimes.map(Number).filter(Number.isFinite)
+              : [],
+            cooldownUntil: Math.max(0, Number(value.cooldownUntil) || 0),
+            consecutiveFailures: Math.max(0, Number.parseInt(value.consecutiveFailures, 10) || 0)
+          };
+        }
+      } catch (_) {
+        accountSignalGuard = { requestTimes: [], cooldownUntil: 0, consecutiveFailures: 0 };
+      }
+    })();
   }
-})();
+  return accountSignalGuardReady;
+}
 
 function accountSignalDelay(ms) {
   return new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
@@ -1519,7 +1816,7 @@ function accountSignalFailure(reason, status = 0, retryAfterMs = 0) {
 }
 
 async function performAccountSignalRequest(uid, token) {
-  await accountSignalGuardReady;
+  await ensureAccountSignalGuardReady();
 
   let now = Date.now();
   pruneAccountSignalWindow(now);
@@ -1875,17 +2172,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 let autoRefreshLastRequestAt = 0;
 let autoRefreshPermitQueue = Promise.resolve();
 
-const autoRefreshGuardReady = (async () => {
-  try {
-    const stored = await chrome.storage.session.get({
-      [AUTO_REFRESH_GUARD_KEY]: 0
-    });
-    const storedAt = Math.max(0, Number(stored[AUTO_REFRESH_GUARD_KEY]) || 0);
-    autoRefreshLastRequestAt = storedAt <= Date.now() ? storedAt : 0;
-  } catch (_) {
-    autoRefreshLastRequestAt = 0;
+let autoRefreshGuardReady;
+function ensureAutoRefreshGuardReady() {
+  if (!autoRefreshGuardReady) {
+    autoRefreshGuardReady = (async () => {
+      try {
+        const stored = await chrome.storage.session.get({ [AUTO_REFRESH_GUARD_KEY]: 0 });
+        const storedAt = Math.max(0, Number(stored[AUTO_REFRESH_GUARD_KEY]) || 0);
+        autoRefreshLastRequestAt = storedAt <= Date.now() ? storedAt : 0;
+      } catch (_) {
+        autoRefreshLastRequestAt = 0;
+      }
+    })();
   }
-})();
+  return autoRefreshGuardReady;
+}
 
 function autoRefreshSenderAllowed(sender) {
   try {
@@ -1900,7 +2201,7 @@ function autoRefreshSenderAllowed(sender) {
 }
 
 async function grantAutoRefreshPermit() {
-  await autoRefreshGuardReady;
+  await ensureAutoRefreshGuardReady();
 
   const now = Date.now();
   if (autoRefreshLastRequestAt > now) autoRefreshLastRequestAt = 0;
@@ -2097,20 +2398,24 @@ let dcbestSourceGuard = {
   cooldownUntil: 0
 };
 
-const dcbestSourceGuardReady = (async () => {
-  try {
-    const stored = await chrome.storage.session.get({
-      [DCBEST_SOURCE_SESSION_KEY]: dcbestSourceGuard
-    });
-    const value = stored?.[DCBEST_SOURCE_SESSION_KEY];
-    if (value && typeof value === "object") {
-      dcbestSourceGuard = {
-        lastRequestAt: Math.max(0, Number(value.lastRequestAt) || 0),
-        cooldownUntil: Math.max(0, Number(value.cooldownUntil) || 0)
-      };
-    }
-  } catch (_) {}
-})();
+let dcbestSourceGuardReady;
+function ensureDcbestSourceGuardReady() {
+  if (!dcbestSourceGuardReady) {
+    dcbestSourceGuardReady = (async () => {
+      try {
+        const stored = await chrome.storage.session.get({ [DCBEST_SOURCE_SESSION_KEY]: dcbestSourceGuard });
+        const value = stored?.[DCBEST_SOURCE_SESSION_KEY];
+        if (value && typeof value === "object") {
+          dcbestSourceGuard = {
+            lastRequestAt: Math.max(0, Number(value.lastRequestAt) || 0),
+            cooldownUntil: Math.max(0, Number(value.cooldownUntil) || 0)
+          };
+        }
+      } catch (_) {}
+    })();
+  }
+  return dcbestSourceGuardReady;
+}
 
 function persistDcbestSourceGuard() {
   void chrome.storage.session.set({
@@ -2246,7 +2551,7 @@ function normalizeDcbestPostUrl(rawUrl, expectedNo) {
 }
 
 async function resolveDcbestSourceGallery(no, rawUrl, referrerUrl, tabId = -1, pageToken = "") {
-  await dcbestSourceGuardReady;
+  await ensureDcbestSourceGuardReady();
 
   if (!isCurrentDcbestSourcePage(tabId, pageToken)) {
     return { ok: false, gid: "", stale: true, reason: "STALE_PAGE" };

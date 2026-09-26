@@ -23,7 +23,7 @@
   let keywords = [];
   let blockedIds = new Set();
   let timer = 0;
-  let observer = null;
+  let unsubscribeDomBus = null;
 
   function galleryLink(raw) {
     try {
@@ -215,38 +215,32 @@
     pendingRoots.clear();
   }
 
+  function handleDomMutations(mutations) {
+    for (const mutation of mutations) {
+      const target = mutation.target.nodeType === Node.TEXT_NODE ? mutation.target.parentElement : mutation.target;
+      if (target?.closest?.("[data-dcb-keyword-soft-placeholder],#dcb-list-filter-style,[data-dcb-owned]")) continue;
+      if (mutation.type === "childList") {
+        mutation.addedNodes.forEach((node) => schedule(node));
+        const entry = target?.closest?.(ROW_SELECTOR)
+          || target?.closest?.(".besttxt,.txt_box")
+          || target?.closest?.("li")?.querySelector(MAIN_TITLE_SELECTOR);
+        if (entry) schedule(entry);
+      } else schedule(target);
+    }
+  }
+
   function startObserver() {
-    if (observer || !filterActive()) return;
-    const root = document.documentElement || document;
-    if (!root) return;
-
-    observer = new MutationObserver((mutations) => {
-      for (const mutation of mutations) {
-        const target = mutation.target.nodeType === Node.TEXT_NODE ? mutation.target.parentElement : mutation.target;
-        if (target?.closest?.("[data-dcb-keyword-soft-placeholder],#dcb-list-filter-style")) continue;
-        if (mutation.type === "childList") {
-          mutation.addedNodes.forEach((node) => schedule(node));
-          const entry = target?.closest?.(ROW_SELECTOR)
-            || target?.closest?.(".besttxt,.txt_box")
-            || target?.closest?.("li")?.querySelector(MAIN_TITLE_SELECTOR);
-          if (entry) schedule(entry);
-        } else schedule(target);
-      }
-    });
-
-    observer.observe(root, {
-      subtree: true,
-      childList: true,
-      characterData: true,
-      attributes: true,
-      attributeFilter: ["href", "data-no"]
-    });
+    if (unsubscribeDomBus || !filterActive() || !globalThis.DCBDomMutationBus) return;
+    unsubscribeDomBus = globalThis.DCBDomMutationBus.subscribe(
+      "list-filter",
+      handleDomMutations,
+      { types: ["childList", "characterData", "attributes"], attributes: ["href", "data-no"] }
+    );
   }
 
   function stopObserver() {
-    if (!observer) return;
-    observer.disconnect();
-    observer = null;
+    unsubscribeDomBus?.();
+    unsubscribeDomBus = null;
   }
 
   function syncObserver() {
@@ -274,7 +268,7 @@
   }
 
   function loadSettings() {
-    chrome.storage.sync.get(DEFAULTS, (config) => {
+    globalThis.DCBRuntimeSettingsCache.get(DEFAULTS, (config) => {
       settings = config;
       keywords = matcher.prepareKeywords(config.blockedKeywords);
       blockedIds = new Set((Array.isArray(config.blockedIds) ? config.blockedIds : []).map(blockedGalleryId).filter(Boolean));

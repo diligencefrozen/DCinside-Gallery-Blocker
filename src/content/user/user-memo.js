@@ -27,6 +27,7 @@
   let currentMeta = null;
   let observer = null;
   let renderQueued = false;
+  const pendingRenderRoots = new Set();
   const CONTEXT_MEMO_TTL = 8000;
   let lastContextMemoMeta = null;
   let lastContextMemoAt = 0;
@@ -1004,6 +1005,7 @@
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = TRIGGER_CLASS;
+    btn.setAttribute('data-dcb-owned', '1');
 
     btn.addEventListener('pointerdown', (e) => {
       e.preventDefault();
@@ -1098,7 +1100,10 @@
     if (!tools) {
       tools = document.createElement("span");
       tools.className = WRITER_TOOLS_CLASS;
+      tools.setAttribute("data-dcb-owned", "1");
     }
+
+    tools.setAttribute("data-dcb-owned", "1");
 
     const listMode = isListWriter(writer);
     const addbox = listMode ? getListAddbox(writer) : writer.querySelector(":scope > .addbox");
@@ -1214,19 +1219,32 @@
     ensureStyle();
     ensureModal();
 
+    const element = root === document ? null : (root?.nodeType === Node.ELEMENT_NODE ? root : root?.parentElement);
+    if (element?.matches?.(WRITER_SELECTOR)) renderWriter(element);
     root.querySelectorAll?.(WRITER_SELECTOR).forEach(renderWriter);
 
     cleanupEmptySlots();
     cleanupEmptyWriterTools();
   }
 
-  function queueRender() {
+  function queueRender(root = document) {
+    if (root) pendingRenderRoots.add(root);
     if (renderQueued) return;
     renderQueued = true;
 
     requestAnimationFrame(() => {
       renderQueued = false;
-      renderAll();
+      const roots = [...pendingRenderRoots];
+      pendingRenderRoots.clear();
+      if (!roots.length || roots.includes(document)) {
+        renderAll();
+        return;
+      }
+      const normalized = roots
+        .map((root) => root?.nodeType === Node.TEXT_NODE ? root.parentElement : root)
+        .filter(Boolean);
+      const minimal = normalized.filter((root) => !normalized.some((other) => other !== root && other.contains?.(root)));
+      minimal.forEach((root) => renderAll(root));
     });
   }
 
@@ -1249,40 +1267,30 @@
     );
   }
 
-  function shouldReactToMutations(mutations) {
+  function handleDomMutations(mutations) {
+    const roots = new Set();
     for (const m of mutations) {
       if (isOurNode(m.target)) continue;
-
-      for (const n of m.addedNodes) {
-        if (isOurNode(n)) continue;
-        if (n.nodeType === 1) {
-          if (n.matches?.(WRITER_SELECTOR) || n.querySelector?.(WRITER_SELECTOR)) return true;
+      if (m.type === "childList") {
+        for (const n of m.addedNodes) {
+          if (isOurNode(n)) continue;
+          if (n.nodeType === 1 && (n.matches?.(WRITER_SELECTOR) || n.querySelector?.(WRITER_SELECTOR))) roots.add(n);
         }
-      }
-
-      for (const n of m.removedNodes) {
-        if (isOurNode(n)) continue;
-        if (n.nodeType === 1) {
-          if (n.matches?.(WRITER_SELECTOR) || n.querySelector?.(WRITER_SELECTOR)) return true;
-        }
+        const target = m.target?.nodeType === 1 ? m.target : m.target?.parentElement;
+        if (target?.closest?.(WRITER_SELECTOR)) roots.add(target.closest(WRITER_SELECTOR));
       }
     }
-
-    return false;
+    roots.forEach((root) => queueRender(root));
   }
 
+  let unsubscribeDomBus = null;
   function initObserver() {
-    if (!document.body || observer) return;
-
-    observer = new MutationObserver((mutations) => {
-      if (!shouldReactToMutations(mutations)) return;
-      queueRender();
-    });
-
-    observer.observe(document.body, {
-      childList: true,
-      subtree: true
-    });
+    if (unsubscribeDomBus || !globalThis.DCBDomMutationBus) return;
+    unsubscribeDomBus = globalThis.DCBDomMutationBus.subscribe(
+      "user-memo",
+      handleDomMutations,
+      { types: ["childList"] }
+    );
   }
 
   try {
@@ -1296,14 +1304,27 @@
   } catch (_) {}
 
   function initStorage() {
-    chrome.storage.sync.get(SYNC_DEFAULTS, ({ userMemoEnabled }) => {
+    let syncReady = false;
+    let localReady = false;
+    let initialRendered = false;
+    const renderWhenReady = () => {
+      if (initialRendered || !syncReady || !localReady) return;
+      initialRendered = true;
+      const run = () => renderAll();
+      if (globalThis.DCBStartupScheduler) globalThis.DCBStartupScheduler.schedule("user-memo:init", run, "normal");
+      else setTimeout(run, 36);
+    };
+
+    globalThis.DCBRuntimeSettingsCache.get(SYNC_DEFAULTS, ({ userMemoEnabled }) => {
       enabled = !!userMemoEnabled;
-      renderAll();
+      syncReady = true;
+      renderWhenReady();
     });
 
     chrome.storage.local.get(LOCAL_DEFAULTS, ({ userMemos }) => {
       memoMap = userMemos || {};
-      renderAll();
+      localReady = true;
+      renderWhenReady();
     });
 
     chrome.storage.onChanged.addListener((changes, area) => {
@@ -1351,8 +1372,8 @@
   }, true);
 
   function boot() {
+    // Wait for sync + local settings once, then perform a single initial render.
     initStorage();
-    renderAll();
     initObserver();
   }
 

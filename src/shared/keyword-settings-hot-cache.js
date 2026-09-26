@@ -115,7 +115,7 @@
     await hotReady;
     if (!chrome?.storage?.sync) return null;
     try {
-      const config = normalize(await chrome.storage.sync.get(DEFAULTS));
+      const config = normalize(await globalThis.DCBRuntimeSettingsCache.get(DEFAULTS));
       lastSync = config;
       if (!lastHot || !same(lastHot, config)) emit(config, "sync");
       await write(config);

@@ -102,7 +102,7 @@
     "data-dcbpv-blocked-reason"
   ]);
 
-  let observer = null;
+  let unsubscribeDomBus = null;
   let flushTimer = 0;
   let scanTimer = 0;
   let flushInFlight = false;
@@ -365,33 +365,29 @@
     ));
   }
 
-  function ensureObserver() {
-    if (observer) return;
-    const target = document.documentElement || document;
-    if (!target) return;
-
-    observer = new MutationObserver((records) => {
-      for (const record of records) {
-        if (record.type === "attributes") {
-          if (relevantAttributeMutation(record)) scheduleScan(record.target);
-          continue;
-        }
-        if (
-          record.target instanceof Element
-          && STYLE_RECOVERY_RULES.some((rule) => record.target.id === rule.styleId)
-        ) {
-          // 기존 스타일 노드의 textContent가 다시 채워지는 재활성화도 놓치지 않는다.
-          scheduleScan(record.target);
-        }
-        for (const node of record.addedNodes || []) scheduleScan(node);
+  function handleRecoveryMutations(records) {
+    for (const record of records) {
+      if (record.type === "attributes") {
+        if (relevantAttributeMutation(record)) scheduleScan(record.target);
+        continue;
       }
-    });
-    observer.observe(target, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      attributeFilter: RECOVERY_ATTRIBUTE_FILTER
-    });
+      if (
+        record.target instanceof Element
+        && STYLE_RECOVERY_RULES.some((rule) => record.target.id === rule.styleId)
+      ) {
+        scheduleScan(record.target);
+      }
+      for (const node of record.addedNodes || []) scheduleScan(node);
+    }
+  }
+
+  function ensureObserver() {
+    if (unsubscribeDomBus || !globalThis.DCBDomMutationBus) return;
+    unsubscribeDomBus = globalThis.DCBDomMutationBus.subscribe(
+      "block-stats",
+      handleRecoveryMutations,
+      { types: ["childList", "attributes"], attributes: [...RECOVERY_ATTRIBUTE_FILTER], ignoreOwned: false }
+    );
   }
 
   function registerSelector(id, selector, category = "other") {

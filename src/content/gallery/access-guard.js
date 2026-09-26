@@ -153,7 +153,7 @@
 
     clearRedirectTimer();
 
-    chrome.storage.sync.get({ blockedIds: [] }, ({ blockedIds }) => {
+    globalThis.DCBRuntimeSettingsCache.get({ blockedIds: [] }, ({ blockedIds }) => {
       const normalized = getUserBlockedGalleryIds(blockedIds);
       const next = Array.from(new Set(normalized.filter((blockedId) => blockedId !== id)));
 
@@ -596,7 +596,7 @@
 
   function loadSettingsThenEnforce() {
     try {
-      chrome.storage.sync.get(DEFAULTS, (conf) => {
+      globalThis.DCBRuntimeSettingsCache.get(DEFAULTS, (conf) => {
         const gEnabled =
           typeof conf.galleryBlockEnabled === "boolean"
             ? conf.galleryBlockEnabled

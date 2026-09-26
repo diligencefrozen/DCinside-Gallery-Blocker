@@ -191,7 +191,7 @@
 
   function loadSetting() {
     try {
-      chrome.storage.sync.get(DEFAULTS, (conf) => {
+      globalThis.DCBRuntimeSettingsCache.get(DEFAULTS, (conf) => {
         enabled = !!conf[STORAGE_KEY];
         applyCompactMode();
       });

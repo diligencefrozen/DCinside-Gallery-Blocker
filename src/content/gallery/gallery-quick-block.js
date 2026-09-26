@@ -22,7 +22,6 @@
   ]);
   const NATIVE_TOP_POSITIONS = new Set(["right-top", "left-top"]);
   let autoRefreshEnabledForOffset = false;
-  let autoRefreshOffsetObserver = null;
   let autoRefreshOffsetRaf = 0;
 
   function norm(v) {
@@ -62,7 +61,7 @@
       [QUICK_BLOCK_POSITION_SAVED_AT_KEY]: 0
     };
 
-    chrome.storage.sync.get(syncDefaults, (syncConf = {}) => {
+    globalThis.DCBRuntimeSettingsCache.get(syncDefaults, (syncConf = {}) => {
       chrome.storage.local.get(localDefaults, (localConf = {}) => {
         callback(pickStoredQuickBlockPosition(syncConf, localConf));
       });
@@ -414,33 +413,13 @@
     autoRefreshOffsetRaf = window.requestAnimationFrame(updateAutoRefreshOverlapOffset);
   }
 
-  function observeAutoRefreshCountdown() {
-    if (autoRefreshOffsetObserver || !document.body) return;
-
-    autoRefreshOffsetObserver = new MutationObserver(scheduleAutoRefreshOverlapOffsetUpdate);
-    autoRefreshOffsetObserver.observe(document.body, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      attributeFilter: ["style", "class"]
-    });
-  }
-
   function initAutoRefreshOverlapOffset() {
-    chrome.storage.sync.get({ autoRefreshEnabled: false }, ({ autoRefreshEnabled }) => {
+    globalThis.DCBRuntimeSettingsCache.get({ autoRefreshEnabled: false }, ({ autoRefreshEnabled }) => {
       autoRefreshEnabledForOffset = !!autoRefreshEnabled;
       scheduleAutoRefreshOverlapOffsetUpdate();
     });
 
-    if (document.body) {
-      observeAutoRefreshCountdown();
-    } else {
-      document.addEventListener("DOMContentLoaded", () => {
-        observeAutoRefreshCountdown();
-        scheduleAutoRefreshOverlapOffsetUpdate();
-      }, { once: true });
-    }
-
+    document.addEventListener("dcb-auto-refresh-ui-change", scheduleAutoRefreshOverlapOffsetUpdate, { passive: true });
     window.addEventListener("resize", scheduleAutoRefreshOverlapOffsetUpdate, { passive: true });
   }
 
@@ -514,7 +493,7 @@
 
     setAllQuickBlockButtonsState({ busy: true });
 
-    chrome.storage.sync.get({ blockedIds: [], builtinDcbestBlockEnabled: true }, ({ blockedIds, builtinDcbestBlockEnabled }) => {
+    globalThis.DCBRuntimeSettingsCache.get({ blockedIds: [], builtinDcbestBlockEnabled: true }, ({ blockedIds, builtinDcbestBlockEnabled }) => {
       const prev = Array.isArray(blockedIds) ? blockedIds : [];
       const normalized = prev.map(extractGalleryId).filter(Boolean);
       const state = getGalleryBlockState(id, prev, builtinDcbestBlockEnabled);
@@ -559,7 +538,7 @@
 
     getStoredQuickBlockPosition((position) => {
       syncQuickBlockPlacement(gid, position);
-      chrome.storage.sync.get({ blockedIds: [], builtinDcbestBlockEnabled: true }, ({ blockedIds, builtinDcbestBlockEnabled }) => {
+      globalThis.DCBRuntimeSettingsCache.get({ blockedIds: [], builtinDcbestBlockEnabled: true }, ({ blockedIds, builtinDcbestBlockEnabled }) => {
         setAllQuickBlockButtonsState(getGalleryBlockState(gid, blockedIds, builtinDcbestBlockEnabled));
       });
     });
@@ -607,7 +586,7 @@
     }
 
     if (area === "sync" && (changes.blockedIds || changes.builtinDcbestBlockEnabled)) {
-      chrome.storage.sync.get(
+      globalThis.DCBRuntimeSettingsCache.get(
         { blockedIds: [], builtinDcbestBlockEnabled: true },
         ({ blockedIds, builtinDcbestBlockEnabled }) => {
           setAllQuickBlockButtonsState(getGalleryBlockState(gid, blockedIds, builtinDcbestBlockEnabled));

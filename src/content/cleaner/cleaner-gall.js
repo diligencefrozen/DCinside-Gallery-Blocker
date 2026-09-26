@@ -1,6 +1,5 @@
 /* cleaner-gall.js — 갤러리(게시글,목록) 숨김 */
 const STYLE_ID = "dcb-gall-clean-style";
-let observer = null;
 
 function ensureStyle(){
   let style = document.getElementById(STYLE_ID);
@@ -12,51 +11,21 @@ function ensureStyle(){
   return style;
 }
 
-function removeNow(selectors){
-  selectors.forEach(sel =>
-    document.querySelectorAll(sel).forEach(el => el.remove())
-  );
-}
-
-function startObserver(selectors){
-  if(observer) observer.disconnect();
-  observer = new MutationObserver(() => removeNow(selectors));
-  if (document.body) {
-    observer.observe(document.body, { childList:true, subtree:true });
-  } else {
-    window.addEventListener("DOMContentLoaded", () => {
-      if (observer) observer.observe(document.body, { childList:true, subtree:true });
-    }, { once:true });
-  }
-}
-
 function apply(){
-  chrome.storage.sync.get(
+  globalThis.DCBRuntimeSettingsCache.get(
     { hideGallEnabled:true, removeSelectorsGall:[] },
     ({ hideGallEnabled, removeSelectorsGall }) => {
       const sels = (removeSelectorsGall || []).map(s=>s.trim()).filter(Boolean);
       const style = ensureStyle();
 
-      // 마스터 OFF 또는 비어있으면 모두 해제
+      // CSS 자체가 동적으로 추가되는 요소에도 적용되므로 MutationObserver와
+      // 반복 querySelectorAll/remove가 필요 없다. Firefox에서 DOM 변경마다
+      // 전체 문서를 재검색하던 비용을 없앤다.
       if (!hideGallEnabled || sels.length === 0) {
         style.textContent = "";
-        if (observer) observer.disconnect();
         return;
       }
-
-      // CSS로 재등장 억제
       style.textContent = sels.map(s => `${s}{display:none!important}`).join("\n");
-
-      // 즉시 제거 + 동적 로딩 대응
-      if (document.readyState === "loading") {
-        window.addEventListener("DOMContentLoaded", () => {
-          removeNow(sels);
-          startObserver(sels);
-        }, { once:true });
-      } else {
-        removeNow(sels);
-        startObserver(sels);
-      }
     }
   );
 }

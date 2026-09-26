@@ -11,8 +11,7 @@
   };
 
   let enabled = true;
-  let observer = null;
-  let scheduled = false;
+  let unsubscribeDomBus = null;
 
   function normalizeText(value) {
     return String(value || "")
@@ -135,66 +134,63 @@
     el.classList.add(BLOCKED_CLASS);
   }
 
-  function applyBlock() {
-    scheduled = false;
+  const ROW_SELECTOR = ".gall_list tbody tr, .gall_list tr, tr.ub-content, tr[data-no], tr.gall_tr";
 
+  function evaluateRow(row) {
+    if (!row || row.nodeType !== 1) return;
+    const shouldBlock = enabled && rowHasOperatorWriter(row) && rowHasNoticeBadge(row);
+    row.classList.toggle(BLOCKED_CLASS, shouldBlock);
+  }
+
+  function processRoot(root) {
+    if (!enabled || !root) return;
+    const element = root.nodeType === Node.ELEMENT_NODE ? root : root.parentElement;
+    if (!element || element.closest?.("[data-dcb-owned]")) return;
+    const rows = new Set();
+    const row = element.matches?.(ROW_SELECTOR) ? element : element.closest?.(ROW_SELECTOR);
+    if (row) rows.add(row);
+    element.querySelectorAll?.(ROW_SELECTOR).forEach((candidate) => rows.add(candidate));
+    element.querySelectorAll?.("td.gall_subject, .gall_subject").forEach((subject) => {
+      const container = findListContainer(subject);
+      if (container) rows.add(container);
+    });
+    rows.forEach(evaluateRow);
+  }
+
+  function applyBlock() {
     if (!enabled) {
       clearStyle();
       clearMarks();
       return;
     }
-
     ensureStyle();
-    clearMarks();
-
-    // 1) 최신/특수 DCInside 목록 구조 대응:
-    //    - 일반/인물 갤러리: `번호` 칸에 설문/AD가 들어옴
-    //    - 마이너/미니 갤러리: `말머리` 또는 제목 쪽에 들어오는 변형 존재
-    //    - 운영자 작성 행만 숨겨서 일반 게시글 오탐을 줄임
-    document.querySelectorAll(
-      ".gall_list tbody tr, .gall_list tr, tr.ub-content, tr[data-no], tr.gall_tr"
-    ).forEach((row) => {
-      if (row.classList.contains(BLOCKED_CLASS)) return;
-      if (!rowHasOperatorWriter(row)) return;
-      if (!rowHasNoticeBadge(row)) return;
-      markBlocked(row);
-    });
-
-    // 2) 기존 방식 유지: 말머리 칸만 명확히 잡히는 구형 구조/리스트형 구조 대응
-    document.querySelectorAll("td.gall_subject, .gall_subject").forEach((subject) => {
-      if (!subjectMatches(subject)) return;
-
-      const container = findListContainer(subject);
-      if (container && rowHasOperatorWriter(container)) markBlocked(container);
-    });
+    document.querySelectorAll(ROW_SELECTOR).forEach(evaluateRow);
   }
 
   function scheduleApply() {
-    if (scheduled) return;
-    scheduled = true;
-    requestAnimationFrame(applyBlock);
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(applyBlock);
+    else setTimeout(applyBlock, 16);
   }
 
   function startObserver() {
-    if (observer) return;
-
-    observer = new MutationObserver(() => scheduleApply());
-
-    const observe = () => {
-      if (document.body) {
-        observer.observe(document.body, { childList: true, subtree: true });
-      }
-    };
-
-    if (document.body) observe();
-    else document.addEventListener("DOMContentLoaded", observe, { once: true });
+    if (unsubscribeDomBus || !globalThis.DCBDomMutationBus) return;
+    unsubscribeDomBus = globalThis.DCBDomMutationBus.subscribe(
+      "cleaner-notice",
+      (records) => {
+        const roots = new Set();
+        for (const record of records) {
+          roots.add(record.target);
+          if (record.type === "childList") record.addedNodes.forEach((node) => roots.add(node));
+        }
+        roots.forEach(processRoot);
+      },
+      { types: ["childList", "attributes"], attributes: ["data-nick", "data-uid", "data-no", "class"] }
+    );
   }
 
   function stopObserver() {
-    if (observer) {
-      observer.disconnect();
-      observer = null;
-    }
+    unsubscribeDomBus?.();
+    unsubscribeDomBus = null;
   }
 
   async function loadAndApply() {
@@ -205,7 +201,7 @@
       const snapshot = critical.getSnapshot?.();
       if (snapshot?.reason === "hot-ready") raw = snapshot.sync;
     }
-    if (!raw) raw = await chrome.storage.sync.get(DEFAULTS);
+    if (!raw) raw = await globalThis.DCBRuntimeSettingsCache.get(DEFAULTS);
     enabled = raw.noticeBlockEnabled !== false;
 
     if (enabled) {

@@ -104,7 +104,7 @@
 
   async function loadStore() {
     const [syncData, localData] = await Promise.all([
-      chrome.storage.sync.get({ [CONFIG_KEY]: null }),
+      globalThis.DCBRuntimeSettingsCache.get({ [CONFIG_KEY]: null }),
       chrome.storage.local.get({ [CONFIG_KEY]: null, [RECORD_KEY]: {} })
     ]);
     config = oneClickConfig(syncData[CONFIG_KEY] || localData[CONFIG_KEY] || BASE_CONFIG);

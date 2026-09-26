@@ -142,7 +142,7 @@
     tag.textContent = info.label;
     tag.removeAttribute("data-dcb-fast-badge");
     tag.removeAttribute("data-dcb-loading-badge");
-    tag.removeAttribute("data-dcb-owned");
+    tag.setAttribute("data-dcb-owned", "1");
     return tag;
   }
 
@@ -265,10 +265,20 @@
     return roots;
   }
 
-  const observer = new MutationObserver((mutations) => {
+  function handleDomMutations(mutations) {
     if (!enabled) return;
     collectMutationRoots(mutations).forEach((root) => scheduleMemberIpScan(root));
-  });
+  }
+
+  let unsubscribeDomBus = null;
+  function startDomWatch() {
+    if (unsubscribeDomBus || !globalThis.DCBDomMutationBus) return;
+    unsubscribeDomBus = globalThis.DCBDomMutationBus.subscribe(
+      "member-ip-view",
+      handleDomMutations,
+      { types: ["childList", "attributes"], attributes: ["data-ip", "data-memo-ip"] }
+    );
+  }
 
   function refreshWithCurrentState(root = document) {
     if (!enabled) {
@@ -293,15 +303,25 @@
     try {
       const hotSnapshot = globalThis.DCBCriticalFilter?.getSnapshot?.();
       const hotEnabled = hotSnapshot?.sync?.showMemberIpInfo;
+      let hotApplied = false;
       if (hotSnapshot?.memberIpSettingKnown === true && typeof hotEnabled === "boolean") {
         enabled = hotEnabled;
+        hotApplied = true;
         refreshMemberIpBadges(document);
       }
 
-      chrome.storage.sync.get({ [STORAGE_KEY]: true }, (conf) => {
-        enabled = !!conf[STORAGE_KEY];
+      globalThis.DCBRuntimeSettingsCache.get({ [STORAGE_KEY]: true }, (conf) => {
+        const nextEnabled = !!conf[STORAGE_KEY];
+        const changed = nextEnabled !== enabled;
+        enabled = nextEnabled;
         globalThis.DCBCriticalFilter?.setMemberIpBadgeSetting?.(enabled);
-        refreshMemberIpBadges(document);
+        // The critical bootstrap already paints the fast badge. Detailed ISP
+        // enrichment is optional and is staggered away from Firefox first paint.
+        if (!hotApplied || changed) {
+          const run = () => refreshMemberIpBadges(document);
+          if (globalThis.DCBStartupScheduler) globalThis.DCBStartupScheduler.schedule("member-ip-detail:init", run, "idle");
+          else setTimeout(run, 60);
+        }
       });
 
       chrome.storage.onChanged.addListener((changes, area) => {
@@ -314,15 +334,8 @@
       refreshMemberIpBadges(document);
     }
 
-    // The manifest injects this at document_end so badge work stays off the
-    // first-paint critical path. Observe incrementally from that point onward.
-    observer.observe(document, {
-      childList: true,
-      subtree: true,
-      characterData: true,
-      attributes: true,
-      attributeFilter: ["data-ip", "data-memo-ip"]
-    });
+    // Share the page-wide observer with the other content features.
+    startDomWatch();
   }
 
   boot();

@@ -539,7 +539,7 @@
       hotCache.subscribe((conf) => applySettings({ ...DEFAULTS, ...(conf || {}) }));
       return;
     }
-    chrome.storage.sync.get(DEFAULTS, (conf) => applySettings(conf));
+    globalThis.DCBRuntimeSettingsCache.get(DEFAULTS, (conf) => applySettings(conf));
   }
 
   chrome.storage.onChanged.addListener((changes, area) => {

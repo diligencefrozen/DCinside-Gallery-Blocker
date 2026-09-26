@@ -39,7 +39,7 @@
   let enabled = false;
   let keywords = [];
   let targets = { ...DEFAULTS.keywordHideTargets };
-  let observer = null;
+  let unsubscribeDomBus = null;
   let scheduled = false;
   let resetRequested = false;
   let suppressObserver = false;
@@ -635,61 +635,59 @@
     });
   }
 
+  function handleDomMutations(mutations) {
+    mutations = mutations.filter((mutation) => {
+      const target = mutation.target?.nodeType === 1 ? mutation.target : mutation.target?.parentElement;
+      if (target?.closest?.("[data-dcb-owned]")) return false;
+      if (mutation.type !== "childList") return true;
+      const nodes = [...mutation.addedNodes, ...mutation.removedNodes].filter((node) => node?.nodeType === 1);
+      return !nodes.length || nodes.some((node) => !node.closest?.("[data-dcb-owned]"));
+    });
+    if (!mutations.length) return;
+    const anonymousVisibilityChanged = mutations.some((mutation) => {
+      if (mutation.type !== "attributes" || mutation.attributeName !== "class") return false;
+      const current = mutation.target?.classList?.contains(ANONYMOUS_HIDDEN_CLASS);
+      const previous = String(mutation.oldValue || "").split(/\s+/).includes(ANONYMOUS_HIDDEN_CLASS);
+      return current !== previous;
+    });
+    if (suppressObserver && !anonymousVisibilityChanged) return;
+
+    const contentMutations = mutations.filter((mutation) => mutation.type !== "attributes");
+    if (!anonymousVisibilityChanged) {
+      if (!contentMutations.length || mutationBelongsToSoftUi(contentMutations)) return;
+    }
+
+    if (anonymousVisibilityChanged) {
+      scheduleApply(document);
+      return;
+    }
+
+    for (const mutation of contentMutations) {
+      if (mutation.type === "childList") {
+        mutation.addedNodes.forEach((node) => {
+          if (node?.nodeType === Node.ELEMENT_NODE || node?.nodeType === Node.TEXT_NODE) pendingRoots.add(node);
+        });
+        const target = mutation.target;
+        if (target?.closest?.(`${listFilter.selector},${COMMENT_ITEM_SELECTOR}`)) pendingRoots.add(target);
+      } else if (mutation.type === "characterData") {
+        pendingRoots.add(mutation.target);
+      }
+    }
+    if (pendingRoots.size) scheduleApply(null);
+  }
+
   function startObserver() {
-    if (observer) return;
-
-    const root = document.documentElement || document;
-    if (!root) return;
-
-    observer = new MutationObserver((mutations) => {
-      const anonymousVisibilityChanged = mutations.some((mutation) => {
-        if (mutation.type !== "attributes" || mutation.attributeName !== "class") return false;
-        const current = mutation.target?.classList?.contains(ANONYMOUS_HIDDEN_CLASS);
-        const previous = String(mutation.oldValue || "").split(/\s+/).includes(ANONYMOUS_HIDDEN_CLASS);
-        return current !== previous;
-      });
-      if (suppressObserver && !anonymousVisibilityChanged) return;
-
-      const contentMutations = mutations.filter((mutation) => mutation.type !== "attributes");
-      if (!anonymousVisibilityChanged) {
-        if (!contentMutations.length || mutationBelongsToSoftUi(contentMutations)) return;
-      }
-
-      if (anonymousVisibilityChanged) {
-        // 익명 차단과의 우선순위가 바뀌는 경우는 드물므로 전체 상태를 한 번 맞춘다.
-        scheduleApply(document);
-        return;
-      }
-
-      for (const mutation of contentMutations) {
-        if (mutation.type === "childList") {
-          mutation.addedNodes.forEach((node) => {
-            if (node?.nodeType === Node.ELEMENT_NODE || node?.nodeType === Node.TEXT_NODE) pendingRoots.add(node);
-          });
-          const target = mutation.target;
-          if (target?.closest?.(`${listFilter.selector},${COMMENT_ITEM_SELECTOR}`)) pendingRoots.add(target);
-        } else if (mutation.type === "characterData") {
-          pendingRoots.add(mutation.target);
-        }
-      }
-      if (pendingRoots.size) scheduleApply(null);
-    });
-
-    observer.observe(root, {
-      childList: true,
-      subtree: true,
-      characterData: true,
-      attributes: true,
-      attributeOldValue: true,
-      attributeFilter: ["class"]
-    });
+    if (unsubscribeDomBus || !globalThis.DCBDomMutationBus) return;
+    unsubscribeDomBus = globalThis.DCBDomMutationBus.subscribe(
+      "keyword-hider",
+      handleDomMutations,
+      { types: ["childList", "characterData", "attributes"], attributes: ["class"], attributeOldValue: true, ignoreOwned: true }
+    );
   }
 
   function stopObserver() {
-    if (!observer) return;
-
-    observer.disconnect();
-    observer = null;
+    unsubscribeDomBus?.();
+    unsubscribeDomBus = null;
   }
 
   function applySettings(config = {}) {
@@ -715,7 +713,7 @@
       return;
     }
     if (!chrome?.storage?.sync) return;
-    chrome.storage.sync.get(DEFAULTS, (config) => applySettings(config));
+    globalThis.DCBRuntimeSettingsCache.get(DEFAULTS, (config) => applySettings(config));
   }
 
   if (chrome?.storage?.onChanged) {

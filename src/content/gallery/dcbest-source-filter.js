@@ -1409,7 +1409,7 @@
 
   function loadSettings() {
     return new Promise((resolve) => {
-      chrome.storage.sync.get(DEFAULTS, (conf) => {
+      globalThis.DCBRuntimeSettingsCache.get(DEFAULTS, (conf) => {
         currentConfig = { ...DEFAULTS, ...(conf || {}) };
         syncSettingsApplied = true;
         applyGallerySettings(currentConfig);

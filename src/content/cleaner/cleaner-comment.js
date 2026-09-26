@@ -68,7 +68,7 @@
 
   cleanupLegacyInlineStyles();
 
-  chrome.storage.sync.get({ hideComment: false }, ({ hideComment: value }) => {
+  globalThis.DCBRuntimeSettingsCache.get({ hideComment: false }, ({ hideComment: value }) => {
     apply(value);
   });
 

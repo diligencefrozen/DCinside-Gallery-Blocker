@@ -3,6 +3,7 @@
   if (!window.DCBFont || !globalThis.chrome?.storage?.sync) return;
 
   const STYLE_ID = "dcb-page-font-style";
+  const IS_LIST_PAGE = /\/board\/lists(?:\/|$)/.test(location.pathname);
   const LINK_ID = "dcb-page-google-font";
   const SIZE_ATTR = "data-dcb-font-size";
   const KEEP_ATTR = "data-dcb-font-keep";
@@ -21,11 +22,11 @@
     ".dcb-writer-tools", ".dc-member-ip-chip",
     '[data-dcb-ui]', '[contenteditable="true"]'
   ].join(",");
-  const observedOptions = { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "style"] };
   let active = false;
   let conf = { ...DCBFont.STORAGE_DEFAULTS };
   let requestVersion = 0;
   let refreshTimer = null;
+  let refreshIdleHandle = null;
   const decorated = new Set();
 
   function ensureNode(id, tagName) {
@@ -33,6 +34,7 @@
     if (!node) {
       node = document.createElement(tagName);
       node.id = id;
+      node.setAttribute("data-dcb-owned", "font-manager");
       (document.head || document.documentElement).appendChild(node);
     }
     return node;
@@ -48,23 +50,56 @@
 
   function clearFont() {
     active = false;
-    observer.disconnect();
+    unsubscribeDomBus?.();
+    unsubscribeDomBus = null;
     clearTimeout(refreshTimer);
     refreshTimer = null;
+    if (refreshIdleHandle !== null && typeof cancelIdleCallback === "function") cancelIdleCallback(refreshIdleHandle);
+    refreshIdleHandle = null;
     document.getElementById(STYLE_ID)?.remove();
     document.getElementById(LINK_ID)?.remove();
     undecorate();
   }
 
+  function refreshListPageFast(style) {
+    const scale = DCBFont.normalizeFontScale(conf.dcbFontScale) / 100;
+    const family = DCBFont.cssFontStack(DCBFont.getEffectiveFontFamily(conf));
+    const selectors = [
+      ".gall_list .gall_tit",
+      ".dcbpv-title",
+      ".dcbpv-html",
+      ".dcbpv-comment-body"
+    ];
+    const rules = [];
+    for (const selector of selectors) {
+      const sample = document.querySelector(selector);
+      if (!sample) {
+        rules.push(`${selector} { font-family:${family} !important; }`);
+        continue;
+      }
+      const native = getComputedStyle(sample);
+      const size = Number.parseFloat(native.fontSize);
+      const sizeRule = Number.isFinite(size) && size > 0 && scale !== 1
+        ? ` font-size:${Math.round(size * scale * 100) / 100}px !important;`
+        : "";
+      rules.push(`${selector} { font-family:${family} !important;${sizeRule} }`);
+    }
+    style.textContent = rules.join("\n");
+  }
+
   function refresh() {
     refreshTimer = null;
     if (!active || !document.documentElement) return;
-    observer.disconnect();
     const style = ensureNode(STYLE_ID, "style");
     // Measure with our layer disabled, so nested em sizes never multiply again.
     style.disabled = true;
     undecorate();
     try {
+      if (IS_LIST_PAGE) {
+        refreshListPageFast(style);
+        return;
+      }
+
       const candidates = new Set();
       const protectedNodes = new Set();
       for (const root of document.querySelectorAll(ROOTS)) {
@@ -120,25 +155,48 @@
       `;
     } finally {
       style.disabled = false;
-      if (active) observer.observe(document.documentElement, observedOptions);
     }
   }
 
-  function scheduleRefresh() {
-    if (active && refreshTimer === null) refreshTimer = setTimeout(refresh, 80);
+  function scheduleRefresh(delay = 120) {
+    if (!active || refreshTimer !== null || refreshIdleHandle !== null) return;
+    const run = () => {
+      refreshTimer = null;
+      refreshIdleHandle = null;
+      refresh();
+    };
+    // Font measurement calls getComputedStyle repeatedly. Keep it off the first
+    // paint path, especially on Firefox where forced style/layout is expensive.
+    if (typeof requestIdleCallback === "function") {
+      refreshIdleHandle = requestIdleCallback(run, { timeout: Math.max(180, delay + 120) });
+    } else {
+      refreshTimer = setTimeout(run, delay);
+    }
   }
 
-  const observer = new MutationObserver((records) => {
+  function handleDomMutations(records) {
     const relevant = records.some((record) => {
-      const target = record.target;
-      if (target.nodeType === 1 && (target.matches(ROOTS) || target.closest(ROOTS))) return true;
-      if (record.type === "attributes" && target.nodeType === 1 && target.querySelector(ROOTS)) return true;
-      return [...record.addedNodes, ...record.removedNodes].some((node) =>
-        node.nodeType === 1 && (node.matches(ROOTS) || node.querySelector(ROOTS))
-      );
+      const target = record.target?.nodeType === 1 ? record.target : record.target?.parentElement;
+      if (target?.closest?.("[data-dcb-owned]")) return false;
+      if (target && (target.matches?.(ROOTS) || target.closest?.(ROOTS))) return true;
+      if (record.type === "attributes") return false;
+      return [...record.addedNodes, ...record.removedNodes].some((node) => {
+        if (node?.nodeType !== 1 || node.closest?.("[data-dcb-owned]")) return false;
+        return !!(node.matches?.(ROOTS) || node.querySelector?.(ROOTS));
+      });
     });
     if (relevant) scheduleRefresh();
-  });
+  }
+
+  let unsubscribeDomBus = null;
+  function startDomWatch() {
+    if (unsubscribeDomBus || !globalThis.DCBDomMutationBus) return;
+    unsubscribeDomBus = globalThis.DCBDomMutationBus.subscribe(
+      "font-manager",
+      handleDomMutations,
+      { types: ["childList", "attributes"], attributes: ["class", "style"] }
+    );
+  }
 
   function applyFont(settings) {
     conf = { ...DCBFont.STORAGE_DEFAULTS, ...settings };
@@ -147,27 +205,31 @@
       return;
     }
     active = true;
+    startDomWatch();
     if (!document.documentElement) return;
     const link = ensureNode(LINK_ID, "link");
     link.rel = "stylesheet";
     const href = DCBFont.googleFontHref(DCBFont.getEffectiveFontFamily(conf));
     if (link.getAttribute("href") !== href) link.href = href;
-    refresh();
+    scheduleRefresh(0);
   }
 
   function loadAndApply() {
     const version = ++requestVersion;
-    chrome.storage.sync.get(DCBFont.STORAGE_DEFAULTS, (settings) => {
+    globalThis.DCBRuntimeSettingsCache.get(DCBFont.STORAGE_DEFAULTS, (settings) => {
       if (version !== requestVersion || chrome.runtime?.lastError) return;
       applyFont(settings);
     });
   }
 
-  loadAndApply();
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", loadAndApply, { once: true });
+  // Font measurement can force layout in Firefox. Keep it off the same frame
+  // used by badges/filters and start it cooperatively after first paint.
+  const startFontManager = () => loadAndApply();
+  if (globalThis.DCBStartupScheduler) {
+    globalThis.DCBStartupScheduler.schedule("font-manager:init", startFontManager, "idle");
+  } else {
+    setTimeout(startFontManager, 60);
   }
-  window.addEventListener("load", scheduleRefresh, { once: true });
   window.addEventListener("resize", scheduleRefresh);
   document.addEventListener("load", (event) => {
     if (event.target?.tagName === "LINK" && event.target.id !== LINK_ID) scheduleRefresh();
