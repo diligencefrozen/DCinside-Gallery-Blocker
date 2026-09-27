@@ -130,7 +130,7 @@
       .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS},
       td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"]{
         overflow:visible !important;
-        text-align:center !important;
+        text-align:left !important;
         vertical-align:middle !important;
         white-space:nowrap !important;
         line-height:18px !important;
@@ -142,7 +142,7 @@
       td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] .addbox{
         display:flex !important;
         align-items:center !important;
-        justify-content:center !important;
+        justify-content:flex-start !important;
         gap:2px !important;
         width:100% !important;
         max-width:100% !important;
@@ -204,7 +204,7 @@
       td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] > .${WRITER_TOOLS_CLASS}{
         display:inline-flex !important;
         align-items:center !important;
-        justify-content:center !important;
+        justify-content:flex-start !important;
         gap:2px !important;
         width:auto !important;
         max-width:92px !important;
@@ -355,7 +355,7 @@
       td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] .addbox > .${WRITER_TOOLS_CLASS}{
         display:inline-flex !important;
         align-items:center !important;
-        justify-content:center !important;
+        justify-content:flex-start !important;
         gap:2px !important;
         width:auto !important;
         max-width:92px !important;
@@ -533,7 +533,7 @@
       td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] > div{
         display:flex !important;
         align-items:center !important;
-        justify-content:center !important;
+        justify-content:flex-start !important;
         width:100% !important;
         max-width:100% !important;
         min-width:0 !important;
@@ -1031,6 +1031,7 @@
     const listMode = isListWriter(writer);
     const previewMode = isPreviewWriter(writer);
     const compactMode = listMode || previewMode;
+    const commentMode = !!getCommentHost(writer);
 
     btn.dataset.memoKey = meta.key;
     btn.dataset.memoUid = meta.uid || '';
@@ -1047,14 +1048,14 @@
     if (saved && saved.memo) {
       const color = isValidColor(saved.color) ? saved.color : DEFAULT_COLOR;
 
-      btn.textContent = compactMode ? formatCompactMemoText(saved.memo) : saved.memo;
+      btn.textContent = commentMode ? '📝' : (compactMode ? formatCompactMemoText(saved.memo) : saved.memo);
       btn.title = saved.memo;
       btn.setAttribute('aria-label', `이용자 메모: ${saved.memo}`);
       btn.style.color = color;
       btn.style.borderColor = `${color}4d`;
       btn.style.background = `${color}14`;
     } else {
-      btn.textContent = compactMode ? '메모' : '메모 추가';
+      btn.textContent = commentMode ? '📝' : (compactMode ? '메모' : '메모 추가');
       btn.title = '이용자 메모 작성';
       btn.setAttribute('aria-label', '이용자 메모 작성');
       btn.style.color = '';

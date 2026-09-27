@@ -150,13 +150,13 @@
 
         핵심:
         - addbox는 18px 확보해서 디시 기본 마크가 잘리지 않게 보호
-        - UID/메모 줄만 별도 압축
+        - 닉네임/기본 마크/UID/메모를 한 줄에 배치
       */
 
       .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS},
       td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"]{
         overflow:visible !important;
-        text-align:center !important;
+        text-align:left !important;
         vertical-align:middle !important;
         white-space:nowrap !important;
         line-height:18px !important;
@@ -168,7 +168,7 @@
       td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] .addbox{
         display:flex !important;
         align-items:center !important;
-        justify-content:center !important;
+        justify-content:flex-start !important;
         gap:2px !important;
         width:100% !important;
         max-width:100% !important;
@@ -230,7 +230,7 @@
       td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] > .${WRITER_TOOLS_CLASS}{
         display:inline-flex !important;
         align-items:center !important;
-        justify-content:center !important;
+        justify-content:flex-start !important;
         gap:2px !important;
         width:auto !important;
         max-width:76px !important;
@@ -250,7 +250,7 @@
       td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] .addbox > .${WRITER_TOOLS_CLASS}{
         display:inline-flex !important;
         align-items:center !important;
-        justify-content:center !important;
+        justify-content:flex-start !important;
         gap:2px !important;
         flex:0 1 auto !important;
         width:auto !important;
@@ -295,7 +295,7 @@
       td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] > div{
         display:flex !important;
         align-items:center !important;
-        justify-content:center !important;
+        justify-content:flex-start !important;
         width:100% !important;
         max-width:100% !important;
         min-width:0 !important;
