@@ -27,7 +27,8 @@
             "src/shared/startup-scheduler.js",
             "src/shared/dom-mutation-bus.js",
             "src/content/appearance/font-config.js",
-            "src/content/appearance/font-bootstrap.js"
+            "src/content/appearance/font-bootstrap.js",
+            "src/content/appearance/font-manager.js"
         ],
         "runAt": "document_start"
     },
@@ -531,7 +532,8 @@
             "src/shared/startup-scheduler.js",
             "src/shared/dom-mutation-bus.js",
             "src/content/appearance/font-config.js",
-            "src/content/appearance/font-bootstrap.js"
+            "src/content/appearance/font-bootstrap.js",
+            "src/content/appearance/font-manager.js"
         ],
         "runAt": "document_start"
     },

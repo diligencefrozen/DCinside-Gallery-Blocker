@@ -9,6 +9,7 @@
   const classifier = globalThis.DCBIpNetworkClassifier;
   if (!classifier) return;
   const { normalizeIpText, describeIpFragment } = classifier;
+  const WRITER_SELECTOR = ".gall_writer,.ub-writer";
   let enabled = false;
   let scheduled = false;
   const pendingRoots = new Set();
@@ -166,6 +167,29 @@
     ipEl.insertAdjacentElement("afterend", createMemberIpBadge(ip));
   }
 
+  function removeWriterNikconWhitespace(writer) {
+    if (!(writer instanceof Element)) return;
+    if (!writer.closest(".cmt_nickbox, .cmt_info, .reply_info, .gall_list")) return;
+
+    writer.querySelectorAll("a.writer_nikcon").forEach((icon) => {
+      if (icon.closest(WRITER_SELECTOR) !== writer) return;
+
+      const whitespace = icon.previousSibling;
+      const nickname = whitespace?.previousSibling;
+      const isNickname =
+        nickname?.nodeType === Node.ELEMENT_NODE &&
+        (nickname.matches("em") ||
+          (nickname.matches(".nickname") && !!nickname.querySelector(":scope > em")));
+      if (
+        whitespace?.nodeType === Node.TEXT_NODE &&
+        /^\s+$/.test(whitespace.nodeValue || "") &&
+        isNickname
+      ) {
+        whitespace.remove();
+      }
+    });
+  }
+
   function attachMemberIpBadgeFromWriter(writer) {
     if (!(writer instanceof Element)) return;
 
@@ -201,6 +225,10 @@
   const WRITER_IP_SELECTOR = ".gall_writer[data-ip],.ub-writer[data-ip],.gall_writer[data-memo-ip],.ub-writer[data-memo-ip]";
 
   function refreshMemberIpBadges(root = document) {
+    if (root instanceof Element && root.matches(WRITER_SELECTOR)) {
+      removeWriterNikconWhitespace(root);
+    }
+    root.querySelectorAll?.(WRITER_SELECTOR).forEach(removeWriterNikconWhitespace);
     if (!enabled) {
       removeMemberIpBadges(root);
       if (root === document) removeBadgeStyle();
@@ -208,6 +236,10 @@
     }
 
     ensureBadgeStyle();
+    if (root instanceof Element && root.matches(WRITER_SELECTOR)) {
+      removeWriterNikconWhitespace(root);
+    }
+    root.querySelectorAll?.(WRITER_SELECTOR).forEach(removeWriterNikconWhitespace);
     if (root instanceof Element) {
       if (root.matches?.(IP_SELECTOR)) attachMemberIpBadge(root);
       if (root.matches?.(WRITER_IP_SELECTOR)) attachMemberIpBadgeFromWriter(root);

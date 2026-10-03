@@ -105,7 +105,24 @@
     select.value = selectedValue || DEFAULT_FONT_FAMILY;
   }
 
+  const PAGE_ROOTS = [
+    ".gall_list .gall_tit", ".title_subject", ".write_div",
+    ".cmt_txtbox", ".reply_txtbox", ".usertxt",
+    ".dcbpv-title", ".dcbpv-html", ".dcbpv-comment-body"
+  ].join(",");
+  const PAGE_EXCLUDED = [
+    "button", "input", "textarea", "select", "svg", "iframe", "video", "audio",
+    ".sp_img", '[class*="icon"]', '[class^="ico"]', '[class*=" ico"]',
+    '[class*="dccon"]', '[class*="txtcon"]', '[class*="emot"]',
+    ".dcbpv-btn", ".dcbpv-filter-chip", ".dcbpv-filter-reveal", ".dcb-uid-badge",
+    ".gall_writer", ".ub-writer", ".cmt_nickbox", ".user_data_list",
+    ".dcb-writer-tools", ".dc-member-ip-chip",
+    '[data-dcb-ui]', '[contenteditable="true"]'
+  ].join(",");
+
   window.DCBFont = {
+    PAGE_ROOTS,
+    PAGE_EXCLUDED,
     DEFAULT_FONT_FAMILY,
     DEFAULT_FONT_SCALE,
     MIN_FONT_SCALE,

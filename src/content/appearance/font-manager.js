@@ -1,27 +1,17 @@
 /* Reading fonts are an opt-in layer; removing the layer restores the site's CSS. */
 (() => {
   if (!window.DCBFont || !globalThis.chrome?.storage?.sync) return;
+  if (globalThis.__DCB_FONT_MANAGER__) return;
+  globalThis.__DCB_FONT_MANAGER__ = true;
 
   const STYLE_ID = "dcb-page-font-style";
   const IS_LIST_PAGE = /\/board\/lists(?:\/|$)/.test(location.pathname);
   const LINK_ID = "dcb-page-google-font";
   const SIZE_ATTR = "data-dcb-font-size";
   const KEEP_ATTR = "data-dcb-font-keep";
-  const ROOTS = [
-    ".gall_list .gall_tit", ".title_subject", ".write_div",
-    ".cmt_txtbox", ".reply_txtbox", ".usertxt",
-    ".dcbpv-title", ".dcbpv-html", ".dcbpv-comment-body"
-  ].join(",");
+  const ROOTS = DCBFont.PAGE_ROOTS;
   const TEXT_NODES = "p,div,span,a,b,strong,em,i,u,s,small,mark,code,pre,blockquote,ul,ol,li,h1,h2,h3,h4,h5,h6,td,th,font,label";
-  const EXCLUDED = [
-    "button", "input", "textarea", "select", "svg", "iframe", "video", "audio",
-    ".sp_img", '[class*="icon"]', '[class^="ico"]', '[class*=" ico"]',
-    '[class*="dccon"]', '[class*="txtcon"]', '[class*="emot"]',
-    ".dcbpv-btn", ".dcbpv-filter-chip", ".dcbpv-filter-reveal", ".dcb-uid-badge",
-    ".gall_writer", ".ub-writer", ".cmt_nickbox", ".user_data_list",
-    ".dcb-writer-tools", ".dc-member-ip-chip",
-    '[data-dcb-ui]', '[contenteditable="true"]'
-  ].join(",");
+  const EXCLUDED = DCBFont.PAGE_EXCLUDED;
   let active = false;
   let conf = { ...DCBFont.STORAGE_DEFAULTS };
   let requestVersion = 0;
@@ -52,7 +42,7 @@
     active = false;
     unsubscribeDomBus?.();
     unsubscribeDomBus = null;
-    clearTimeout(refreshTimer);
+    cancelAnimationFrame(refreshTimer);
     refreshTimer = null;
     if (refreshIdleHandle !== null && typeof cancelIdleCallback === "function") cancelIdleCallback(refreshIdleHandle);
     refreshIdleHandle = null;
@@ -91,8 +81,10 @@
     refreshTimer = null;
     if (!active || !document.documentElement) return;
     const style = ensureNode(STYLE_ID, "style");
+    const earlyStyle = document.getElementById("dcb-page-font-bootstrap-style");
     // Measure with our layer disabled, so nested em sizes never multiply again.
     style.disabled = true;
+    if (earlyStyle) earlyStyle.disabled = true;
     undecorate();
     try {
       if (IS_LIST_PAGE) {
@@ -154,24 +146,21 @@
         ${keepRules.join("\n")}
       `;
     } finally {
+      if (earlyStyle) earlyStyle.disabled = false;
       style.disabled = false;
     }
   }
 
-  function scheduleRefresh(delay = 120) {
+  function scheduleRefresh() {
     if (!active || refreshTimer !== null || refreshIdleHandle !== null) return;
     const run = () => {
       refreshTimer = null;
       refreshIdleHandle = null;
       refresh();
     };
-    // Font measurement calls getComputedStyle repeatedly. Keep it off the first
-    // paint path, especially on Firefox where forced style/layout is expensive.
-    if (typeof requestIdleCallback === "function") {
-      refreshIdleHandle = requestIdleCallback(run, { timeout: Math.max(180, delay + 120) });
-    } else {
-      refreshTimer = setTimeout(run, delay);
-    }
+    // Coalesce changes before paint instead of leaving native sizes visible
+    // until an idle callback. Measurement and restoration stay synchronous.
+    refreshTimer = requestAnimationFrame(run);
   }
 
   function handleDomMutations(records) {
@@ -206,7 +195,10 @@
     }
     active = true;
     startDomWatch();
-    if (!document.documentElement) return;
+    if (!document.documentElement) {
+      document.addEventListener("DOMContentLoaded", () => applyFont(conf), { once: true });
+      return;
+    }
     const link = ensureNode(LINK_ID, "link");
     link.rel = "stylesheet";
     const href = DCBFont.googleFontHref(DCBFont.getEffectiveFontFamily(conf));
@@ -222,14 +214,12 @@
     });
   }
 
-  // Font measurement can force layout in Firefox. Keep it off the same frame
-  // used by badges/filters and start it cooperatively after first paint.
+  // Reuse the synchronous bootstrap snapshot while storage is validated.
+  const initialSettings = globalThis.DCBFontBootstrap?.getSettings();
+  if (initialSettings?.dcbApplyFontToDc === true) applyFont(initialSettings);
   const startFontManager = () => loadAndApply();
-  if (globalThis.DCBStartupScheduler) {
-    globalThis.DCBStartupScheduler.schedule("font-manager:init", startFontManager, "idle");
-  } else {
-    setTimeout(startFontManager, 60);
-  }
+  startFontManager();
+  document.addEventListener("DOMContentLoaded", () => scheduleRefresh(), { once: true });
   window.addEventListener("resize", scheduleRefresh);
   document.addEventListener("load", (event) => {
     if (event.target?.tagName === "LINK" && event.target.id !== LINK_ID) scheduleRefresh();

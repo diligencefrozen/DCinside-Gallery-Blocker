@@ -25,17 +25,7 @@
   const LINK_ID = "dcb-page-google-font";
   const STICKY_KEY = "dcbFontStickyV1";
   const STICKY_VERSION = 1;
-  const ROOTS = [
-    ".gall_list .gall_tit",
-    ".title_subject",
-    ".write_div",
-    ".cmt_txtbox",
-    ".reply_txtbox",
-    ".usertxt",
-    ".dcbpv-title",
-    ".dcbpv-html",
-    ".dcbpv-comment-body"
-  ].join(",");
+  const ROOTS = fontApi.PAGE_ROOTS;
 
   let conf = { ...fontApi.STORAGE_DEFAULTS };
   let requestVersion = 0;
@@ -141,8 +131,12 @@
     if (persist) writeSticky(conf);
     const familyName = fontApi.getEffectiveFontFamily(conf);
     const family = fontApi.cssFontStack(familyName);
+    const scale = fontApi.normalizeFontScale(conf.dcbFontScale) / 100;
     const style = ensureNode(STYLE_ID, "style");
-    style.textContent = `${ROOTS} { font-family:${family} !important; }`;
+    const excluded = fontApi.PAGE_EXCLUDED;
+    style.textContent = `:is(${ROOTS}):not(:is(${excluded}, :is(${excluded}) *)),
+      :is(${ROOTS}) :not(:is(${excluded}, :is(${excluded}) *)) { font-family:${family} !important; }
+      :is(${ROOTS}):not(:is(${excluded}, :is(${excluded}) *)) { font-size:${scale}em !important; }`;
     ensureGoogleFontNonBlocking(familyName);
   }
 
@@ -171,10 +165,11 @@
   // font has been enabled on this DCinside origin, the same family is painted on
   // the next navigation immediately. Runtime storage is only a later validator.
   const sticky = readSticky();
+  globalThis.DCBFontBootstrap = { getSettings: () => ({ ...conf }) };
   if (sticky) {
     stickyActive = true;
     applyEarlyFont(sticky, { persist: false });
-    validateFromRuntime({ delay: 500 });
+    validateFromRuntime();
   } else {
     // First enable / first visit: do not make first paint wait. Resolve the shared
     // hot cache asynchronously and persist it for all following navigations.

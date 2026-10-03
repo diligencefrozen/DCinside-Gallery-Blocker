@@ -1,5 +1,6 @@
-/* Keep the native author column; only the name and optional tools may shrink. */
-.cmt_nickbox :is(.gall_writer, .ub-writer) {
+/* Keep the native DCInside author layout untouched unless this extension
+   actually adds author UI. When enhanced, only the name and optional tools may shrink. */
+.cmt_nickbox :is(.gall_writer, .ub-writer):is(.dcb-writer-enhanced, :has(.dc-member-ip-chip), :has(> .dcb-writer-tools)) {
   display: inline-flex !important;
   align-items: center !important;
   flex-wrap: nowrap !important;
@@ -12,10 +13,13 @@
   overflow: visible !important;
 }
 
-.cmt_nickbox :is(.gall_writer, .ub-writer) > .nickname {
+.cmt_nickbox :is(.gall_writer, .ub-writer):is(.dcb-writer-enhanced, :has(.dc-member-ip-chip), :has(> .dcb-writer-tools)) > .nickname {
   display: inline-flex !important;
   align-items: center !important;
-  flex: 1 1 auto !important;
+  /* Keep fixed-nickname icons next to the visible nickname text.
+     Grow=1 made the nickname consume the whole author column and pushed
+     .writer_nikcon to the far right, leaving a large visual gap. */
+  flex: 0 1 auto !important;
   min-width: 0 !important;
   max-width: 100% !important;
   white-space: nowrap !important;
@@ -25,7 +29,7 @@
   overflow: visible !important;
 }
 
-.cmt_nickbox :is(.gall_writer, .ub-writer) > .nickname > em {
+.cmt_nickbox :is(.gall_writer, .ub-writer):is(.dcb-writer-enhanced, :has(.dc-member-ip-chip), :has(> .dcb-writer-tools)) > .nickname > em {
   display: block !important;
   flex: 0 1 auto !important;
   min-width: 0 !important;
@@ -34,24 +38,35 @@
   text-overflow: ellipsis !important;
 }
 
-.cmt_nickbox :is(.gall_writer, .ub-writer) > .nickname:not(:has(> em, .user_data_list)) {
+.cmt_nickbox :is(.gall_writer, .ub-writer):is(.dcb-writer-enhanced, :has(.dc-member-ip-chip), :has(> .dcb-writer-tools)) > .nickname:not(:has(> em, .user_data_list)) {
   display: block !important;
   overflow: hidden !important;
   text-overflow: ellipsis !important;
 }
 
-.cmt_nickbox :is(.gall_writer, .ub-writer):has(> .writer_nikcon) > .nickname {
+.cmt_nickbox :is(.gall_writer, .ub-writer):is(.dcb-writer-enhanced, :has(.dc-member-ip-chip), :has(> .dcb-writer-tools)):has(> .writer_nikcon) > .nickname {
   max-width: calc(100% - 20px) !important;
 }
 
-.cmt_nickbox :is(.gall_writer, .ub-writer) :is(.ip, .writer_ip, .writer_nikcon, .dc-member-ip-chip) {
+/* The native fixed-nickname image already has a 2px left margin. Remove the
+   extension gap only for the nickname-to-icon boundary; keep space before
+   extension-owned tools and badges that follow the icon. */
+.cmt_nickbox :is(.gall_writer, .ub-writer):is(.dcb-writer-enhanced, :has(.dc-member-ip-chip), :has(> .dcb-writer-tools)):has(> .writer_nikcon) {
+  column-gap: 0 !important;
+}
+
+.cmt_nickbox :is(.gall_writer, .ub-writer):is(.dcb-writer-enhanced, :has(.dc-member-ip-chip), :has(> .dcb-writer-tools)):has(> .writer_nikcon) > .writer_nikcon ~ :is(.dcb-writer-tools, .dc-member-ip-chip, .ip, .writer_ip) {
+  margin-left: 3px !important;
+}
+
+.cmt_nickbox :is(.gall_writer, .ub-writer):is(.dcb-writer-enhanced, :has(.dc-member-ip-chip), :has(> .dcb-writer-tools)) :is(.ip, .writer_ip, .writer_nikcon, .dc-member-ip-chip) {
   flex: 0 0 auto !important;
   white-space: nowrap !important;
   word-break: normal !important;
   overflow-wrap: normal !important;
 }
 
-.cmt_nickbox :is(.gall_writer, .ub-writer) > .dcb-writer-tools {
+.cmt_nickbox :is(.gall_writer, .ub-writer):is(.dcb-writer-enhanced, :has(.dc-member-ip-chip), :has(> .dcb-writer-tools)) > .dcb-writer-tools {
   display: inline-flex !important;
   order: initial !important;
   flex: 0 0 auto !important;
@@ -66,7 +81,7 @@
   box-sizing: border-box !important;
 }
 
-.cmt_nickbox :is(.gall_writer, .ub-writer) > .dcb-writer-tools > :is(.dcb-uid-badge, .dcb-user-memo-trigger) {
+.cmt_nickbox :is(.gall_writer, .ub-writer):is(.dcb-writer-enhanced, :has(.dc-member-ip-chip), :has(> .dcb-writer-tools)) > .dcb-writer-tools > :is(.dcb-uid-badge, .dcb-user-memo-trigger) {
   display: inline-flex !important;
   flex: 0 0 auto !important;
   min-width: 0 !important;

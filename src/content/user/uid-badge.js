@@ -180,6 +180,11 @@
         box-sizing:border-box !important;
       }
 
+      .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} .addbox:has(> .writer_nikcon),
+      td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] .addbox:has(> .writer_nikcon){
+        column-gap:0 !important;
+      }
+
       .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} .nickname,
       td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] .nickname{
         display:inline-block !important;
@@ -307,7 +312,7 @@
 
       .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} .addbox,
       td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] .addbox{
-        flex:1 1 auto !important;
+        flex:0 1 auto !important;
         min-width:0 !important;
         max-width:100% !important;
         overflow:visible !important;
@@ -316,7 +321,7 @@
 
       .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} .nickname,
       td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] .nickname{
-        flex:1 1 auto !important;
+        flex:0 1 auto !important;
         max-width:none !important;
         min-width:0 !important;
       }
@@ -417,6 +422,29 @@
     return "";
   }
 
+  function removeWriterNikconWhitespace(writer) {
+    if (!(writer instanceof Element)) return;
+    if (!writer.closest(".cmt_nickbox, .cmt_info, .reply_info") && !isListWriter(writer)) return;
+
+    writer.querySelectorAll("a.writer_nikcon").forEach((icon) => {
+      if (icon.closest(".gall_writer, .ub-writer") !== writer) return;
+
+      const whitespace = icon.previousSibling;
+      const nickname = whitespace?.previousSibling;
+      const isNickname =
+        nickname?.nodeType === Node.ELEMENT_NODE &&
+        (nickname.matches("em") ||
+          (nickname.matches(".nickname") && !!nickname.querySelector(":scope > em")));
+      if (
+        whitespace?.nodeType === Node.TEXT_NODE &&
+        /^\s+$/.test(whitespace.nodeValue || "") &&
+        isNickname
+      ) {
+        whitespace.remove();
+      }
+    });
+  }
+
   function ensureWriterTools(writer) {
     writer.classList.add(WRITER_ENHANCED_CLASS);
 
@@ -474,6 +502,8 @@
     if (!showEnabled) return;
     if (!(writer instanceof Element)) return;
 
+    removeWriterNikconWhitespace(writer);
+
     const uid = extractUid(writer);
     const badges = Array.from(writer.querySelectorAll(`:scope .${BADGE}`));
 
@@ -517,6 +547,7 @@
   }
 
   function scan() {
+    document.querySelectorAll(WRITER_SELECTOR).forEach(removeWriterNikconWhitespace);
     if (!showEnabled) {
       restoreOriginalUi();
       return;
