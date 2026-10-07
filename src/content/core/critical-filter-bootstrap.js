@@ -86,12 +86,12 @@
         }
         .${MEMBER_IP_BADGE_CLASS}{
           --member-ip-bg:rgba(76,99,255,.09);--member-ip-fg:#3446a8;--member-ip-ring:rgba(76,99,255,.22);
-          display:inline-flex!important;align-items:center!important;gap:3px!important;max-width:42px!important;height:13px!important;
+          display:inline-flex!important;align-items:center!important;gap:3px!important;height:13px!important;
           margin:0 0 0 1px!important;padding:0 2px!important;border:1px solid var(--member-ip-ring)!important;border-radius:8px!important;
           background:linear-gradient(180deg,rgba(255,255,255,.78),rgba(255,255,255,.52)),var(--member-ip-bg)!important;
           box-shadow:0 1px 2px rgba(15,23,42,.06),inset 0 1px 0 rgba(255,255,255,.55)!important;color:var(--member-ip-fg)!important;
           font:800 8px/1.1 Arial,Helvetica,sans-serif!important;letter-spacing:-.35px!important;white-space:nowrap!important;
-          vertical-align:baseline!important;overflow:hidden!important;text-overflow:ellipsis!important;box-sizing:border-box!important;
+          vertical-align:baseline!important;overflow:visible!important;text-overflow:clip!important;box-sizing:border-box!important;
         }
         .${MEMBER_IP_BADGE_CLASS}::before{content:""!important;flex:0 0 4px!important;width:4px!important;height:4px!important;border-radius:50%!important;background:currentColor!important;opacity:.78!important;}
         .${MEMBER_IP_BADGE_CLASS}[data-tone="wired"]{--member-ip-bg:rgba(38,166,91,.10);--member-ip-fg:#257247;--member-ip-ring:rgba(38,166,91,.24);}
@@ -233,37 +233,31 @@
     return applyFastMemberIpBadge(document.createElement("span"), ip);
   }
 
-  function placeMemberIpBadge(writer, tag, ip) {
-    const anchors = [...(writer.querySelectorAll?.(".ip,.writer_ip") || [])];
-    const anchor = anchors.find((node) => normalizeIp(node.textContent || "") === ip);
-    if (anchor) {
-      anchor.insertAdjacentElement("afterend", tag);
-      return;
-    }
-    const after = writer.querySelector?.(":scope > .writer_nikcon") || writer.querySelector?.(":scope > .nickname") || writer.querySelector?.(".writer_nikcon,.nickname");
-    if (after) after.insertAdjacentElement("afterend", tag);
-    else writer.appendChild(tag);
+  function placeMemberIpBadge(writer, tag) {
+    globalThis.DCBWriterLayout?.attachProvider(writer, tag);
   }
 
   function attachLoadingMemberIpBadge(writer, tokens = null) {
     if (!(writer instanceof Element)) return;
     const ip = (tokens || writerTokens(writer)).ip;
     if (!ip) return;
-    const existing = writer.querySelector?.(`.${MEMBER_IP_BADGE_CLASS}`);
+    const owner = globalThis.DCBWriterLayout?.getWriter(writer) || writer;
+    const existing = owner.querySelector?.(`.${MEMBER_IP_BADGE_CLASS}`);
     if (existing) return;
-    placeMemberIpBadge(writer, createLoadingMemberIpBadge(ip), ip);
+    placeMemberIpBadge(writer, createLoadingMemberIpBadge(ip));
   }
 
   function attachFastMemberIpBadge(writer, tokens = null) {
     if (!(writer instanceof Element) || state.sync.showMemberIpInfo !== true) return;
     const ip = (tokens || writerTokens(writer)).ip;
     if (!ip) return;
-    const existing = writer.querySelector?.(`.${MEMBER_IP_BADGE_CLASS}`);
+    const owner = globalThis.DCBWriterLayout?.getWriter(writer) || writer;
+    const existing = owner.querySelector?.(`.${MEMBER_IP_BADGE_CLASS}`);
     if (existing) {
       if (existing.hasAttribute("data-dcb-loading-badge")) applyFastMemberIpBadge(existing, ip);
       return;
     }
-    placeMemberIpBadge(writer, createFastMemberIpBadge(ip), ip);
+    placeMemberIpBadge(writer, createFastMemberIpBadge(ip));
   }
 
   function syncFastMemberIpBadges(row, writers, getTokens) {
@@ -276,7 +270,11 @@
       writers.forEach((writer) => attachFastMemberIpBadge(writer, getTokens(writer)));
       return;
     }
-    row.querySelectorAll?.(`.${MEMBER_IP_BADGE_CLASS}[${FAST_BADGE_ATTR}="1"]`).forEach((node) => node.remove());
+    row.querySelectorAll?.(`.${MEMBER_IP_BADGE_CLASS}[${FAST_BADGE_ATTR}="1"]`).forEach((node) => {
+      const writer = node.closest?.(WRITER_SELECTOR);
+      node.remove();
+      globalThis.DCBWriterLayout?.cleanup(writer);
+    });
   }
 
   function processRow(row) {
@@ -401,7 +399,11 @@
     state.memberIpViewReady = true;
     state.sync.showMemberIpInfo = !!enabled;
     if (!enabled) {
-      document.querySelectorAll?.(`.${MEMBER_IP_BADGE_CLASS}[${FAST_BADGE_ATTR}="1"]`).forEach((node) => node.remove());
+      document.querySelectorAll?.(`.${MEMBER_IP_BADGE_CLASS}[${FAST_BADGE_ATTR}="1"]`).forEach((node) => {
+        const writer = globalThis.DCBWriterLayout?.getWriter(node);
+        node.remove();
+        globalThis.DCBWriterLayout?.cleanup(writer);
+      });
     }
   }
 

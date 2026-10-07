@@ -73,7 +73,7 @@
       add("dcbest-source", settings.builtinDcbestBlockEnabled !== false && (isList || isView), "idle");
     }
 
-    add("font", settings.dcbApplyFontToDc === true, "background");
+    add("font", settings.dcbApplyFontToDc === true, "visual");
     add("link-blocker", settings.linkWarnEnabled === true, "background");
     add("area-picker", isGall || isWww || isSearch, "background");
     add("theme-bridge", isGall || isWww, "background");

@@ -11,8 +11,6 @@
   const WRITER_TOOLS_CLASS = "dcb-writer-tools";
   const WRITER_ENHANCED_CLASS = "dcb-writer-enhanced";
   const WRITER_SELECTOR = ".gall_writer,.ub-writer";
-  const LIST_ROOT_SELECTOR = ".gall_list,.list_array,.ub-list,.dccon_list,.issuebox";
-  const PREVIEW_ROOT_SELECTOR = "#dcbpv-overlay,.dcbpv-overlay,.dcbpv-panel,.dcbpv-comment-list";
 
   const SYNC_DEFAULTS = {
     userMemoEnabled: false
@@ -25,7 +23,6 @@
   let enabled = false;
   let memoMap = {};
   let currentMeta = null;
-  let observer = null;
   let renderQueued = false;
   const pendingRenderRoots = new Set();
   const CONTEXT_MEMO_TTL = 8000;
@@ -44,31 +41,6 @@
     return /^#[0-9a-fA-F]{6}$/.test(String(v || ""));
   }
 
-  function isListWriter(writer) {
-    return !!(
-      writer &&
-      writer.matches?.("td.gall_writer,td.ub-writer,.gall_list .gall_writer,.gall_list .ub-writer,.ub-writer[data-loc='list'],.gall_writer[data-loc='list']") &&
-      (
-        writer.getAttribute("data-loc") === "list" ||
-        writer.closest(LIST_ROOT_SELECTOR) ||
-        writer.closest("tr.ub-content,tr")
-      )
-    );
-  }
-
-  function getListAddbox(writer) {
-    if (!(writer instanceof Element)) return null;
-    return (
-      writer.querySelector(":scope > .addbox") ||
-      writer.querySelector(":scope > div > .addbox") ||
-      writer.querySelector(":scope > b.addbox") ||
-      writer.querySelector(":scope .addbox")
-    );
-  }
-
-  function isPreviewWriter(writer) {
-    return !!(writer && writer.closest?.(PREVIEW_ROOT_SELECTOR));
-  }
 
   function ensureStyle() {
     let st = document.getElementById(STYLE_ID);
@@ -76,176 +48,8 @@
 
     st = document.createElement("style");
     st.id = STYLE_ID;
+    st.dataset.dcbOwned = "user-memo";
     st.textContent = `
-      .${WRITER_ENHANCED_CLASS}{
-        max-width:100% !important;
-      }
-
-      .${WRITER_TOOLS_CLASS}{
-        display:inline-flex !important;
-        align-items:center !important;
-        gap:3px !important;
-        flex-wrap:nowrap !important;
-        vertical-align:middle !important;
-        margin-left:3px !important;
-        max-width:100% !important;
-        white-space:nowrap !important;
-      }
-
-      .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} > .${WRITER_TOOLS_CLASS},
-      td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] > .${WRITER_TOOLS_CLASS}{
-        display:inline-flex !important;
-        vertical-align:baseline !important;
-        margin-left:2px !important;
-        gap:2px !important;
-      }
-
-      .gall_writer.${WRITER_ENHANCED_CLASS},
-      .ub-writer.${WRITER_ENHANCED_CLASS}{
-        overflow:visible !important;
-      }
-
-      .gall_writer.${WRITER_ENHANCED_CLASS} > .nickname,
-      .gall_writer.${WRITER_ENHANCED_CLASS} > .writer_nikcon,
-      .gall_writer.${WRITER_ENHANCED_CLASS} > .${WRITER_TOOLS_CLASS},
-      .ub-writer.${WRITER_ENHANCED_CLASS} > .nickname,
-      .ub-writer.${WRITER_ENHANCED_CLASS} > .writer_nikcon,
-      .ub-writer.${WRITER_ENHANCED_CLASS} > .${WRITER_TOOLS_CLASS}{
-        vertical-align:middle !important;
-      }
-
-      .cmt_nickbox .gall_writer.${WRITER_ENHANCED_CLASS} .btn_cmt_delete,
-      .cmt_info .gall_writer.${WRITER_ENHANCED_CLASS} .btn_cmt_delete,
-      .reply_info .gall_writer.${WRITER_ENHANCED_CLASS} .btn_cmt_delete,
-      .${COMMENT_HOST_CLASS} .btn_cmt_delete{
-        display:none !important;
-      }
-
-      /*
-        게시물 목록 작성자 칸 전용 최적화
-        - addbox 18px 확보
-        - 디시 기본 마크/주황 B/갤로그 아이콘 잘림 방지
-      */
-
-      .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS},
-      td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"]{
-        overflow:visible !important;
-        text-align:left !important;
-        vertical-align:middle !important;
-        white-space:nowrap !important;
-        line-height:18px !important;
-        padding-left:2px !important;
-        padding-right:2px !important;
-      }
-
-      .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} .addbox,
-      td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] .addbox{
-        display:flex !important;
-        align-items:center !important;
-        justify-content:flex-start !important;
-        gap:2px !important;
-        width:100% !important;
-        max-width:100% !important;
-        min-width:0 !important;
-        min-height:18px !important;
-        height:18px !important;
-        line-height:18px !important;
-        overflow:visible !important;
-        box-sizing:border-box !important;
-      }
-
-      .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} .addbox:has(> .writer_nikcon),
-      td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] .addbox:has(> .writer_nikcon){
-        gap:0 !important;
-      }
-
-      .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} .nickname,
-      td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] .nickname{
-        display:inline-block !important;
-        flex:0 1 auto !important;
-        max-width:calc(100% - 74px) !important;
-        min-width:0 !important;
-        overflow:hidden !important;
-        text-overflow:ellipsis !important;
-        white-space:nowrap !important;
-        vertical-align:middle !important;
-        line-height:18px !important;
-      }
-
-      .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} .nickname em,
-      td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] .nickname em{
-        display:inline !important;
-        white-space:nowrap !important;
-        line-height:18px !important;
-      }
-
-      .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} .writer_nikcon,
-      td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] .writer_nikcon{
-        flex:0 0 auto !important;
-        display:inline-flex !important;
-        align-items:center !important;
-        justify-content:center !important;
-        width:auto !important;
-        min-width:12px !important;
-        max-width:22px !important;
-        height:18px !important;
-        max-height:18px !important;
-        overflow:visible !important;
-        vertical-align:middle !important;
-      }
-
-      .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} .addbox img,
-      td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] .addbox img,
-      .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} .writer_nikcon img,
-      td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] .writer_nikcon img{
-        display:inline-block !important;
-        vertical-align:middle !important;
-        max-width:18px !important;
-        max-height:18px !important;
-        object-fit:contain !important;
-        margin-left:1px !important;
-      }
-
-      .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} > .${WRITER_TOOLS_CLASS},
-      td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] > .${WRITER_TOOLS_CLASS}{
-        display:inline-flex !important;
-        align-items:center !important;
-        justify-content:flex-start !important;
-        gap:2px !important;
-        width:auto !important;
-        max-width:92px !important;
-        min-width:0 !important;
-        height:14px !important;
-        line-height:14px !important;
-        margin:0 0 0 2px !important;
-        padding:0 !important;
-        overflow:hidden !important;
-        white-space:nowrap !important;
-        vertical-align:middle !important;
-        transform:none !important;
-        box-sizing:border-box !important;
-      }
-
-      .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} .${UID_BADGE_CLASS},
-      td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] .${UID_BADGE_CLASS}{
-        flex:0 1 auto !important;
-        max-width:56px !important;
-        min-width:0 !important;
-        height:14px !important;
-        line-height:13px !important;
-        padding:0 4px !important;
-        font-size:9.5px !important;
-        border-radius:8px !important;
-        overflow:hidden !important;
-        text-overflow:ellipsis !important;
-        white-space:nowrap !important;
-        box-sizing:border-box !important;
-      }
-
-      .${COMMENT_HOST_CLASS}{
-        position:relative !important;
-      }
-
       .${SLOT_CLASS}{
         display:flex !important;
         align-items:center !important;
@@ -262,43 +66,18 @@
       .${TRIGGER_CLASS}{
         appearance:none !important;
         -webkit-appearance:none !important;
-        display:inline-flex !important;
-        align-items:center !important;
-        gap:6px !important;
-        max-width:min(100%, 320px) !important;
-        min-height:24px !important;
-        padding:4px 10px !important;
         border:1px solid rgba(148, 163, 184, .35) !important;
         border-radius:999px !important;
         background:rgba(148, 163, 184, .12) !important;
         color:#64748b !important;
-        font-size:12px !important;
         font-weight:600 !important;
-        line-height:1.2 !important;
         letter-spacing:-0.01em !important;
-        white-space:nowrap !important;
-        overflow:hidden !important;
-        text-overflow:ellipsis !important;
-        vertical-align:middle !important;
         cursor:pointer !important;
         user-select:none !important;
         pointer-events:auto !important;
         position:static !important;
         z-index:auto !important;
-        box-sizing:border-box !important;
-        margin-left:0 !important;
-        margin-right:0 !important;
-        transition:
-          background-color .18s ease,
-          border-color .18s ease,
-          color .18s ease,
-          transform .18s ease,
-          box-shadow .18s ease !important;
-      }
-
-      .${WRITER_TOOLS_CLASS} > .${TRIGGER_CLASS}{
-        flex:0 0 auto !important;
-        max-width:min(320px, 45vw) !important;
+        transition:background-color .18s ease,border-color .18s ease,color .18s ease,transform .18s ease,box-shadow .18s ease !important;
       }
 
       .${TRIGGER_CLASS}::before{
@@ -312,86 +91,9 @@
         opacity:.62 !important;
       }
 
-      .${TRIGGER_CLASS}.has-memo{
-        font-weight:700 !important;
-      }
-
-      .${TRIGGER_CLASS}:hover{
-        transform:translateY(-1px) !important;
-        box-shadow:0 6px 18px rgba(15, 23, 42, .08) !important;
-      }
-
-      .${TRIGGER_CLASS}:focus{
-        outline:2px solid rgba(79,124,255,.35) !important;
-        outline-offset:2px !important;
-      }
-
-      .cmt_nickbox .${TRIGGER_CLASS},
-      .cmt_info .${TRIGGER_CLASS},
-      .reply_info .${TRIGGER_CLASS}{
-        max-width:min(100%, 280px) !important;
-      }
-
-      /*
-        게시글 목록에서는 빈 "메모" 버튼을 만들지 않는다.
-        저장된 메모가 있을 때만 닉네임 옆에 작은 칩으로 표시한다.
-      */
-
-      .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} .${TRIGGER_CLASS},
-      td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] .${TRIGGER_CLASS}{
-        flex:0 1 auto !important;
-        max-width:72px !important;
-        min-width:0 !important;
-        min-height:13px !important;
-        height:14px !important;
-        max-height:14px !important;
-        padding:0 4px !important;
-        font-size:9px !important;
-        line-height:12px !important;
-        gap:2px !important;
-        border-radius:999px !important;
-        overflow:hidden !important;
-        text-overflow:ellipsis !important;
-        white-space:nowrap !important;
-        box-sizing:border-box !important;
-        vertical-align:baseline !important;
-      }
-
-      .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} .addbox > .${WRITER_TOOLS_CLASS},
-      td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] .addbox > .${WRITER_TOOLS_CLASS}{
-        display:inline-flex !important;
-        align-items:center !important;
-        justify-content:flex-start !important;
-        gap:2px !important;
-        width:auto !important;
-        max-width:92px !important;
-        min-width:0 !important;
-        height:14px !important;
-        line-height:14px !important;
-        margin:0 0 0 2px !important;
-        padding:0 !important;
-        overflow:hidden !important;
-        white-space:nowrap !important;
-        vertical-align:middle !important;
-        transform:none !important;
-        box-sizing:border-box !important;
-      }
-
-      .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} .addbox > .${WRITER_TOOLS_CLASS} .${TRIGGER_CLASS},
-      td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] .addbox > .${WRITER_TOOLS_CLASS} .${TRIGGER_CLASS}{
-        max-width:72px !important;
-        min-width:0 !important;
-        height:14px !important;
-        line-height:12px !important;
-        padding:0 4px !important;
-        font-size:9px !important;
-        gap:2px !important;
-      }
-
-      #dcbpv-overlay .${TRIGGER_CLASS}:not(.has-memo),
-      .dcbpv-panel .${TRIGGER_CLASS}:not(.has-memo){
-        display:none !important;
-      }
+      .${TRIGGER_CLASS}.has-memo{font-weight:700 !important;}
+      .${TRIGGER_CLASS}:hover{transform:translateY(-1px) !important;box-shadow:0 6px 18px rgba(15,23,42,.08) !important;}
+      .${TRIGGER_CLASS}:focus{outline:2px solid rgba(79,124,255,.35) !important;outline-offset:2px !important;}
 
       .dcb-user-memo-overlay{
         position:fixed !important;
@@ -404,7 +106,6 @@
         padding:12px !important;
         box-sizing:border-box !important;
       }
-
       .dcb-user-memo-overlay.open{
         display:flex !important;
       }
@@ -531,128 +232,11 @@
         color:#ef4444 !important;
       }
 
-
-
-      /* 7.3.39: list writer row hardening
-         닉네임/관리자 아이콘/식별코드/메모를 nested addbox 안 한 줄로 고정한다. */
-      .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} > div,
-      td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] > div{
-        display:flex !important;
-        align-items:center !important;
-        justify-content:flex-start !important;
-        width:100% !important;
-        max-width:100% !important;
-        min-width:0 !important;
-        height:18px !important;
-        line-height:18px !important;
-        overflow:visible !important;
-        box-sizing:border-box !important;
-      }
-
-      .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} .addbox,
-      td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] .addbox{
-        flex:0 1 auto !important;
-        min-width:0 !important;
-        max-width:100% !important;
-        overflow:visible !important;
-        flex-wrap:nowrap !important;
-      }
-
-      .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} .nickname,
-      td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] .nickname{
-        flex:0 1 auto !important;
-        max-width:none !important;
-        min-width:0 !important;
-      }
-
-      .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} .writer_nikcon,
-      td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] .writer_nikcon{
-        flex:0 0 auto !important;
-      }
-
-      .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} .addbox > .${WRITER_TOOLS_CLASS},
-      td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] .addbox > .${WRITER_TOOLS_CLASS}{
-        flex:0 1 auto !important;
-        max-width:72px !important;
-        min-width:0 !important;
-        gap:1px !important;
-        overflow:hidden !important;
-      }
-
-      .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} .${UID_BADGE_CLASS},
-      td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] .${UID_BADGE_CLASS}{
-        max-width:42px !important;
-        padding:0 3px !important;
-        font-size:8.5px !important;
-        letter-spacing:-.35px !important;
-      }
-
-      .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} .addbox > .${WRITER_TOOLS_CLASS} .${TRIGGER_CLASS},
-      td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] .addbox > .${WRITER_TOOLS_CLASS} .${TRIGGER_CLASS}{
-        max-width:44px !important;
-        padding:0 3px !important;
-        font-size:8.5px !important;
-        letter-spacing:-.35px !important;
-      }
-
-
-
-      /* DCInside native member menu guard.
-         The nickname click menu (<ul class="user_data_list">) is injected inside/near
-         the writer cell. Keep our compact writer layout from clipping that dropdown. */
-      .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} .user_data_list,
-      td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] .user_data_list{
-        position:absolute !important;
-        z-index:2147483000 !important;
-        overflow:visible !important;
-        max-width:none !important;
-        white-space:normal !important;
-        flex:0 0 auto !important;
-      }
-
-      .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS}:has(.user_data_list),
-      .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} .addbox:has(.user_data_list),
-      .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} .nickname:has(.user_data_list),
-      td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"]:has(.user_data_list),
-      td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] .addbox:has(.user_data_list),
-      td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] .nickname:has(.user_data_list){
-        overflow:visible !important;
-      }
-
       @media (max-width:640px){
-        .${SLOT_CLASS}{
-          margin:5px 0 7px !important;
-        }
-
-        .${TRIGGER_CLASS}{
-          max-width:100% !important;
-          font-size:11px !important;
-          padding:4px 9px !important;
-        }
-
-        .${WRITER_TOOLS_CLASS} > .${TRIGGER_CLASS}{
-          max-width:min(240px, 55vw) !important;
-        }
-
-        .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} .${TRIGGER_CLASS},
-        td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] .${TRIGGER_CLASS}{
-          max-width:58px !important;
-          min-height:13px !important;
-          height:13px !important;
-          max-height:13px !important;
-          padding:0 3px !important;
-          font-size:8.5px !important;
-          line-height:11px !important;
-        }
-
-        .dcb-user-memo-panel{
-          width:min(100%, calc(100vw - 16px)) !important;
-          padding:16px !important;
-          border-radius:16px !important;
-        }
+        .${SLOT_CLASS}{margin:5px 0 7px !important;}
+        .dcb-user-memo-panel{width:min(100%,calc(100vw - 16px)) !important;padding:16px !important;border-radius:16px !important;}
       }
     `;
-
     (document.head || document.documentElement).appendChild(st);
     return st;
   }
@@ -665,14 +249,7 @@
   }
 
   function cleanupEmptyWriterTools() {
-    document.querySelectorAll(`.${WRITER_TOOLS_CLASS}`).forEach((tools) => {
-      if (!tools.children.length) tools.remove();
-    });
-
-    document.querySelectorAll(`.${WRITER_ENHANCED_CLASS}`).forEach((writer) => {
-      const tools = writer.querySelector(`.${WRITER_TOOLS_CLASS}`);
-      if (!tools) writer.classList.remove(WRITER_ENHANCED_CLASS);
-    });
+    document.querySelectorAll(`.${WRITER_ENHANCED_CLASS}`).forEach((writer) => globalThis.DCBWriterLayout?.cleanup(writer));
   }
 
   function removeInjectedUi() {
@@ -970,12 +547,6 @@
     });
   }
 
-  function shouldShowListMemoChip(meta, writer) {
-    const compactSurface = isListWriter(writer) || isPreviewWriter(writer);
-    if (!compactSurface) return true;
-    const saved = meta?.key ? memoMap[meta.key] : null;
-    return !!(saved && saved.memo);
-  }
 
   function rememberContextMemoTarget(target) {
     const writer = target?.closest?.(WRITER_SELECTOR);
@@ -1027,41 +598,43 @@
     return btn;
   }
 
-  function formatCompactMemoText(memo) {
-    const text = String(memo || "").replace(/\s+/g, " ").trim();
-    if (text.length <= 14) return text;
-    return `${text.slice(0, 14)}…`;
-  }
-
   function updateTrigger(btn, meta, writer) {
-    const listMode = isListWriter(writer);
-    const previewMode = isPreviewWriter(writer);
-    const compactMode = listMode || previewMode;
-    const commentMode = !!getCommentHost(writer);
+    const context = globalThis.DCBWriterLayout.detectContext(writer);
 
     btn.dataset.memoKey = meta.key;
     btn.dataset.memoUid = meta.uid || '';
     btn.dataset.memoIp = meta.ip || '';
     btn.dataset.memoNickname = meta.nickname || '';
-    btn.dataset.loc = listMode ? 'list' : (previewMode ? 'preview' : '');
+    btn.dataset.loc = context;
 
     const saved = memoMap[meta.key];
+    btn.dataset.dcbMemoMode = globalThis.DCBWriterLayout.memoMode(writer, !!saved?.memo);
 
     btn.classList.toggle('has-memo', !!saved);
-    btn.classList.toggle('is-list', listMode);
-    btn.classList.toggle('is-preview', previewMode);
+    btn.classList.remove('is-list');
+    btn.classList.toggle('is-preview', context.startsWith("preview-"));
+    btn.dataset.fullMemo = saved?.memo || "";
+
+    let value = btn.querySelector(":scope > .dcb-memo-value");
+    if (!value) {
+      value = document.createElement("span");
+      value.className = "dcb-memo-value";
+      btn.replaceChildren(value);
+    }
 
     if (saved && saved.memo) {
       const color = isValidColor(saved.color) ? saved.color : DEFAULT_COLOR;
 
-      btn.textContent = commentMode ? '📝' : (compactMode ? formatCompactMemoText(saved.memo) : saved.memo);
+      const text = saved.memo;
+      if (value.textContent !== text) value.textContent = text;
       btn.title = saved.memo;
       btn.setAttribute('aria-label', `이용자 메모: ${saved.memo}`);
       btn.style.color = color;
       btn.style.borderColor = `${color}4d`;
       btn.style.background = `${color}14`;
     } else {
-      btn.textContent = commentMode ? '📝' : (compactMode ? '메모' : '메모 추가');
+      const text = '📝';
+      if (value.textContent !== text) value.textContent = text;
       btn.title = '이용자 메모 작성';
       btn.setAttribute('aria-label', '이용자 메모 작성');
       btn.style.color = '';
@@ -1075,26 +648,7 @@
   }
 
   function removeWriterNikconWhitespace(writer) {
-    if (!(writer instanceof Element)) return;
-    if (!getCommentHost(writer) && !isListWriter(writer)) return;
-
-    writer.querySelectorAll('a.writer_nikcon').forEach((icon) => {
-      if (icon.closest('.gall_writer, .ub-writer') !== writer) return;
-
-      const whitespace = icon.previousSibling;
-      const nickname = whitespace?.previousSibling;
-      const isNickname =
-        nickname?.nodeType === Node.ELEMENT_NODE &&
-        (nickname.matches('em') ||
-          (nickname.matches('.nickname') && !!nickname.querySelector(':scope > em')));
-      if (
-        whitespace?.nodeType === Node.TEXT_NODE &&
-        /^\s+$/.test(whitespace.nodeValue || '') &&
-        isNickname
-      ) {
-        whitespace.remove();
-      }
-    });
+    return globalThis.DCBWriterLayout?.removeNativeWhitespace(writer);
   }
 
   function getExistingCommentSlot(writer) {
@@ -1117,79 +671,16 @@
     const slot = getExistingCommentSlot(writer);
     if (slot) {
       slot.querySelectorAll(`.${TRIGGER_CLASS}`).forEach((el) => el.remove());
+      if (!slot.querySelector(`.${TRIGGER_CLASS}`)) slot.remove();
     }
 
-    cleanupEmptySlots();
-    cleanupEmptyWriterTools();
-  }
-
-  function ensureWriterTools(writer) {
-    writer.classList.add(WRITER_ENHANCED_CLASS);
-
-    let tools = writer.querySelector(`.${WRITER_TOOLS_CLASS}`);
-    if (!tools) {
-      tools = document.createElement("span");
-      tools.className = WRITER_TOOLS_CLASS;
-      tools.setAttribute("data-dcb-owned", "1");
-    }
-
-    tools.setAttribute("data-dcb-owned", "1");
-
-    const listMode = isListWriter(writer);
-    const addbox = listMode ? getListAddbox(writer) : writer.querySelector(":scope > .addbox");
-    const nikcon = writer.querySelector(":scope > .writer_nikcon");
-    const nick = writer.querySelector(":scope > .nickname");
-
-    if (listMode && addbox) {
-      // 목록에서는 닉네임, 기본 갤로그 아이콘, 식별코드, 메모 내용을 한 줄에 둔다.
-      const anchor =
-        addbox.querySelector(":scope > .writer_nikcon") ||
-        addbox.querySelector(":scope > .nickname") ||
-        addbox.lastElementChild;
-
-      if (anchor && anchor !== tools) {
-        if (anchor.nextSibling !== tools) {
-          anchor.insertAdjacentElement("afterend", tools);
-        }
-      } else if (tools.parentElement !== addbox) {
-        addbox.appendChild(tools);
-      }
-      return tools;
-    }
-
-    if (nikcon) {
-      if (nikcon.nextSibling !== tools) {
-        nikcon.insertAdjacentElement("afterend", tools);
-      }
-    } else if (nick) {
-      if (nick.nextSibling !== tools) {
-        nick.insertAdjacentElement("afterend", tools);
-      }
-    } else if (addbox) {
-      if (addbox.nextSibling !== tools) {
-        addbox.insertAdjacentElement("afterend", tools);
-      }
-    } else if (tools.parentElement !== writer) {
-      writer.appendChild(tools);
-    }
-
-    return tools;
+    // A list pass visits every writer. Global cleanup here made that pass
+    // repeatedly traverse all writers instead of only the current identity.
+    globalThis.DCBWriterLayout?.cleanup(writer);
   }
 
   function placeTriggerInline(writer, btn) {
-    const tools = ensureWriterTools(writer);
-    const uidBadge = tools.querySelector(`.${UID_BADGE_CLASS}`);
-
-    if (uidBadge) {
-      if (uidBadge.nextSibling !== btn) {
-        uidBadge.insertAdjacentElement("afterend", btn);
-      }
-      return;
-    }
-
-    if (btn.parentElement !== tools) {
-      tools.appendChild(btn);
-    }
+    globalThis.DCBWriterLayout?.attachMemo(writer, btn);
   }
 
   function placeTrigger(writer, btn) {
@@ -1199,9 +690,7 @@
   function renderWriter(writer) {
     if (!(writer instanceof Element)) return;
 
-    removeWriterNikconWhitespace(writer);
-
-    if (!enabled) {
+    if (!enabled || !globalThis.DCBWriterLayout || globalThis.DCBWriterLayout.memoMode(writer) === "hidden") {
       removeTriggerForWriter(writer);
       return;
     }
@@ -1212,10 +701,6 @@
       return;
     }
 
-    if (!shouldShowListMemoChip(meta, writer)) {
-      removeTriggerForWriter(writer);
-      return;
-    }
 
     let btn =
       writer.querySelector(`.${WRITER_TOOLS_CLASS} > .${TRIGGER_CLASS}`) ||

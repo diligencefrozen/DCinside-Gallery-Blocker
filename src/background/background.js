@@ -51,10 +51,17 @@ async function detectDcbBrowserFamily() {
 }
 
 async function ensureDcbContentScriptProfile({ force = false } = {}) {
+  if (dcbContentProfileEnsurePromise) {
+    const pending = dcbContentProfileEnsurePromise;
+    if (!force) return pending;
+    // Installation can overlap the background's initial verification. A fresh
+    // registration already satisfies it; otherwise force one check afterwards.
+    return pending.then((result) => result.registered || result.staticBridge
+      ? result : ensureDcbContentScriptProfile({ force: true }));
+  }
   if (!force && dcbContentProfileVerifiedInThisBackground) {
     return { ok: true, cached: true, verified: true };
   }
-  if (!force && dcbContentProfileEnsurePromise) return dcbContentProfileEnsurePromise;
 
   const job = (async () => {
     const profiles = globalThis.DCBContentScriptProfiles;
@@ -142,11 +149,11 @@ async function ensureDcbContentScriptProfile({ force = false } = {}) {
     }
   })();
 
-  if (!force) dcbContentProfileEnsurePromise = job;
+  dcbContentProfileEnsurePromise = job;
   try {
     return await job;
   } finally {
-    if (!force && dcbContentProfileEnsurePromise === job) dcbContentProfileEnsurePromise = null;
+    if (dcbContentProfileEnsurePromise === job) dcbContentProfileEnsurePromise = null;
   }
 }
 
@@ -164,10 +171,10 @@ const DCB_LAZY_FEATURE_FILES = Object.freeze({
   "list-filter": ["src/content/list/list-filter.js"],
   "keyword-hider": ["src/content/keyword/keyword-hider.js"],
   "keyword-blocker": ["src/content/keyword/keyword-blocker.js"],
-  "uid-badge": ["src/content/user/uid-badge.js"],
+  "uid-badge": ["src/content/user/writer-layout.js", "src/content/user/uid-badge.js"],
   "ip-core": ["src/shared/ip-network-classifier.js"],
-  "member-ip": ["src/content/user/member-ip-view.js"],
-  "user-memo": ["src/content/user/user-memo.js"],
+  "member-ip": ["src/content/user/writer-layout.js", "src/content/user/member-ip-view.js"],
+  "user-memo": ["src/content/user/writer-layout.js", "src/content/user/user-memo.js"],
   "notice-cleaner": ["src/content/cleaner/cleaner-notice.js"],
   "user-block": ["src/shared/storage/user-block-store.js", "src/content/user/cleaner-userblock.js"],
   "foreign-anonymous": ["src/content/cleaner/cleaner-foreign-ip.js", "src/content/cleaner/cleaner-anonymous.js"],
@@ -204,7 +211,9 @@ const DCB_FIREFOX_BOOTSTRAP_COMMON = Object.freeze([
   "src/shared/startup-scheduler.js",
   "src/shared/dom-mutation-bus.js",
   "src/content/appearance/font-config.js",
-  "src/content/appearance/font-bootstrap.js"
+  "src/content/appearance/font-bootstrap.js",
+  "src/content/appearance/font-manager.js",
+  "src/content/user/writer-layout.js"
 ]);
 
 function getDcbFirefoxBootstrapFiles(sender) {
@@ -235,15 +244,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return undefined;
   }
   const run = async () => {
-    await DCB_EXT_API.scripting.executeScript({ target: { tabId, frameIds: [frameId] }, files });
     if (sender?.url?.includes("gall.dcinside.com")) {
       try {
         await DCB_EXT_API.scripting.insertCSS({
           target: { tabId, frameIds: [frameId] },
-          files: ["src/content/appearance/comment-author.css"]
+          files: [
+            "src/content/appearance/comment-author.css",
+            "src/content/appearance/writer-layout.css",
+            "src/content/appearance/visited-posts.css"
+          ]
         });
       } catch (_) {}
     }
+    await DCB_EXT_API.scripting.executeScript({ target: { tabId, frameIds: [frameId] }, files });
     return { ok: true };
   };
   run().then(sendResponse, (error) => {

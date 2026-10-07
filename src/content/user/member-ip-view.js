@@ -51,6 +51,7 @@
     if (!style) {
       style = document.createElement("style");
       style.id = STYLE_ID;
+      style.dataset.dcbOwned = "member-ip";
       (document.head || document.documentElement).appendChild(style);
     }
 
@@ -62,7 +63,6 @@
         display:inline-flex !important;
         align-items:center !important;
         gap:3px !important;
-        max-width:62px !important;
         height:15px !important;
         margin-left:3px !important;
         padding:0 4px !important;
@@ -75,8 +75,8 @@
         letter-spacing:-.25px !important;
         white-space:nowrap !important;
         vertical-align:middle !important;
-        overflow:hidden !important;
-        text-overflow:ellipsis !important;
+        overflow:visible !important;
+        text-overflow:clip !important;
         box-sizing:border-box !important;
       }
       .${BADGE_CLASS}::before{
@@ -93,23 +93,6 @@
       .${BADGE_CLASS}[data-tone="risk"]{--member-ip-bg:rgba(239, 68, 68, .10);--member-ip-fg:#a83b3b;--member-ip-ring:rgba(239, 68, 68, .24);}
       .${BADGE_CLASS}[data-tone="foreign"]{--member-ip-bg:rgba(148, 163, 184, .16);--member-ip-fg:#566173;--member-ip-ring:rgba(148, 163, 184, .26);}
       .${BADGE_CLASS}[data-tone="loading"]{--member-ip-bg:rgba(148, 163, 184, .11);--member-ip-fg:#6b7280;--member-ip-ring:rgba(148, 163, 184, .22);}
-      .gall_list td.gall_writer .${BADGE_CLASS},
-      .gall_list td.ub-writer .${BADGE_CLASS},
-      td.gall_writer.ub-writer[data-loc="list"] .${BADGE_CLASS},
-      td.ub-writer[data-loc="list"] .${BADGE_CLASS}{
-        display:inline-flex !important;
-        max-width:42px !important;
-        height:13px !important;
-        margin:0 0 0 1px !important;
-        padding:0 2px !important;
-        font-size:8px !important;
-        letter-spacing:-.35px !important;
-        vertical-align:baseline !important;
-      }
-      .gall_list td.gall_writer .${BADGE_CLASS}::before,
-      .gall_list td.ub-writer .${BADGE_CLASS}::before,
-      td.gall_writer.ub-writer[data-loc="list"] .${BADGE_CLASS}::before,
-      td.ub-writer[data-loc="list"] .${BADGE_CLASS}::before{width:4px !important;height:4px !important;flex-basis:4px !important;}
       body.dcb-dark .${BADGE_CLASS}, .darkmode .${BADGE_CLASS}{
         background:linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.03)), var(--member-ip-bg) !important;
         box-shadow:none !important;
@@ -123,15 +106,15 @@
 
   function removeMemberIpBadges(root = document) {
     root.querySelectorAll?.(`.${BADGE_CLASS}`).forEach((el) => el.remove());
+    if (root instanceof Element && root.matches(WRITER_SELECTOR)) {
+      globalThis.DCBWriterLayout?.cleanup(root);
+    }
+    root.querySelectorAll?.(WRITER_SELECTOR).forEach((writer) => globalThis.DCBWriterLayout?.cleanup(writer));
   }
 
   function getExistingBadge(ipEl) {
     const next = ipEl?.nextElementSibling;
     return next && next.classList?.contains(BADGE_CLASS) ? next : null;
-  }
-
-  function hasExistingBadge(ipEl) {
-    return !!getExistingBadge(ipEl);
   }
 
   function applyMemberIpBadgeInfo(tag, ip) {
@@ -159,35 +142,20 @@
     const ip = normalizeIpText(ipEl.textContent || "");
     if (!ip) return;
 
-    const existing = getExistingBadge(ipEl);
+    const writer = ipEl.closest?.(WRITER_SELECTOR);
+    const existing = getExistingBadge(ipEl) || [...(writer?.querySelectorAll?.(`.${BADGE_CLASS}`) || [])]
+      .find((node) => !node.dataset.ip || node.dataset.ip === ip);
     if (existing) {
-      if (existing.hasAttribute("data-dcb-fast-badge")) applyMemberIpBadgeInfo(existing, ip);
+      if (existing.hasAttribute("data-dcb-fast-badge") || existing.dataset.ip !== ip) applyMemberIpBadgeInfo(existing, ip);
+      globalThis.DCBWriterLayout?.attachProviderToIp(ipEl, existing);
       return;
     }
-    ipEl.insertAdjacentElement("afterend", createMemberIpBadge(ip));
+    const chip = createMemberIpBadge(ip);
+    globalThis.DCBWriterLayout?.attachProviderToIp(ipEl, chip);
   }
 
   function removeWriterNikconWhitespace(writer) {
-    if (!(writer instanceof Element)) return;
-    if (!writer.closest(".cmt_nickbox, .cmt_info, .reply_info, .gall_list")) return;
-
-    writer.querySelectorAll("a.writer_nikcon").forEach((icon) => {
-      if (icon.closest(WRITER_SELECTOR) !== writer) return;
-
-      const whitespace = icon.previousSibling;
-      const nickname = whitespace?.previousSibling;
-      const isNickname =
-        nickname?.nodeType === Node.ELEMENT_NODE &&
-        (nickname.matches("em") ||
-          (nickname.matches(".nickname") && !!nickname.querySelector(":scope > em")));
-      if (
-        whitespace?.nodeType === Node.TEXT_NODE &&
-        /^\s+$/.test(whitespace.nodeValue || "") &&
-        isNickname
-      ) {
-        whitespace.remove();
-      }
-    });
+    return globalThis.DCBWriterLayout?.removeNativeWhitespace(writer);
   }
 
   function attachMemberIpBadgeFromWriter(writer) {
@@ -197,7 +165,8 @@
     if (!ip) return;
     const existing = writer.querySelector?.(`.${BADGE_CLASS}`);
     if (existing) {
-      if (existing.hasAttribute("data-dcb-fast-badge")) applyMemberIpBadgeInfo(existing, ip);
+      if (existing.hasAttribute("data-dcb-fast-badge") || existing.dataset.ip !== ip) applyMemberIpBadgeInfo(existing, ip);
+      globalThis.DCBWriterLayout?.attachProvider(writer, existing);
       return;
     }
 
@@ -210,15 +179,8 @@
       }
     }
 
-    const tools = writer.querySelector?.(".dcb-writer-tools");
-    if (tools) {
-      tools.insertAdjacentElement("afterbegin", createMemberIpBadge(ip));
-      return;
-    }
-
-    const after = writer.querySelector?.(":scope > .writer_nikcon") || writer.querySelector?.(":scope > .nickname") || writer.querySelector?.(".writer_nikcon,.nickname");
-    if (after) after.insertAdjacentElement("afterend", createMemberIpBadge(ip));
-    else writer.appendChild(createMemberIpBadge(ip));
+    const chip = createMemberIpBadge(ip);
+    globalThis.DCBWriterLayout?.attachProvider(writer, chip);
   }
 
   const IP_SELECTOR = ".ip,.writer_ip";
@@ -236,10 +198,6 @@
     }
 
     ensureBadgeStyle();
-    if (root instanceof Element && root.matches(WRITER_SELECTOR)) {
-      removeWriterNikconWhitespace(root);
-    }
-    root.querySelectorAll?.(WRITER_SELECTOR).forEach(removeWriterNikconWhitespace);
     if (root instanceof Element) {
       if (root.matches?.(IP_SELECTOR)) attachMemberIpBadge(root);
       if (root.matches?.(WRITER_IP_SELECTOR)) attachMemberIpBadgeFromWriter(root);
@@ -308,7 +266,7 @@
     unsubscribeDomBus = globalThis.DCBDomMutationBus.subscribe(
       "member-ip-view",
       handleDomMutations,
-      { types: ["childList", "attributes"], attributes: ["data-ip", "data-memo-ip"] }
+      { types: ["childList", "characterData", "attributes"], attributes: ["data-ip", "data-memo-ip"] }
     );
   }
 

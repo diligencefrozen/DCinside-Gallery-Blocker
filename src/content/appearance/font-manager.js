@@ -174,7 +174,13 @@
         return !!(node.matches?.(ROOTS) || node.querySelector?.(ROOTS));
       });
     });
-    if (relevant) scheduleRefresh();
+    if (relevant) {
+      // The DOM bus already coalesces these records before paint. Deferring
+      // another frame exposes newly inserted comments at their native size.
+      if (refreshTimer !== null) cancelAnimationFrame(refreshTimer);
+      refreshTimer = null;
+      refresh();
+    }
   }
 
   let unsubscribeDomBus = null;

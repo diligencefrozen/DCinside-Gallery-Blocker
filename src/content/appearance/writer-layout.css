@@ -1,0 +1,253 @@
+/* Geometry, spacing and width priority for list, post, comment and preview identities.
+   Features own their content/colour; the native site owns menus and reply UI. */
+.dcb-writer-layout {
+  --dcb-writer-normal-gap: 4px;
+  --dcb-writer-compact-gap: 2px;
+  --dcb-writer-gap: var(--dcb-writer-normal-gap);
+  --dcb-writer-identity-gap: 4px;
+  --dcb-writer-row-height: auto;
+  --dcb-writer-badge-height: 18px;
+  --dcb-writer-uid-size: 11px;
+  --dcb-writer-provider-size: 10px;
+  --dcb-writer-provider-tracking: -.25px;
+  --dcb-writer-memo-size: 12px;
+  --dcb-writer-uid-padding: 6px;
+  --dcb-writer-memo-padding: 3px;
+  --dcb-writer-provider-padding: 3px;
+  --dcb-writer-memo-min: 18px;
+  --dcb-writer-name-step: .25px;
+  --dcb-writer-name-min: 10.5px;
+  --dcb-writer-name-min-chars: 2;
+  --dcb-writer-name-soft-ratio: .7;
+}
+
+/* A post header may own both native left/right columns. Only its identity row
+   uses our geometry; the surrounding header keeps the site's layout. */
+.dcb-writer-layout:not([data-dcb-writer-native-shell]) {
+  min-width: 0 !important;
+  max-width: 100% !important;
+  white-space: nowrap !important;
+  overflow: visible !important;
+  box-sizing: border-box !important;
+}
+
+.dcb-writer-layout[data-dcb-writer-context="list"] {
+  --dcb-writer-normal-gap: 2px;
+  --dcb-writer-compact-gap: 1px;
+  --dcb-writer-identity-gap: 2px;
+  --dcb-writer-row-height: 18px;
+  --dcb-writer-badge-height: 14px;
+  --dcb-writer-uid-size: 9.5px;
+  --dcb-writer-provider-size: 8px;
+  --dcb-writer-provider-tracking: -.35px;
+  --dcb-writer-uid-padding: 4px;
+  --dcb-writer-provider-padding: 2px;
+  --dcb-writer-name-step: .5px;
+  --dcb-writer-name-soft-ratio: .55;
+}
+
+.dcb-writer-layout[data-dcb-writer-density="compact"] {
+  --dcb-writer-gap: var(--dcb-writer-compact-gap);
+  --dcb-writer-uid-padding: 2px;
+  --dcb-writer-memo-padding: 2px;
+}
+
+.dcb-writer-layout:not(td):not([data-dcb-writer-native-shell]) {
+  display: inline-flex !important;
+  align-items: center !important;
+  width: auto !important;
+  max-width: min(100%, var(--dcb-writer-available, 100%)) !important;
+}
+
+/* A native table cell remains a table cell. Reuse its existing addbox/div
+   rather than replacing the author DOM or moving its user menu. */
+.dcb-writer-layout .dcb-writer-shell {
+  display: flex !important;
+  align-items: center !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  overflow: visible !important;
+}
+
+.dcb-writer-layout .dcb-writer-row,
+.dcb-writer-layout.dcb-writer-row:not([data-dcb-writer-native-shell]) {
+  max-width: min(100%, var(--dcb-writer-available, 100%)) !important;
+  min-width: 0 !important;
+  white-space: nowrap !important;
+  overflow: visible !important;
+  box-sizing: border-box !important;
+  min-height: var(--dcb-writer-row-height) !important;
+  line-height: inherit !important;
+}
+
+.dcb-writer-layout .dcb-writer-row:not(td),
+.dcb-writer-layout.dcb-writer-row:not(td):not([data-dcb-writer-native-shell]) {
+  display: inline-flex !important;
+  align-items: center !important;
+  flex: 0 1 auto !important;
+  flex-wrap: nowrap !important;
+  gap: 0 !important;
+  width: max-content !important;
+}
+
+.dcb-writer-layout .dcb-writer-name {
+  display: inline-flex !important;
+  align-items: center !important;
+  flex: 0 0 auto !important;
+  gap: 0 !important;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  white-space: nowrap !important;
+  overflow: visible !important;
+  float: none !important;
+}
+
+.dcb-writer-layout .dcb-writer-name-text {
+  display: inline-block !important;
+  flex: 0 0 auto !important;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: var(--dcb-writer-name-limit, none) !important;
+  white-space: nowrap !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+  line-height: inherit !important;
+}
+
+.dcb-writer-layout[data-dcb-writer-name-fit] .dcb-writer-name-text {
+  font-size: var(--dcb-writer-name-size) !important;
+}
+
+.dcb-writer-layout .dcb-writer-name-text.dcb-writer-name-clipped {
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+.dcb-writer-layout :is(.dcb-writer-native-icon, .dcb-writer-native-ip) {
+  flex: 0 0 auto !important;
+  width: auto !important;
+  min-width: max-content !important;
+  max-width: none !important;
+  white-space: nowrap !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+  vertical-align: middle !important;
+  float: none !important;
+}
+
+.dcb-writer-layout .dcb-writer-native-icon {
+  display: inline-flex !important;
+  align-items: center !important;
+}
+
+.dcb-writer-layout[data-dcb-writer-context^="preview-"] .dcb-writer-native-icon:empty {
+  width: 12px !important;
+  min-width: 12px !important;
+  height: 11px !important;
+  margin-left: 2px !important;
+}
+
+.dcb-writer-layout .dcb-writer-native-ip {
+  margin-left: var(--dcb-writer-identity-gap) !important;
+}
+
+/* Keep the site's inline img margin-left:2px. No extra nickname/icon gap. */
+.dcb-writer-layout .dcb-writer-native-icon img { vertical-align: middle !important; }
+
+.dcb-writer-layout .dcb-writer-tools {
+  display: inline-flex !important;
+  align-items: center !important;
+  flex: 0 0 auto !important;
+  flex-wrap: nowrap !important;
+  gap: var(--dcb-writer-gap) !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  margin: 0 0 0 var(--dcb-writer-gap) !important;
+  padding: 0 !important;
+  white-space: nowrap !important;
+  overflow: visible !important;
+  vertical-align: middle !important;
+}
+
+.dcb-writer-layout .dcb-writer-tools:empty,
+.dcb-writer-layout[data-dcb-writer-context="list"] .dcb-user-memo-trigger,
+.dcb-writer-layout[data-dcb-writer-context="list"] .dcb-writer-tools > .dcb-user-memo-trigger {
+  display: none !important;
+}
+
+/* Native IP and its first provider chip are adjacent and non-shrinking. */
+.dcb-writer-layout[data-dcb-writer-has-ip="true"] .dcb-writer-tools:has(> .dc-member-ip-chip:first-child) {
+  margin-left: 1px !important;
+}
+
+.dcb-writer-layout .dcb-writer-tools > :is(.dc-member-ip-chip, .dcb-uid-badge, .dcb-user-memo-trigger) {
+  display: inline-flex !important;
+  align-items: center !important;
+  flex: 0 0 auto !important;
+  height: var(--dcb-writer-badge-height) !important;
+  min-height: var(--dcb-writer-badge-height) !important;
+  max-height: var(--dcb-writer-badge-height) !important;
+  margin: 0 !important;
+  white-space: nowrap !important;
+  line-height: 1 !important;
+  vertical-align: middle !important;
+  box-sizing: border-box !important;
+}
+
+.dcb-writer-layout .dcb-writer-tools > .dc-member-ip-chip {
+  min-width: max-content !important;
+  max-width: none !important;
+  padding: 0 var(--dcb-writer-provider-padding) !important;
+  font-size: var(--dcb-writer-provider-size) !important;
+  letter-spacing: var(--dcb-writer-provider-tracking) !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+}
+
+.dcb-writer-layout .dcb-writer-tools > .dcb-uid-badge {
+  min-width: 0 !important;
+  max-width: var(--dcb-writer-uid-limit, none) !important;
+  padding: 0 var(--dcb-writer-uid-padding) !important;
+  font-size: var(--dcb-writer-uid-fitted-size, var(--dcb-writer-uid-size)) !important;
+  overflow: visible !important;
+}
+
+/* Brackets belong to the badge; only its inner value may ellipsize. */
+.dcb-writer-layout .dcb-uid-value,
+.dcb-writer-layout .dcb-memo-value {
+  display: block;
+  flex: 0 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dcb-writer-layout .dcb-writer-tools > .dcb-user-memo-trigger {
+  width: var(--dcb-writer-memo-width, auto) !important;
+  min-width: var(--dcb-writer-memo-fixed-min, 0px) !important;
+  max-width: var(--dcb-writer-memo-limit, none) !important;
+  padding: 0 var(--dcb-writer-memo-padding) !important;
+  gap: 2px !important;
+  font-size: var(--dcb-writer-memo-fitted-size, var(--dcb-writer-memo-size)) !important;
+  overflow: visible !important;
+}
+
+.dcb-writer-layout .dcb-user-memo-trigger[data-dcb-memo-mode="icon"] {
+  --dcb-writer-memo-width: 18px;
+  --dcb-writer-memo-fixed-min: 18px;
+  --dcb-writer-memo-padding: 0px;
+  justify-content: center;
+}
+
+.dcb-writer-layout .dcb-user-memo-trigger[data-dcb-memo-mode="icon"]::before {
+  display: none !important;
+}
+
+.dcb-writer-layout :is(.user_data, .user_data_list) {
+  flex: 0 0 auto !important;
+  overflow: visible !important;
+  max-width: none !important;
+  white-space: normal !important;
+}

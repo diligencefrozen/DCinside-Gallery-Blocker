@@ -1,0 +1,26 @@
+/* Browser history owns this state. Preview fetches do not mark posts visited. */
+.gall_list .gall_tit > a:is(
+  [href^="/board/view"],
+  [href^="/mgallery/board/view"],
+  [href^="/mini/board/view"],
+  [href^="/person/board/view"],
+  [href^="board/view"],
+  [href^="https://gall.dcinside.com/"],
+  [href^="http://gall.dcinside.com/"],
+  [href^="//gall.dcinside.com/"]
+)[href*="board/view"][href*="id="][href*="no="]:not(.reply_numbox):visited {
+  color: #956fa8 !important;
+}
+
+.gall_list .gall_tit > a:is(
+  [href^="/board/view"],
+  [href^="/mgallery/board/view"],
+  [href^="/mini/board/view"],
+  [href^="/person/board/view"],
+  [href^="board/view"],
+  [href^="https://gall.dcinside.com/"],
+  [href^="http://gall.dcinside.com/"],
+  [href^="//gall.dcinside.com/"]
+)[href*="board/view"][href*="id="][href*="no="]:not(.reply_numbox):visited:hover {
+  color: #805a95 !important;
+}

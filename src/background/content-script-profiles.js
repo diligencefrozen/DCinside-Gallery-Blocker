@@ -13,7 +13,7 @@
   if (globalThis.DCBContentScriptProfiles) return;
 
   globalThis.DCBContentScriptProfiles = Object.freeze({
-    version: 3,
+    version: 8,
     chrome: Object.freeze([
     {
         "id": "dcb-profile-chrome-00",
@@ -28,7 +28,13 @@
             "src/shared/dom-mutation-bus.js",
             "src/content/appearance/font-config.js",
             "src/content/appearance/font-bootstrap.js",
-            "src/content/appearance/font-manager.js"
+            "src/content/appearance/font-manager.js",
+            "src/content/user/writer-layout.js"
+        ],
+        "css": [
+            "src/content/appearance/comment-author.css",
+            "src/content/appearance/writer-layout.css",
+            "src/content/appearance/visited-posts.css"
         ],
         "runAt": "document_start"
     },
@@ -43,6 +49,8 @@
         "persistAcrossSessions": true,
         "js": [
             "src/shared/ip-network-fast-classifier.js",
+            "src/shared/dom-mutation-bus.js",
+            "src/content/user/writer-layout.js",
             "src/content/core/critical-filter-bootstrap.js"
         ],
         "runAt": "document_start",
@@ -419,12 +427,18 @@
         ],
         "persistAcrossSessions": true,
         "js": [
+            "src/shared/runtime-settings-cache.js",
+            "src/shared/startup-scheduler.js",
+            "src/shared/dom-mutation-bus.js",
+            "src/content/user/writer-layout.js",
             "src/content/user/uid-badge.js",
             "src/shared/ip-network-classifier.js",
             "src/content/user/member-ip-view.js"
         ],
         "css": [
-            "src/content/appearance/comment-author.css"
+            "src/content/appearance/comment-author.css",
+            "src/content/appearance/writer-layout.css",
+            "src/content/appearance/visited-posts.css"
         ],
         "runAt": "document_end",
         "allFrames": true
@@ -519,7 +533,8 @@
             "src/shared/dom-mutation-bus.js",
             "src/content/appearance/font-config.js",
             "src/content/appearance/font-bootstrap.js",
-            "src/content/appearance/font-manager.js"
+            "src/content/appearance/font-manager.js",
+            "src/content/user/writer-layout.js"
         ],
         "runAt": "document_start"
     },
@@ -534,6 +549,8 @@
         "persistAcrossSessions": true,
         "js": [
             "src/shared/ip-network-fast-classifier.js",
+            "src/shared/dom-mutation-bus.js",
+            "src/content/user/writer-layout.js",
             "src/content/core/critical-filter-bootstrap.js"
         ],
         "runAt": "document_start",
@@ -598,7 +615,9 @@
         ],
         "persistAcrossSessions": true,
         "css": [
-            "src/content/appearance/comment-author.css"
+            "src/content/appearance/comment-author.css",
+            "src/content/appearance/writer-layout.css",
+            "src/content/appearance/visited-posts.css"
         ],
         "runAt": "document_start",
         "allFrames": false

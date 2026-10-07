@@ -572,23 +572,32 @@ syncSettings(handleUrl);
       #${OVERLAY_ID}{position:fixed;inset:0;z-index:2147483600;display:flex;align-items:center;justify-content:center;padding:22px;background:rgba(2,6,23,.58);backdrop-filter:blur(9px);font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
       #${OVERLAY_ID} *{box-sizing:border-box}
       #${OVERLAY_ID}.dcbpv-enter{animation:dcbpv-fade .16s ease-out}
-      #${OVERLAY_ID} .dcbpv-panel{width:min(880px,100%);min-width:0;max-height:min(92dvh,960px);display:flex;flex-direction:column;overflow:hidden;border-radius:18px;background:#fff;color:#111827;box-shadow:0 24px 80px rgba(0,0,0,.34),0 0 0 1px rgba(255,255,255,.25)}
+      #${OVERLAY_ID} .dcbpv-panel{--dcbpv-thread-indent:32px;width:min(1000px,100%);min-width:0;max-height:94dvh;display:flex;flex-direction:column;overflow:hidden;border-radius:16px;background:#fbfcfe;color:#1f2937;box-shadow:0 24px 80px rgba(0,0,0,.28)}
       #${OVERLAY_ID}.dcbpv-enter .dcbpv-panel{animation:dcbpv-pop .18s ease-out}
-      #${OVERLAY_ID} .dcbpv-header{display:flex;flex-shrink:0;gap:14px;align-items:flex-start;justify-content:space-between;padding:17px 20px;border-bottom:1px solid #eef2f7;background:linear-gradient(180deg,#fff,#fbfcff)}
-      #${OVERLAY_ID} .dcbpv-title{font-size:18px;font-weight:800;line-height:1.38;color:#0f172a;word-break:break-word}
-      #${OVERLAY_ID} .dcbpv-title a{color:inherit;text-decoration:underline;text-underline-offset:3px}
-      #${OVERLAY_ID} .dcbpv-writer{margin-top:8px;color:#64748b;font-size:12px;line-height:1.55;word-break:break-word}
+      #${OVERLAY_ID} .dcbpv-header{display:grid;grid-template-columns:minmax(0,1fr) auto;flex-shrink:0;gap:10px 16px;align-items:start;padding:24px 32px 20px;border-bottom:1px solid #e2e8f0;background:#fbfcfe}
+      #${OVERLAY_ID} .dcbpv-heading{display:contents}
+      #${OVERLAY_ID} .dcbpv-title{font-size:20px;font-weight:750;line-height:1.45;color:#1f2937;word-break:break-word}
+      #${OVERLAY_ID} .dcbpv-title a{color:inherit;text-decoration:none;text-underline-offset:3px}
+      #${OVERLAY_ID} .dcbpv-title a:is(:hover,:focus-visible){text-decoration:underline}
+      #${OVERLAY_ID} .dcbpv-writer{grid-column:1 / -1;grid-row:2;display:flex;align-items:center;gap:8px;min-width:0;color:#778399;font-size:12px;line-height:1.55;white-space:nowrap}
+      #${OVERLAY_ID} .dcbpv-author-name{min-width:0}
+      #${OVERLAY_ID} .dcbpv-writer > .dcbpv-chip:not(.dcbpv-author-name){flex:0 1 auto;min-width:0;max-width:40%;overflow:hidden;text-overflow:ellipsis}
       #${OVERLAY_ID} .dcbpv-writer a{color:#2563eb;text-decoration:none}
-      #${OVERLAY_ID} .dcbpv-icons{display:flex;gap:6px;flex:0 0 auto}
+      #${OVERLAY_ID} .dcbpv-icons{grid-column:2;grid-row:1;display:flex;gap:6px;flex:0 0 auto}
       #${OVERLAY_ID} .dcbpv-icon{width:34px;height:34px;border:1px solid #e5e7eb;border-radius:10px;background:#fff;color:#64748b;cursor:pointer;font-size:16px;line-height:1;transition:.12s}
       #${OVERLAY_ID} .dcbpv-icon:hover{background:#f8fafc;border-color:#cbd5e1;color:#0f172a;transform:translateY(-1px)}
-      #${OVERLAY_ID} .dcbpv-scroll{min-width:0;min-height:0;overflow-y:auto;overflow-x:hidden;padding:18px 20px 20px;background:#fff;overscroll-behavior:contain;scrollbar-gutter:stable}
+      #${OVERLAY_ID} .dcbpv-scroll{min-width:0;min-height:0;overflow-y:auto;overflow-x:hidden;padding:28px 32px 12px;background:#fbfcfe;overscroll-behavior:contain;scrollbar-gutter:stable}
       #${OVERLAY_ID} :is(button,a,input,[tabindex]):focus-visible{outline:3px solid #2563eb;outline-offset:3px}
       #${OVERLAY_ID} .dcbpv-scroll::-webkit-scrollbar{width:8px}#${OVERLAY_ID} .dcbpv-scroll::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:999px}
-      #${OVERLAY_ID} .dcbpv-section{margin:0 0 18px}
-      #${OVERLAY_ID} .dcbpv-section-title{display:flex;align-items:center;gap:8px;margin:0 0 10px;color:#0f172a;font-size:13px;font-weight:800;letter-spacing:.01em}
-      #${OVERLAY_ID} .dcbpv-section-title:before{content:"";width:5px;height:15px;border-radius:999px;background:#2563eb;display:inline-block}
-      #${OVERLAY_ID} .dcbpv-html{font-size:15px;line-height:1.8;color:#273449;word-break:normal;overflow-wrap:anywhere;min-width:0;max-width:100%;white-space:normal}
+      #${OVERLAY_ID} .dcbpv-section{margin:0 0 24px}
+      #${OVERLAY_ID} .dcbpv-section-title{margin:0;color:#1f2937;font-size:17px;font-weight:750;line-height:1.5}
+      #${OVERLAY_ID} .dcbpv-comments-header{display:flex;align-items:center;gap:16px;min-width:0;margin-bottom:4px}
+      #${OVERLAY_ID} .dcbpv-thread-count{color:#8490a3;font-size:12px;white-space:nowrap}
+      #${OVERLAY_ID} .dcbpv-comments-actions{display:flex;gap:14px;margin-left:auto;flex:0 0 auto}
+      #${OVERLAY_ID} .dcbpv-comments-actions :is(button,a){border:0;padding:3px 0;background:transparent;color:#475569;font-size:12px;cursor:pointer;text-decoration:none}
+      #${OVERLAY_ID} .dcbpv-comments-actions :is(button,a):hover{text-decoration:underline}
+      #${OVERLAY_ID} .dcbpv-html{font-size:15.5px;line-height:1.8;color:#273449;word-break:normal;overflow-wrap:anywhere;min-width:0;max-width:100%;white-space:normal}
+      #${OVERLAY_ID} .dcbpv-article{max-width:820px;margin:0 auto}
       #${OVERLAY_ID} .dcbpv-article :is(div,p,span,a,blockquote,ul,ol,li){max-width:100%;overflow-wrap:anywhere}
       #${OVERLAY_ID} .dcbpv-article pre{max-width:100%;white-space:pre-wrap;overflow-wrap:anywhere}
       #${OVERLAY_ID} .dcbpv-article table{display:block;max-width:100%;overflow-x:auto}
@@ -615,30 +624,35 @@ syncSettings(handleUrl);
       #${OVERLAY_ID} .dcbpv-movie-note a{color:#2563eb;text-decoration:underline;text-underline-offset:2px}
       #${OVERLAY_ID} .dcbpv-dccon,#${OVERLAY_ID} img.dcbpv-dccon,#${OVERLAY_ID} video.dcbpv-dccon,#${OVERLAY_ID} img[src*="dccon.php"]{display:inline-block!important;max-width:min(120px,32vw)!important;height:auto!important;margin:4px!important;border-radius:6px;box-shadow:none}
       #${OVERLAY_ID} .dcbpv-filter-hidden,#${OVERLAY_ID} .dcb-dccon-content-hidden,#${OVERLAY_ID} .dcbpv-dccon-hidden,#${OVERLAY_ID} [data-dcb-dccon-hidden="true"]{display:none!important}
-      #${OVERLAY_ID} .dcbpv-comment-scope,#${OVERLAY_ID} .dcbpv-comments{border-top:1px solid #eef2f7;padding-top:16px}
-      #${OVERLAY_ID} .dcbpv-comments .dcbpv-html{font-size:14px;line-height:1.75}
-      #${OVERLAY_ID} .dcbpv-comment-list{display:flex;flex-direction:column;gap:8px;min-width:0;max-width:100%}
-      #${OVERLAY_ID} .dcbpv-comment-item{min-width:0;max-width:100%;padding:12px 14px;border:1px solid #e2e8f0;border-radius:10px;background:#fff;overflow-wrap:anywhere}
-      #${OVERLAY_ID} .dcbpv-comment-item.reply{margin-left:20px;border-left:3px solid #dbeafe;background:#f8fafc}
-      #${OVERLAY_ID} .dcbpv-comment-item.deleted{color:#94a3b8;background:#f8fafc}
-      #${OVERLAY_ID} .dcbpv-comment-meta{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center;min-width:0;margin-bottom:6px;font-size:12px;color:#64748b;overflow-wrap:anywhere}
-      #${OVERLAY_ID} .dcbpv-comment-meta :is(span,a,strong){min-width:0;max-width:100%;white-space:normal;overflow-wrap:anywhere}
+      #${OVERLAY_ID} .dcbpv-comment-scope,#${OVERLAY_ID} .dcbpv-comments{padding-top:8px}
+      #${OVERLAY_ID} .dcbpv-comments .dcbpv-html{font-size:15px;line-height:1.75}
+      #${OVERLAY_ID} .dcbpv-comment-list{display:flex;flex-direction:column;gap:0;min-width:0;max-width:100%}
+      #${OVERLAY_ID} .dcbpv-comment-item{--dcb-thread-depth:0;position:relative;min-width:0;max-width:100%;margin-left:calc(var(--dcb-thread-depth) * var(--dcbpv-thread-indent));padding:16px 0;border:0;border-bottom:1px solid #e2e8f0;border-radius:0;background:transparent;overflow-wrap:anywhere}
+      #${OVERLAY_ID} .dcbpv-comment-item.reply{--dcb-thread-depth:1}
+      #${OVERLAY_ID} .dcbpv-comment-item[data-dcb-thread-depth]:not([data-dcb-thread-depth="0"])::before{content:"";position:absolute;left:-20px;top:0;bottom:-1px;width:1px;background:#ced9eb}
+      #${OVERLAY_ID} .dcbpv-comment-item[data-dcb-thread-depth="2"]::before{box-shadow:calc(-1 * var(--dcbpv-thread-indent)) 0 #ced9eb}
+      #${OVERLAY_ID} .dcbpv-comment-item[data-dcb-thread-depth="3"]::before{box-shadow:calc(-1 * var(--dcbpv-thread-indent)) 0 #ced9eb,calc(-2 * var(--dcbpv-thread-indent)) 0 #ced9eb}
+      #${OVERLAY_ID} .dcbpv-comment-item[data-dcb-thread-depth]:not([data-dcb-thread-depth="0"])::after{content:"";position:absolute;left:-20px;top:26px;width:14px;height:1px;background:#ced9eb}
+      #${OVERLAY_ID} .dcbpv-comment-item.deleted{color:#94a3b8}
+      #${OVERLAY_ID} .dcbpv-comment-meta{display:flex;flex-wrap:nowrap;justify-content:space-between;gap:8px;align-items:center;min-width:0;margin-bottom:5px;font-size:12px;color:#778399}
+      #${OVERLAY_ID} .dcbpv-comment-meta > :is(span,a,strong):not(.gall_writer):not(.ub-writer){margin-left:0;flex:0 0 auto;white-space:nowrap}
       #${OVERLAY_ID} .dcbpv-comment-meta strong{color:#0f172a;font-size:13px}
-      #${OVERLAY_ID} .dcbpv-comment-body{min-width:0;max-width:100%;font-size:14px;line-height:1.75;color:#273449;word-break:normal;overflow-wrap:anywhere;white-space:normal!important}
+      #${OVERLAY_ID} .dcbpv-comment-body{min-width:0;max-width:100%;font-size:15px;line-height:1.75;color:#273449;word-break:normal;overflow-wrap:anywhere;white-space:normal!important}
       #${OVERLAY_ID} .dcbpv-comment-body :is(div,p,span,a,em,strong,blockquote,pre,ul,ol,li){float:none!important;position:static!important;width:auto!important;min-width:0!important;max-width:100%!important;height:auto!important;max-height:none!important;white-space:pre-wrap!important;overflow:visible!important;text-overflow:clip!important;overflow-wrap:anywhere!important;word-break:normal!important;font-size:inherit;line-height:inherit}
       #${OVERLAY_ID} .dcbpv-comment-body :is(.coment_dccon_txt,.comment_dccon_txt){display:inline-block!important;width:fit-content!important;min-width:0!important;max-width:100%!important;height:auto!important;vertical-align:top!important;white-space:normal!important;overflow:hidden!important}
       #${OVERLAY_ID} .dcbpv-comment-body :is(.coment_dccon_txt,.comment_dccon_txt) .txtcon_txt{display:block!important;width:auto!important;min-width:0!important;max-width:100%!important;margin:0!important;white-space:pre-wrap!important;overflow-wrap:anywhere!important}
       #${OVERLAY_ID} .dcbpv-comment-body p{margin:0}
-      #${OVERLAY_ID} .dcbpv-legacy-vote,#${OVERLAY_ID} .dcbpv-vote{margin:14px 0;padding:10px 12px;border:1px solid #e5e7eb;border-radius:12px;background:#f8fafc;color:#334155;font-size:13px;font-weight:700}
-      #${OVERLAY_ID} .dcbpv-empty{padding:22px;text-align:center;border:1px dashed #cbd5e1;border-radius:12px;color:#64748b;background:#f8fafc}
-      #${OVERLAY_ID} .dcbpv-actions{display:flex;flex-shrink:0;gap:8px;flex-wrap:wrap;margin:0;padding:12px 20px;border-top:1px solid #e2e8f0;background:#fff}
-      #${OVERLAY_ID} .dcbpv-btn{flex:1 1 92px;min-width:88px;border:1px solid #e5e7eb;border-radius:11px;background:#fff;color:#334155;padding:9px 10px;cursor:pointer;font-weight:700;font-size:13px;transition:.12s}
+      #${OVERLAY_ID} .dcbpv-legacy-vote,#${OVERLAY_ID} .dcbpv-vote{display:flex;align-items:center;gap:24px;margin:24px 0 20px;padding:14px 0;border:0;border-top:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;border-radius:0;background:transparent;color:#64748b;font-size:13px;font-weight:600}
+      #${OVERLAY_ID} .dcbpv-vote-reaction:first-child{color:#405c9c}
+      #${OVERLAY_ID} .dcbpv-empty{padding:22px 0;text-align:center;border:0;color:#64748b;background:transparent}
+      #${OVERLAY_ID} .dcbpv-actions{display:flex;flex-shrink:0;gap:10px;flex-wrap:wrap;margin:0;padding:14px 26px;border-top:1px solid #e2e8f0;background:#fbfcfe}
+      #${OVERLAY_ID} .dcbpv-btn{flex:0 0 auto;min-width:88px;border:1px solid #dbe2ec;border-radius:10px;background:transparent;color:#334155;padding:9px 20px;cursor:pointer;font-weight:600;font-size:13px;transition:.12s}
       #${OVERLAY_ID} .dcbpv-btn:hover{background:#f8fafc;border-color:#cbd5e1;transform:translateY(-1px)}
-      #${OVERLAY_ID} .dcbpv-btn.primary{background:#2563eb;border-color:#2563eb;color:#fff}#${OVERLAY_ID} .dcbpv-btn.primary:hover{background:#1d4ed8}
-      #${OVERLAY_ID} .dcbpv-btn.warn{color:#b91c1c;border-color:#fecaca;background:#fff7f7}
+      #${OVERLAY_ID} .dcbpv-btn.primary{min-width:min(220px,48%);margin-right:auto;background:#315fe5;border-color:#315fe5;color:#fff}#${OVERLAY_ID} .dcbpv-btn.primary:hover{background:#254dbe}
+      #${OVERLAY_ID} .dcbpv-btn.warn{color:#b91c1c;border-color:#fecaca;background:transparent}
       #${OVERLAY_ID} .dcbpv-center{min-height:240px;display:grid;place-items:center;text-align:center;color:#64748b;padding:28px}
-      #${OVERLAY_ID} .dcbpv-loading-panel{width:min(420px,92vw)}
-      #${OVERLAY_ID} .dcbpv-loading-panel .dcbpv-center{min-height:132px;padding:22px}
+      #${OVERLAY_ID} .dcbpv-loading-panel{width:min(1000px,100%)}
+      #${OVERLAY_ID} .dcbpv-loading-panel .dcbpv-center{min-height:220px;padding:28px}
       #${OVERLAY_ID} .dcbpv-spinner{width:34px;height:34px;border-radius:50%;border:3px solid #dbeafe;border-top-color:#2563eb;margin:0 auto 14px;animation:dcbpv-spin .8s linear infinite}
       #${OVERLAY_ID} .dcbpv-inline-loading{display:flex;align-items:center;justify-content:center;gap:9px;min-height:62px;padding:14px;color:#64748b;font-size:13px}
       #${OVERLAY_ID} .dcbpv-inline-spinner{width:16px;height:16px;flex:0 0 auto;border-radius:50%;border:2px solid #dbeafe;border-top-color:#2563eb;animation:dcbpv-spin .8s linear infinite}
@@ -665,7 +679,7 @@ syncSettings(handleUrl);
       #${OVERLAY_ID} .dcbpv-share-row{display:flex;gap:8px;margin:10px 0}.dcbpv-share-row button{flex:1;padding:10px;border:1px solid #e5e7eb;border-radius:10px;background:#f8fafc;cursor:pointer;font-weight:700;color:#334155}
       #${OVERLAY_ID} .dcbpv-copy{display:flex;gap:8px;margin-top:12px}.dcbpv-copy input{min-width:0;flex:1;border:1px solid #e5e7eb;border-radius:10px;padding:10px;background:#f8fafc}.dcbpv-copy button{border:1px solid #2563eb;border-radius:10px;padding:0 14px;background:#2563eb;color:#fff;cursor:pointer;font-weight:800}
       @keyframes dcbpv-fade{from{opacity:0}to{opacity:1}}@keyframes dcbpv-pop{from{transform:translateY(8px) scale(.985);opacity:.6}to{transform:none;opacity:1}}@keyframes dcbpv-spin{to{transform:rotate(360deg)}}
-      @media(max-width:540px){#${OVERLAY_ID}{padding:8px}#${OVERLAY_ID} .dcbpv-panel{max-height:96dvh;border-radius:14px}#${OVERLAY_ID} .dcbpv-header{padding:14px}#${OVERLAY_ID} .dcbpv-title{font-size:17px}#${OVERLAY_ID} .dcbpv-scroll{padding:14px}#${OVERLAY_ID} .dcbpv-actions{padding:10px 14px}#${OVERLAY_ID} .dcbpv-comment-item.reply{margin-left:12px}#${OVERLAY_ID} .dcbpv-movie-wrap iframe{height:360px!important}}
+      @media(max-width:540px){#${OVERLAY_ID}{padding:8px}#${OVERLAY_ID} .dcbpv-panel{--dcbpv-thread-indent:20px;max-height:96dvh;border-radius:12px}#${OVERLAY_ID} .dcbpv-header{padding:18px 14px}#${OVERLAY_ID} .dcbpv-title{font-size:18px}#${OVERLAY_ID} .dcbpv-scroll{padding:20px 14px 8px}#${OVERLAY_ID} .dcbpv-actions{padding:10px 14px}#${OVERLAY_ID} .dcbpv-thread-count,#${OVERLAY_ID} .dcbpv-writer > .dcbpv-chip:nth-child(n+3){display:none}#${OVERLAY_ID} .dcbpv-comment-item{margin-left:calc(min(var(--dcb-thread-depth),2) * var(--dcbpv-thread-indent))}#${OVERLAY_ID} .dcbpv-comment-item[data-dcb-thread-depth="3"]::before{box-shadow:calc(-1 * var(--dcbpv-thread-indent)) 0 #ced9eb}#${OVERLAY_ID} .dcbpv-comment-item::before,#${OVERLAY_ID} .dcbpv-comment-item::after{left:-12px!important}#${OVERLAY_ID} .dcbpv-comment-item::after{width:8px!important}#${OVERLAY_ID} .dcbpv-movie-wrap iframe{height:360px!important}}
       @media(prefers-reduced-motion:reduce){#${OVERLAY_ID},#${OVERLAY_ID} .dcbpv-panel{animation:none}#${OVERLAY_ID} button{transition:none}}
     `;
     document.head.appendChild(style);
@@ -743,6 +757,7 @@ syncSettings(handleUrl);
       row?.classList.remove("dcbpv-filter-hidden");
       revealButton.closest(".dcbpv-filter-note")?.remove();
       summarizeHiddenComments(overlay);
+      updatePreviewThreadDesign(overlay);
       return;
     }
 
@@ -2099,7 +2114,8 @@ syncSettings(handleUrl);
         const deletedClass = /삭제된 댓글|운영자에 의해/.test(plain) ? " deleted" : "";
         const doryClass = commentLooksAutomated(item, { ...meta, nick }) ? " dory" : "";
         const packageAttr = previewDcconPackageAttr(previewDcconPackageIdxFromElement(item));
-        return `<div class="dcbpv-comment-item${depthClass}${deletedClass}${doryClass}" data-dcbpv-comment="1" data-nick="${escapeText(nick)}" data-uid="${escapeText(meta.uid)}" data-ip="${escapeText(meta.ip)}"${packageAttr}><div class="dcbpv-comment-meta">${previewWriterBadge({ nick, uid: meta.uid, ip: meta.ip, loc: "preview-comment" })}${date ? `<span>${escapeText(date)}</span>` : ""}</div><div class="dcbpv-comment-body">${body}</div></div>`;
+        const threadAttr = previewNativeThreadAttributes(item);
+        return `<div class="dcbpv-comment-item${depthClass}${deletedClass}${doryClass}" data-dcbpv-comment="1" data-nick="${escapeText(nick)}" data-uid="${escapeText(meta.uid)}" data-ip="${escapeText(meta.ip)}"${packageAttr}${threadAttr}><div class="dcbpv-comment-meta">${previewWriterBadge({ nick, uid: meta.uid, ip: meta.ip, loc: "preview-comment" })}${date ? `<span>${escapeText(date)}</span>` : ""}</div><div class="dcbpv-comment-body">${body}</div></div>`;
       }).filter(Boolean);
       if (rows.length) return `<div class="dcbpv-comment-list">${rows.join("")}</div>`;
     }
@@ -2600,7 +2616,8 @@ syncSettings(handleUrl);
       const deletedClass = /삭제|차단|운영자/.test(plain) || /Y/i.test(String(record.del_yn || record.is_delete || "")) ? " deleted" : "";
       const doryClass = commentRecordLooksAutomated(record, { ...meta, nick }) ? " dory" : "";
       const packageAttr = previewDcconPackageAttr(previewDcconPackageIdxFromRecord(record));
-      return `<div class="dcbpv-comment-item${replyClass}${deletedClass}${doryClass}" data-dcbpv-comment="1" data-nick="${escapeText(nick)}" data-uid="${escapeText(meta.uid)}" data-ip="${escapeText(meta.ip)}"${packageAttr}><div class="dcbpv-comment-meta">${previewWriterBadge({ nick, uid: meta.uid, ip: meta.ip, loc: "preview-comment" })}${date ? `<span>${escapeText(date)}</span>` : ""}</div><div class="dcbpv-comment-body">${body}</div></div>`;
+      const threadAttr = previewNativeThreadAttributes(record);
+      return `<div class="dcbpv-comment-item${replyClass}${deletedClass}${doryClass}" data-dcbpv-comment="1" data-nick="${escapeText(nick)}" data-uid="${escapeText(meta.uid)}" data-ip="${escapeText(meta.ip)}"${packageAttr}${threadAttr}><div class="dcbpv-comment-meta">${previewWriterBadge({ nick, uid: meta.uid, ip: meta.ip, loc: "preview-comment" })}${date ? `<span>${escapeText(date)}</span>` : ""}</div><div class="dcbpv-comment-body">${body}</div></div>`;
     }).filter(Boolean);
     return rows.length ? `<div class="dcbpv-comment-list">${rows.join("")}</div>` : "";
   }
@@ -3252,14 +3269,15 @@ syncSettings(handleUrl);
     }
     style.textContent = `
       #${OVERLAY_ID} .dcbpv-filter-hidden{display:none!important}
-      #${OVERLAY_ID} .dcbpv-filter-note{margin:10px 0;padding:10px 12px;border:1px dashed rgba(37,99,235,.35);border-radius:12px;background:rgba(37,99,235,.06);color:#475569;font-size:12px;font-weight:700;line-height:1.5}
+      #${OVERLAY_ID} .dcbpv-filter-note{margin:10px 0;padding:8px 12px;border:1px solid #dbe4f1;border-radius:8px;background:#f6f8fd;color:#60718b;font-size:12px;font-weight:400;line-height:1.5}
       #${OVERLAY_ID} .dcbpv-filter-note.danger{border-color:rgba(239,68,68,.35);background:rgba(239,68,68,.06);color:#b91c1c}
       #${OVERLAY_ID} .dcbpv-filter-chip{display:inline-flex;max-width:220px;vertical-align:middle;margin-left:4px;padding:2px 7px;border-radius:999px;background:rgba(37,99,235,.1);border:1px solid rgba(37,99,235,.18);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
       #${OVERLAY_ID} .dcbpv-filter-reveal{margin-left:8px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;color:#334155;font-size:12px;font-weight:800;padding:3px 8px;cursor:pointer}
-      #${OVERLAY_ID} .dcbpv-writer-ref{display:inline-flex!important;align-items:center!important;gap:4px!important;max-width:100%;vertical-align:middle;white-space:normal}
-      #${OVERLAY_ID} .dcbpv-writer-ref .writer_nikcon{width:12px;height:11px;display:inline-block;background:linear-gradient(135deg,#93c5fd,#2563eb);border-radius:3px;opacity:.85;flex:0 0 auto}
+      #${OVERLAY_ID} .dcbpv-writer-ref{font-size:14px;color:#1f2937}
+      #${OVERLAY_ID} .dcbpv-writer-ref .nickname{color:#1f2937;font-weight:600}
+      #${OVERLAY_ID} .dcbpv-writer-ref .writer_nikcon{background:linear-gradient(135deg,#93c5fd,#2563eb);border-radius:3px;opacity:.85}
       #${OVERLAY_ID} .dcbpv-writer-ref .ip{color:#64748b;font-size:12px}
-      #${OVERLAY_ID} .dcb-uid-badge,#${OVERLAY_ID} .dcbpv-uid-badge{display:inline-flex;align-items:center;flex:0 0 auto;font-size:11px;color:#64748b;background:rgba(100,116,139,.12);padding:1px 6px;border-radius:10px;line-height:1.2;white-space:nowrap}
+      #${OVERLAY_ID} .dcb-uid-badge,#${OVERLAY_ID} .dcbpv-uid-badge{color:#64748b;background:rgba(100,116,139,.12);border-radius:10px}
       #${OVERLAY_ID} .dcb-dccon-content-hidden,#${OVERLAY_ID} .dcbpv-dccon-hidden,#${OVERLAY_ID} [data-dcb-dccon-hidden="true"]{display:none!important}
     `;
   }
@@ -3373,13 +3391,19 @@ syncSettings(handleUrl);
   function addUidBadges(root){
     root.querySelectorAll(".gall_writer,.ub-writer").forEach((writer) => {
       const meta = previewWriterFromNode(writer);
-      if (!meta.uid || writer.querySelector(":scope .dcb-uid-badge,.dcbpv-uid-badge")) return;
-      const badge = document.createElement("span");
-      badge.className = "dcbpv-uid-badge dcb-uid-badge";
+      if (!meta.uid) return;
+      const badge = writer.querySelector(".dcb-uid-badge,.dcbpv-uid-badge") || document.createElement("span");
+      badge.classList.add("dcbpv-uid-badge", "dcb-uid-badge");
       badge.dataset.fullUid = meta.uid;
       badge.title = meta.uid;
-      badge.textContent = `(${meta.uid})`;
-      writer.appendChild(badge);
+      let value = badge.querySelector(":scope > .dcb-uid-value");
+      if (!value) {
+        value = document.createElement("span");
+        value.className = "dcb-uid-value";
+        badge.replaceChildren(document.createTextNode("("), value, document.createTextNode(")"));
+      }
+      if (value.textContent !== meta.uid) value.textContent = meta.uid;
+      globalThis.DCBWriterLayout?.attachUid(writer, badge);
     });
   }
 
@@ -3577,7 +3601,7 @@ syncSettings(handleUrl);
       return;
     }
 
-    const text = `차단 설정에 따라 댓글 ${hidden}개를 숨겼습니다.`;
+    const text = `ⓘ 차단 설정으로 댓글 ${hidden}개 숨김`;
     if (existing) {
       if (existing.textContent !== text) existing.textContent = text;
       return;
@@ -3632,6 +3656,7 @@ syncSettings(handleUrl);
         if (changed) {
           cascadePreviewBlockedReplies(overlay);
           summarizeHiddenComments(overlay);
+          updatePreviewThreadDesign(overlay);
         }
       }, 120);
     };
@@ -3798,8 +3823,141 @@ syncSettings(handleUrl);
 
     cascadePreviewBlockedReplies(overlay);
     summarizeHiddenComments(overlay);
+    updatePreviewThreadDesign(overlay);
     addPreviewPhase("processMs", processStartedAt, trace);
     if (lastPreviewTrace?.key === trace?.key) lastPreviewTrace = { ...trace };
+  }
+
+  // Presentation metadata only: preserve native relationships while serializing
+  // HTML. Request selection, record parsing and original comment bodies stay intact.
+  function previewNativeThreadAttributes(source){
+    const element = source instanceof Element;
+    const cleanId = (raw) => {
+      const id = String(raw ?? "").trim().replace(/^(?:comment|reply)(?:_li)?_/, "");
+      return id !== "0" && /^[\w:.-]+$/.test(id) ? id : "";
+    };
+    const id = cleanId(element
+      ? source.getAttribute("data-no") || source.getAttribute("data-comment-no") || source.id
+      : source.c_no ?? source.comment_no ?? source.no);
+    const parent = cleanId(element
+      ? source.getAttribute("data-parent-no") || source.getAttribute("data-p-no") || source.getAttribute("p-no") || source.closest(".reply_list[p-no]")?.getAttribute("p-no")
+      : source.parent_no ?? source.p_no ?? source.parent_id);
+    const rawDepth = element ? source.getAttribute("data-depth") ?? source.getAttribute("data-c-depth") : source.c_depth ?? source.depth;
+    const depth = rawDepth != null && String(rawDepth).trim() !== "" ? Number(rawDepth) : NaN;
+    return `${id ? ` data-dcbpv-native-id="${escapeText(id)}"` : ""}${parent ? ` data-dcbpv-native-parent="${escapeText(parent)}"` : ""}${Number.isInteger(depth) && depth >= 0 ? ` data-dcbpv-native-depth="${depth}"` : ""}`;
+  }
+
+  function previewHasPseudoReplyPrefix(body){
+    if (!body) return false;
+    const walker = document.createTreeWalker(body, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
+    while (walker.nextNode()) {
+      const node = walker.currentNode;
+      if (node.nodeType === Node.ELEMENT_NODE && node.matches("img,video,iframe,.dcbpv-dccon,.coment_dccon_txt,.comment_dccon_txt")) return false;
+      if (node.nodeType === Node.TEXT_NODE && /\S/.test(node.nodeValue || "")) {
+        return /^ㄴ[ \t]+\S/.test((body.textContent || "").trimStart());
+      }
+    }
+    return false;
+  }
+
+  function buildPreviewThreadModel(rows){
+    const models = rows.map((row) => ({ row, depth: 0, source: "flat", nativeDepth: null }));
+    const byId = new Map();
+    const duplicateIds = new Set();
+    models.forEach((model) => {
+      const id = model.row.dataset.dcbpvNativeId;
+      if (!id) return;
+      if (byId.has(id)) duplicateIds.add(id);
+      else byId.set(id, model);
+    });
+    duplicateIds.forEach((id) => byId.delete(id));
+    const ownDepth = (model) => {
+      const explicit = model.row.dataset.dcbpvNativeDepth;
+      if (explicit !== undefined && Number.isInteger(Number(explicit)) && Number(explicit) >= 0) return Number(explicit);
+      return model.row.classList.contains("reply") || model.row.querySelector(".reply_info") ? 1 : 0;
+    };
+    const depthOf = (model) => {
+      if (model.nativeDepth !== null) return model.nativeDepth;
+      const path = [];
+      const seen = new Set();
+      let current = model;
+      while (current.nativeDepth === null) {
+        if (seen.has(current)) {
+          // Invalid native parent cycles cannot create an invented hierarchy.
+          path.forEach((node) => { node.nativeDepth = ownDepth(node); node.ambiguousNative = true; });
+          return model.nativeDepth;
+        }
+        seen.add(current);
+        path.push(current);
+        const parent = byId.get(current.row.dataset.dcbpvNativeParent);
+        if (!parent) {
+          current.nativeDepth = ownDepth(current);
+          current.ambiguousNative = !!current.row.dataset.dcbpvNativeParent;
+          break;
+        }
+        current = parent;
+      }
+      if (current.ambiguousNative) {
+        path.forEach((node) => { node.nativeDepth = ownDepth(node); node.ambiguousNative = true; });
+      } else {
+        let depth = current.nativeDepth;
+        for (let index = path.length - 1; index >= 0; index--) {
+          if (path[index] !== current) path[index].nativeDepth = ++depth;
+        }
+      }
+      return model.nativeDepth;
+    };
+    let root = null;
+    models.forEach((model) => {
+      const nativeDepth = depthOf(model);
+      if (nativeDepth > 0) {
+        model.depth = Math.min(nativeDepth, 3);
+        model.source = "native";
+        root = null; // Never infer a manual reply across an ambiguous native branch.
+      } else if (model.ambiguousNative || model.row.classList.contains("deleted")) {
+        root = null;
+      } else if (previewHasPseudoReplyPrefix(model.row.querySelector(".dcbpv-comment-body"))) {
+        if (root && !root.row.classList.contains("dcbpv-filter-hidden")) {
+          model.depth = 1;
+          model.source = "inferred";
+        }
+      } else {
+        root = model;
+      }
+    });
+    return models;
+  }
+
+  function updatePreviewThreadDesign(overlay){
+    const list = overlay.querySelector(".dcbpv-comment-list");
+    if (!list) return;
+    const models = buildPreviewThreadModel([...list.querySelectorAll(":scope > .dcbpv-comment-item")]);
+    models.forEach(({ row, depth, source }) => {
+      if (row.dataset.dcbThreadSource !== source) row.dataset.dcbThreadSource = source;
+      if (row.dataset.dcbThreadDepth !== String(depth)) row.dataset.dcbThreadDepth = String(depth);
+      if (row.style.getPropertyValue("--dcb-thread-depth") !== String(depth)) row.style.setProperty("--dcb-thread-depth", String(depth));
+    });
+    const count = models.filter(({ row, depth }) => depth === 0 && !row.classList.contains("dcbpv-filter-hidden")).length;
+    const label = overlay.querySelector(".dcbpv-thread-count");
+    if (label) {
+      label.textContent = count ? `스레드 ${count}개` : "";
+      label.hidden = !count;
+    }
+  }
+
+  function preparePreviewPresentation(overlay){
+    ensurePreviewFilterStyle();
+    overlay.querySelectorAll(".dcbpv-comment-meta > span:not(.gall_writer):not(.ub-writer)").forEach((time) => {
+      const fullTime = time.textContent.trim();
+      const clock = fullTime.match(/(?:^|\s)(\d{2}:\d{2}(?::\d{2})?)$/)?.[1];
+      if (clock && clock !== fullTime) {
+        time.title = fullTime;
+        time.dataset.dcbpvFullTime = fullTime;
+        time.textContent = clock;
+      }
+    });
+    overlay.querySelectorAll(".gall_writer,.ub-writer").forEach((writer) => globalThis.DCBWriterLayout?.normalize(writer));
+    updatePreviewThreadDesign(overlay);
   }
 
   function previewCommentHtml(data, commentsPending = false){
@@ -3828,6 +3986,7 @@ syncSettings(handleUrl);
 
     if (commentTitle) commentTitle.textContent = data.commentTitle || "댓글";
     commentRoot.innerHTML = previewCommentHtml(data, false);
+    preparePreviewPresentation(overlay);
     const trace = activePreviewTrace;
     settlePreviewMedia(commentRoot, data.fetchedUrl || data.url, data.url, trace);
     applyPreviewFeatureBridge(overlay, data, trace);
@@ -3848,7 +4007,7 @@ syncSettings(handleUrl);
     overlay.innerHTML = `
       <section class="dcbpv-panel" role="dialog" aria-modal="true" aria-label="디시 게시글 미리보기" tabindex="-1">
         <header class="dcbpv-header">
-          <div style="min-width:0;flex:1">
+          <div class="dcbpv-heading">
             <div class="dcbpv-title"><a href="${escapeText(data.url)}" target="_blank" rel="noreferrer noopener">${escapeText(data.title)}</a></div>
             <div class="dcbpv-writer">${data.writerHTML || "작성자 정보 없음"}</div>
           </div>
@@ -3859,16 +4018,21 @@ syncSettings(handleUrl);
         </header>
         <main class="dcbpv-scroll">
           <section class="dcbpv-section">
-            <h3 class="dcbpv-section-title">본문</h3>
             <article class="dcbpv-html dcbpv-article">${data.articleHTML || `<div class="dcbpv-empty">본문을 표시할 수 없습니다.</div>`}</article>
           </section>
           <div class="dcbpv-vote">
-            개추 : <span class="dcbpv-vote-up">${data.counts.up || "0"}</span>
-            ${data.counts.upMember ? `<span class="dcbpv-vote-member">${data.counts.upMember}</span>` : ""}
-            &nbsp; 비추 : <span class="dcbpv-vote-down">${data.counts.down || "0"}</span>
+            <span class="dcbpv-vote-reaction">↑ 개추 <span class="dcbpv-vote-up">${data.counts.up || "0"}</span>${data.counts.upMember ? ` <span class="dcbpv-vote-member">(${data.counts.upMember})</span>` : ""}</span>
+            <span class="dcbpv-vote-reaction">↓ 비추 <span class="dcbpv-vote-down">${data.counts.down || "0"}</span></span>
           </div>
           <section class="dcbpv-section dcbpv-comments">
-            <h3 class="dcbpv-section-title dcbpv-comments-title">${escapeText(data.commentTitle || "댓글")}</h3>
+            <div class="dcbpv-comments-header">
+              <h3 class="dcbpv-section-title dcbpv-comments-title">${escapeText(data.commentTitle || "댓글")}</h3>
+              <span class="dcbpv-thread-count"></span>
+              <div class="dcbpv-comments-actions">
+                <a href="${escapeText(data.url.split("#")[0])}#focus_cmt" target="_blank" rel="noreferrer noopener">댓글쓰기</a>
+                <button type="button" data-act="reload">새로고침</button>
+              </div>
+            </div>
             <article class="dcbpv-html dcbpv-comment-html">${commentEmptyHtml}</article>
           </section>
         </main>
@@ -3880,6 +4044,7 @@ syncSettings(handleUrl);
       </section>`;
 
     mountPreview(overlay);
+    preparePreviewPresentation(overlay);
     settlePreviewMedia(overlay, data.fetchedUrl || data.url, data.url, trace);
     applyPreviewFeatureBridge(overlay, data, trace);
     emitPreviewState(true);
