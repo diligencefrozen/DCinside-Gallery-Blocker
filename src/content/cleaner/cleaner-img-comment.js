@@ -47,7 +47,7 @@ cleaner-img-comment.js - 이미지 댓글만 숨기기
 
   globalThis.DCBRuntimeSettingsCache.get({ hideImgComment: false }, ({ hideImgComment }) => apply(hideImgComment));
 
-  chrome.storage.onChanged.addListener((changes, area) => {
+  (globalThis.DCBRuntimeSettingsCache?.onChanged || chrome.storage.onChanged).addListener((changes, area) => {
     if (area === "sync" && changes.hideImgComment) apply(changes.hideImgComment.newValue);
   });
 })();

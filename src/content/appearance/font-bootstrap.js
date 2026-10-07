@@ -182,7 +182,7 @@
   }
 
   try {
-    storage.onChanged.addListener((changes, area) => {
+    (globalThis.DCBRuntimeSettingsCache?.onChanged || storage.onChanged).addListener((changes, area) => {
       if (area !== "sync") return;
       let touched = false;
       const next = { ...conf };

@@ -1,12 +1,16 @@
 (() => {
   "use strict";
+  if (globalThis.__DCB_ACCOUNT_ACTIVITY_BLOCKER__) return;
+  globalThis.__DCB_ACCOUNT_ACTIVITY_BLOCKER__ = true;
 
   const FILTER = () => globalThis.DCBAccountActivityFilter;
   const STYLE_ID = "dcb-account-activity-style";
   const HIDDEN_CLASS = "dcb-account-activity-hidden";
   const PENDING_CLASS = "dcb-account-activity-pending";
   const NOTICE_CLASS = "dcb-account-activity-notice";
-  const MAX_UNCACHED_UIDS_PER_PAGE = 12;
+  // Guard deferrals do not consume retries: they never reached the endpoint.
+  // Actual lookup failures get at most two automatic retries in this document.
+  const MAX_FAILURE_RETRIES = 2;
   const WRITER_SELECTOR = [
     ".gall_writer",
     ".ub-writer",
@@ -17,10 +21,16 @@
   ].join(",");
 
   let observer = null;
+  let unsubscribeDomBus = null;
+  let enabled = false;
   let scanTimer = null;
   let incrementalTimer = null;
+  let cancelScheduledScan = null;
+  let queueWakeTimer = null;
+  let queueActive = false;
+  let guardRetryAt = 0;
   let rulesEpoch = 0;
-  const attemptedUids = new Set();
+  const uidQueue = new Map();
   const pendingRoots = new Set();
 
   const cleanText = (value) => String(value ?? "").trim();
@@ -99,6 +109,8 @@
     );
     if (comment) return { kind: "comment", target: comment, showNotice: false };
 
+    // Native rows use the same post context on ordinary and recommend lists;
+    // exception_mode does not change activity eligibility or queue ownership.
     const listPost = writer.closest?.(
       ".gall_list tr.ub-content,.gall_list tr[data-no],.gall_list tr.gall_tr," +
       "tr.ub-content,tr[data-no],tr.gall_tr,.gall_list li.ub-content,.gall_list li.gall_item,li.gall_item"
@@ -170,22 +182,23 @@
     target.parentNode?.insertBefore(notice, target);
   }
 
-  function setState(info, uid, state, verdict = null) {
+  function setState(info, uid, state, verdict = null, pending = state === "pending") {
     const { target, showNotice } = info;
     const summary = cleanText(verdict?.summary);
     if (
       target.dataset.dcbAccountActivityUid === uid &&
       target.dataset.dcbAccountActivityState === state &&
-      target.dataset.dcbAccountActivitySummary === summary
+      target.dataset.dcbAccountActivitySummary === summary &&
+      target.classList.contains(PENDING_CLASS) === pending
     ) return;
     target.dataset.dcbAccountActivityUid = uid;
     target.dataset.dcbAccountActivityState = state;
     target.dataset.dcbAccountActivitySummary = summary;
-    target.classList.toggle(PENDING_CLASS, state === "pending");
+    target.classList.toggle(PENDING_CLASS, pending);
     target.classList.toggle(HIDDEN_CLASS, state === "hidden");
     if (state === "hidden") globalThis.DCBBlockStats?.report?.(target, "lowActivity");
-    if (showNotice && (state === "pending" || state === "hidden")) {
-      showTargetNotice(target, uid, verdict, state === "pending");
+    if (showNotice && (pending || state === "hidden")) {
+      showTargetNotice(target, uid, verdict, pending);
     } else {
       removeNotice(target);
     }
@@ -195,14 +208,12 @@
     return kind === "comment" ? settings.blockComments !== false : settings.blockPosts !== false;
   }
 
-  async function evaluateWriter(writer, filter, settings, epoch) {
-    const uid = extractUid(writer);
-    if (!uid) return;
+  function registerWriter(writer, filter, settings) {
     const info = targetForWriter(writer);
     if (!info) return;
-
+    const uid = extractUid(writer);
     const { target } = info;
-    if (!settingAllows(settings, info.kind)) {
+    if (!uid || !settingAllows(settings, info.kind)) {
       clearTarget(target);
       return;
     }
@@ -211,37 +222,137 @@
       return;
     }
 
+    const key = uid.toLowerCase();
+    let entry = uidQueue.get(key);
+    if (!entry) {
+      entry = { key, uid, targets: new Map(), state: "queued", retryAt: 0, failures: 0 };
+      uidQueue.set(key, entry);
+    }
+    entry.targets.set(target, { writer, info, uid });
+
     const cached = filter.peek?.(uid);
-    if (cached) {
-      if (cached.shouldHide) setState(info, uid, "hidden", cached);
-      else clearTarget(target, uid);
-      return;
+    if (cached?.available) {
+      applyVerdict(entry, cached, settings);
+      uidQueue.delete(key);
+    } else {
+      if (cached && entry.state === "queued") deferEntry(entry, cached, false);
+      if (entry.state === "queued" && guardRetryAt > Date.now()) entry.state = "deferred";
+      applyQueueState(entry, settings);
     }
+  }
 
-    const attemptKey = uid.toLowerCase();
-    if (!attemptedUids.has(attemptKey)) {
-      if (attemptedUids.size >= MAX_UNCACHED_UIDS_PER_PAGE) {
-        clearTarget(target, uid);
-        return;
+  function liveTargets(entry, settings) {
+    for (const [target, item] of entry.targets) {
+      if (!target.isConnected || !item.writer.isConnected ||
+          extractUid(item.writer).toLowerCase() !== entry.key) {
+        entry.targets.delete(target);
+      } else if (!settingAllows(settings, item.info.kind) || target.dataset.dcbAccountActivityPeek === item.uid) {
+        clearTarget(target, item.uid);
+        entry.targets.delete(target);
       }
-      attemptedUids.add(attemptKey);
     }
+    return entry.targets.values();
+  }
 
-    if (settings.holdWhileChecking) setState(info, uid, "pending");
-    else {
-      target.dataset.dcbAccountActivityUid = uid;
-      target.dataset.dcbAccountActivityState = "checking";
+  function applyVerdict(entry, verdict, settings) {
+    for (const { info, uid } of liveTargets(entry, settings)) {
+      if (verdict.shouldHide) setState(info, uid, "hidden", verdict);
+      else clearTarget(info.target, uid);
     }
+  }
 
-    const verdict = await filter.evaluate(uid);
-    if (epoch !== rulesEpoch) return;
-    if (!target.isConnected || target.dataset.dcbAccountActivityUid !== uid) return;
-    if (target.dataset.dcbAccountActivityPeek === uid) {
-      clearTarget(target, uid);
-      return;
+  function applyQueueState(entry, settings) {
+    for (const { info, uid } of liveTargets(entry, settings)) {
+      setState(info, uid, entry.state, null,
+        entry.state !== "unavailable" && settings.holdWhileChecking === true);
     }
-    if (verdict?.shouldHide) setState(info, uid, "hidden", verdict);
-    else clearTarget(target, uid);
+  }
+
+  function deferEntry(entry, verdict, attempted) {
+    const guarded = verdict?.reason === "BUDGET" || verdict?.reason === "COOLDOWN";
+    const retryAt = Number(verdict?.retryAt) || 0;
+    if (attempted && !guarded) entry.failures += 1;
+    if (guarded) {
+      guardRetryAt = Math.max(guardRetryAt, retryAt);
+      for (const queued of uidQueue.values()) {
+        if (queued.state === "queued") queued.state = "deferred";
+      }
+    }
+    const retryable = retryAt > Date.now() && verdict?.reason !== "NO_TOKEN" &&
+      (guarded || entry.failures <= MAX_FAILURE_RETRIES);
+    entry.retryAt = retryable ? retryAt : 0;
+    entry.state = retryable ? "deferred" : "unavailable";
+  }
+
+  function scheduleQueueWake() {
+    if (queueWakeTimer) clearTimeout(queueWakeTimer);
+    queueWakeTimer = null;
+    if (!enabled || document.visibilityState === "hidden") return;
+    const now = Date.now();
+    let wakeAt = Infinity;
+    for (const entry of uidQueue.values()) {
+      if (entry.state === "unavailable" || !entry.targets.size) continue;
+      wakeAt = Math.min(wakeAt, Math.max(entry.retryAt, guardRetryAt, now));
+    }
+    if (!Number.isFinite(wakeAt)) return;
+    // A single deadline wake-up, not polling. Hidden documents resume on visibilitychange.
+    queueWakeTimer = setTimeout(() => {
+      queueWakeTimer = null;
+      void drainUidQueue();
+    }, Math.max(0, wakeAt - now));
+  }
+
+  async function drainUidQueue() {
+    if (queueActive || !enabled || document.visibilityState === "hidden") return;
+    const filter = FILTER();
+    if (!filter) return;
+    queueActive = true;
+    const epoch = rulesEpoch;
+    try {
+      while (enabled && epoch === rulesEpoch && document.visibilityState !== "hidden") {
+        const settings = filter.getSettings();
+        if (!settings.enabled) break;
+        let next = null;
+        const now = Date.now();
+        for (const [key, entry] of uidQueue) {
+          liveTargets(entry, settings);
+          if (!entry.targets.size) {
+            uidQueue.delete(key);
+            continue;
+          }
+          const cached = filter.peek?.(entry.uid);
+          if (cached?.available) {
+            applyVerdict(entry, cached, settings);
+            uidQueue.delete(key);
+            continue;
+          }
+          if (entry.state === "unavailable" || entry.retryAt > now || guardRetryAt > now) continue;
+          // Page DOM order prioritizes top rows; each UID has only one entry.
+          next = entry;
+          break;
+        }
+        if (!next) break;
+        next.state = "checking";
+        applyQueueState(next, settings);
+        let verdict;
+        try {
+          verdict = await filter.evaluate(next.uid);
+        } catch (_) {
+          verdict = { available: false, reason: "EVALUATE" };
+        }
+        if (epoch !== rulesEpoch) break;
+        if (verdict?.available) {
+          applyVerdict(next, verdict, filter.getSettings());
+          uidQueue.delete(next.key);
+        } else {
+          deferEntry(next, verdict, true);
+          applyQueueState(next, filter.getSettings());
+        }
+      }
+    } finally {
+      queueActive = false;
+      scheduleQueueWake();
+    }
   }
 
   function clearAll(resetPeek = false) {
@@ -270,9 +381,11 @@
   }
 
   async function scanScope(scope = document) {
+    if (!enabled) return;
     const filter = FILTER();
     if (!filter) return;
     await filter.ready();
+    if (!enabled) return;
     const settings = filter.getSettings();
     if (!settings.enabled) {
       if (scope === document) clearAll();
@@ -280,14 +393,14 @@
     }
     if (document.visibilityState === "hidden") return;
 
-    const epoch = rulesEpoch;
     const seen = new Set();
     writerNodesInScope(scope).forEach((node) => {
       const writer = canonicalWriter(node);
       if (!writer || seen.has(writer)) return;
       seen.add(writer);
-      void evaluateWriter(writer, filter, settings, epoch);
+      registerWriter(writer, filter, settings);
     });
+    void drainUidQueue();
   }
 
   async function scan() {
@@ -295,10 +408,15 @@
   }
 
   function scheduleScan(delay = 80) {
+    if (!enabled) return;
     if (scanTimer) clearTimeout(scanTimer);
     scanTimer = setTimeout(() => {
       scanTimer = null;
-      void scan();
+      const run = () => { cancelScheduledScan = null; void scan(); };
+      cancelScheduledScan?.();
+      if (globalThis.DCBStartupScheduler) {
+        cancelScheduledScan = globalThis.DCBStartupScheduler.schedule("account-activity:scan", run, "idle");
+      } else run();
     }, delay);
   }
 
@@ -321,16 +439,21 @@
   }
 
   function queueIncrementalScan(root, allowOwned = false) {
+    if (!enabled) return;
     if (!root || (root.nodeType !== Node.ELEMENT_NODE && root.nodeType !== Node.DOCUMENT_FRAGMENT_NODE)) return;
-    if (!allowOwned && root instanceof Element && root.closest?.("[data-dcb-owned]")) return;
+    if (!allowOwned && root instanceof Element && root.closest?.("[data-dcb-owned]")) {
+      root = root.closest(".gall_writer,.ub-writer");
+      if (!root) return;
+    }
     pendingRoots.add(root);
     if (incrementalTimer) return;
     incrementalTimer = setTimeout(flushIncrementalScans, 80);
   }
 
   function watch() {
-    if (observer || !document.documentElement) return;
-    observer = new MutationObserver((records) => {
+    if (!enabled || observer || unsubscribeDomBus || !document.documentElement) return;
+    const handleRecords = (records) => {
+      if (!enabled) return;
       for (const record of records) {
         if (record.type === "attributes") {
           queueIncrementalScan(record.target);
@@ -338,26 +461,76 @@
         }
         for (const node of record.addedNodes || []) queueIncrementalScan(node);
       }
-    });
+    };
+    const attributes = ["data-uid", "data-full-uid", "data-memo-uid", "href", "onclick"];
+    if (globalThis.DCBDomMutationBus) {
+      unsubscribeDomBus = globalThis.DCBDomMutationBus.subscribe(
+        "account-activity-blocker", handleRecords,
+        { types: ["childList", "attributes"], attributes, ignoreOwned: false }
+      );
+      return;
+    }
+    observer = new MutationObserver(handleRecords);
     observer.observe(document.documentElement, {
       childList: true,
       subtree: true,
       attributes: true,
-      attributeFilter: ["data-uid", "data-full-uid", "data-memo-uid", "href", "onclick"]
+      attributeFilter: attributes
     });
+  }
+
+  function stopWork() {
+    observer?.disconnect();
+    observer = null;
+    unsubscribeDomBus?.();
+    unsubscribeDomBus = null;
+    if (scanTimer) clearTimeout(scanTimer);
+    if (incrementalTimer) clearTimeout(incrementalTimer);
+    if (queueWakeTimer) clearTimeout(queueWakeTimer);
+    scanTimer = incrementalTimer = queueWakeTimer = null;
+    cancelScheduledScan?.();
+    cancelScheduledScan = null;
+    pendingRoots.clear();
+    uidQueue.clear();
+    guardRetryAt = 0;
+  }
+
+  async function updateFeatureState() {
+    const filter = FILTER();
+    if (!filter) return;
+    await filter.ready();
+    enabled = filter.getSettings().enabled === true;
+    if (!enabled) {
+      stopWork();
+      document.getElementById(STYLE_ID)?.remove();
+      return;
+    }
+    installStyle();
+    watch();
+    scheduleScan(0);
   }
 
   window.addEventListener("dcb:account-activity-rules-changed", () => {
     rulesEpoch += 1;
-    attemptedUids.clear();
+    stopWork();
     clearAll(true);
-    scheduleScan(0);
+    void updateFeatureState();
   });
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState !== "hidden") scheduleScan(0);
+    if (!enabled) return;
+    if (document.visibilityState !== "hidden") {
+      scheduleScan(0);
+      void drainUidQueue();
+    } else if (queueWakeTimer) {
+      clearTimeout(queueWakeTimer);
+      queueWakeTimer = null;
+    }
+  });
+  window.addEventListener("dcb:account-activity-cache-changed", () => {
+    if (enabled && uidQueue.size) void drainUidQueue();
   });
   document.addEventListener("dcb-preview-state", (event) => {
-    if (!event?.detail?.open) return;
+    if (!enabled || !event?.detail?.open) return;
     const preview = document.getElementById("dcb-preview-overlay");
     preview?.querySelectorAll?.(`[data-dcb-account-activity-uid],[data-dcb-account-activity-peek],.${HIDDEN_CLASS},.${PENDING_CLASS}`).forEach((target) => {
       clearTarget(target);
@@ -366,11 +539,10 @@
     if (preview) queueIncrementalScan(preview, true);
   });
 
-  installStyle();
-  watch();
-  scheduleScan(0);
+  void updateFeatureState();
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", () => {
+      if (!enabled) return;
       installStyle();
       watch();
       scheduleScan(0);

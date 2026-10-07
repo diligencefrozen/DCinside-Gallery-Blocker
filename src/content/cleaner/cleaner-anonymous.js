@@ -266,7 +266,7 @@
     if (chrome && chrome.storage && chrome.storage.sync) {
       apply();
 
-      chrome.storage.onChanged.addListener((changes, area) => {
+      (globalThis.DCBRuntimeSettingsCache?.onChanged || chrome.storage.onChanged).addListener((changes, area) => {
         if (area !== "sync" || !changes.hideAnonymousEnabled) return;
         hideEnabled = !!changes.hideAnonymousEnabled.newValue;
         if (!hideEnabled) {

@@ -69,7 +69,7 @@ function apply() {
 }
 
 /* 스토리지 변경 감지 */
-chrome.storage.onChanged.addListener((c, area) => {
+(globalThis.DCBRuntimeSettingsCache?.onChanged || chrome.storage.onChanged).addListener((c, area) => {
   if (area !== "sync") return;
   if (c.hideSearchEnabled || c.removeSelectorsSearch) apply();
 });

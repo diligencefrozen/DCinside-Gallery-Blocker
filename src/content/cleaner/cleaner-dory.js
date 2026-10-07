@@ -234,7 +234,7 @@
     loadAndApply();
   }
 
-  chrome.storage.onChanged.addListener((changes, area) => {
+  (globalThis.DCBRuntimeSettingsCache?.onChanged || chrome.storage.onChanged).addListener((changes, area) => {
     if (area !== "sync" || !changes.doryBlockEnabled) return;
 
     enabled = changes.doryBlockEnabled.newValue !== false;

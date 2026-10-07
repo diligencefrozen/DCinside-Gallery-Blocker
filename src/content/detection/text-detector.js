@@ -631,7 +631,7 @@
     }).catch(() => {});
   }
 
-  chrome.storage.onChanged.addListener((changes, area) => {
+  (globalThis.DCBRuntimeSettingsCache?.onChanged || chrome.storage.onChanged).addListener((changes, area) => {
     if (area !== 'sync' || !changes[Config.key]) return;
     settingsChanged = true;
     const next = Config.normalize(changes[Config.key].newValue);

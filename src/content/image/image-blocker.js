@@ -31,8 +31,14 @@
   let authorSignature = "";
   let ready = false;
   let observer = null;
+  let unsubscribeDomBus = null;
   let pulse = null;
   let lastScan = 0;
+  let settingsRefreshQueued = false;
+  let resetAuthorPeekQueued = false;
+  let storeLoadRevision = 0;
+  let storeLoadPromise = null;
+  let renderRevision = 0;
 
   const fileCache = new WeakMap();
   const actionState = new WeakMap();
@@ -102,14 +108,22 @@
     return `${parts[0]}.${parts[1]}`;
   }
 
-  async function loadStore() {
-    const [syncData, localData] = await Promise.all([
+  function loadStore() {
+    const revision = ++storeLoadRevision;
+    const job = Promise.all([
       globalThis.DCBRuntimeSettingsCache.get({ [CONFIG_KEY]: null }),
       chrome.storage.local.get({ [CONFIG_KEY]: null, [RECORD_KEY]: {} })
-    ]);
-    config = oneClickConfig(syncData[CONFIG_KEY] || localData[CONFIG_KEY] || BASE_CONFIG);
-    records = asRecordMap(localData[RECORD_KEY]);
-    ready = true;
+    ]).then(([syncData, localData]) => {
+      // An older startup/manager read must not restore a pre-commit snapshot.
+      // Its caller waits for the newest read instead.
+      if (revision !== storeLoadRevision) return storeLoadPromise;
+      config = oneClickConfig(syncData[CONFIG_KEY] || localData[CONFIG_KEY] || BASE_CONFIG);
+      records = asRecordMap(localData[RECORD_KEY]);
+      renderRevision += 1;
+      ready = true;
+    });
+    storeLoadPromise = job;
+    return job;
   }
 
   function installStyle() {
@@ -461,6 +475,7 @@
     }
     const frame = document.createElement("span");
     frame.className = `${UI}-frame`;
+    frame.dataset.dcbImageWrapper = "1";
     el.parentNode.insertBefore(frame, el);
     frame.appendChild(el);
     return frame;
@@ -661,6 +676,7 @@
       return;
     }
 
+    const revision = renderRevision;
     const frame = frameFor(el);
     const currentAuthor = detectAuthorIdentity(el);
 
@@ -674,6 +690,7 @@
     frame.classList.remove(`${UI}-blur`);
 
     const quickKey = `quick:${await digestText(src)}`;
+    if (!config.enabled || revision !== renderRevision || !frame.isConnected || mediaUrl(el) !== src) return;
     const quickInfo = { key: quickKey, src, mime: "", ext: "bin", dataUrl: "", thumb: el.tagName === "IMG" ? src : "" };
     frame.dataset.ibxKey = quickKey;
 
@@ -692,7 +709,7 @@
   }
 
   function scan(base = document) {
-    if (!ready) return;
+    if (!ready || !config.enabled) return;
     const authorChanged = refreshAuthorIdentity();
     gatherMedia(authorChanged ? document : base).forEach((el) => void prepare(el));
   }
@@ -705,8 +722,9 @@
   }
 
   function watch() {
-    observer?.disconnect();
-    observer = new MutationObserver((changes) => {
+    if (!config.enabled || observer || unsubscribeDomBus) return;
+    const handleChanges = (changes) => {
+      if (!config.enabled) return;
       const now = Date.now();
       if (now - lastScan < 50) return;
       lastScan = now;
@@ -726,7 +744,16 @@
           scan(target);
         }
       }
-    });
+    };
+
+    if (globalThis.DCBDomMutationBus) {
+      unsubscribeDomBus = globalThis.DCBDomMutationBus.subscribe("image-blocker", handleChanges, {
+        types: ["childList", "attributes"],
+        attributes: ["src", "data-src", "data-uid", "data-full-uid", "data-ip", "data-nick", "title", "href"]
+      });
+      return;
+    }
+    observer = new MutationObserver(handleChanges);
 
     observer.observe(document.documentElement || document, {
       childList: true,
@@ -742,6 +769,31 @@
       pulse = null;
       if (ready && config.enabled) scan(document);
     }, 1200);
+  }
+
+  function reconcileFeature() {
+    if (!ready) return;
+    if (config.enabled) {
+      installStyle();
+      watch();
+      warmup();
+      scan(document);
+      return;
+    }
+    observer?.disconnect();
+    observer = null;
+    unsubscribeDomBus?.();
+    unsubscribeDomBus = null;
+    if (pulse) clearTimeout(pulse);
+    pulse = null;
+    // Only restore images that this feature previously decorated, rather than
+    // finding every native image/author while the feature is OFF.
+    $$(`.${UI}-frame`).forEach((frame) => {
+      resetFrame(frame);
+      frame.classList.remove(`${UI}-frame`);
+      if (frame.dataset.dcbImageWrapper === "1") frame.replaceWith(...frame.childNodes);
+    });
+    if (!$(`.${UI}-overlay`)) $(`#${UI}-style`)?.remove();
   }
 
   function renderPanel(title, count, body) {
@@ -808,17 +860,28 @@
     return true;
   });
 
-  chrome.storage.onChanged.addListener((changes, area) => {
+  (globalThis.DCBRuntimeSettingsCache?.onChanged || chrome.storage.onChanged).addListener((changes, area) => {
     const configChanged = (area === "sync" || area === "local") && changes[CONFIG_KEY];
     const recordsChanged = area === "local" && changes[RECORD_KEY];
-    if (configChanged || recordsChanged) loadStore().then(() => {
-      if (configChanged) $$(`.${UI}-frame`).forEach((frame) => delete frame.dataset.ibxAuthorPeek);
-      scan(document);
+    if (!configChanged && !recordsChanged) return;
+    renderRevision += 1;
+    resetAuthorPeekQueued ||= !!configChanged;
+    if (settingsRefreshQueued) return;
+    settingsRefreshQueued = true;
+    // The batch wrapper replays sync/local changes together. Read their final
+    // snapshot and reconcile once after that notification turn completes.
+    queueMicrotask(() => {
+      settingsRefreshQueued = false;
+      void loadStore().then(() => {
+        if (resetAuthorPeekQueued) $$(`.${UI}-frame`).forEach((frame) => delete frame.dataset.ibxAuthorPeek);
+        resetAuthorPeekQueued = false;
+        reconcileFeature();
+      });
     });
   });
 
   document.addEventListener("dcb-preview-state", (event) => {
-    if (!event?.detail?.open) return;
+    if (!config.enabled || !event?.detail?.open) return;
     requestAnimationFrame(() => {
       const previewRoot = document.getElementById("dcb-preview-overlay");
       if (previewRoot) scan(previewRoot);
@@ -827,11 +890,8 @@
 
   async function boot() {
     await loadStore();
-    installStyle();
-    watch();
-    warmup();
-    scan(document);
-    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", () => scan(document), { once: true });
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", reconcileFeature, { once: true });
+    else reconcileFeature();
   }
 
   void boot();

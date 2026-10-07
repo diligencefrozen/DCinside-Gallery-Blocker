@@ -237,7 +237,7 @@
     if (event.target?.tagName === "LINK" && event.target.id !== LINK_ID) scheduleRefresh();
   }, true);
 
-  chrome.storage.onChanged.addListener((changes, area) => {
+  (globalThis.DCBRuntimeSettingsCache?.onChanged || chrome.storage.onChanged).addListener((changes, area) => {
     if (area !== "sync" || !Object.keys(DCBFont.STORAGE_DEFAULTS).some((key) => key in changes)) return;
     // OFF takes effect before any pending storage callback can restore old settings.
     if (changes.dcbApplyFontToDc && changes.dcbApplyFontToDc.newValue !== true) clearFont();

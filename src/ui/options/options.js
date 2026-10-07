@@ -675,7 +675,7 @@ function normalizeImageAccountRules(value) {
     commentRuleEnabled: source.commentRuleEnabled !== false,
     minCommentCount: int(source.minCommentCount, IMAGE_ACCOUNT_RULE_DEFAULT.minCommentCount, 0, 1_000_000),
     activityMatchMode: source.activityMatchMode === "any" ? "any" : "both",
-    holdWhileChecking: false,
+    holdWhileChecking: source.holdWhileChecking === true,
     cacheHours: int(source.cacheHours, IMAGE_ACCOUNT_RULE_DEFAULT.cacheHours, 24, 168)
   };
 }
@@ -900,12 +900,6 @@ function parseBackupPayload(raw) {
   return { sync, local, blockedUids };
 }
 
-async function restoreUserBlockTokens(tokens) {
-  if (tokens === null) return [];
-  if (globalThis.DCBUserBlockStore?.setAllTokens) return DCBUserBlockStore.setAllTokens(tokens || []);
-  return setStoredUidList(tokens || []);
-}
-
 function backupValueEqual(a, b) {
   if (Object.is(a, b)) return true;
   if (Array.isArray(a) || Array.isArray(b)) {
@@ -921,40 +915,24 @@ function backupValueEqual(a, b) {
   return false;
 }
 
-async function writeSyncBackup(sync) {
-  if (!Object.keys(sync || {}).length) return;
-  // storage.sync.set() 완료만 사용자 대기 경로에 둔다. set()이 성공하면 데이터는
-  // 이미 로컬 extension storage에 반영되어 있으며, read-after-write 검증은 아래의
-  // 비동기 보정 작업에서 수행한다. 같은 값을 즉시 다시 읽는 IPC 왕복을 피한다.
-  await chrome.storage.sync.set(sync);
-}
-
-async function verifySyncBackupEventually(sync, maxAttempts = 2) {
+async function verifySyncBackupEventually(sync) {
   const entries = Object.entries(sync || {});
   if (!entries.length) return;
   const keys = entries.map(([key]) => key);
-  let lastMismatch = keys;
-
-  for (let attempt = 0; attempt < Math.max(1, maxAttempts); attempt += 1) {
-    try {
-      const stored = await chrome.storage.sync.get(lastMismatch);
-      lastMismatch = lastMismatch.filter((key) => !backupValueEqual(stored[key], sync[key]));
-      if (!lastMismatch.length) return;
-      await chrome.storage.sync.set(Object.fromEntries(lastMismatch.map((key) => [key, sync[key]])));
-    } catch (error) {
-      if (attempt + 1 >= Math.max(1, maxAttempts)) throw error;
-    }
-  }
-
-  if (lastMismatch.length) throw new Error(`backup sync verify failed: ${lastMismatch.join(", ")}`);
+  const stored = await chrome.storage.sync.get(keys);
+  const mismatch = keys.filter((key) => !backupValueEqual(stored[key], sync[key]));
+  // Verification is read-only: a user's newer setting must never be replaced
+  // by a delayed attempt to reapply the imported snapshot.
+  if (mismatch.length) console.debug("[DCB] settings changed after backup commit:", mismatch);
 }
 
-function commitBackupImportCaches(sync, blockedUids) {
+function commitBackupImportCaches(sync, local, blockedUids) {
   return new Promise((resolve, reject) => {
     try {
       chrome.runtime.sendMessage({
         type: "dcb.backupImport.commit",
         sync: sync && typeof sync === "object" ? sync : {},
+        local: local && typeof local === "object" ? local : {},
         blockedUids: Array.isArray(blockedUids) ? blockedUids : null
       }, (response) => {
         const lastError = chrome.runtime?.lastError;
@@ -995,17 +973,9 @@ function importSettingsFromFile(file) {
       }
 
       try {
-        const jobs = [];
-        if (Object.keys(sync).length) jobs.push(writeSyncBackup(sync));
-        if (chrome.storage.local && Object.keys(local).length) jobs.push(chrome.storage.local.set(local));
-        if (blockedUids !== null) jobs.push(restoreUserBlockTokens(blockedUids));
-
-        await Promise.all(jobs);
-
-        // 이미 파싱한 백업 스냅샷을 background에 그대로 넘긴다. background는 sync를
-        // 다시 읽지 않고 runtime/keyword/dcbest/critical 캐시를 한 번의 local read/write로
-        // 확정한다. DNR 및 read-after-write 보정은 사용자 대기 경로에서 제외한다.
-        await commitBackupImportCaches(sync, blockedUids);
+        // One background transaction owns the storage writes and final caches.
+        // Existing tabs defer intermediate events until that snapshot commits.
+        await commitBackupImportCaches(sync, local, blockedUids);
 
         if (local[QUICK_BLOCK_POSITION_KEY]) {
           broadcastQuickBlockPosition(local[QUICK_BLOCK_POSITION_KEY]);

@@ -22,6 +22,7 @@
 
   let enabled = false;
   let memoMap = {};
+  let memoReadRevision = 0;
   let currentMeta = null;
   let renderQueued = false;
   const pendingRenderRoots = new Set();
@@ -248,14 +249,19 @@
     });
   }
 
-  function cleanupEmptyWriterTools() {
-    document.querySelectorAll(`.${WRITER_ENHANCED_CLASS}`).forEach((writer) => globalThis.DCBWriterLayout?.cleanup(writer));
+  function cleanupEmptyWriterTools(writers = null) {
+    (writers || document.querySelectorAll(`.${WRITER_ENHANCED_CLASS}`)).forEach((writer) => globalThis.DCBWriterLayout?.cleanup(writer));
   }
 
   function removeInjectedUi() {
-    document.querySelectorAll(`.${TRIGGER_CLASS}`).forEach((el) => el.remove());
+    const writers = new Set();
+    document.querySelectorAll(`.${TRIGGER_CLASS}`).forEach((el) => {
+      const writer = el.closest(WRITER_SELECTOR);
+      if (writer) writers.add(writer);
+      el.remove();
+    });
     cleanupEmptySlots();
-    cleanupEmptyWriterTools();
+    cleanupEmptyWriterTools(writers);
 
     document.querySelectorAll(`.${COMMENT_HOST_CLASS}`).forEach((el) => {
       el.classList.remove(COMMENT_HOST_CLASS);
@@ -525,6 +531,7 @@
       }
 
       chrome.storage.local.set({ userMemos: next }, () => {
+        memoReadRevision += 1;
         memoMap = next;
         renderAll();
         closeModal();
@@ -540,6 +547,7 @@
       delete next[currentMeta.key];
 
       chrome.storage.local.set({ userMemos: next }, () => {
+        memoReadRevision += 1;
         memoMap = next;
         renderAll();
         closeModal();
@@ -722,23 +730,26 @@
       removeInjectedUi();
       return;
     }
-    root.querySelectorAll?.(`.${TRIGGER_CLASS}`).forEach((el) => el.remove());
+    const writers = new Set();
+    root.querySelectorAll?.(`.${TRIGGER_CLASS}`).forEach((el) => {
+      const writer = el.closest(WRITER_SELECTOR);
+      if (writer) writers.add(writer);
+      el.remove();
+    });
     cleanupEmptySlots();
-    cleanupEmptyWriterTools();
+    cleanupEmptyWriterTools(writers);
   }
 
   function renderAll(root = document) {
-    if (root instanceof Element && root.matches(WRITER_SELECTOR)) {
-      removeWriterNikconWhitespace(root);
-    }
-    root.querySelectorAll?.(WRITER_SELECTOR).forEach(removeWriterNikconWhitespace);
     if (!enabled) {
       removeInjectedUiInRoot(root);
       return;
     }
-
+    if (root instanceof Element && root.matches(WRITER_SELECTOR)) {
+      removeWriterNikconWhitespace(root);
+    }
+    root.querySelectorAll?.(WRITER_SELECTOR).forEach(removeWriterNikconWhitespace);
     ensureStyle();
-    ensureModal();
 
     const element = root === document ? null : (root?.nodeType === Node.ELEMENT_NODE ? root : root?.parentElement);
     if (element?.matches?.(WRITER_SELECTOR)) renderWriter(element);
@@ -749,6 +760,7 @@
   }
 
   function queueRender(root = document) {
+    if (!enabled) return;
     if (root) pendingRenderRoots.add(root);
     if (renderQueued) return;
     renderQueued = true;
@@ -757,6 +769,7 @@
       renderQueued = false;
       const roots = [...pendingRenderRoots];
       pendingRenderRoots.clear();
+      if (!enabled) return;
       if (!roots.length || roots.includes(document)) {
         renderAll();
         return;
@@ -789,6 +802,7 @@
   }
 
   function handleDomMutations(mutations) {
+    if (!enabled) return;
     const roots = new Set();
     for (const m of mutations) {
       if (isOurNode(m.target)) continue;
@@ -806,12 +820,21 @@
 
   let unsubscribeDomBus = null;
   function initObserver() {
-    if (unsubscribeDomBus || !globalThis.DCBDomMutationBus) return;
+    if (!enabled || unsubscribeDomBus || !globalThis.DCBDomMutationBus) return;
     unsubscribeDomBus = globalThis.DCBDomMutationBus.subscribe(
       "user-memo",
       handleDomMutations,
       { types: ["childList"] }
     );
+  }
+
+  function updateObserver() {
+    if (enabled) initObserver();
+    else {
+      unsubscribeDomBus?.();
+      unsubscribeDomBus = null;
+      pendingRenderRoots.clear();
+    }
   }
 
   try {
@@ -831,6 +854,7 @@
     const renderWhenReady = () => {
       if (initialRendered || !syncReady || !localReady) return;
       initialRendered = true;
+      updateObserver();
       const run = () => renderAll();
       if (globalThis.DCBStartupScheduler) globalThis.DCBStartupScheduler.schedule("user-memo:init", run, "normal");
       else setTimeout(run, 36);
@@ -842,21 +866,25 @@
       renderWhenReady();
     });
 
+    const revision = memoReadRevision;
     chrome.storage.local.get(LOCAL_DEFAULTS, ({ userMemos }) => {
-      memoMap = userMemos || {};
+      if (revision === memoReadRevision) memoMap = userMemos || {};
       localReady = true;
       renderWhenReady();
     });
 
-    chrome.storage.onChanged.addListener((changes, area) => {
+    (globalThis.DCBRuntimeSettingsCache?.onChanged || chrome.storage.onChanged).addListener((changes, area) => {
       if (area === 'sync' && changes.userMemoEnabled) {
         enabled = !!changes.userMemoEnabled.newValue;
-        renderAll();
+        updateObserver();
+        if (enabled) queueRender();
+        else renderAll();
       }
 
       if (area === 'local' && changes.userMemos) {
+        memoReadRevision += 1;
         memoMap = changes.userMemos.newValue || {};
-        renderAll();
+        if (enabled) queueRender();
       }
     });
   }
@@ -895,7 +923,6 @@
   function boot() {
     // Wait for sync + local settings once, then perform a single initial render.
     initStorage();
-    initObserver();
   }
 
   if (document.readyState === 'loading') {

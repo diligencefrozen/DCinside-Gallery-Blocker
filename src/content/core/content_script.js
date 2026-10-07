@@ -73,7 +73,7 @@ function syncSettings(cb){
   );
 }
 
-chrome.storage.onChanged.addListener((chg,a)=>{
+(globalThis.DCBRuntimeSettingsCache?.onChanged || chrome.storage.onChanged).addListener((chg,a)=>{
   if(a!=="sync") return;
   // 새 키 우선, 없으면 구키(enabled)도 반영
   if(chg.galleryBlockEnabled) gBlockEnabled = !!chg.galleryBlockEnabled.newValue;
@@ -4120,7 +4120,7 @@ syncSettings(handleUrl);
     }, delay);
   }
 
-  chrome.storage.onChanged.addListener((changes, area) => {
+  (globalThis.DCBRuntimeSettingsCache?.onChanged || chrome.storage.onChanged).addListener((changes, area) => {
     if (!currentPreviewData || area !== "sync" && area !== "local") return;
     const keys = new Set([
       "userBlockEnabled", "includeGray", "hideDCGray", "blockedUids", "hideComment", "hideImgComment", "hideDccon", "hideTextCon",

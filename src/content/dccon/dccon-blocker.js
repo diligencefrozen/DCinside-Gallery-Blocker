@@ -1120,7 +1120,7 @@
     return true;
   });
 
-  chrome.storage.onChanged.addListener((changes, area) => {
+  (globalThis.DCBRuntimeSettingsCache?.onChanged || chrome.storage.onChanged).addListener((changes, area) => {
     if (area !== "local" || !changes[Store.STATE_KEY]) return;
     applyState(changes[Store.STATE_KEY].newValue || Store.emptyState());
   });

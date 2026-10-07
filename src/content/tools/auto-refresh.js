@@ -443,7 +443,7 @@
     else setTimeout(run, 100);
   });
 
-  chrome.storage.onChanged.addListener((changes, area) => {
+  (globalThis.DCBRuntimeSettingsCache?.onChanged || chrome.storage.onChanged).addListener((changes, area) => {
     if (area !== "sync") return;
     if (!changes.autoRefreshEnabled && !changes.autoRefreshInterval) return;
     applySettings(

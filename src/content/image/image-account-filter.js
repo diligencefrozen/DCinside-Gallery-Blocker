@@ -49,7 +49,7 @@
       commentRuleEnabled: source.commentRuleEnabled !== false,
       minCommentCount: boundedInteger(source.minCommentCount, DEFAULT_SETTINGS.minCommentCount, 0, 1_000_000),
       activityMatchMode: source.activityMatchMode === "any" ? "any" : "both",
-      holdWhileChecking: false,
+      holdWhileChecking: source.holdWhileChecking === true,
       cacheHours: boundedInteger(source.cacheHours, DEFAULT_SETTINGS.cacheHours, 24, 168)
     };
   }
@@ -137,7 +137,7 @@
 
   function unavailableSummary(reason) {
     if (reason === "COOLDOWN" || reason === "BUDGET") {
-      return "안전 요청 한도에 따라 이번 조회를 건너뛰었습니다.";
+      return "안전 요청 한도가 풀리면 활동 정보를 다시 확인합니다.";
     }
     if (reason === "NO_TOKEN") return "로그인 세션 정보를 확인하지 못했습니다.";
     return "작성자 활동 정보를 안전하게 확인하지 못했습니다.";
@@ -149,25 +149,40 @@
       this.cache = {};
       this.inflight = new Map();
       this.cacheWriteTimer = null;
+      this.cacheReadyPromise = null;
+      this.cacheRevision = 0;
+      this.settingsRevision = 0;
       this.readyPromise = this.initialize();
     }
 
     async initialize() {
+      const revision = this.settingsRevision;
       try {
-        const [syncData, localData] = await Promise.all([
-          globalThis.DCBRuntimeSettingsCache.get({ [SETTINGS_KEY]: DEFAULT_SETTINGS }),
-          chrome.storage.local.get({ [CACHE_KEY]: {} })
-        ]);
-        this.settings = normalizeSettings(syncData[SETTINGS_KEY]);
-        this.cache = localData[CACHE_KEY] && typeof localData[CACHE_KEY] === "object"
-          ? localData[CACHE_KEY]
-          : {};
-        this.trimCache();
+        const syncData = await globalThis.DCBRuntimeSettingsCache.get({ [SETTINGS_KEY]: DEFAULT_SETTINGS });
+        if (revision === this.settingsRevision) this.settings = normalizeSettings(syncData[SETTINGS_KEY]);
+        if (this.settings.enabled) await this.ensureCacheReady();
       } catch (_) {
-        this.settings = { ...DEFAULT_SETTINGS };
-        this.cache = {};
+        if (revision === this.settingsRevision) this.settings = { ...DEFAULT_SETTINGS };
       }
       return this;
+    }
+
+    ensureCacheReady() {
+      if (this.cacheReadyPromise) return this.cacheReadyPromise;
+      const revision = this.cacheRevision;
+      this.cacheReadyPromise = (async () => {
+        try {
+          const localData = await chrome.storage.local.get({ [CACHE_KEY]: {} });
+          if (revision === this.cacheRevision) {
+            this.cache = localData[CACHE_KEY] && typeof localData[CACHE_KEY] === "object"
+              ? localData[CACHE_KEY]
+              : {};
+          }
+          this.trimCache();
+        } catch (_) {}
+        return this;
+      })();
+      return this.cacheReadyPromise;
     }
 
     trimCache() {
@@ -215,17 +230,22 @@
       });
 
       if (!result?.ok) {
+        const reason = cleanText(result?.reason) || "UNAVAILABLE";
+        const guarded = reason === "BUDGET" || reason === "COOLDOWN";
+        // A budget/circuit wait is not a failed activity verdict. Preserve its
+        // deadline so the content queue can resume when the guard permits it.
         const retryAfterMs = boundedInteger(
           result?.retryAfterMs,
           NEGATIVE_CACHE_MS,
-          NEGATIVE_CACHE_MS,
+          guarded ? 1_000 : NEGATIVE_CACHE_MS,
           24 * 60 * 60 * 1000
         );
         return {
           checkedAt: Date.now(),
           expiresAt: Date.now() + retryAfterMs,
           unavailable: true,
-          reason: cleanText(result?.reason) || "UNAVAILABLE"
+          deferred: guarded,
+          reason
         };
       }
 
@@ -242,6 +262,9 @@
         return {
           uid,
           available: false,
+          reason: cleanText(entry?.reason) || "UNAVAILABLE",
+          deferred: entry?.deferred === true || ["BUDGET", "COOLDOWN"].includes(entry?.reason),
+          retryAt: Number(entry?.expiresAt) || (Number(entry?.checkedAt) || 0) + NEGATIVE_CACHE_MS,
           shouldHide: false,
           reasons: [],
           summary: unavailableSummary(entry?.reason)
@@ -279,6 +302,9 @@
         };
       }
 
+      await this.ensureCacheReady();
+      if (!this.settings.enabled) return this.judge(uid, null);
+
       const key = uid.toLowerCase();
       const cached = this.cache[key];
       if (this.cacheFresh(cached)) return this.judge(uid, cached);
@@ -312,6 +338,7 @@
 
     async clearCache() {
       await this.readyPromise;
+      await this.ensureCacheReady();
       this.cache = {};
       await chrome.storage.local.set({ [CACHE_KEY]: {} });
     }
@@ -319,20 +346,29 @@
 
   const service = new AccountSignalService();
 
-  chrome.storage.onChanged.addListener((changes, area) => {
+  (globalThis.DCBRuntimeSettingsCache?.onChanged || chrome.storage.onChanged).addListener((changes, area) => {
     if (area === "local" && changes[CACHE_KEY]) {
+      service.cacheRevision += 1;
       service.cache = changes[CACHE_KEY].newValue && typeof changes[CACHE_KEY].newValue === "object"
         ? changes[CACHE_KEY].newValue
         : {};
+      try { window.dispatchEvent(new Event("dcb:account-activity-cache-changed")); } catch (_) {}
       return;
     }
     if (area === "sync" && changes[SETTINGS_KEY]) {
+      service.settingsRevision += 1;
       service.settings = normalizeSettings(changes[SETTINGS_KEY].newValue);
-      try {
-        window.dispatchEvent(new CustomEvent("dcb:account-activity-rules-changed", {
-          detail: { settings: { ...service.settings } }
-        }));
-      } catch (_) {}
+      const settings = service.settings;
+      const announce = () => {
+        if (service.settings !== settings) return;
+        try {
+          window.dispatchEvent(new CustomEvent("dcb:account-activity-rules-changed", {
+            detail: { settings: { ...settings } }
+          }));
+        } catch (_) {}
+      };
+      if (settings.enabled) void service.ensureCacheReady().then(announce);
+      else announce();
     }
   });
 

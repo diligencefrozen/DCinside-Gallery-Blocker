@@ -105,11 +105,13 @@
   }
 
   function removeMemberIpBadges(root = document) {
-    root.querySelectorAll?.(`.${BADGE_CLASS}`).forEach((el) => el.remove());
-    if (root instanceof Element && root.matches(WRITER_SELECTOR)) {
-      globalThis.DCBWriterLayout?.cleanup(root);
-    }
-    root.querySelectorAll?.(WRITER_SELECTOR).forEach((writer) => globalThis.DCBWriterLayout?.cleanup(writer));
+    const writers = new Set();
+    root.querySelectorAll?.(`.${BADGE_CLASS}`).forEach((el) => {
+      const writer = el.closest(WRITER_SELECTOR);
+      if (writer) writers.add(writer);
+      el.remove();
+    });
+    writers.forEach((writer) => globalThis.DCBWriterLayout?.cleanup(writer));
   }
 
   function getExistingBadge(ipEl) {
@@ -187,16 +189,15 @@
   const WRITER_IP_SELECTOR = ".gall_writer[data-ip],.ub-writer[data-ip],.gall_writer[data-memo-ip],.ub-writer[data-memo-ip]";
 
   function refreshMemberIpBadges(root = document) {
-    if (root instanceof Element && root.matches(WRITER_SELECTOR)) {
-      removeWriterNikconWhitespace(root);
-    }
-    root.querySelectorAll?.(WRITER_SELECTOR).forEach(removeWriterNikconWhitespace);
     if (!enabled) {
       removeMemberIpBadges(root);
       if (root === document) removeBadgeStyle();
       return;
     }
-
+    if (root instanceof Element && root.matches(WRITER_SELECTOR)) {
+      removeWriterNikconWhitespace(root);
+    }
+    root.querySelectorAll?.(WRITER_SELECTOR).forEach(removeWriterNikconWhitespace);
     ensureBadgeStyle();
     if (root instanceof Element) {
       if (root.matches?.(IP_SELECTOR)) attachMemberIpBadge(root);
@@ -207,6 +208,7 @@
   }
 
   function scheduleMemberIpScan(root = document) {
+    if (!enabled) return;
     if (root) pendingRoots.add(root);
     if (scheduled) return;
     scheduled = true;
@@ -214,6 +216,7 @@
       scheduled = false;
       const roots = [...pendingRoots];
       pendingRoots.clear();
+      if (!enabled) return;
       roots.forEach((candidate) => {
         if (candidate === document || candidate?.isConnected !== false) refreshMemberIpBadges(candidate);
       });
@@ -262,12 +265,21 @@
 
   let unsubscribeDomBus = null;
   function startDomWatch() {
-    if (unsubscribeDomBus || !globalThis.DCBDomMutationBus) return;
+    if (!enabled || unsubscribeDomBus || !globalThis.DCBDomMutationBus) return;
     unsubscribeDomBus = globalThis.DCBDomMutationBus.subscribe(
       "member-ip-view",
       handleDomMutations,
       { types: ["childList", "characterData", "attributes"], attributes: ["data-ip", "data-memo-ip"] }
     );
+  }
+
+  function updateDomWatch() {
+    if (enabled) startDomWatch();
+    else {
+      unsubscribeDomBus?.();
+      unsubscribeDomBus = null;
+      pendingRoots.clear();
+    }
   }
 
   function refreshWithCurrentState(root = document) {
@@ -293,39 +305,37 @@
     try {
       const hotSnapshot = globalThis.DCBCriticalFilter?.getSnapshot?.();
       const hotEnabled = hotSnapshot?.sync?.showMemberIpInfo;
-      let hotApplied = false;
       if (hotSnapshot?.memberIpSettingKnown === true && typeof hotEnabled === "boolean") {
         enabled = hotEnabled;
-        hotApplied = true;
-        refreshMemberIpBadges(document);
+        updateDomWatch();
       }
 
       globalThis.DCBRuntimeSettingsCache.get({ [STORAGE_KEY]: true }, (conf) => {
         const nextEnabled = !!conf[STORAGE_KEY];
-        const changed = nextEnabled !== enabled;
         enabled = nextEnabled;
+        updateDomWatch();
         globalThis.DCBCriticalFilter?.setMemberIpBadgeSetting?.(enabled);
         // The critical bootstrap already paints the fast badge. Detailed ISP
         // enrichment is optional and is staggered away from Firefox first paint.
-        if (!hotApplied || changed) {
+        if (enabled) {
           const run = () => refreshMemberIpBadges(document);
           if (globalThis.DCBStartupScheduler) globalThis.DCBStartupScheduler.schedule("member-ip-detail:init", run, "idle");
           else setTimeout(run, 60);
-        }
+        } else refreshMemberIpBadges(document);
       });
 
-      chrome.storage.onChanged.addListener((changes, area) => {
+      (globalThis.DCBRuntimeSettingsCache?.onChanged || chrome.storage.onChanged).addListener((changes, area) => {
         if (area !== "sync" || !changes[STORAGE_KEY]) return;
         enabled = !!changes[STORAGE_KEY].newValue;
+        updateDomWatch();
         globalThis.DCBCriticalFilter?.setMemberIpBadgeSetting?.(enabled);
-        refreshMemberIpBadges(document);
+        if (enabled) scheduleMemberIpScan();
+        else refreshMemberIpBadges(document);
       });
     } catch (_) {
       refreshMemberIpBadges(document);
     }
 
-    // Share the page-wide observer with the other content features.
-    startDomWatch();
   }
 
   boot();

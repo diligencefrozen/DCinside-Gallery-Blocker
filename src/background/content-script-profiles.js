@@ -13,7 +13,7 @@
   if (globalThis.DCBContentScriptProfiles) return;
 
   globalThis.DCBContentScriptProfiles = Object.freeze({
-    version: 8,
+    version: 9,
     chrome: Object.freeze([
     {
         "id": "dcb-profile-chrome-00",
@@ -107,7 +107,7 @@
             "src/content/user/account-activity-blocker.js",
             "src/content/image/image-blocker.js"
         ],
-        "runAt": "document_start",
+        "runAt": "document_idle",
         "allFrames": false
     },
     {
@@ -517,6 +517,23 @@
         ],
         "runAt": "document_start",
         "allFrames": false
+    },
+    {
+        "id": "dcb-profile-chrome-31",
+        "matches": [
+            "*://gall.dcinside.com/board/lists*",
+            "*://gall.dcinside.com/board/view*",
+            "*://gall.dcinside.com/mgallery/board/lists*",
+            "*://gall.dcinside.com/mgallery/board/view*",
+            "*://gall.dcinside.com/mini/board/lists*",
+            "*://gall.dcinside.com/mini/board/view*",
+            "*://gall.dcinside.com/person/board/lists*",
+            "*://gall.dcinside.com/person/board/view*"
+        ],
+        "persistAcrossSessions": true,
+        "js": ["src/shared/dom-mutation-bus.js", "src/content/list/read-posts.js"],
+        "runAt": "document_start",
+        "allFrames": false
     }
 ]),
     firefox: Object.freeze([
@@ -633,6 +650,23 @@
             "src/content/core/feature-loader.js"
         ],
         "runAt": "document_idle",
+        "allFrames": false
+    },
+    {
+        "id": "dcb-profile-firefox-08",
+        "matches": [
+            "*://gall.dcinside.com/board/lists*",
+            "*://gall.dcinside.com/board/view*",
+            "*://gall.dcinside.com/mgallery/board/lists*",
+            "*://gall.dcinside.com/mgallery/board/view*",
+            "*://gall.dcinside.com/mini/board/lists*",
+            "*://gall.dcinside.com/mini/board/view*",
+            "*://gall.dcinside.com/person/board/lists*",
+            "*://gall.dcinside.com/person/board/view*"
+        ],
+        "persistAcrossSessions": true,
+        "js": ["src/shared/dom-mutation-bus.js", "src/content/list/read-posts.js"],
+        "runAt": "document_start",
         "allFrames": false
     }
 ])

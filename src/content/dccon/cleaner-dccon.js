@@ -276,7 +276,7 @@ cleaner-dccon.js - 디시콘 / 텍스트콘 숨기기
     applySettings(settings);
   });
 
-  chrome.storage.onChanged.addListener((changes, area) => {
+  (globalThis.DCBRuntimeSettingsCache?.onChanged || chrome.storage.onChanged).addListener((changes, area) => {
     if (area !== 'sync') return;
     const next = {};
     if (changes.hideDccon) next.hideDccon = changes.hideDccon.newValue;

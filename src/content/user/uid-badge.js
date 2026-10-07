@@ -3,10 +3,9 @@
   const BADGE = "dcb-uid-badge";
   const STYLE_ID = "dcb-uid-style";
 
-  const WRITER_ENHANCED_CLASS = "dcb-writer-enhanced";
   const WRITER_SELECTOR = ".gall_writer,.ub-writer";
 
-  let showEnabled = true;
+  let showEnabled = false;
 
   const isIpLike = (s) =>
     /^\d{1,3}(?:\.\d{1,3}){1,3}$/.test(String(s || "").trim());
@@ -15,13 +14,14 @@
     return globalThis.DCBWriterLayout?.detectContext(writer) === "list";
   }
 
-  function cleanupEmptyWriterTools() {
-    document.querySelectorAll(`.${WRITER_ENHANCED_CLASS}`).forEach((writer) => globalThis.DCBWriterLayout?.cleanup(writer));
-  }
-
   function removeAllBadges() {
-    document.querySelectorAll(`.${BADGE}`).forEach((el) => el.remove());
-    cleanupEmptyWriterTools();
+    const writers = new Set();
+    document.querySelectorAll(`.${BADGE}`).forEach((el) => {
+      const writer = el.closest(WRITER_SELECTOR);
+      if (writer) writers.add(writer);
+      el.remove();
+    });
+    writers.forEach((writer) => globalThis.DCBWriterLayout?.cleanup(writer));
   }
 
   function removeInjectedStyle() {
@@ -151,7 +151,6 @@
   }
 
   function scan() {
-    document.querySelectorAll(WRITER_SELECTOR).forEach(removeWriterNikconWhitespace);
     if (!showEnabled) {
       restoreOriginalUi();
       return;
@@ -159,27 +158,6 @@
 
     ensureStyle();
     document.querySelectorAll(WRITER_SELECTOR).forEach(placeBadge);
-  }
-
-  try {
-    if (chrome && chrome.storage && chrome.storage.sync) {
-      globalThis.DCBRuntimeSettingsCache.get({ showUidBadge: false }, ({ showUidBadge }) => {
-        showEnabled = !!showUidBadge;
-        const run = () => scan();
-        if (globalThis.DCBStartupScheduler) globalThis.DCBStartupScheduler.schedule("uid-badge:init", run, "normal");
-        else setTimeout(run, 24);
-      });
-
-      chrome.storage.onChanged.addListener((changes, area) => {
-        if (area !== "sync" || !changes.showUidBadge) return;
-        showEnabled = !!changes.showUidBadge.newValue;
-        scan();
-      });
-    } else {
-      scan();
-    }
-  } catch (e) {
-    scan();
   }
 
   function isUidOwnNode(node) {
@@ -219,6 +197,7 @@
       scheduled = false;
       const writers = [...pendingWriters];
       pendingWriters.clear();
+      if (!showEnabled) return;
       ensureStyle();
       writers.forEach((writer) => { if (writer.isConnected) placeBadge(writer); });
     });
@@ -226,7 +205,7 @@
 
   let unsubscribeDomBus = null;
   function startDomWatch() {
-    if (unsubscribeDomBus || !globalThis.DCBDomMutationBus) return;
+    if (!showEnabled || unsubscribeDomBus || !globalThis.DCBDomMutationBus) return;
     unsubscribeDomBus = globalThis.DCBDomMutationBus.subscribe(
       "uid-badge",
       handleDomMutations,
@@ -234,17 +213,25 @@
     );
   }
 
-  if (document.readyState === "loading") {
-    document.addEventListener(
-      "DOMContentLoaded",
-      () => {
-        scan();
-        startDomWatch();
-      },
-      { once: true }
-    );
-  } else {
-    scan();
+  function applySetting(value) {
+    showEnabled = value === true;
+    if (!showEnabled) {
+      unsubscribeDomBus?.();
+      unsubscribeDomBus = null;
+      pendingWriters.clear();
+      restoreOriginalUi();
+      return;
+    }
     startDomWatch();
+    const run = () => scan();
+    if (globalThis.DCBStartupScheduler) globalThis.DCBStartupScheduler.schedule("uid-badge:init", run, "normal");
+    else requestAnimationFrame(run);
   }
+
+  // Settings hydration owns the single initial pass; there is no speculative
+  // DOMContentLoaded scan before the feature's ON/OFF state is known.
+  globalThis.DCBRuntimeSettingsCache.get({ showUidBadge: false }, ({ showUidBadge }) => applySetting(showUidBadge));
+  (globalThis.DCBRuntimeSettingsCache?.onChanged || chrome.storage.onChanged).addListener((changes, area) => {
+    if (area === "sync" && changes.showUidBadge) applySetting(changes.showUidBadge.newValue);
+  });
 })();

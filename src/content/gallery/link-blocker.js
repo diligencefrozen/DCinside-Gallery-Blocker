@@ -166,7 +166,7 @@
     );
   }
 
-  chrome.storage.onChanged.addListener((chg, area) => {
+  (globalThis.DCBRuntimeSettingsCache?.onChanged || chrome.storage.onChanged).addListener((chg, area) => {
     if (area !== "sync") return;
 
     let requiresFullApply = false;

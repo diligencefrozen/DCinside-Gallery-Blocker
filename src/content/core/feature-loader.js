@@ -45,16 +45,16 @@
       const galleryFilterOn = truthy(settings.galleryBlockEnabled, truthy(settings.enabled, true));
       const keywordCoreOn = galleryFilterOn || settings.keywordBlockEnabled === true || settings.keywordHideEnabled === true;
       const ipCoreOn = settings.showMemberIpInfo === true || settings.hideForeignIpEnabled === true || settings.hideAnonymousEnabled === true;
-      add("keyword-core", keywordCoreOn, "visual");
-      add("list-filter", galleryFilterOn || settings.keywordBlockEnabled === true, "visual");
+      add("keyword-core", keywordCoreOn, "critical");
+      add("list-filter", galleryFilterOn || settings.keywordBlockEnabled === true, "critical");
       add("keyword-hider", settings.keywordHideEnabled === true, "visual");
       add("keyword-blocker", settings.keywordBlockEnabled === true, "visual");
       add("uid-badge", settings.showUidBadge === true, "visual");
       add("ip-core", ipCoreOn, "visual");
       add("member-ip", settings.showMemberIpInfo === true, "visual");
       add("user-memo", settings.userMemoEnabled === true, "normal");
-      add("notice-cleaner", isList && settings.noticeBlockEnabled !== false, "normal");
-      add("user-block", settings.userBlockEnabled !== false, "normal");
+      add("notice-cleaner", isList && settings.noticeBlockEnabled !== false, "critical");
+      add("user-block", settings.userBlockEnabled !== false, "critical");
       add("foreign-anonymous", settings.hideForeignIpEnabled === true || settings.hideAnonymousEnabled === true, "normal");
       add("gamemeca", settings.gamemecaBlockEnabled === true, "normal");
       add("dory", settings.doryBlockEnabled === true, "normal");
@@ -93,6 +93,7 @@
   }
 
   async function waitForBatch(batch) {
+    if (batch === "critical") return;
     if (batch === "visual") {
       await waitFrame();
       return;
@@ -115,10 +116,11 @@
   }
 
   function createBatches(items) {
-    const batches = { visual: [], normal: [], idle: [], background: [], preview: [] };
+    const batches = { critical: [], visual: [], normal: [], idle: [], background: [], preview: [] };
     for (const item of items) {
       if (!item || loaded.has(item.id)) continue;
       if (item.id === "preview") batches.preview.push(item);
+      else if (item.phase === "critical") batches.critical.push(item);
       else if (item.phase === "visual") batches.visual.push(item);
       else if (item.phase === "normal") batches.normal.push(item);
       else if (item.phase === "idle") batches.idle.push(item);
@@ -131,6 +133,7 @@
     const pending = items.filter((item) => !loaded.has(item.id));
     if (!pending.length) return;
     await waitForBatch(batch);
+    if (rerun) return;
 
     const features = pending.map((item) => item.id);
     const started = performance.now();
@@ -161,6 +164,7 @@
         rerun = false;
         const settings = await cache.get(null);
         const batches = createBatches(desired(settings));
+        await injectBatch(batches.critical, "critical");
         await injectBatch(batches.visual, "visual");
         await injectBatch(batches.normal, "normal");
         await injectBatch(batches.idle, "idle");
@@ -175,13 +179,13 @@
   run();
 
   try {
-    api.storage.onChanged.addListener((changes, area) => {
+    (cache.onChanged || api.storage.onChanged).addListener((changes, area) => {
       if (area !== "sync") return;
       // Enabling a previously disabled feature injects it on the current page.
       // Loaded scripts already listen to settings changes and disable themselves.
       if (Object.keys(changes || {}).length) {
         rerun = true;
-        setTimeout(run, 40);
+        if (!running) globalThis.DCBStartupScheduler.schedule("feature-loader-plan", run, "normal");
       }
     });
   } catch (_) {}

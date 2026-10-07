@@ -242,6 +242,37 @@
     return chip;
   }
 
+  function attachActionAfterIdentity(value, action, scope = null) {
+    if (!(action instanceof Element)) return null;
+    const writer = getWriter(value) || (value instanceof Element ? value.querySelector(WRITER_SELECTOR) : null);
+    const parts = getParts(writer);
+    const identityScope = scope || parts?.row;
+    if (!(identityScope instanceof Element) ||
+        (writer && !identityScope.contains(writer) && !writer.contains(identityScope))) return null;
+    if (!writer && !identityScope.matches(".cmt_nickbox")) return null;
+
+    // A native comment icon/IP can be a sibling of .gall_writer, including
+    // inside an addbox. Place actions after that whole branch without moving
+    // native nodes or creating a writer-tools slot for inactive features.
+    const nickname = parts?.nickname || identityScope.querySelector(".nickname,.nick_name,.user_nick");
+    const anchors = new Set([writer, nickname, parts?.icon, parts?.nativeIp, parts?.tools]
+      .filter(Boolean).map((node) => directChildOf(node, identityScope)).filter(Boolean));
+    identityScope.querySelectorAll(".writer_nikcon,.gallercon,.ip,.writer_ip").forEach((node) => {
+      if (node.closest("[data-dcb-owned],.user_data,.user_data_list,.dcbpv-user-data-list")) return;
+      const nativeWriter = node.closest(WRITER_SELECTOR);
+      if (nativeWriter && nativeWriter !== writer) return;
+      if (scope?.matches(".cmt_nickbox") && node.closest(".cmt_nickbox") !== scope) return;
+      anchors.add(directChildOf(node, identityScope));
+    });
+    const anchor = [...identityScope.children].filter((node) => anchors.has(node)).pop();
+    if (!anchor || anchor === action || action.contains(anchor)) return null;
+    if (action.parentElement !== identityScope || anchor.nextElementSibling !== action) {
+      anchor.insertAdjacentElement("afterend", action);
+    }
+    scheduleFit(writer);
+    return action;
+  }
+
   function cleanup(value) {
     const writer = getWriter(value);
     if (!writer) return;
@@ -424,7 +455,7 @@
     ensure: normalize, normalize, order, removeNativeWhitespace, cleanup, remove,
     attachUid: (writer, node) => attach(writer, node, "uid"),
     attachProvider: (writer, node) => attach(writer, node, "provider"), attachProviderToIp,
-    attachMemo: (writer, node) => attach(writer, node, "memo"),
+    attachMemo: (writer, node) => attach(writer, node, "memo"), attachActionAfterIdentity,
     fitNickname: scheduleFit
   });
   // Reuse the shared native-DOM pipeline. No comment request, root mutation,

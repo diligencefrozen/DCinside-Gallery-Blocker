@@ -717,7 +717,7 @@
   }
 
   if (chrome?.storage?.onChanged) {
-    chrome.storage.onChanged.addListener((changes, area) => {
+    (globalThis.DCBRuntimeSettingsCache?.onChanged || chrome.storage.onChanged).addListener((changes, area) => {
       if (area !== "sync") return;
       if (!changes.keywordHideEnabled && !changes.hiddenKeywords && !changes.keywordHideTargets) return;
 

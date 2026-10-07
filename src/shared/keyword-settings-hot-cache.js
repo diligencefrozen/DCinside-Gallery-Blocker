@@ -96,6 +96,14 @@
   }
 
   const hotReady = (async () => {
+    if (globalThis.DCBRuntimeSettingsCache) {
+      // The shared snapshot also waits for an in-progress settings transaction.
+      // Background owns hot-cache writes, so content never overwrites its commit.
+      const config = normalize(await globalThis.DCBRuntimeSettingsCache.get(DEFAULTS));
+      lastHot = config;
+      emit(config, "hot");
+      return clone(config);
+    }
     if (!chrome?.storage?.local) return null;
     try {
       const result = await chrome.storage.local.get({ [HOT_KEY]: null });
@@ -118,7 +126,6 @@
       const config = normalize(await globalThis.DCBRuntimeSettingsCache.get(DEFAULTS));
       lastSync = config;
       if (!lastHot || !same(lastHot, config)) emit(config, "sync");
-      await write(config);
       return clone(config);
     } catch (_) {
       return null;
@@ -128,8 +135,13 @@
   function subscribe(listener) {
     if (typeof listener !== "function") return () => {};
     listeners.add(listener);
-    if (lastHot) queueMicrotask(() => listener(clone(lastHot), { source: "hot" }));
-    else if (lastSync) queueMicrotask(() => listener(clone(lastSync), { source: "sync" }));
+    if (lastHot || lastSync) {
+      if (globalThis.DCBRuntimeSettingsCache) {
+        globalThis.DCBRuntimeSettingsCache.get(DEFAULTS).then((config) => {
+          if (listeners.has(listener)) listener(normalize(config), { source: "snapshot" });
+        }).catch(() => {});
+      } else queueMicrotask(() => { if (listeners.has(listener)) listener(clone(lastHot || lastSync), { source: "hot" }); });
+    }
     return () => listeners.delete(listener);
   }
 

@@ -433,6 +433,8 @@
         overflow:visible; white-space:nowrap; vertical-align:middle;
         line-height:1; position:relative; z-index:2;
       }
+      .${UNBLOCK_HOST_CLASS}:empty,
+      .${UNBLOCK_HOST_CLASS}[data-layout="comment-icon"]:empty { display:none!important; margin:0!important; }
       .${UNBLOCK_BUTTON_CLASS} {
         --dcb-unblock-border:#d7dde7;
         --dcb-unblock-bg:#ffffff;
@@ -494,14 +496,11 @@
       /* 댓글/답글에서는 작성자 정보 뒤에 아이콘만 표시한다. */
       .${UNBLOCK_HOST_CLASS}[data-layout="comment-icon"] {
         display:inline-flex!important; align-items:center; justify-content:center;
-        width:20px; min-width:20px; max-width:20px; height:20px;
-        margin:0 0 0 4px!important; padding:0!important;
+        width:auto; min-width:0; max-width:none; height:auto;
+        margin:0 0 0 3px!important; padding:0!important;
         overflow:visible; white-space:nowrap; vertical-align:middle;
         line-height:20px; float:none!important; position:static!important;
         inset:auto!important; z-index:2;
-      }
-      .cmt_nickbox > .${UNBLOCK_HOST_CLASS}[data-layout="comment-icon"] {
-        display:inline-flex!important;
       }
       .${UNBLOCK_HOST_CLASS}[data-layout="comment-icon"] .${UNBLOCK_BUTTON_CLASS} {
         display:inline-flex!important; align-items:center; justify-content:center;
@@ -952,7 +951,7 @@
 
     const writerAnchor =
       (writer?.matches?.(".gall_writer, .ub-writer") && nickbox.contains(writer) ? writer : null) ||
-      nickbox.querySelector?.(":scope > .gall_writer, :scope > .ub-writer") ||
+      nickbox.querySelector?.(".gall_writer, .ub-writer") ||
       null;
 
     return { info, nickbox, writerAnchor };
@@ -989,12 +988,10 @@
       const { nickbox, writerAnchor } = commentContext;
       if (!nickbox || target !== nickbox || nickbox.closest?.(UNBLOCK_FORBIDDEN_HOST_SELECTOR)) return false;
 
-      // 정확한 위치: .cmt_nickbox 안에서 .gall_writer 바로 다음 형제.
-      if (writerAnchor && writerAnchor.parentElement === nickbox) {
-        writerAnchor.insertAdjacentElement("afterend", host);
-      } else {
-        nickbox.appendChild(host);
-      }
+      // Shared placement keeps sibling/nested native icon and IP nodes beside
+      // the nickname. Never insert an extension slot between that identity.
+      const placed = globalThis.DCBWriterLayout?.attachActionAfterIdentity?.(writerAnchor, host, nickbox);
+      if (!placed) return false;
 
       return (
         host.parentElement === nickbox &&
@@ -1038,22 +1035,23 @@
       ? (
           commentContext.nickbox.querySelector?.(`:scope > .${UNBLOCK_HOST_CLASS}`) ||
           commentContext.writerAnchor?.querySelector?.(`:scope > .${UNBLOCK_HOST_CLASS}`) ||
-          owner?.querySelector?.(`.${UNBLOCK_HOST_CLASS}`) ||
+          [...(owner?.querySelectorAll?.(`.${UNBLOCK_HOST_CLASS}`) || [])].find((node) =>
+            node.closest("li") === owner.closest("li")) ||
           null
         )
       : (owner?.querySelector?.(`.${UNBLOCK_HOST_CLASS}`) || null);
 
-    // 이전 삽입 위치(.gall_writer 내부, 댓글 본문, 우측 액션 영역)를 발견하면
-    // 같은 host를 제거하지 않고 정확한 작성자 슬롯으로 이동시킨다.
+    // Migrate only our action host; native identity/reply nodes stay in place.
     if (!host) {
       host = document.createElement("span");
       host.className = UNBLOCK_HOST_CLASS;
     }
 
+    host.dataset.dcbOwned = "userblock";
     host.dataset.layout = commentContext ? "comment-icon" : "full";
 
     if (!placeUnblockHost(target, host, commentContext)) {
-      cleanupUnblockHost(host);
+      host.remove();
       return null;
     }
 
@@ -1184,21 +1182,16 @@
   const pendingRoots = new Set();
 
   async function readConfiguration() {
+    const raw = await globalThis.DCBRuntimeSettingsCache.get(DEFAULTS);
+    const conf = migrate(raw);
     const critical = globalThis.DCBCriticalFilter;
-    if (critical?.ready) {
+    if (critical?.ready && blockedUidsCacheRevision === 0 && globalThis.DCBRuntimeSettingsCache.source === "hot") {
       await critical.ready;
       const snapshot = critical.getSnapshot?.();
       if (snapshot?.reason === "hot-ready") {
-        return migrate({
-          ...DEFAULTS,
-          ...snapshot.sync,
-          blockedUids: Array.isArray(snapshot.tokens) ? snapshot.tokens : []
-        });
+        blockedUidsCache = Array.isArray(snapshot.tokens) ? snapshot.tokens : [];
       }
     }
-
-    const raw = await globalThis.DCBRuntimeSettingsCache.get(DEFAULTS);
-    const conf = migrate(raw);
     try {
       conf.blockedUids = await readBlockedUids();
     } catch (_) {
@@ -1268,8 +1261,10 @@
   }
 
   function queueIncrementalApply(root) {
-    if (!root || isInternalUiNode(root)) return;
-    pendingRoots.add(root);
+    if (!root || !activeConf || activeMatcher.empty || isInternalUiNode(root)) return;
+    // Native icons can arrive as writer siblings; reconcile their local author
+    // cluster so an existing action remains after the newly inserted identity.
+    pendingRoots.add(root.closest?.(".cmt_nickbox") || root);
     if (incrementalTimer) return;
     incrementalTimer = setTimeout(flushIncrementalRoots, 60);
   }
@@ -1349,7 +1344,7 @@
     }
   );
 
-  chrome.storage.onChanged.addListener((changes, area) => {
+  (globalThis.DCBRuntimeSettingsCache?.onChanged || chrome.storage.onChanged).addListener((changes, area) => {
     if (area === "local" && globalThis.DCBUserBlockStore?.isRelevantChange?.(changes)) {
       invalidateBlockedUidsCache();
       scheduleApply(0);

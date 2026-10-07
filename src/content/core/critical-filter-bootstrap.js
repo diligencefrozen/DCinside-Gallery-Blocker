@@ -1,10 +1,9 @@
 /*****************************************************************
  * critical-filter-bootstrap.js
  *
- * First-paint protection for list rows that may be hidden by the
- * operator-notice or user-block filters.  Only candidate rows are
- * shielded; the page/body is never hidden.  Storage failures are
- * fail-open so this bootstrap can never leave the list invisible.
+ * Apply warm-cache filters directly to native list rows before paint.
+ * Cold/missing settings are fail-open: native rows are never shielded
+ * while storage or installation initialization is still pending.
  *****************************************************************/
 (() => {
   if (globalThis.DCBCriticalFilter) return;
@@ -63,24 +62,18 @@
     try { performance.mark(`dcb-critical-filter:${name}`); } catch (_) {}
   }
 
-  function installShield() {
+  function installStyles() {
     const root = document.documentElement;
     if (!root) return;
-    root.classList.add(ROOT_CLASS);
+    // Never hide native rows while an asynchronous cold-cache lookup runs.
+    // A warm snapshot applies its filtering classes directly before paint.
+    root.classList.remove(ROOT_CLASS);
     let style = document.getElementById(STYLE_ID);
     if (!style) {
       style = document.createElement("style");
       style.id = STYLE_ID;
       style.dataset.dcbOwned = "critical-filter";
       style.textContent = `
-        html.${ROOT_CLASS} .gall_list tbody tr,
-        html.${ROOT_CLASS} .gall_list tr.ub-content,
-        html.${ROOT_CLASS} .gall_list tr[data-no],
-        html.${ROOT_CLASS} .gall_list tr.gall_tr,
-        html.${ROOT_CLASS} .gall_list li.ub-content,
-        html.${ROOT_CLASS} .gall_list li.gall_item {
-          visibility: hidden !important;
-        }
         .${USER_BLOCKED_CLASS}, .${NOTICE_BLOCKED_CLASS}, .${FOREIGN_IP_BLOCKED_CLASS} {
           display: none !important;
         }
@@ -263,7 +256,6 @@
   function syncFastMemberIpBadges(row, writers, getTokens) {
     if (state.memberIpViewReady) return;
     if (!state.memberIpSettingKnown) {
-      writers.forEach((writer) => attachLoadingMemberIpBadge(writer, getTokens(writer)));
       return;
     }
     if (state.sync.showMemberIpInfo === true) {
@@ -278,6 +270,7 @@
   }
 
   function processRow(row) {
+    if (!state.memberIpSettingKnown) return;
     if (!(row instanceof Element) || row.closest(OWNED_SELECTOR)) return;
     const writers = row.matches?.(WRITER_SELECTOR) ? [row] : [...row.querySelectorAll(WRITER_SELECTOR)];
     const tokenCache = new Map();
@@ -294,6 +287,7 @@
   }
 
   function processRoot(root) {
+    if (!state.memberIpSettingKnown) return;
     if (!root || root.nodeType !== Node.ELEMENT_NODE && root.nodeType !== Node.DOCUMENT_NODE && root.nodeType !== Node.DOCUMENT_FRAGMENT_NODE) return;
     if (root instanceof Element && root.closest(OWNED_SELECTOR)) return;
     if (root instanceof Element && root.matches(ROW_SELECTOR)) processRow(root);
@@ -365,6 +359,7 @@
 
       if (initial && state.phase === "pending") finish(readyFromHotCache ? "hot-ready" : "hot-miss");
       else processRoot(document);
+      startObserver();
     } catch (_) {
       if (generation !== reloadGeneration) return;
       state.sync = { userBlockEnabled: false, noticeBlockEnabled: false, hideForeignIpEnabled: false, showMemberIpInfo: false };
@@ -373,10 +368,15 @@
       state.memberIpSettingKnown = false;
       if (initial && state.phase === "pending") finish("hot-error");
       else processRoot(document);
+      startObserver();
     }
   }
 
   function startObserver() {
+    observer?.disconnect();
+    observer = null;
+    if (!state.memberIpSettingKnown || !(state.sync.userBlockEnabled || state.sync.noticeBlockEnabled
+      || state.sync.hideForeignIpEnabled || (state.sync.showMemberIpInfo && !state.memberIpViewReady))) return;
     observer = new MutationObserver((records) => {
       for (const record of records) {
         for (const node of record.addedNodes) processRoot(node);
@@ -398,6 +398,7 @@
     state.memberIpSettingKnown = true;
     state.memberIpViewReady = true;
     state.sync.showMemberIpInfo = !!enabled;
+    startObserver();
     if (!enabled) {
       document.querySelectorAll?.(`.${MEMBER_IP_BADGE_CLASS}[${FAST_BADGE_ATTR}="1"]`).forEach((node) => {
         const writer = globalThis.DCBWriterLayout?.getWriter(node);
@@ -411,8 +412,7 @@
   mark("start");
 
   function begin() {
-    installShield();
-    startObserver();
+    installStyles();
     const watchdog = setTimeout(() => finish("watchdog"), WATCHDOG_MS);
     ready.finally(() => clearTimeout(watchdog));
     loadState({ initial: true });
@@ -429,7 +429,7 @@
     rootObserver.observe(document, { childList: true });
   }
 
-  chrome.storage.onChanged.addListener((changes, area) => {
+  (globalThis.DCBRuntimeSettingsCache?.onChanged || chrome.storage.onChanged).addListener((changes, area) => {
     if (area === "local" && changes[HOT_CACHE_KEY]) loadState();
   });
 })();

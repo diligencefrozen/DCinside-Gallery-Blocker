@@ -570,7 +570,7 @@
     return true;
   });
 
-  chrome.storage.onChanged.addListener((changes, area) => {
+  (globalThis.DCBRuntimeSettingsCache?.onChanged || chrome.storage.onChanged).addListener((changes, area) => {
     if (area !== "sync" && area !== "local") return;
 
     if (area === "sync" && changes.autoRefreshEnabled) {

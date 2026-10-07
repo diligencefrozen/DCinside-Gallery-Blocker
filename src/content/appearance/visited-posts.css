@@ -1,26 +1,18 @@
-/* Browser history owns this state. Preview fetches do not mark posts visited. */
-.gall_list .gall_tit > a:is(
-  [href^="/board/view"],
-  [href^="/mgallery/board/view"],
-  [href^="/mini/board/view"],
-  [href^="/person/board/view"],
-  [href^="board/view"],
-  [href^="https://gall.dcinside.com/"],
-  [href^="http://gall.dcinside.com/"],
-  [href^="//gall.dcinside.com/"]
-)[href*="board/view"][href*="id="][href*="no="]:not(.reply_numbox):visited {
+/* Read state belongs to DCB; these rules never change row geometry. */
+.gall_list tr.dcb-read-post {
+  opacity: .74;
+}
+
+.gall_list tr.dcb-read-post:hover {
+  opacity: .84;
+}
+
+.gall_list tr.dcb-read-post .gall_tit > a[href*="board/view"][href*="id="][href*="no="]:not(.reply_numbox),
+.gall_list tr.dcb-read-post .gall_tit > a[href*="board/view"][href*="id="][href*="no="]:not(.reply_numbox) > b {
   color: #956fa8 !important;
 }
 
-.gall_list .gall_tit > a:is(
-  [href^="/board/view"],
-  [href^="/mgallery/board/view"],
-  [href^="/mini/board/view"],
-  [href^="/person/board/view"],
-  [href^="board/view"],
-  [href^="https://gall.dcinside.com/"],
-  [href^="http://gall.dcinside.com/"],
-  [href^="//gall.dcinside.com/"]
-)[href*="board/view"][href*="id="][href*="no="]:not(.reply_numbox):visited:hover {
+.gall_list tr.dcb-read-post .gall_tit > a[href*="board/view"][href*="id="][href*="no="]:not(.reply_numbox):hover,
+.gall_list tr.dcb-read-post .gall_tit > a[href*="board/view"][href*="id="][href*="no="]:not(.reply_numbox):hover > b {
   color: #805a95 !important;
 }

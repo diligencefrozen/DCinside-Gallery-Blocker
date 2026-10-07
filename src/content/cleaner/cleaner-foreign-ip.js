@@ -211,7 +211,7 @@
 
   try {
     globalThis.DCBRuntimeSettingsCache.get({ hideForeignIpEnabled: false }, ({ hideForeignIpEnabled }) => apply(hideForeignIpEnabled));
-    chrome.storage.onChanged.addListener((changes, area) => {
+    (globalThis.DCBRuntimeSettingsCache?.onChanged || chrome.storage.onChanged).addListener((changes, area) => {
       if (area === "sync" && changes.hideForeignIpEnabled) apply(changes.hideForeignIpEnabled.newValue);
     });
   } catch (_) {}

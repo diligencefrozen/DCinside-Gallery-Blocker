@@ -50,7 +50,7 @@
       enabled = !!conf[STORAGE_KEY];
       applyCompactMode();
     });
-    chrome.storage.onChanged.addListener((changes, area) => {
+    (globalThis.DCBRuntimeSettingsCache?.onChanged || chrome.storage.onChanged).addListener((changes, area) => {
       if (area !== "sync" || !changes[STORAGE_KEY]) return;
       enabled = !!changes[STORAGE_KEY].newValue;
       applyCompactMode();

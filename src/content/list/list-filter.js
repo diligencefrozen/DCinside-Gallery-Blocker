@@ -291,7 +291,7 @@
   }
 
   globalThis.DCBListFilter = Object.freeze({ collect, read, evaluate, selector: CANDIDATE_SELECTOR });
-  chrome.storage.onChanged.addListener((changes, area) => {
+  (globalThis.DCBRuntimeSettingsCache?.onChanged || chrome.storage.onChanged).addListener((changes, area) => {
     if (area === "sync" && Object.keys(DEFAULTS).some((key) => key in changes)) loadSettings();
   });
 

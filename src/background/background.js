@@ -34,6 +34,54 @@ const CRITICAL_FILTER_HOT_CACHE_VERSION = 2;
 const RUNTIME_SETTINGS_HOT_CACHE_KEY = "dcbRuntimeSettingsHotCacheV1";
 const RUNTIME_SETTINGS_HOT_CACHE_VERSION = 1;
 let runtimeSettingsHotCacheWriteQueue = Promise.resolve();
+const SETTINGS_BATCH_KEY = "dcbSettingsBatchV1";
+let settingsMutationQueue = Promise.resolve();
+let settingsMutationApplying = false;
+let settingsChangesDuringBatch = {};
+let settingsTransactionsPending = 0;
+let settingsLocalKeysDuringBatch = new Set();
+let lastSettingsEpochAt = 0;
+let dnrSyncQueued = false;
+let dnrSyncRunning = false;
+let readPostsWriteQueue = Promise.resolve();
+const READ_POSTS_KEY = "dcbReadPosts";
+
+function readPostIdentity(sender) {
+  if (!Number.isInteger(sender?.tab?.id) || sender.frameId !== 0 || sender.documentLifecycle === "prerender") return "";
+  try {
+    const url = new URL(sender.url);
+    const match = url.pathname.match(/^\/(?:(mgallery|mini|person)\/)?board\/view\/?$/);
+    const id = String(url.searchParams.get("id") || "").trim().toLowerCase();
+    const rawNo = String(url.searchParams.get("no") || "").trim();
+    const no = /^\d{1,20}$/.test(rawNo) ? rawNo.replace(/^0+/, "") : "";
+    if (!/^https?:$/.test(url.protocol) || url.hostname !== "gall.dcinside.com"
+      || url.username || url.password || url.port || !match || !/^[a-z0-9_-]{1,80}$/.test(id) || !no) return "";
+    return `${match[1] || "gallery"}:${id}:${no}`;
+  } catch (_) { return ""; }
+}
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type !== "dcb.readPosts.mark") return undefined;
+  const identity = readPostIdentity(sender);
+  if (!identity) { sendResponse({ ok: false }); return undefined; }
+  const job = readPostsWriteQueue.then(async () => {
+    const stored = await chrome.storage.local.get({ [READ_POSTS_KEY]: {} });
+    const record = stored[READ_POSTS_KEY];
+    let history = record && typeof record === "object" && !Array.isArray(record) ? { ...record } : {};
+    history[identity] = Date.now();
+    // Trim in occasional batches instead of sorting on every navigation.
+    if (Object.keys(history).length > 5500) {
+      history = Object.fromEntries(Object.entries(history)
+        .filter(([, stamp]) => Number.isFinite(stamp) && stamp > 0)
+        .sort((a, b) => b[1] - a[1]).slice(0, 5000));
+    }
+    await chrome.storage.local.set({ [READ_POSTS_KEY]: history });
+    return { ok: true };
+  });
+  readPostsWriteQueue = job.catch(() => {});
+  job.then(sendResponse, () => sendResponse({ ok: false }));
+  return true;
+});
 
 const DCB_CONTENT_PROFILE_STATE_KEY = "dcbContentScriptProfileV1";
 let dcbContentProfileVerifiedInThisBackground = false;
@@ -224,6 +272,9 @@ function getDcbFirefoxBootstrapFiles(sender) {
     if (/^\/(?:mgallery\/|mini\/|person\/)?board\/lists/.test(url.pathname)) {
       files.push("src/shared/ip-network-fast-classifier.js", "src/content/core/critical-filter-bootstrap.js");
     }
+    if (/^\/(?:mgallery\/|mini\/|person\/)?board\/(?:lists|view)\/?$/.test(url.pathname)) {
+      files.push("src/content/list/read-posts.js");
+    }
     files.push("src/content/gallery/access-guard.js", "src/content/cleaner/cleaner-gall.js");
   } else if (url.hostname === "www.dcinside.com") {
     files.push("src/content/cleaner/cleaner.js");
@@ -380,7 +431,10 @@ let criticalFilterHotCacheTimer = null;
 let userBlockMutationQueue = Promise.resolve();
 let updateNoticeMutationQueue = Promise.resolve();
 
-function queueUserBlockMutation(work) {
+function queueUserBlockMutation(work, { internal = false } = {}) {
+  if (!internal && settingsTransactionsPending) {
+    return settingsMutationQueue.then(() => queueUserBlockMutation(work));
+  }
   const job = userBlockMutationQueue.then(work, work);
   userBlockMutationQueue = job.catch(() => {});
   return job;
@@ -529,6 +583,7 @@ function scheduleCriticalFilterHotCacheSeed(delay = 25) {
 }
 
 function queueKeywordSettingsPatch(patch = {}) {
+  if (settingsTransactionsPending) return settingsMutationQueue.then(() => queueKeywordSettingsPatch(patch));
   const safePatch = normalizeKeywordSettingsPatch(patch);
   const job = keywordSettingsWriteQueue.then(async () => {
     if (!Object.keys(safePatch).length) return { ok: true };
@@ -1353,7 +1408,7 @@ function resetContextMenus() {
 }
 
 /* ───── 설치/업데이트: 기본값 주입 ───── */
-chrome.runtime.onInstalled.addListener(async ({ reason, previousVersion }) => {
+async function applyInstalledSettings({ reason, previousVersion }, epoch) {
   resetContextMenus();
 
   if (reason === "update") {
@@ -1550,7 +1605,21 @@ chrome.runtime.onInstalled.addListener(async ({ reason, previousVersion }) => {
     }
   }
 
-  syncRules();
+  await queueUserBlockMutation(() => normalizeStoredUserBlockList(), { internal: true });
+  const [finalSettings, tokens] = await Promise.all([
+    chrome.storage.sync.get(null),
+    globalThis.DCBUserBlockStore?.getAllTokensReadOnly?.() || Promise.resolve([])
+  ]);
+  await writeAllSettingsHotCaches(finalSettings, tokens, epoch);
+}
+
+chrome.runtime.onInstalled.addListener((details) => {
+  // Profile registration is independent; caches wait for defaults/migrations.
+  void ensureDcbContentScriptProfile({ force: true });
+  void runSettingsTransaction((epoch) => applyInstalledSettings(details, epoch))
+    .catch((error) => console.error("[DCB] install settings initialization failed", error));
+  chrome.alarms?.create(GITHUB_RELEASE_ALARM, { delayInMinutes: 1, periodInMinutes: 360 });
+  void refreshReleaseStatusAndBadge({ force: true });
 });
 
 /*
@@ -1658,8 +1727,35 @@ async function syncRules() {
   console.log(`[DNR] hard access rules synced: ${rules.length}`);
 }
 
+function scheduleDnrSync() {
+  dnrSyncQueued = true;
+  if (dnrSyncRunning) return;
+  dnrSyncRunning = true;
+  // DNR reconciliation is serialized and outside the settings commit response.
+  setTimeout(async () => {
+    try {
+      while (dnrSyncQueued) {
+        dnrSyncQueued = false;
+        await syncRules();
+      }
+    } catch (error) { console.warn("[DCB] DNR sync failed", error); }
+    finally { dnrSyncRunning = false; }
+  }, 0);
+}
+
 /* 저장소 변경 시에만 DNR 규칙을 다시 계산한다. 동적 규칙은 background 재기동 사이에도 유지된다. */
 chrome.storage.onChanged.addListener((c, area) => {
+  if (settingsMutationApplying) {
+    if (area === "sync") Object.assign(settingsChangesDuringBatch, c);
+    if (area === "local") {
+      for (const key of Object.keys(c)) {
+        if (key.startsWith(globalThis.DCBUserBlockStore.BUCKET_PREFIX)) settingsLocalKeysDuringBatch.add(globalThis.DCBUserBlockStore.META_KEY);
+        else if (![SETTINGS_BATCH_KEY, RUNTIME_SETTINGS_HOT_CACHE_KEY, KEYWORD_HOT_CACHE_KEY,
+          DCBEST_FILTER_HOT_CACHE_KEY, CRITICAL_FILTER_HOT_CACHE_KEY, READ_POSTS_KEY].includes(key)) settingsLocalKeysDuringBatch.add(key);
+      }
+    }
+    return;
+  }
   if (
     area === "sync" &&
     (
@@ -1670,7 +1766,7 @@ chrome.storage.onChanged.addListener((c, area) => {
       c.enabled
     )
   ) {
-    syncRules();
+    scheduleDnrSync();
   }
 
   if (area === "sync") {
@@ -1706,120 +1802,149 @@ function validHotCacheData(entry, version) {
     : {};
 }
 
-async function commitBackupImportCaches(syncPatch = {}, blockedUids = null) {
-  // 백업 데이터는 options에서 이미 한 번 파싱했다. 여기서 storage.sync를 다시
-  // 읽지 않고 전달받은 스냅샷을 그대로 hot cache에 반영한다.
-  const safeSyncPatch = syncPatch && typeof syncPatch === "object" && !Array.isArray(syncPatch)
-    ? syncPatch
-    : {};
-
-  if (criticalFilterHotCacheTimer) {
-    clearTimeout(criticalFilterHotCacheTimer);
-    criticalFilterHotCacheTimer = null;
-  }
-
-  // storage.onChanged가 먼저 만든 patch 작업만 짧게 비운다. 이후 캐시는 네 종류를
-  // local.get 1회 + local.set 1회로 함께 확정한다.
-  await Promise.all([
-    userBlockMutationQueue,
-    runtimeSettingsHotCacheWriteQueue,
-    keywordHotCacheWriteQueue,
-    dcbestFilterHotCacheWriteQueue,
-    criticalFilterHotCacheWriteQueue
-  ].map((job) => Promise.resolve(job).catch(() => {})));
-
-  const stored = await chrome.storage.local.get([
-    RUNTIME_SETTINGS_HOT_CACHE_KEY,
-    KEYWORD_HOT_CACHE_KEY,
-    DCBEST_FILTER_HOT_CACHE_KEY,
-    CRITICAL_FILTER_HOT_CACHE_KEY
-  ]);
+async function writeAllSettingsHotCaches(runtimeData, tokens, epoch = null) {
   const stamp = Date.now();
-
-  const runtimeData = {
-    ...validHotCacheData(stored[RUNTIME_SETTINGS_HOT_CACHE_KEY], RUNTIME_SETTINGS_HOT_CACHE_VERSION),
-    ...safeSyncPatch
-  };
-
-  const keywordCurrent = validHotCacheData(stored[KEYWORD_HOT_CACHE_KEY], KEYWORD_HOT_CACHE_VERSION);
-  const keywordPatch = normalizeKeywordSettingsPatch(safeSyncPatch);
-  const keywordData = { ...KEYWORD_SYNC_DEFAULTS, ...keywordCurrent, ...keywordPatch };
-  if (keywordPatch.keywordBlockTargets) {
-    keywordData.keywordBlockTargets = {
-      ...KEYWORD_SYNC_DEFAULTS.keywordBlockTargets,
-      ...(keywordCurrent.keywordBlockTargets || {}),
-      ...keywordPatch.keywordBlockTargets
-    };
-  }
-  if (keywordPatch.keywordHideTargets) {
-    keywordData.keywordHideTargets = {
-      ...KEYWORD_SYNC_DEFAULTS.keywordHideTargets,
-      ...(keywordCurrent.keywordHideTargets || {}),
-      ...keywordPatch.keywordHideTargets
-    };
-  }
-
-  const dcbestCurrent = validHotCacheData(stored[DCBEST_FILTER_HOT_CACHE_KEY], DCBEST_FILTER_HOT_CACHE_VERSION);
-  const dcbestData = {
-    ...DCBEST_FILTER_SYNC_DEFAULTS,
-    ...dcbestCurrent,
-    ...normalizeDcbestFilterHotPatch(safeSyncPatch)
-  };
-
-  const criticalCurrent = validHotCacheData(stored[CRITICAL_FILTER_HOT_CACHE_KEY], CRITICAL_FILTER_HOT_CACHE_VERSION);
+  const keywordData = { ...KEYWORD_SYNC_DEFAULTS, ...normalizeKeywordSettingsPatch(runtimeData) };
+  const dcbestData = { ...DCBEST_FILTER_SYNC_DEFAULTS, ...normalizeDcbestFilterHotPatch(runtimeData) };
   const criticalSync = {
-    ...CRITICAL_FILTER_SYNC_DEFAULTS,
-    ...(criticalCurrent.sync && typeof criticalCurrent.sync === "object" ? criticalCurrent.sync : {})
+    userBlockEnabled: runtimeData.userBlockEnabled !== false,
+    noticeBlockEnabled: runtimeData.noticeBlockEnabled !== false,
+    hideForeignIpEnabled: runtimeData.hideForeignIpEnabled === true,
+    showMemberIpInfo: runtimeData.showMemberIpInfo !== false
   };
-  for (const key of CRITICAL_FILTER_SYNC_KEYS) {
-    if (!Object.prototype.hasOwnProperty.call(safeSyncPatch, key)) continue;
-    const value = safeSyncPatch[key];
-    if (key === "userBlockEnabled" || key === "noticeBlockEnabled" || key === "showMemberIpInfo") {
-      criticalSync[key] = value !== false;
-    } else if (key === "hideForeignIpEnabled") {
-      criticalSync[key] = value === true;
-    }
-  }
-  const criticalTokens = Array.isArray(blockedUids)
-    ? normalizeUserBlockList(blockedUids)
-    : (Array.isArray(criticalCurrent.tokens) ? criticalCurrent.tokens : []);
-
-  await chrome.storage.local.set({
-    [RUNTIME_SETTINGS_HOT_CACHE_KEY]: {
-      version: RUNTIME_SETTINGS_HOT_CACHE_VERSION,
-      updatedAt: stamp,
-      data: runtimeData
-    },
-    [KEYWORD_HOT_CACHE_KEY]: {
-      version: KEYWORD_HOT_CACHE_VERSION,
-      updatedAt: stamp,
-      data: keywordData
-    },
-    [DCBEST_FILTER_HOT_CACHE_KEY]: {
-      version: DCBEST_FILTER_HOT_CACHE_VERSION,
-      updatedAt: stamp,
-      data: dcbestData
-    },
+  const records = {
+    [RUNTIME_SETTINGS_HOT_CACHE_KEY]: { version: RUNTIME_SETTINGS_HOT_CACHE_VERSION, updatedAt: stamp, data: runtimeData },
+    [KEYWORD_HOT_CACHE_KEY]: { version: KEYWORD_HOT_CACHE_VERSION, updatedAt: stamp, data: keywordData },
+    [DCBEST_FILTER_HOT_CACHE_KEY]: { version: DCBEST_FILTER_HOT_CACHE_VERSION, updatedAt: stamp, data: dcbestData },
     [CRITICAL_FILTER_HOT_CACHE_KEY]: {
-      version: CRITICAL_FILTER_HOT_CACHE_VERSION,
-      updatedAt: stamp,
-      data: { sync: criticalSync, tokens: criticalTokens }
+      version: CRITICAL_FILTER_HOT_CACHE_VERSION, updatedAt: stamp,
+      data: { sync: criticalSync, tokens: Array.isArray(tokens) ? tokens : [] }
     }
-  });
-
-  // DNR은 storage.onChanged에서도 동기화된다. 사용자에게 완료를 알리는 임계 경로에는
-  // 넣지 않고 한 번 더 보정만 예약한다.
-  setTimeout(() => {
-    void syncRules().catch((error) => console.warn("[DCB] delayed backup DNR sync failed", error));
-  }, 0);
-
+  };
+  if (epoch) records[SETTINGS_BATCH_KEY] = { epoch, phase: "committed", committedAt: stamp, localKeys: [...settingsLocalKeysDuringBatch] };
+  await chrome.storage.local.set(records);
   return { ok: true, committedAt: stamp };
 }
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (message?.type !== "dcb.backupImport.commit") return undefined;
+async function broadcastSettingsCommit(epoch) {
+  try {
+    const tabs = await chrome.tabs.query({ url: ["*://*.dcinside.com/*", "*://*.dcinside.co.kr/*"] });
+    await Promise.allSettled(tabs.filter((tab) => Number.isInteger(tab.id)).map((tab) =>
+      chrome.tabs.sendMessage(tab.id, { type: "dcb:settings-batch-committed", epoch })));
+  } catch (_) {}
+}
 
-  commitBackupImportCaches(message.sync, message.blockedUids)
+function runSettingsTransaction(work, plannedLocalKeys = []) {
+  settingsTransactionsPending += 1;
+  const job = settingsMutationQueue.then(async () => {
+    lastSettingsEpochAt = Math.max(Date.now(), lastSettingsEpochAt + 1);
+    const epoch = `${lastSettingsEpochAt}:${Math.random().toString(36).slice(2)}`;
+    settingsMutationApplying = true;
+    settingsChangesDuringBatch = {};
+    settingsLocalKeysDuringBatch = new Set([globalThis.DCBUserBlockStore.META_KEY, ...plannedLocalKeys]);
+    try {
+      if (criticalFilterHotCacheTimer) clearTimeout(criticalFilterHotCacheTimer);
+      criticalFilterHotCacheTimer = null;
+      await Promise.all([
+        userBlockMutationQueue, runtimeSettingsHotCacheWriteQueue, keywordHotCacheWriteQueue,
+        dcbestFilterHotCacheWriteQueue, criticalFilterHotCacheWriteQueue, keywordSettingsWriteQueue
+      ].map((queued) => Promise.resolve(queued).catch(() => {})));
+      await chrome.storage.local.set({ [SETTINGS_BATCH_KEY]: { epoch, phase: "applying", localKeys: [...settingsLocalKeysDuringBatch] } });
+      return await work(epoch);
+    } catch (error) {
+      // Release existing tabs even if a write failed partway through. Recover the
+      // actually committed settings; never claim the failed import succeeded.
+      try {
+        const [data, tokens] = await Promise.all([
+          chrome.storage.sync.get(null),
+          globalThis.DCBUserBlockStore?.getAllTokensReadOnly?.() || Promise.resolve([])
+        ]);
+        await writeAllSettingsHotCaches(data, tokens, epoch);
+      } catch (_) {
+        await chrome.storage.local.set({ [SETTINGS_BATCH_KEY]: { epoch, phase: "committed", failed: true } }).catch(() => {});
+      }
+      throw error;
+    } finally {
+      settingsMutationApplying = false;
+      settingsChangesDuringBatch = {};
+      settingsLocalKeysDuringBatch.clear();
+      scheduleDnrSync();
+      void broadcastSettingsCommit(epoch);
+    }
+  });
+  const tracked = job.finally(() => { settingsTransactionsPending -= 1; });
+  settingsMutationQueue = tracked.catch(() => {});
+  return tracked;
+}
+
+async function recoverSettingsBatch() {
+  const stored = await chrome.storage.local.get({ [SETTINGS_BATCH_KEY]: null });
+  if (settingsTransactionsPending) return settingsMutationQueue;
+  if (stored[SETTINGS_BATCH_KEY]?.phase !== "applying") return;
+  // An interrupted worker must not leave the next page waiting on an orphan
+  // transaction. Rebuild once from the settings that actually reached storage.
+  return runSettingsTransaction(async (epoch) => {
+    const [data, tokens] = await Promise.all([
+      chrome.storage.sync.get(null), globalThis.DCBUserBlockStore.getAllTokensReadOnly()
+    ]);
+    return writeAllSettingsHotCaches(data, tokens, epoch);
+  }, Array.isArray(stored[SETTINGS_BATCH_KEY].localKeys) ? stored[SETTINGS_BATCH_KEY].localKeys : []);
+}
+
+queueMicrotask(() => { void recoverSettingsBatch().catch(() => {}); });
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message?.type !== "dcb.settingsBatch.recover") return undefined;
+  recoverSettingsBatch().then(() => sendResponse({ ok: true }), () => sendResponse({ ok: false }));
+  return true;
+});
+
+async function commitBackupImportCaches(syncPatch = {}, blockedUids = null, epoch = null) {
+  // Options already parsed/normalized the backup. Merge that final patch into
+  // the current hot snapshot, without re-reading/re-parsing storage.sync.
+  const stored = await chrome.storage.local.get([RUNTIME_SETTINGS_HOT_CACHE_KEY, CRITICAL_FILTER_HOT_CACHE_KEY]);
+  const runtimeRecord = stored[RUNTIME_SETTINGS_HOT_CACHE_KEY];
+  const hasRuntime = runtimeRecord?.version === RUNTIME_SETTINGS_HOT_CACHE_VERSION
+    && runtimeRecord.data && typeof runtimeRecord.data === "object";
+  const runtimeData = {
+    ...(hasRuntime ? runtimeRecord.data : await chrome.storage.sync.get(null)),
+    ...syncPatch
+  };
+  for (const [key, change] of Object.entries(settingsChangesDuringBatch)) {
+    if (typeof change.newValue === "undefined") delete runtimeData[key];
+    else runtimeData[key] = change.newValue;
+  }
+  const previousCritical = validHotCacheData(stored[CRITICAL_FILTER_HOT_CACHE_KEY], CRITICAL_FILTER_HOT_CACHE_VERSION);
+  const tokens = Array.isArray(blockedUids) ? normalizeUserBlockList(blockedUids)
+    : Array.isArray(previousCritical.tokens) ? previousCritical.tokens
+    : await globalThis.DCBUserBlockStore.getAllTokensReadOnly();
+  return writeAllSettingsHotCaches(runtimeData, tokens, epoch);
+}
+
+async function applyBackupImport(message, epoch) {
+  const sync = message.sync && typeof message.sync === "object" && !Array.isArray(message.sync) ? message.sync : {};
+  const local = message.local && typeof message.local === "object" && !Array.isArray(message.local) ? { ...message.local } : {};
+  // Settings transaction/cache/history keys are owned by the background.
+  for (const key of [SETTINGS_BATCH_KEY, RUNTIME_SETTINGS_HOT_CACHE_KEY, KEYWORD_HOT_CACHE_KEY,
+    DCBEST_FILTER_HOT_CACHE_KEY, CRITICAL_FILTER_HOT_CACHE_KEY, "dcbReadPosts"]) delete local[key];
+  Object.keys(local).forEach((key) => settingsLocalKeysDuringBatch.add(key));
+  const jobs = [];
+  if (Object.keys(sync).length) jobs.push(chrome.storage.sync.set(sync));
+  if (Object.keys(local).length) jobs.push(chrome.storage.local.set(local));
+  if (Array.isArray(message.blockedUids)) jobs.push(queueUserBlockMutation(() =>
+    globalThis.DCBUserBlockStore.setAllTokens(message.blockedUids), { internal: true }));
+  const results = await Promise.allSettled(jobs);
+  const failed = results.find((result) => result.status === "rejected");
+  if (failed) throw failed.reason;
+  return commitBackupImportCaches(sync, message.blockedUids, epoch);
+}
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type !== "dcb.backupImport.commit") return undefined;
+  if (sender?.id !== chrome.runtime.id || String(sender?.url || "").split(/[?#]/)[0]
+    !== chrome.runtime.getURL("src/ui/options/options.html")) {
+    sendResponse({ ok: false, error: "unsupported-sender" });
+    return undefined;
+  }
+  runSettingsTransaction((epoch) => applyBackupImport(message, epoch), Object.keys(message.local || {}))
     .then((result) => sendResponse(result))
     .catch((error) => {
       console.error("[DCB] backup import cache commit failed", error);
@@ -1844,26 +1969,16 @@ chrome.runtime.onStartup?.addListener(() => {
   // Firefox MV3 event page는 페이지 탐색/메시지로 여러 번 다시 생성될 수 있으므로
   // 브라우저 시작 이벤트에서만 세션성 초기화를 수행한다.
   resetContextMenus();
-  void queueUserBlockMutation(() => normalizeStoredUserBlockList()).catch(() => {});
-  void syncRules().catch(() => {});
-  void seedRuntimeSettingsHotCache();
-  void seedKeywordHotCache();
-  void seedDcbestFilterHotCache();
-  void seedCriticalFilterHotCache();
+  void runSettingsTransaction(async (epoch) => {
+    await queueUserBlockMutation(() => normalizeStoredUserBlockList(), { internal: true });
+    const [data, tokens] = await Promise.all([
+      chrome.storage.sync.get(null),
+      globalThis.DCBUserBlockStore?.getAllTokensReadOnly?.() || Promise.resolve([])
+    ]);
+    return writeAllSettingsHotCaches(data, tokens, epoch);
+  }).catch((error) => console.warn("[DCB] startup settings commit failed", error));
   chrome.alarms?.create(GITHUB_RELEASE_ALARM, { delayInMinutes: 1, periodInMinutes: 360 });
   void refreshReleaseStatusAndBadge();
-});
-chrome.runtime.onInstalled?.addListener(() => {
-  // Dynamic registrations are cleared on extension updates in Firefox, so rebuild the profile.
-  void ensureDcbContentScriptProfile({ force: true });
-  // 설치/업데이트 직후에는 onInstalled 본체의 마이그레이션과 별개로 캐시를 최종 정합화한다.
-  void queueUserBlockMutation(() => normalizeStoredUserBlockList()).catch(() => {});
-  void seedRuntimeSettingsHotCache();
-  void seedKeywordHotCache();
-  void seedDcbestFilterHotCache();
-  void seedCriticalFilterHotCache();
-  chrome.alarms?.create(GITHUB_RELEASE_ALARM, { delayInMinutes: 1, periodInMinutes: 360 });
-  void refreshReleaseStatusAndBadge({ force: true });
 });
 chrome.alarms?.onAlarm.addListener((alarm) => {
   if (alarm?.name === GITHUB_RELEASE_ALARM) void refreshReleaseStatusAndBadge({ force: true });

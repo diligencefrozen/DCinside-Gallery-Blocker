@@ -542,7 +542,7 @@
     globalThis.DCBRuntimeSettingsCache.get(DEFAULTS, (conf) => applySettings(conf));
   }
 
-  chrome.storage.onChanged.addListener((changes, area) => {
+  (globalThis.DCBRuntimeSettingsCache?.onChanged || chrome.storage.onChanged).addListener((changes, area) => {
     if (area !== "sync") return;
     if (!changes.keywordBlockEnabled && !changes.blockedKeywords && !changes.keywordBlockTargets) return;
 

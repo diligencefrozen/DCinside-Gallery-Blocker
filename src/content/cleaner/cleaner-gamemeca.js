@@ -217,7 +217,7 @@
     loadAndApply();
   }
 
-  chrome.storage.onChanged.addListener((changes, area) => {
+  (globalThis.DCBRuntimeSettingsCache?.onChanged || chrome.storage.onChanged).addListener((changes, area) => {
     if (area !== "sync" || !changes.gamemecaBlockEnabled) return;
 
     enabled = changes.gamemecaBlockEnabled.newValue !== false;
