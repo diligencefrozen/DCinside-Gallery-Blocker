@@ -606,6 +606,11 @@ syncSettings(handleUrl);
       #${OVERLAY_ID} .dcbpv-html img.dcbpv-img-broken{min-height:80px;background:repeating-linear-gradient(45deg,#f8fafc,#f8fafc 8px,#eef2f7 8px,#eef2f7 16px);border:1px dashed #cbd5e1}
       #${OVERLAY_ID} .dcbpv-html iframe{display:block;width:min(100%,720px)!important;aspect-ratio:16/9;min-height:0;margin:10px auto;border-radius:10px;background:#000}
       #${OVERLAY_ID} .dcbpv-html iframe.dcbpv-poll-frame{width:min(100%,var(--dcbpv-poll-width,459px))!important;height:min(var(--dcbpv-poll-height,437px),75dvh)!important;min-height:min(var(--dcbpv-poll-height,437px),75dvh)!important;aspect-ratio:auto!important;margin:10px auto;border:1px solid #e5e7eb;border-radius:10px;background:#fff;overflow:auto}
+      #${OVERLAY_ID} .dcbpv-html .dcbpv-youtube-wrap{display:block!important;width:100%!important;max-width:720px!important;margin:14px auto!important}
+      #${OVERLAY_ID} .dcbpv-html .dcbpv-youtube-player{position:relative!important;width:100%!important;height:auto!important;aspect-ratio:16/9;overflow:hidden!important;border-radius:10px;background:#000}
+      #${OVERLAY_ID} .dcbpv-html iframe.dcbpv-youtube-frame{position:absolute!important;inset:0!important;display:block!important;width:100%!important;height:100%!important;min-height:0!important;max-height:none!important;aspect-ratio:auto!important;margin:0!important;border:0!important;border-radius:0;transform:none!important;pointer-events:auto!important}
+      #${OVERLAY_ID} .dcbpv-html .dcbpv-youtube-note{margin:6px 0 0!important;color:#64748b;font-size:11px!important;line-height:1.5!important;text-align:right}
+      #${OVERLAY_ID} .dcbpv-youtube-note a{color:#475569;text-decoration:underline;text-underline-offset:2px}
       #${OVERLAY_ID} .dcbpv-pum-card{margin:0;overflow:hidden;border:1px solid #dbe2ea;border-radius:14px;background:#fff;color:#334155;box-shadow:0 5px 18px rgba(15,23,42,.06)}
       #${OVERLAY_ID} .dcbpv-pum-card .gallview_head{display:block;position:static;min-height:0;margin:0;padding:13px 15px;border:0;border-bottom:1px solid #e5e7eb;background:#f8fafc}
       #${OVERLAY_ID} .dcbpv-pum-card .gallview_head>a{display:inline-block;color:#2563eb;text-decoration:none}
@@ -748,7 +753,11 @@ syncSettings(handleUrl);
       const key = revealButton.dataset.dcbpvReveal;
       if (key === "article") {
         const body = overlay.querySelector(".dcbpv-article");
-        if (body?.dataset.dcbpvOriginalHtml) body.innerHTML = body.dataset.dcbpvOriginalHtml;
+        if (body?.dataset.dcbpvOriginalHtml) {
+          body.innerHTML = body.dataset.dcbpvOriginalHtml;
+          delete body.dataset.dcbpvFiltered;
+          markRenderedPreviewRead(data, overlay);
+        }
         revealButton.closest(".dcbpv-filter-note")?.remove();
         settlePreviewMedia(overlay, data.fetchedUrl || data.url);
         return;
@@ -863,6 +872,9 @@ syncSettings(handleUrl);
 
   function stripUnsafe(container, baseUrl){
     if (!container) return null;
+    // Resolve only validated YouTube frames before dropping lazy/event/style
+    // attributes. This same path also covers serialized comments and cache HTML.
+    normalizePreviewYouTubeFrames(container, baseUrl);
     container.querySelectorAll("script,style,noscript,template,object,embed,base,meta,link,form,svg,math").forEach((node) => node.remove());
     const urlAttributes = new Set(["src", "href", "xlink:href", "poster", "background", "action", "formaction"]);
     container.querySelectorAll("*").forEach((node) => {
@@ -902,6 +914,152 @@ syncSettings(handleUrl);
     .replace(/&amp;/g, "&")
     .replace(/\\\//g, "/")
     .replace(/^['\"]+|['\"]+$/g, "");
+
+  const YOUTUBE_HOSTS = new Set([
+    "youtube.com", "www.youtube.com", "m.youtube.com",
+    "youtube-nocookie.com", "www.youtube-nocookie.com", "youtu.be"
+  ]);
+  const YOUTUBE_SOURCE_ATTRS = [
+    "src", "data-src", "data-original", "data-original-src", "data-original-url",
+    "data-lazy", "data-lazy-src", "data-url", "data-embed-src", "data-video-url"
+  ];
+
+  function previewYouTubeUrl(value, baseUrl){
+    let source;
+    try {
+      source = new URL(decodeMediaUrl(value), baseUrl || location.href);
+    } catch (_) { return null; }
+    if (!/^https?:$/.test(source.protocol) || !YOUTUBE_HOSTS.has(source.hostname) ||
+        source.username || source.password || source.port) return null;
+
+    const path = source.pathname;
+    const id = source.hostname === "youtu.be"
+      ? path.match(/^\/([A-Za-z0-9_-]{11})\/?$/)?.[1]
+      : path.match(/^\/(?:embed|shorts)\/([A-Za-z0-9_-]{11})\/?$/)?.[1] ||
+        (/^\/watch\/?$/.test(path) ? source.searchParams.get("v") : "");
+    if (!/^[A-Za-z0-9_-]{11}$/.test(id || "")) return null;
+
+    const noCookie = source.hostname === "youtube-nocookie.com" || source.hostname === "www.youtube-nocookie.com";
+    const embed = new URL(`https://${noCookie ? "www.youtube-nocookie.com" : "www.youtube.com"}/embed/${id}`);
+    const seconds = (raw) => {
+      if (!/^\d+$/.test(raw || "")) return null;
+      const number = Number(raw);
+      return Number.isSafeInteger(number) && number <= 2_147_483_647 ? number : null;
+    };
+    let start = seconds(source.searchParams.get("start"));
+    if (start === null) {
+      const rawTime = source.searchParams.get("t") || source.hash.match(/^#t=(.+)$/)?.[1] || "";
+      start = seconds(rawTime);
+      if (start === null) {
+        const units = rawTime.match(/^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$/);
+        if (units && units[0]) start = seconds(String(Number(units[1] || 0) * 3600 + Number(units[2] || 0) * 60 + Number(units[3] || 0)));
+      }
+    }
+    const end = seconds(source.searchParams.get("end"));
+    if (start !== null && start > 0) embed.searchParams.set("start", String(start));
+    if (end !== null && end > (start || 0)) embed.searchParams.set("end", String(end));
+    for (const name of ["rel", "cc_load_policy"]) {
+      const value = source.searchParams.get(name);
+      if (/^[01]$/.test(value || "")) embed.searchParams.set(name, value);
+    }
+    const captions = source.searchParams.get("cc_lang_pref");
+    if (/^[a-z]{2,3}(?:-[A-Za-z]{2,4})?$/.test(captions || "")) embed.searchParams.set("cc_lang_pref", captions);
+    const annotations = source.searchParams.get("iv_load_policy");
+    if (annotations === "1" || annotations === "3") embed.searchParams.set("iv_load_policy", annotations);
+    const list = source.searchParams.get("list");
+    if (/^[A-Za-z0-9_-]{2,100}$/.test(list || "")) embed.searchParams.set("list", list);
+    const playlist = source.searchParams.get("playlist");
+    if (playlist && playlist.length <= 599 && playlist.split(",").every((item) => /^[A-Za-z0-9_-]{11}$/.test(item))) {
+      embed.searchParams.set("playlist", playlist);
+    }
+    const index = seconds(source.searchParams.get("index"));
+    if (index !== null && embed.searchParams.has("list")) embed.searchParams.set("index", String(index));
+    // No inherited autoplay, API origin, tracking or redirect parameters.
+    embed.searchParams.set("autoplay", "0");
+    embed.searchParams.set("controls", "1");
+    embed.searchParams.set("fs", "1");
+    embed.searchParams.set("playsinline", "1");
+    const watch = new URL("https://www.youtube.com/watch");
+    watch.searchParams.set("v", id);
+    if (start !== null && start > 0) watch.searchParams.set("t", `${start}s`);
+    return { id, embedUrl: embed.href, watchUrl: watch.href };
+  }
+
+  function normalizePreviewYouTubeFrames(root, baseUrl){
+    if (!root) return;
+    const frames = [...(root.querySelectorAll?.("iframe") || [])];
+    if (root.matches?.("iframe")) frames.unshift(root);
+    let eagerAssigned = false;
+    for (const iframe of frames) {
+      // Native movie/poll identity takes precedence over an unrelated lazy hint.
+      if (iframe.closest?.(".dcbpv-movie-wrap") || iframe.classList.contains("dcbpv-poll-frame") ||
+          dcPollFrameUrl(iframe, baseUrl) || dcMoviePlayerUrl(iframe, baseUrl)) continue;
+      let media = null;
+      for (const name of YOUTUBE_SOURCE_ATTRS) {
+        const value = iframe.getAttribute(name);
+        if (value && (media = previewYouTubeUrl(value, baseUrl))) break;
+      }
+      if (!media) continue;
+      if (iframe.getAttribute("src") !== media.embedUrl) iframe.setAttribute("src", media.embedUrl);
+      iframe.classList.add("dcbpv-youtube-frame");
+      iframe.classList.remove("lazy", "img_loading");
+      if (!iframe.title) iframe.title = "YouTube 동영상 플레이어";
+      iframe.setAttribute("allow", "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen");
+      iframe.setAttribute("allowfullscreen", "");
+      // Relax inherited sandbox restrictions only after exact provider/ID
+      // validation. Generic external and native DCInside frames are untouched.
+      iframe.removeAttribute("sandbox");
+      iframe.referrerPolicy = "strict-origin-when-cross-origin";
+      iframe.removeAttribute("srcdoc");
+      iframe.removeAttribute("credentialless");
+      iframe.removeAttribute("csp");
+      iframe.removeAttribute("width");
+      iframe.removeAttribute("height");
+      iframe.removeAttribute("id");
+      iframe.removeAttribute("style");
+      YOUTUBE_SOURCE_ATTRS.filter((name) => name !== "src").forEach((name) => iframe.removeAttribute(name));
+      for (const attribute of [...iframe.attributes]) {
+        if (attribute.name.toLowerCase().startsWith("on")) iframe.removeAttribute(attribute.name);
+      }
+
+      let wrapper = iframe.parentElement?.parentElement;
+      if (!wrapper?.classList.contains("dcbpv-youtube-wrap") ||
+          !iframe.parentElement?.classList.contains("dcbpv-youtube-player")) {
+        const factory = iframe.ownerDocument || document;
+        wrapper = factory.createElement("div");
+        wrapper.className = "dcbpv-youtube-wrap";
+        const player = factory.createElement("div");
+        player.className = "dcbpv-youtube-player";
+        iframe.replaceWith(wrapper);
+        wrapper.appendChild(player);
+        player.appendChild(iframe);
+      }
+      let note = wrapper.querySelector(":scope > .dcbpv-youtube-note");
+      if (!note) {
+        note = (iframe.ownerDocument || document).createElement("p");
+        note.className = "dcbpv-youtube-note";
+        wrapper.appendChild(note);
+      }
+      let link = note.querySelector(":scope > a");
+      if (!link) {
+        link = (iframe.ownerDocument || document).createElement("a");
+        note.replaceChildren(link);
+      }
+      link.href = media.watchUrl;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.textContent = "재생되지 않으면 YouTube에서 보기";
+      let visible = !iframe.isConnected || !iframe.ownerDocument.defaultView;
+      if (!visible) {
+        const bounds = iframe.getBoundingClientRect();
+        const scroll = iframe.closest(".dcbpv-scroll")?.getBoundingClientRect();
+        visible = bounds.width > 0 && bounds.height > 0 &&
+          bounds.bottom > (scroll?.top ?? 0) && bounds.top < (scroll?.bottom ?? window.innerHeight);
+      }
+      iframe.loading = !eagerAssigned && visible ? "eager" : "lazy";
+      if (iframe.loading === "eager") eagerAssigned = true;
+    }
+  }
 
   function isPlaceholderImageUrl(value){
     const url = String(value || "").toLowerCase();
@@ -1218,6 +1376,8 @@ syncSettings(handleUrl);
       iframe.replaceWith(wrapper);
       wrapper.append(iframe, note);
     });
+
+    normalizePreviewYouTubeFrames(root, baseUrl);
 
     root.querySelectorAll("img").forEach((img) => {
       if (img.dataset.dcbpvMediaSettled === "1") return;
@@ -3164,6 +3324,7 @@ syncSettings(handleUrl);
     }
 
     if (isWeakPreviewData(data) && data.commentsHTML) {
+      data.articleUnavailable = true;
       data.articleHTML = data.articleHTML || `<div class="dcbpv-empty">본문 영역을 표시할 수 없습니다.</div>`;
     }
 
@@ -3464,6 +3625,14 @@ syncSettings(handleUrl);
     globalThis.DCBBlockStats?.report?.(node, previewStatsCategory(reason));
   }
 
+  function markPreviewCommentBlocked(row, reason){
+    row.classList.add("dcbpv-filter-hidden");
+    // Independent flags keep simultaneous filters from overwriting cascade policy.
+    if (reason === "user") row.dataset.dcbpvUserBlocked = "1";
+    else row.dataset.dcbpvCascadeBlocked = "1";
+    if (!row.dataset.dcbpvBlockedReason) row.dataset.dcbpvBlockedReason = reason;
+  }
+
   function markPreviewHiddenNode(node, reason){
     if (!(node instanceof Element)) return false;
     let changed = false;
@@ -3489,10 +3658,9 @@ syncSettings(handleUrl);
     const row = node.closest(".dcbpv-comment-item");
     if (row) {
       if (!row.classList.contains("dcbpv-filter-hidden")) {
-        row.classList.add("dcbpv-filter-hidden");
         changed = true;
       }
-      if (!row.dataset.dcbpvBlockedReason) row.dataset.dcbpvBlockedReason = reason;
+      markPreviewCommentBlocked(row, reason);
       reportPreviewBlock(row, row.dataset.dcbpvBlockedReason || reason);
     } else {
       reportPreviewBlock(node, reason);
@@ -3578,7 +3746,8 @@ syncSettings(handleUrl);
     list.querySelectorAll(":scope > .dcbpv-comment-item").forEach((row) => {
       const isReply = previewCommentIsReplyRow(row);
       if (!isReply) {
-        parentBlocked = row.classList.contains("dcbpv-filter-hidden");
+        parentBlocked = row.classList.contains("dcbpv-filter-hidden")
+          && row.dataset.dcbpvCascadeBlocked === "1";
         return;
       }
 
@@ -3715,10 +3884,12 @@ syncSettings(handleUrl);
 
   async function applyPreviewFeatureBridge(overlay, data, trace = activePreviewTrace){
     if (!overlay || !data) return;
+    const requestVersion = previewRequestVersion;
     const processStartedAt = previewNow();
     ensurePreviewFilterStyle();
     const conf = await previewSettings();
-    if (!document.documentElement.contains(overlay)) return;
+    if (requestVersion !== previewRequestVersion || currentPreviewData !== data
+      || overlay.dataset.dcbpvUrl !== data.url || !overlay.isConnected) return;
 
     const articleSection = overlay.querySelector(".dcbpv-article")?.closest(".dcbpv-section");
     const commentsSection = overlay.querySelector(".dcbpv-comments");
@@ -3740,7 +3911,6 @@ syncSettings(handleUrl);
 
     if (conf.userBlockEnabled !== false && previewWriterBlocked(authorMeta, matcher)) {
       replaceSectionWithNote(articleSection, filterNote("user", authorMeta.uid || authorMeta.ip || authorMeta.nick));
-      replaceSectionWithNote(commentsSection, filterNote("user", authorMeta.uid || authorMeta.ip || authorMeta.nick));
     }
 
     if (conf.hideAnonymousEnabled && previewIsAnonymous(authorMeta, overlay.querySelector(".dcbpv-author-name .gall_writer,.dcbpv-writer .gall_writer"))) {
@@ -3771,39 +3941,25 @@ syncSettings(handleUrl);
       if (titleKw || bodyKw) replaceSectionWithNote(articleSection, filterNote("keyword-hide", (titleKw || bodyKw).label, "article"));
     }
 
-    let hideRepliesForBlockedParent = false;
     overlay.querySelectorAll(".dcbpv-comment-item").forEach((row, index) => {
-      const isReply = row.classList.contains("reply");
-      if (!isReply) hideRepliesForBlockedParent = false;
-
       const meta = previewWriterFromNode(row);
-      if (hideRepliesForBlockedParent && isReply) {
-        row.classList.add("dcbpv-filter-hidden");
-        row.dataset.dcbpvBlockedReason = "blocked-parent";
-      }
       if (conf.doryBlockEnabled !== false && commentLooksAutomated(row, { ...meta, nick: meta.nick || row.dataset.nick })) {
-        row.classList.add("dcbpv-filter-hidden");
-        row.dataset.dcbpvBlockedReason = "dory";
+        markPreviewCommentBlocked(row, "dory");
       }
       if (conf.userBlockEnabled !== false && previewWriterBlocked(meta, matcher)) {
-        row.classList.add("dcbpv-filter-hidden");
-        row.dataset.dcbpvBlockedReason = "user";
-        if (!isReply) hideRepliesForBlockedParent = true;
+        markPreviewCommentBlocked(row, "user");
       }
       if (conf.hideAnonymousEnabled && previewIsAnonymous(meta, row)) {
-        row.classList.add("dcbpv-filter-hidden");
-        row.dataset.dcbpvBlockedReason = "anonymous";
+        markPreviewCommentBlocked(row, "anonymous");
       }
       if (conf.hideForeignIpEnabled && previewIsForeignNetwork(meta)) {
-        row.classList.add("dcbpv-filter-hidden");
-        row.dataset.dcbpvBlockedReason = "foreign";
+        markPreviewCommentBlocked(row, "foreign");
       }
       const text = commentText(row);
       if (conf.keywordBlockEnabled && blockTargets.comments) {
         const kw = findPreviewKeyword(text, blockKeywords);
         if (kw) {
-          row.classList.add("dcbpv-filter-hidden");
-          row.dataset.dcbpvBlockedReason = "keyword";
+          markPreviewCommentBlocked(row, "keyword");
           row.dataset.dcbpvBlockedLabel = kw.label;
         }
       }
@@ -3811,8 +3967,7 @@ syncSettings(handleUrl);
         const kw = findPreviewKeyword(text, hideKeywords);
         if (kw) {
           row.dataset.dcbpvSoftKey = `comment-${index}`;
-          row.classList.add("dcbpv-filter-hidden");
-          row.dataset.dcbpvBlockedReason = row.dataset.dcbpvBlockedReason || "keyword-hide";
+          markPreviewCommentBlocked(row, "keyword-hide");
           row.insertAdjacentHTML("afterend", filterNote("keyword-hide", kw.label, row.dataset.dcbpvSoftKey));
         }
       }
@@ -3994,6 +4149,23 @@ syncSettings(handleUrl);
     return true;
   }
 
+  function markRenderedPreviewRead(data, overlay){
+    if (data.articleUnavailable || isWeakPreviewData(data)) return;
+    const requestVersion = previewRequestVersion;
+    requestAnimationFrame(() => {
+      // Cancelled/replaced previews and loading/error surfaces never reach this mark.
+      const article = overlay.querySelector(".dcbpv-article");
+      if (requestVersion !== previewRequestVersion || currentPreviewData !== data
+        || !overlay.isConnected || overlay.dataset.dcbpvUrl !== data.url
+        || !article || article.dataset.dcbpvFiltered === "1" || !article.getClientRects().length) return;
+      try {
+        chrome.runtime.sendMessage({ type: "dcb.readPosts.markPreview", url: data.url }, () => {
+          void chrome.runtime.lastError;
+        });
+      } catch (_) {}
+    });
+  }
+
   function renderPreview(data, { commentsPending = false } = {}){
     const renderStartedAt = previewNow();
     const trace = activePreviewTrace;
@@ -4050,6 +4222,7 @@ syncSettings(handleUrl);
     emitPreviewState(true);
     emitPreviewContent(overlay);
     addPreviewPhase("renderMs", renderStartedAt, trace);
+    markRenderedPreviewRead(data, overlay);
   }
 
   function showShare(data){

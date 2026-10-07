@@ -45,11 +45,12 @@ let dnrSyncQueued = false;
 let dnrSyncRunning = false;
 let readPostsWriteQueue = Promise.resolve();
 const READ_POSTS_KEY = "dcbReadPosts";
+const READ_POST_FRESHNESS_MS = 60_000;
 
-function readPostIdentity(sender) {
-  if (!Number.isInteger(sender?.tab?.id) || sender.frameId !== 0 || sender.documentLifecycle === "prerender") return "";
+function readPostIdentityFromUrl(rawUrl) {
+  if (typeof rawUrl !== "string") return "";
   try {
-    const url = new URL(sender.url);
+    const url = new URL(rawUrl);
     const match = url.pathname.match(/^\/(?:(mgallery|mini|person)\/)?board\/view\/?$/);
     const id = String(url.searchParams.get("id") || "").trim().toLowerCase();
     const rawNo = String(url.searchParams.get("no") || "").trim();
@@ -60,15 +61,30 @@ function readPostIdentity(sender) {
   } catch (_) { return ""; }
 }
 
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message?.type !== "dcb.readPosts.mark") return undefined;
-  const identity = readPostIdentity(sender);
-  if (!identity) { sendResponse({ ok: false }); return undefined; }
+function readPostIdentity(sender) {
+  if (!Number.isInteger(sender?.tab?.id) || sender.frameId !== 0 || sender.documentLifecycle === "prerender") return "";
+  return readPostIdentityFromUrl(sender.url);
+}
+
+function readPostPreviewSenderAllowed(sender) {
+  if (!Number.isInteger(sender?.tab?.id) || sender.frameId !== 0 || sender.documentLifecycle === "prerender") return false;
+  try {
+    const url = new URL(sender.url);
+    return /^https?:$/.test(url.protocol) && url.hostname === "gall.dcinside.com"
+      && !url.username && !url.password && !url.port;
+  } catch (_) { return false; }
+}
+
+function markReadIdentity(identity) {
   const job = readPostsWriteQueue.then(async () => {
     const stored = await chrome.storage.local.get({ [READ_POSTS_KEY]: {} });
     const record = stored[READ_POSTS_KEY];
     let history = record && typeof record === "object" && !Array.isArray(record) ? { ...record } : {};
-    history[identity] = Date.now();
+    const stamp = Date.now();
+    const previous = history[identity];
+    // Opening/refreshing the same preview repeatedly need not rewrite history.
+    if (Number.isFinite(previous) && stamp >= previous && stamp - previous < READ_POST_FRESHNESS_MS) return { ok: true };
+    history[identity] = stamp;
     // Trim in occasional batches instead of sorting on every navigation.
     if (Object.keys(history).length > 5500) {
       history = Object.fromEntries(Object.entries(history)
@@ -79,6 +95,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return { ok: true };
   });
   readPostsWriteQueue = job.catch(() => {});
+  return job;
+}
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type !== "dcb.readPosts.mark" && message?.type !== "dcb.readPosts.markPreview") return undefined;
+  const identity = message.type === "dcb.readPosts.mark"
+    ? readPostIdentity(sender)
+    : readPostPreviewSenderAllowed(sender) ? readPostIdentityFromUrl(message.url) : "";
+  if (!identity) { sendResponse({ ok: false }); return undefined; }
+  const job = markReadIdentity(identity);
   job.then(sendResponse, () => sendResponse({ ok: false }));
   return true;
 });

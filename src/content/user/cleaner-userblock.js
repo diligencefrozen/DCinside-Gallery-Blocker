@@ -4,6 +4,11 @@
 (() => {
   const STYLE_ID = "dcb-userblock-style";
   const BLOCKED_CLASS = "dcb-userblock-hidden";
+  const COMMENT_SURFACE_CLASS = "dcb-userblock-own-surface-hidden";
+  const COMMENT_SURFACES_ATTR = "data-dcb-userblock-own-surfaces";
+  const COMMENT_UNIT_SELECTOR = "li,.reply_item,.dcbpv-comment-item";
+  const REPLY_THREAD_SELECTOR = ".reply_box,.reply_list,[id^='reply_list_']";
+  const commentSurfaces = new WeakMap();
   const OLD_MASKED_CLASS = "dcb-masked";
   const UNBLOCK_BUTTON_CLASS = "dcb-userblock-unblock";
   const UNBLOCK_HOST_CLASS = "dcb-userblock-unblock-host";
@@ -38,10 +43,15 @@
   const COMMENT_ROOT_SELECTOR = [
     "#focus_cmt",
     ".comment_wrap",
+    ".comment_box",
+    ".cmt_info",
+    ".reply_info",
+    ".cmt_nickbox",
     ".cmt_list",
     ".reply_box",
     ".reply_list",
-    ".dccon_comment_box"
+    ".dccon_comment_box",
+    ".dcbpv-comment-html"
   ].join(",");
 
   const COMMENT_BODY_SELECTOR = [
@@ -166,7 +176,7 @@
     const own = scope.getAttribute?.(name) || "";
     if (own) return own;
 
-    const child = scope.querySelector?.(`[${name}]`);
+    const child = ownCommentElement(scope, `[${name}]`);
     return child?.getAttribute?.(name) || "";
   }
 
@@ -194,7 +204,7 @@
     const badge =
       scope.matches?.(".dcb-uid-badge")
         ? scope
-        : scope.querySelector?.(".dcb-uid-badge");
+        : ownCommentElement(scope, ".dcb-uid-badge");
 
     if (!badge) return "";
 
@@ -212,7 +222,7 @@
     const ref =
       scope.matches?.(".refresherUserData")
         ? scope
-        : scope.querySelector?.(".refresherUserData");
+        : ownCommentElement(scope, ".refresherUserData");
 
     if (!ref) return "";
 
@@ -230,7 +240,7 @@
     const selfUid = extractUidFromGallogText(selfText);
     if (selfUid) return selfUid;
 
-    const ref = scope.querySelector?.(
+    const ref = ownCommentElement(scope,
       '[onclick*="gallog.dcinside.com"], [href*="gallog.dcinside.com"], [title*="갤로그"], [alt*="갤로그"]'
     );
 
@@ -243,16 +253,16 @@
     const ipEl =
       scope.matches?.(".ip, .refresherUserData.ip")
         ? scope
-        : (scope.querySelector?.(".ip") ||
-           scope.querySelector?.(".refresherUserData.ip") ||
-           scope.querySelector?.("[data-ip]") ||
+        : (ownCommentElement(scope, ".ip") ||
+           ownCommentElement(scope, ".refresherUserData.ip") ||
+           ownCommentElement(scope, "[data-ip]") ||
            null);
 
     const attrText = [textFromAttrs(scope), textFromAttrs(ipEl)].filter(Boolean).join(" ");
     const fromAttr = normalizeIpPrefix(attrText);
     if (fromAttr) return fromAttr;
 
-    const text = (ipEl?.textContent || scope.textContent || "").trim();
+    const text = (ipEl?.textContent || ownCommentText(scope) || "").trim();
     return normalizeIpPrefix(text);
   }
 
@@ -262,10 +272,10 @@
     const nickEl =
       scope.matches?.(".nickname, .nick_name, .user_nick")
         ? scope
-        : (scope.querySelector?.(":scope > .nickname") ||
-           scope.querySelector?.(".nickname") ||
-           scope.querySelector?.(".nick_name") ||
-           scope.querySelector?.(".user_nick") ||
+        : (ownCommentElement(scope, ":scope > .nickname") ||
+           ownCommentElement(scope, ".nickname") ||
+           ownCommentElement(scope, ".nick_name") ||
+           ownCommentElement(scope, ".user_nick") ||
            null);
 
     return normalizeNick(
@@ -547,7 +557,8 @@
     if (includeGray) lines.push(".block-disable{display:none!important}");
 
     lines.push(`
-      .${BLOCKED_CLASS} { display:none!important; }
+      .${BLOCKED_CLASS}:not([${COMMENT_SURFACES_ATTR}]),
+      .${COMMENT_SURFACE_CLASS} { display:none!important; }
 
       .dcb-blocked {
         display:block; margin:6px 0 8px; padding:8px 10px;
@@ -563,11 +574,7 @@
         `.gall_list tr.ub-content:has(.gall_writer${attr}){display:none!important}`,
         `.gall_list tr:has(.gall_writer${attr}){display:none!important}`,
         `.gall_list li.ub-content:has(.gall_writer${attr}){display:none!important}`,
-        `.gall_list li:has(.gall_writer${attr}){display:none!important}`,
-        `.view_content_wrap:has(.gall_writer[data-loc="view"]${attr}){display:none!important}`,
-        `#focus_cmt li.ub-content:has(.gall_writer${attr}){display:none!important}`,
-        `.comment_wrap li.ub-content:has(.gall_writer${attr}){display:none!important}`,
-        `.cmt_list li.ub-content:has(.gall_writer${attr}){display:none!important}`
+        `.gall_list li:has(.gall_writer${attr}){display:none!important}`
       );
     };
 
@@ -585,9 +592,7 @@
           if (nick) {
             addRulesForAttr(`[data-nick*="${cssEscape(nick)}"]`);
             lines.push(
-              `.gall_list tr:has(.gall_writer .nickname[title*="${cssEscape(nick)}"]){display:none!important}`,
-              `.comment_wrap li.ub-content:has(.nickname[title*="${cssEscape(nick)}"]){display:none!important}`,
-              `.cmt_list li.ub-content:has(.nickname[title*="${cssEscape(nick)}"]){display:none!important}`
+              `.gall_list tr:has(.gall_writer .nickname[title*="${cssEscape(nick)}"]){display:none!important}`
             );
           }
           return;
@@ -609,8 +614,10 @@
 
   function clearDomBlocks() {
     document.querySelectorAll(`.${BLOCKED_CLASS}`).forEach((el) => {
-      el.classList.remove(BLOCKED_CLASS);
+      clearCommentBlock(el);
     });
+    document.querySelectorAll(`.${COMMENT_SURFACE_CLASS}`).forEach((el) => el.classList.remove(COMMENT_SURFACE_CLASS));
+    document.querySelectorAll(`[${COMMENT_SURFACES_ATTR}]`).forEach((el) => el.removeAttribute(COMMENT_SURFACES_ATTR));
 
     document.querySelectorAll(`.${OLD_MASKED_CLASS}`).forEach((el) => {
       el.classList.remove(OLD_MASKED_CLASS);
@@ -625,146 +632,99 @@
   }
 
   function isInsideCommentRoot(writer) {
-    return !!writer.closest?.(COMMENT_ROOT_SELECTOR);
+    return !!writer.closest?.(COMMENT_ROOT_SELECTOR) || !!(
+      writer.matches?.(COMMENT_UNIT_SELECTOR) && writer.querySelector?.('.cmt_info,.reply_info,.cmt_nickbox')
+    );
   }
 
-  function findCommentBody(container) {
-    return container?.querySelector?.(COMMENT_BODY_SELECTOR) || null;
+  function isCommentUnit(node) {
+    if (!(node instanceof Element) || node.closest('.user_data_list,.dcbpv-user-data-list')) return false;
+    if (node.matches('.reply_item,.dcbpv-comment-item')) return true;
+    if (node.tagName !== 'LI') return false;
+    if (node.matches(".ub-content,[id^='comment_'],[id^='reply_']")) return true;
+    // A plain li is a comment only when it owns author metadata. Native menu
+    // items and lists inside comment text are not independent comment units.
+    return [...node.querySelectorAll('.cmt_info,.reply_info,.cmt_nickbox,.gall_writer,.ub-writer')]
+      .some((identity) => identity.closest(COMMENT_UNIT_SELECTOR) === node);
   }
 
-  function findBodyFromInfo(infoEl) {
-    const parent = infoEl?.parentElement;
-    const parentBody = findCommentBody(parent || infoEl);
-    if (parentBody) return parentBody;
-
-    let sib = infoEl?.nextElementSibling;
-    for (let i = 0; i < 4 && sib; i += 1, sib = sib.nextElementSibling) {
-      if (sib.matches?.(COMMENT_BODY_SELECTOR)) return sib;
-      const inner = sib.querySelector?.(COMMENT_BODY_SELECTOR);
-      if (inner) return inner;
+  function findCommentOwner(writer) {
+    if (!writer || !isInsideCommentRoot(writer)) return null;
+    let unit = writer.closest?.(COMMENT_UNIT_SELECTOR);
+    while (unit) {
+      if (isCommentUnit(unit)) return unit;
+      unit = unit.parentElement?.closest(COMMENT_UNIT_SELECTOR);
     }
-
-    return null;
+    return writer.closest?.('.cmt_info,.reply_info,.cmt_nickbox') || writer;
   }
 
-  function isReplyCommentItem(el) {
-    if (!el || el.nodeType !== 1) return false;
-    if (el.matches?.(".reply, .reply_line, .reply_item, .dcbpv-comment-item.reply, li[id^='reply_'], li[id^='reply_li_']")) return true;
-    if (el.querySelector?.(":scope > .reply_info, :scope > .reply_box, :scope > .reply_txtbox")) return true;
-
-    const depth = el.getAttribute?.("data-depth") || el.getAttribute?.("depth") || el.dataset?.depth || "";
-    if (depth && Number(depth) > 0) return true;
-
-    const parentNo = el.getAttribute?.("data-parent-no") || el.getAttribute?.("data-parent") || el.getAttribute?.("p-no") || "";
-    if (parentNo) return true;
-
-    return /(^|\s)(reply|reply_line|reply_item)(\s|$)/i.test(String(el.className || ""));
+  function ownCommentElement(scope, selector) {
+    const owner = findCommentOwner(scope);
+    return [...(scope.querySelectorAll?.(selector) || [])].find((node) =>
+      !owner || findCommentOwner(node) === owner) || null;
   }
 
-  function readCommentNo(el) {
-    if (!el || el.nodeType !== 1) return "";
-
-    const fromId = String(el.id || "").match(/(?:comment|reply)_(?:li_)?(\d+)/i);
-    if (fromId) return fromId[1];
-
-    const attrNames = [
-      "data-no", "data-comment-no", "data-commentno", "data-cno", "data-cmt-no", "data-article-no", "no"
-    ];
-
-    for (const name of attrNames) {
-      const value = el.getAttribute?.(name);
-      if (value && /^\d+$/.test(String(value).trim())) return String(value).trim();
+  function ownCommentText(scope) {
+    const owner = findCommentOwner(scope);
+    if (!owner) return scope.textContent || "";
+    const walker = document.createTreeWalker(scope, NodeFilter.SHOW_TEXT);
+    const text = [];
+    while (walker.nextNode()) {
+      if (findCommentOwner(walker.currentNode.parentElement) === owner) text.push(walker.currentNode.nodeValue);
     }
-
-    const info = el.querySelector?.(":scope > .cmt_info[data-no], :scope > .reply_info[data-no], .cmt_info[data-no], .reply_info[data-no]");
-    const infoNo = info?.getAttribute?.("data-no");
-    return infoNo && /^\d+$/.test(String(infoNo).trim()) ? String(infoNo).trim() : "";
+    return text.join(" ");
   }
 
-  function collectReplyContainer(container, out) {
-    if (!container || container.nodeType !== 1) return;
-    if (!out.includes(container)) out.push(container);
-    container.querySelectorAll?.(
-      "li.reply, li.reply_line, li.reply_item, li[id^='reply_'], li[id^='reply_li_'], " +
-      ".reply_item, .reply_box li, .reply_list li, .dcbpv-comment-item.reply"
-    ).forEach((item) => {
-      if (!out.includes(item)) out.push(item);
-    });
+  function hasNestedComments(owner) {
+    return !!owner.querySelector?.(REPLY_THREAD_SELECTOR) ||
+      [...(owner.querySelectorAll?.(COMMENT_UNIT_SELECTOR) || [])].some((node) =>
+        node !== owner && isCommentUnit(node));
   }
 
-  function findReplyContainerForParentComment(root) {
-    if (!root || root.nodeType !== 1 || isReplyCommentItem(root)) return null;
+  function collectOwnCommentSurfaces(owner) {
+    const surfaces = new Set();
+    const visit = (node) => {
+      if (node.matches?.(REPLY_THREAD_SELECTOR)) return;
+      if (node !== owner && isCommentUnit(node)) return;
+      if (!hasNestedComments(node)) { surfaces.add(node); return; }
+      [...node.children].forEach(visit);
+    };
+    if (!isCommentUnit(owner) && !hasNestedComments(owner)) surfaces.add(owner);
+    else [...owner.children].forEach(visit);
 
-    const commentNo = readCommentNo(root);
-    if (!commentNo) return null;
-
-    const escapedNo = cssEscape(commentNo);
-    const scopedSelector = [
-      `#reply_list_${escapedNo}`,
-      `.reply_list[p-no="${escapedNo}"]`,
-      `.reply_list[data-parent-no="${escapedNo}"]`,
-      `.reply_box[p-no="${escapedNo}"]`,
-      `.reply_box[data-parent-no="${escapedNo}"]`,
-      `[data-parent-no="${escapedNo}"]`,
-      `[data-parent="${escapedNo}"]`
-    ].join(",");
-
-    let sib = root.nextElementSibling;
-    let guard = 0;
-    while (sib && guard < 6) {
-      if (sib.matches?.(scopedSelector) || sib.querySelector?.(scopedSelector)) return sib;
-      if (isReplyCommentItem(sib)) return sib;
-      sib = sib.nextElementSibling;
-      guard += 1;
-    }
-
-    const local = root.parentElement?.querySelector?.(scopedSelector) || document.querySelector(scopedSelector);
-    if (!local) return null;
-    return local.closest?.("li, .reply_box, .reply_list, .comment_wrap, .cmt_list") || local;
-  }
-
-  function expandCommentThread(root) {
-    if (!root || root.nodeType !== 1) return [];
-
-    const out = [root];
-
-    root.querySelectorAll?.("li.reply, li.reply_line, li.reply_item, li[id^='reply_'], li[id^='reply_li_'], .reply_item, .reply_box li, .reply_list li, .dcbpv-comment-item.reply").forEach((item) => {
-      if (!out.includes(item)) out.push(item);
-    });
-
-    const replyContainer = findReplyContainerForParentComment(root);
-    if (replyContainer) collectReplyContainer(replyContainer, out);
-
-    if (!isReplyCommentItem(root)) {
-      let sib = root.nextElementSibling;
-      let guard = 0;
-      while (sib && guard < 80) {
-        if (replyContainer && (sib === replyContainer || replyContainer.contains?.(sib))) {
-          collectReplyContainer(sib, out);
-          sib = sib.nextElementSibling;
-          guard += 1;
-          continue;
-        }
-        if (!isReplyCommentItem(sib)) break;
-        collectReplyContainer(sib, out);
-        sib = sib.nextElementSibling;
-        guard += 1;
+    // Some native variants have author info and body as separate siblings,
+    // without an enclosing comment li. Only use adjacent own body surfaces;
+    // never search the whole comment root or another reply's container.
+    if (!isCommentUnit(owner)) {
+      let sibling = owner.nextElementSibling;
+      for (let count = 0; count < 4 && sibling; count++, sibling = sibling.nextElementSibling) {
+        if (sibling.matches?.(`${REPLY_THREAD_SELECTOR},.cmt_info,.reply_info,.cmt_nickbox`) || isCommentUnit(sibling)) break;
+        if (sibling.matches?.(COMMENT_BODY_SELECTOR)) { visit(sibling); break; }
       }
     }
-
-    return out;
+    return surfaces;
   }
 
-  function findCommentTargets(writer) {
-    const commentLi = writer.closest?.(
-      "#focus_cmt li, .comment_wrap li, .cmt_list li, .reply_box li, .reply_list li, .dccon_comment_box li, li.ub-content"
-    );
-    if (commentLi && isInsideCommentRoot(commentLi)) return expandCommentThread(commentLi);
+  function clearCommentBlock(owner) {
+    commentSurfaces.get(owner)?.forEach((surface) => surface.classList.remove(COMMENT_SURFACE_CLASS));
+    commentSurfaces.delete(owner);
+    owner.removeAttribute(COMMENT_SURFACES_ATTR);
+    owner.classList.remove(BLOCKED_CLASS);
+  }
 
-    const info = writer.closest?.(".cmt_info, .reply_info, .cmt_nickbox") || writer;
-    const body = findBodyFromInfo(info);
-
-    return [...new Set([info, body].filter(Boolean))];
+  function markCommentBlocked(owner) {
+    clearCommentBlock(owner);
+    const needsOwnSurfaces = hasNestedComments(owner) || !isCommentUnit(owner);
+    if (needsOwnSurfaces) {
+      owner.setAttribute(COMMENT_SURFACES_ATTR, 'true');
+      const surfaces = collectOwnCommentSurfaces(owner);
+      surfaces.forEach((surface) => surface.classList.add(COMMENT_SURFACE_CLASS));
+      commentSurfaces.set(owner, surfaces);
+    }
+    // One recovery/report marker represents one author-owned comment, even
+    // when several own visual surfaces must be hidden to preserve its replies.
+    owner.classList.add(BLOCKED_CLASS);
+    globalThis.DCBBlockStats?.report?.(owner, 'users');
   }
 
   function findListContainer(writer) {
@@ -780,21 +740,33 @@
   function isViewWriter(writer) {
     if (isInsideCommentRoot(writer)) return false;
     if (writer.getAttribute?.("data-loc") === "view") return true;
-    return !!writer.closest?.(".gallview_head, .view_head, .view_content_wrap");
+    return !!writer.closest?.(".gallview_head, .view_head");
   }
 
   function findViewContainer(writer) {
     if (!isViewWriter(writer)) return null;
 
-    return (
-      writer.closest?.(".view_content_wrap") ||
-      document.querySelector(".view_content_wrap") ||
-      writer.closest?.(".view_wrap") ||
-      writer.closest?.(".gallview") ||
-      writer.closest?.("article") ||
-      writer.closest?.(".gallview_head, .view_head") ||
-      null
-    );
+    // The post header owns this identity. Its surrounding view wrapper can
+    // also contain comments from other authors and must remain visible.
+    return writer.closest?.(".gallview_head, .view_head") || writer;
+  }
+
+  function markViewBlocked(writer) {
+    const owner = findViewContainer(writer);
+    if (!owner) return;
+    clearCommentBlock(owner);
+    const scope = writer.closest?.(".view_content_wrap,.gallview_wrap,.view_wrap,.gallview,article") || writer.ownerDocument;
+    const surfaces = new Set([owner]);
+    scope.querySelectorAll?.("#write_div,.write_div,.writing_view_box,.write_view,#dgn_content_de").forEach((body) => {
+      if (body.closest?.("#dcb-preview-overlay,.dcbpv-panel,[data-dcb-owned='preview']")) return;
+      if (body.closest?.(COMMENT_ROOT_SELECTOR) || body.querySelector?.(COMMENT_ROOT_SELECTOR)) return;
+      surfaces.add(body);
+    });
+    owner.setAttribute(COMMENT_SURFACES_ATTR, 'true');
+    surfaces.forEach((surface) => surface.classList.add(COMMENT_SURFACE_CLASS));
+    commentSurfaces.set(owner, surfaces);
+    owner.classList.add(BLOCKED_CLASS);
+    globalThis.DCBBlockStats?.report?.(owner, 'users');
   }
 
   function markBlocked(el) {
@@ -818,10 +790,13 @@
     }
 
     candidates.forEach((node) => {
+      // Preview author matching belongs to the preview bridge. A native full
+      // scan must never resolve preview identities to the underlying page.
+      if (node.closest?.("#dcb-preview-overlay,.dcbpv-panel,[data-dcb-owned='preview']")) return;
       const writer =
         (node.matches?.(authorSelector) ? node : null) ||
         node.closest?.(authorSelector) ||
-        node.querySelector?.(authorSelector) ||
+        ownCommentElement(node, authorSelector) ||
         node.closest?.(infoSelector) ||
         (node.matches?.(unsafeFallbackSelector) ? null : node);
 
@@ -911,10 +886,8 @@
   }
 
   function findUnblockOwner(writer) {
-    const commentItem = writer.closest?.(
-      "#focus_cmt li, .comment_wrap li, .cmt_list li, .reply_box li, .reply_list li, .dccon_comment_box li, li.ub-content"
-    );
-    if (commentItem && isInsideCommentRoot(commentItem)) return commentItem;
+    const commentItem = findCommentOwner(writer);
+    if (commentItem) return commentItem;
 
     return (
       findListContainer(writer) ||
@@ -1036,7 +1009,7 @@
           commentContext.nickbox.querySelector?.(`:scope > .${UNBLOCK_HOST_CLASS}`) ||
           commentContext.writerAnchor?.querySelector?.(`:scope > .${UNBLOCK_HOST_CLASS}`) ||
           [...(owner?.querySelectorAll?.(`.${UNBLOCK_HOST_CLASS}`) || [])].find((node) =>
-            node.closest("li") === owner.closest("li")) ||
+            findCommentOwner(node) === owner) ||
           null
         )
       : (owner?.querySelector?.(`.${UNBLOCK_HOST_CLASS}`) || null);
@@ -1138,12 +1111,14 @@
     const targets = new Set();
 
     if (isInsideCommentRoot(writer)) {
-      findCommentTargets(writer).forEach((target) => targets.add(target));
+      const owner = findCommentOwner(writer);
+      if (owner) clearCommentBlock(owner);
+      return;
     } else {
       const listContainer = findListContainer(writer);
       const viewContainer = findViewContainer(writer);
       if (listContainer) targets.add(listContainer);
-      if (viewContainer) targets.add(viewContainer);
+      if (viewContainer) clearCommentBlock(viewContainer);
     }
 
     targets.forEach((target) => target?.classList?.remove(BLOCKED_CLASS));
@@ -1153,15 +1128,16 @@
     if (options.reset === true) clearDomBlocks();
     if (matcher.empty) return;
 
+    const commentWriters = new Map();
     getCandidateWriters(base).forEach((writer) => {
-      if (options.reset !== true) clearWriterBlockState(writer);
-      if (!writerMatches(writer, matcher)) return;
-
-      const commentTargets = isInsideCommentRoot(writer) ? findCommentTargets(writer) : [];
-      if (commentTargets.length) {
-        commentTargets.forEach(markBlocked);
+      const owner = findCommentOwner(writer);
+      if (owner) {
+        if (!commentWriters.has(owner)) commentWriters.set(owner, []);
+        commentWriters.get(owner).push(writer);
         return;
       }
+      if (options.reset !== true) clearWriterBlockState(writer);
+      if (!writerMatches(writer, matcher)) return;
 
       const listContainer = findListContainer(writer);
       if (listContainer) {
@@ -1169,8 +1145,11 @@
         return;
       }
 
-      const viewContainer = findViewContainer(writer);
-      if (viewContainer) markBlocked(viewContainer);
+      markViewBlocked(writer);
+    });
+    commentWriters.forEach((writers, owner) => {
+      clearCommentBlock(owner);
+      if (writers.some((writer) => writerMatches(writer, matcher))) markCommentBlocked(owner);
     });
   }
 
@@ -1328,6 +1307,13 @@
       if (record.type === "attributes") {
         queueIncrementalApply(record.target);
         return;
+      }
+      // Native may attach a nested reply thread after its parent was hidden.
+      // Recompute only that blocked owner's own surfaces, releasing the new
+      // thread without moving/recreating any native comment nodes.
+      const blockedOwner = record.target?.closest?.(`.${BLOCKED_CLASS}`);
+      if (activeConf?.userBlockEnabled && blockedOwner && isInsideCommentRoot(blockedOwner) && !isInternalUiNode(record.target)) {
+        markCommentBlocked(blockedOwner);
       }
       record.addedNodes.forEach((node) => {
         if (node.nodeType === 1 || node.nodeType === 11) queueIncrementalApply(node);

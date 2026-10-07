@@ -328,8 +328,28 @@
     delete frame.dataset.ibxAuthorPeek;
   }
 
+  function isYouTubeFrame(el) {
+    if (el?.tagName !== "IFRAME") return false;
+    const hosts = ["youtube.com", "www.youtube.com", "m.youtube.com", "youtube-nocookie.com", "www.youtube-nocookie.com", "youtu.be"];
+    for (const name of ["src", "data-src", "data-original", "data-original-src", "data-original-url", "data-lazy", "data-lazy-src", "data-url", "data-embed-src", "data-video-url"]) {
+      try {
+        const raw = el.getAttribute(name);
+        if (!raw) continue;
+        const url = new URL(raw.trim().replace(/&amp;/g, "&"), location.href);
+        if (/^https?:$/.test(url.protocol) && hosts.includes(url.hostname)) return true;
+      } catch (_) {}
+    }
+    return false;
+  }
+
   function mediaAllowed(el) {
     if (!el) return false;
+    // A hosted player is not an image file or a DCInside movie. Do not wrap,
+    // hash, hide or put an image-block toolbar over a YouTube iframe.
+    if (isYouTubeFrame(el)) {
+      clearDccon(el);
+      return false;
+    }
     if (dccon(el)) {
       clearDccon(el);
       return false;
