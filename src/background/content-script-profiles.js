@@ -13,7 +13,7 @@
   if (globalThis.DCBContentScriptProfiles) return;
 
   globalThis.DCBContentScriptProfiles = Object.freeze({
-    version: 2,
+    version: 3,
     chrome: Object.freeze([
     {
         "id": "dcb-profile-chrome-00",
@@ -100,20 +100,6 @@
             "src/content/image/image-blocker.js"
         ],
         "runAt": "document_start",
-        "allFrames": false
-    },
-    {
-        "id": "dcb-profile-chrome-05",
-        "matches": [
-            "*://gall.dcinside.com/*",
-            "*://www.dcinside.com/*",
-            "*://search.dcinside.com/*"
-        ],
-        "persistAcrossSessions": true,
-        "js": [
-            "src/content/appearance/font-manager.js"
-        ],
-        "runAt": "document_end",
         "allFrames": false
     },
     {

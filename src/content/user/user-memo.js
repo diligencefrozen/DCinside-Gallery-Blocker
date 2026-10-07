@@ -156,12 +156,13 @@
 
       .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} .addbox:has(> .writer_nikcon),
       td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] .addbox:has(> .writer_nikcon){
-        column-gap:0 !important;
+        gap:0 !important;
       }
 
       .gall_list td.gall_writer.${WRITER_ENHANCED_CLASS} .nickname,
       td.gall_writer.ub-writer.${WRITER_ENHANCED_CLASS}[data-loc="list"] .nickname{
         display:inline-block !important;
+        flex:0 1 auto !important;
         max-width:calc(100% - 74px) !important;
         min-width:0 !important;
         overflow:hidden !important;
@@ -1242,6 +1243,9 @@
   }
 
   function renderAll(root = document) {
+    if (root instanceof Element && root.matches(WRITER_SELECTOR)) {
+      removeWriterNikconWhitespace(root);
+    }
     root.querySelectorAll?.(WRITER_SELECTOR).forEach(removeWriterNikconWhitespace);
     if (!enabled) {
       removeInjectedUiInRoot(root);

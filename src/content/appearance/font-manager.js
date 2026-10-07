@@ -210,6 +210,12 @@
     const version = ++requestVersion;
     globalThis.DCBRuntimeSettingsCache.get(DCBFont.STORAGE_DEFAULTS, (settings) => {
       if (version !== requestVersion || chrome.runtime?.lastError) return;
+      const bootstrapSettings = globalThis.DCBFontBootstrap?.getSettings?.();
+      if (
+        settings?.dcbApplyFontToDc !== true &&
+        bootstrapSettings?.dcbApplyFontToDc === true &&
+        globalThis.DCBRuntimeSettingsCache.source === "empty"
+      ) return;
       applyFont(settings);
     });
   }

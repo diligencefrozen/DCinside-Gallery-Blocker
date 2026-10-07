@@ -30,6 +30,7 @@
   let conf = { ...fontApi.STORAGE_DEFAULTS };
   let requestVersion = 0;
   let stickyActive = false;
+  let settingsReady = false;
 
   function mountPoint() {
     return document.head || document.documentElement;
@@ -123,6 +124,7 @@
 
   function applyEarlyFont(settings, { persist = true } = {}) {
     conf = { ...fontApi.STORAGE_DEFAULTS, ...conf, ...settings };
+    settingsReady = true;
     if (conf.dcbApplyFontToDc !== true) {
       clearEarlyFont({ clearSticky: persist });
       return;
@@ -165,7 +167,10 @@
   // font has been enabled on this DCinside origin, the same family is painted on
   // the next navigation immediately. Runtime storage is only a later validator.
   const sticky = readSticky();
-  globalThis.DCBFontBootstrap = { getSettings: () => ({ ...conf }) };
+  globalThis.DCBFontBootstrap = Object.freeze({
+    getSettings: () => settingsReady ? { ...conf } : null,
+    isReady: () => settingsReady
+  });
   if (sticky) {
     stickyActive = true;
     applyEarlyFont(sticky, { persist: false });
