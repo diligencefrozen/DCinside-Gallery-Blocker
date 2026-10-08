@@ -1,5 +1,35 @@
 /* options.js */
 
+/* 옵션 페이지 본문 스크롤 전용 상단 이동 버튼. 내부 목록의 스크롤에는 개입하지 않는다. */
+(() => {
+  const button = document.getElementById("dcbScrollTop");
+  if (!button) return;
+
+  const getScrollTop = () => {
+    const root = document.scrollingElement;
+    return Math.max(root?.scrollTop || 0, window.scrollY || 0);
+  };
+
+  let frame = 0;
+  const update = () => {
+    frame = 0;
+    button.hidden = getScrollTop() <= 250;
+  };
+  const scheduleUpdate = () => {
+    if (frame) return;
+    frame = window.requestAnimationFrame(update);
+  };
+
+  window.addEventListener("scroll", scheduleUpdate, { passive: true });
+  window.addEventListener("resize", scheduleUpdate, { passive: true });
+  update();
+
+  button.addEventListener("click", () => {
+    const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    window.scrollTo({ top: 0, left: 0, behavior: reduceMotion ? "auto" : "smooth" });
+  });
+})();
+
 /* ───── 상수 ───── */
 const builtinBlocked = ["dcbest"];
 

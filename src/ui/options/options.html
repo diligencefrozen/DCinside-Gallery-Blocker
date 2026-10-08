@@ -49,6 +49,33 @@
   code{background:#30363d;padding:2px 6px;border-radius:4px;font-size:13px}
   @media(max-width:480px){.card{padding:20px}h1{font-size:22px}}
 
+  #dcbScrollTop{
+    position:fixed;
+    right:max(20px,env(safe-area-inset-right));
+    bottom:max(20px,env(safe-area-inset-bottom));
+    z-index:20;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    width:44px;
+    height:44px;
+    padding:0;
+    border:1px solid rgba(147,169,255,.65);
+    border-radius:50%;
+    background:rgba(22,27,34,.94);
+    color:var(--accent);
+    box-shadow:0 8px 24px rgba(0,0,0,.34);
+    font-size:21px;
+    line-height:1;
+    opacity:1;
+    transform:translateY(0);
+    transition:opacity .18s ease,transform .18s ease,background .18s ease;
+  }
+  #dcbScrollTop:hover{background:var(--accent);color:var(--bg-1)}
+  #dcbScrollTop:focus-visible{outline:2px solid #dbeafe;outline-offset:3px}
+  #dcbScrollTop[hidden]{display:none}
+  @media(prefers-reduced-motion:reduce){#dcbScrollTop{transition:none}}
+
   .switch{
     position:relative;
     display:inline-flex;
@@ -1759,6 +1786,8 @@
     <a class="support-link" href="https://chromewebstore.google.com/detail/%EB%94%94%EC%8B%9C%EA%B0%A4-%EC%B0%A8%EB%8B%A8%EA%B8%B0/fnfmdbldnhadkadklplhcjcojjiaopgg/reviews?hl=ko" target="_blank" rel="noopener noreferrer">문의하기</a>
   </section>
 </main>
+
+<button id="dcbScrollTop" type="button" aria-label="맨 위로 이동" title="맨 위로 이동" hidden>↑</button>
 
 <script src="../shared/ui-settings-cache.js"></script>
 <script src="../../content/appearance/font-config.js"></script>

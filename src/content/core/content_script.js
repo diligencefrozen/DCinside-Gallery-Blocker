@@ -591,10 +591,11 @@ syncSettings(handleUrl);
       #${OVERLAY_ID} .dcbpv-scroll::-webkit-scrollbar{width:8px}#${OVERLAY_ID} .dcbpv-scroll::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:999px}
       #${OVERLAY_ID} .dcbpv-section{margin:0 0 24px}
       #${OVERLAY_ID} .dcbpv-section-title{margin:0;color:#1f2937;font-size:17px;font-weight:750;line-height:1.5}
-      #${OVERLAY_ID} .dcbpv-comments-header{display:flex;align-items:center;gap:16px;min-width:0;margin-bottom:4px}
-      #${OVERLAY_ID} .dcbpv-thread-count{color:#8490a3;font-size:12px;white-space:nowrap}
-      #${OVERLAY_ID} .dcbpv-comments-actions{display:flex;gap:14px;margin-left:auto;flex:0 0 auto}
-      #${OVERLAY_ID} .dcbpv-comments-actions :is(button,a){border:0;padding:3px 0;background:transparent;color:#475569;font-size:12px;cursor:pointer;text-decoration:none}
+      #${OVERLAY_ID} .dcbpv-comments-header{display:flex!important;position:relative!important;align-items:center!important;justify-content:flex-start!important;flex-wrap:wrap!important;gap:8px 16px!important;width:100%!important;min-width:0!important;min-height:32px!important;margin:0 0 8px!important;padding:0!important;float:none!important;clear:both!important;box-sizing:border-box!important}
+      #${OVERLAY_ID} .dcbpv-comments-header > .dcbpv-comments-title{display:block!important;position:static!important;flex:0 1 auto!important;min-width:0!important;width:auto!important;margin:0!important;padding:0!important;float:none!important;clear:none!important}
+      #${OVERLAY_ID} .dcbpv-thread-count{display:inline-block!important;position:static!important;flex:0 1 auto!important;min-width:0!important;width:auto!important;margin:0!important;padding:0!important;float:none!important;white-space:nowrap!important;color:#8490a3;font-size:12px}
+      #${OVERLAY_ID} .dcbpv-comments-actions{display:inline-flex!important;position:static!important;align-items:center!important;justify-content:flex-end!important;flex:0 0 auto!important;min-width:0!important;max-width:100%!important;width:auto!important;height:auto!important;margin:0 0 0 auto!important;padding:0!important;float:none!important;clear:none!important;gap:12px!important;white-space:nowrap!important}
+      #${OVERLAY_ID} .dcbpv-comments-actions :is(button,a){display:inline-flex!important;position:static!important;align-items:center!important;justify-content:center!important;width:auto!important;min-width:0!important;height:auto!important;max-width:none!important;margin:0!important;border:0!important;padding:3px 0!important;float:none!important;clear:none!important;background:transparent!important;color:#475569!important;font:inherit!important;font-size:12px!important;line-height:1.5!important;cursor:pointer;text-decoration:none}
       #${OVERLAY_ID} .dcbpv-comments-actions :is(button,a):hover{text-decoration:underline}
       #${OVERLAY_ID} .dcbpv-html{font-size:15.5px;line-height:1.8;color:#273449;word-break:normal;overflow-wrap:anywhere;min-width:0;max-width:100%;white-space:normal}
       #${OVERLAY_ID} .dcbpv-article{max-width:820px;margin:0 auto}
@@ -684,7 +685,7 @@ syncSettings(handleUrl);
       #${OVERLAY_ID} .dcbpv-share-row{display:flex;gap:8px;margin:10px 0}.dcbpv-share-row button{flex:1;padding:10px;border:1px solid #e5e7eb;border-radius:10px;background:#f8fafc;cursor:pointer;font-weight:700;color:#334155}
       #${OVERLAY_ID} .dcbpv-copy{display:flex;gap:8px;margin-top:12px}.dcbpv-copy input{min-width:0;flex:1;border:1px solid #e5e7eb;border-radius:10px;padding:10px;background:#f8fafc}.dcbpv-copy button{border:1px solid #2563eb;border-radius:10px;padding:0 14px;background:#2563eb;color:#fff;cursor:pointer;font-weight:800}
       @keyframes dcbpv-fade{from{opacity:0}to{opacity:1}}@keyframes dcbpv-pop{from{transform:translateY(8px) scale(.985);opacity:.6}to{transform:none;opacity:1}}@keyframes dcbpv-spin{to{transform:rotate(360deg)}}
-      @media(max-width:540px){#${OVERLAY_ID}{padding:8px}#${OVERLAY_ID} .dcbpv-panel{--dcbpv-thread-indent:20px;max-height:96dvh;border-radius:12px}#${OVERLAY_ID} .dcbpv-header{padding:18px 14px}#${OVERLAY_ID} .dcbpv-title{font-size:18px}#${OVERLAY_ID} .dcbpv-scroll{padding:20px 14px 8px}#${OVERLAY_ID} .dcbpv-actions{padding:10px 14px}#${OVERLAY_ID} .dcbpv-thread-count,#${OVERLAY_ID} .dcbpv-writer > .dcbpv-chip:nth-child(n+3){display:none}#${OVERLAY_ID} .dcbpv-comment-item{margin-left:calc(min(var(--dcb-thread-depth),2) * var(--dcbpv-thread-indent))}#${OVERLAY_ID} .dcbpv-comment-item[data-dcb-thread-depth="3"]::before{box-shadow:calc(-1 * var(--dcbpv-thread-indent)) 0 #ced9eb}#${OVERLAY_ID} .dcbpv-comment-item::before,#${OVERLAY_ID} .dcbpv-comment-item::after{left:-12px!important}#${OVERLAY_ID} .dcbpv-comment-item::after{width:8px!important}#${OVERLAY_ID} .dcbpv-movie-wrap iframe{height:360px!important}}
+      @media(max-width:540px){#${OVERLAY_ID}{padding:8px}#${OVERLAY_ID} .dcbpv-panel{--dcbpv-thread-indent:20px;max-height:96dvh;border-radius:12px}#${OVERLAY_ID} .dcbpv-header{padding:18px 14px}#${OVERLAY_ID} .dcbpv-title{font-size:18px}#${OVERLAY_ID} .dcbpv-scroll{padding:20px 14px 8px}#${OVERLAY_ID} .dcbpv-actions{padding:10px 14px}#${OVERLAY_ID} .dcbpv-thread-count,#${OVERLAY_ID} .dcbpv-writer > .dcbpv-chip:nth-child(n+3){display:none}#${OVERLAY_ID} .dcbpv-comments-header{align-items:flex-start!important;gap:6px 10px!important}#${OVERLAY_ID} .dcbpv-comments-actions{margin-left:auto!important;gap:10px!important}#${OVERLAY_ID} .dcbpv-comments-actions :is(button,a){padding:4px 0!important}#${OVERLAY_ID} .dcbpv-comment-item{margin-left:calc(min(var(--dcb-thread-depth),2) * var(--dcbpv-thread-indent))}#${OVERLAY_ID} .dcbpv-comment-item[data-dcb-thread-depth="3"]::before{box-shadow:calc(-1 * var(--dcbpv-thread-indent)) 0 #ced9eb}#${OVERLAY_ID} .dcbpv-comment-item::before,#${OVERLAY_ID} .dcbpv-comment-item::after{left:-12px!important}#${OVERLAY_ID} .dcbpv-comment-item::after{width:8px!important}#${OVERLAY_ID} .dcbpv-movie-wrap iframe{height:360px!important}}
       @media(prefers-reduced-motion:reduce){#${OVERLAY_ID},#${OVERLAY_ID} .dcbpv-panel{animation:none}#${OVERLAY_ID} button{transition:none}}
     `;
     document.head.appendChild(style);
@@ -921,7 +922,8 @@ syncSettings(handleUrl);
   ]);
   const YOUTUBE_SOURCE_ATTRS = [
     "src", "data-src", "data-original", "data-original-src", "data-original-url",
-    "data-lazy", "data-lazy-src", "data-url", "data-embed-src", "data-video-url"
+    "data-lazy", "data-lazy-src", "data-url", "data-embed-src", "data-video-url",
+    "data-youtube-url", "data-youtube-src", "data-youtube-id", "data-yt-video-id", "data-ytid"
   ];
 
   function previewYouTubeUrl(value, baseUrl){
@@ -985,6 +987,21 @@ syncSettings(handleUrl);
     return { id, embedUrl: embed.href, watchUrl: watch.href };
   }
 
+  function previewYouTubeMediaFromFrame(iframe, baseUrl){
+    if (!iframe?.getAttribute) return null;
+    for (const name of YOUTUBE_SOURCE_ATTRS) {
+      const value = iframe.getAttribute(name);
+      if (!value) continue;
+      const idOnly = /^(?:data-youtube-id|data-yt-video-id|data-ytid)$/.test(name)
+        && /^[A-Za-z0-9_-]{11}$/.test(value.trim());
+      const media = idOnly
+        ? previewYouTubeUrl(`https://www.youtube.com/embed/${value.trim()}`, baseUrl)
+        : previewYouTubeUrl(value, baseUrl);
+      if (media) return media;
+    }
+    return null;
+  }
+
   function normalizePreviewYouTubeFrames(root, baseUrl){
     if (!root) return;
     const frames = [...(root.querySelectorAll?.("iframe") || [])];
@@ -994,13 +1011,10 @@ syncSettings(handleUrl);
       // Native movie/poll identity takes precedence over an unrelated lazy hint.
       if (iframe.closest?.(".dcbpv-movie-wrap") || iframe.classList.contains("dcbpv-poll-frame") ||
           dcPollFrameUrl(iframe, baseUrl) || dcMoviePlayerUrl(iframe, baseUrl)) continue;
-      let media = null;
-      for (const name of YOUTUBE_SOURCE_ATTRS) {
-        const value = iframe.getAttribute(name);
-        if (value && (media = previewYouTubeUrl(value, baseUrl))) break;
-      }
+      // Some DCInside lazy players keep only the video ID in a YouTube-specific
+      // data attribute. Generic data-video-id is intentionally not trusted here.
+      const media = previewYouTubeMediaFromFrame(iframe, baseUrl);
       if (!media) continue;
-      if (iframe.getAttribute("src") !== media.embedUrl) iframe.setAttribute("src", media.embedUrl);
       iframe.classList.add("dcbpv-youtube-frame");
       iframe.classList.remove("lazy", "img_loading");
       if (!iframe.title) iframe.title = "YouTube 동영상 플레이어";
@@ -1020,6 +1034,13 @@ syncSettings(handleUrl);
       YOUTUBE_SOURCE_ATTRS.filter((name) => name !== "src").forEach((name) => iframe.removeAttribute(name));
       for (const attribute of [...iframe.attributes]) {
         if (attribute.name.toLowerCase().startsWith("on")) iframe.removeAttribute(attribute.name);
+      }
+      // Apply the trusted-frame policy before the first navigation. If an old
+      // lazy frame already navigated with a restrictive sandbox, changing src
+      // after removing it gives the player a clean initialization.
+      if (iframe.getAttribute("src") !== media.embedUrl || iframe.dataset.dcbpvYoutubeReady !== "1") {
+        iframe.setAttribute("src", media.embedUrl);
+        iframe.dataset.dcbpvYoutubeReady = "1";
       }
 
       let wrapper = iframe.parentElement?.parentElement;
@@ -2436,8 +2457,8 @@ syncSettings(handleUrl);
 
   function hasPreviewArticleMedia(html, baseUrl){
     const doc = new DOMParser().parseFromString(String(html || ""), "text/html");
-    return [...doc.querySelectorAll("img[src],video[src],video source[src],iframe[src]")].some((node) => {
-      const raw = decodeMediaUrl(node.getAttribute("src"));
+    return [...doc.querySelectorAll("img[src],video[src],video source[src],iframe[src],iframe[data-src],iframe[data-original],iframe[data-url]")].some((node) => {
+      const raw = decodeMediaUrl(node.getAttribute("src") || node.getAttribute("data-src") || node.getAttribute("data-original") || node.getAttribute("data-url"));
       if (!raw || node.classList.contains("dcbpv-img-broken")) return false;
       let url;
       try { url = new URL(raw, baseUrl || location.href); }
@@ -2449,6 +2470,25 @@ syncSettings(handleUrl);
       }
       return true;
     });
+  }
+
+  function previewYouTubeFramePresent(html, baseUrl){
+    if (!html) return false;
+    try {
+      const doc = new DOMParser().parseFromString(String(html), "text/html");
+      return [...doc.querySelectorAll("iframe")].some((iframe) => !!previewYouTubeMediaFromFrame(iframe, baseUrl));
+    } catch (_) { return false; }
+  }
+
+  function previewMayContainDynamicYouTube(data){
+    // Keep this probe cheap: it runs before every preview render, while the
+    // full raw page can contain a large article and unrelated embeds.
+    const article = String(data?.articleHTML || "").slice(0, 120000);
+    const raw = [data?.rawHtml, data?.desktopRawHtml]
+      .filter(Boolean).map((value) => String(value).slice(0, 64000)).join(" ");
+    const source = `${article} ${raw}`;
+    if (/(?:ytmVideoCoverHost|ytmCuedOverlayHost|video-cover|cued-overlay|data-(?:youtube|yt)-)/i.test(source)) return true;
+    return /<iframe\b[^>]*(?:youtube(?:-nocookie)?\.com|youtu\.be|youtube[-_ ]?(?:player|embed))/i.test(source);
   }
 
   function isWeakPreviewData(data){
@@ -2472,7 +2512,10 @@ syncSettings(handleUrl);
 
     if (!result.title || isLayerLikeText(result.title)) result.title = backup.title;
     if (!result.writerHTML && backup.writerHTML) result.writerHTML = backup.writerHTML;
-    if ((!result.articleHTML || isHashOnlyText(articleText) || isWeakPreviewData(primary) && !isWeakPreviewData(backup)) && backup.articleHTML) {
+    const backupHasYoutube = previewYouTubeFramePresent(backup.articleHTML, backup.fetchedUrl || backup.url);
+    const primaryHasYoutube = previewYouTubeFramePresent(result.articleHTML, result.fetchedUrl || result.url);
+    if ((!result.articleHTML || isHashOnlyText(articleText) || isWeakPreviewData(primary) && !isWeakPreviewData(backup)
+      || backupHasYoutube && !primaryHasYoutube) && backup.articleHTML) {
       result.articleHTML = backup.articleHTML;
     }
     if (!result.commentsHTML && backup.commentsHTML) {
@@ -3251,7 +3294,10 @@ syncSettings(handleUrl);
     // 댓글은 본문 렌더링 이후 별도의 AJAX 단계에서 가져온다.
     // commentsHTML이 비었다는 이유만으로 데스크톱 본문을 한 번 더 기다리면
     // 정상적인 모바일 본문도 표시가 늦어지므로, 본문 품질/작성자 정보가 부족할 때만 fallback한다.
-    if (!data || isWeakPreviewData(data) || !data.writerHTML) {
+    const needsDesktopMediaFallback = data
+      && !previewYouTubeFramePresent(data.articleHTML, data.fetchedUrl || data.url)
+      && previewMayContainDynamicYouTube(data);
+    if (!data || isWeakPreviewData(data) || !data.writerHTML || needsDesktopMediaFallback) {
       try {
         const desktopResponse = await fetchText(url, signal, cacheMode);
         const desktopData = parseDesktopFallback(desktopResponse.text, url, desktopResponse.finalUrl || url);
@@ -3263,11 +3309,24 @@ syncSettings(handleUrl);
       }
     }
 
+    let renderedFrameAttempted = false;
     if (!data || isWeakPreviewData(data)) {
+      renderedFrameAttempted = true;
       const renderedData = await fetchPreviewViaRenderedFrame(url, signal);
       if (renderedData) {
         // 렌더링된 본문을 우선하고, 기존 fetch에서 얻은 댓글/통계만 보충한다.
         data = data ? mergePreviewData(renderedData, data) : renderedData;
+      }
+    }
+
+    // Mobile/desktop HTML can contain a valid article while omitting the
+    // dynamically-created YouTube iframe. Only marked pages take this bounded
+    // rendered-frame fallback; ordinary previews keep the fast path.
+    if (!renderedFrameAttempted && data && previewMayContainDynamicYouTube(data)
+      && !previewYouTubeFramePresent(data.articleHTML, data.fetchedUrl || data.url)) {
+      const renderedData = await fetchPreviewViaRenderedFrame(url, signal);
+      if (renderedData && previewYouTubeFramePresent(renderedData.articleHTML, renderedData.fetchedUrl || renderedData.url)) {
+        data = mergePreviewData(renderedData, data);
       }
     }
 
@@ -4315,7 +4374,13 @@ syncSettings(handleUrl);
     if (!url || !previewEnabled) return;
     const requestKey = previewCacheKey(url);
     const cached = !options.force ? readPreviewCache(url) : null;
-    if (cached) {
+    // Older cache entries can contain a valid article body while losing the
+    // dynamically-created YouTube iframe. Refresh only those entries so a
+    // previously opened post does not keep rendering an iframe-less snapshot.
+    const cachedNeedsYoutubeRefresh = !!cached
+      && previewMayContainDynamicYouTube(cached)
+      && !previewYouTubeFramePresent(cached.articleHTML, cached.fetchedUrl || cached.url);
+    if (cached && !cachedNeedsYoutubeRefresh) {
       const trace = beginPreviewTrace(url, requestKey, true);
       activeAbort?.abort();
       const requestVersion = ++previewRequestVersion;
@@ -4326,6 +4391,7 @@ syncSettings(handleUrl);
       completePreviewTrace(trace);
       return cached;
     }
+    if (cachedNeedsYoutubeRefresh) options = { ...options, force: true };
     if (!options.force && activeOpenPromise && activeRequestKey === requestKey) return activeOpenPromise;
     const trace = beginPreviewTrace(url, requestKey, false);
 

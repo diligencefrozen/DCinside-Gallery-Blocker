@@ -32,6 +32,11 @@
     display:flex;flex-direction:column;
   }
   .popup-main{flex:1 1 auto;min-height:0;padding:18px var(--popup-content-padding);overflow-y:auto;overflow-x:hidden;display:flex;flex-direction:column;gap:18px;scrollbar-gutter:stable}
+  #popupBackToTop{position:fixed;right:calc(var(--popup-scrollbar-width) + 16px);bottom:calc(var(--popup-footer-height, 0px) + 12px);z-index:20;display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;padding:0;border:1px solid rgba(147,197,253,.48);border-radius:999px;background:rgba(20,38,64,.96);color:#dbeafe;font-size:20px;line-height:1;box-shadow:0 8px 20px rgba(0,0,0,.28);opacity:0;visibility:hidden;pointer-events:none;transform:translateY(5px);transition:opacity .16s ease,visibility .16s ease,transform .16s ease,background .16s ease}
+  #popupBackToTop.is-visible{opacity:1;visibility:visible;pointer-events:auto;transform:translateY(0)}
+  #popupBackToTop:hover{background:#315fe5;color:#fff;box-shadow:0 8px 20px rgba(49,95,229,.35)}
+  #popupBackToTop:focus-visible{outline:2px solid #bfdbfe;outline-offset:2px}
+  @media (prefers-reduced-motion:reduce){#popupBackToTop{transition:none}}
   .popup-footer{flex:0 0 auto;padding:10px calc(var(--popup-content-padding) + var(--popup-scrollbar-width)) 12px var(--popup-content-padding);border-top:1px solid rgba(96,165,250,.2);background:#142640}
   .popup-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;padding:4px;border:1px solid rgba(148,163,184,.18);border-radius:12px;background:#101722}
   .popup-tab{min-width:0;padding:7px 5px;border:0;border-radius:8px;color:#9fb0c8;background:transparent;font-size:12px;white-space:nowrap;box-shadow:none}
@@ -1821,6 +1826,8 @@
 
   <button id="openOptions">고급 설정 열기</button>
 </main>
+
+<button id="popupBackToTop" type="button" tabindex="-1" aria-label="팝업 맨 위로 이동" aria-hidden="true" title="맨 위로 이동">↑</button>
 
 <footer class="popup-footer">
   <section class="donation-card" aria-label="개발자 후원">

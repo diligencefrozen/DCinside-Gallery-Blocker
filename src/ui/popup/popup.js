@@ -37,6 +37,8 @@ const updateNoticeTitleEl = document.getElementById("updateNoticeTitle");
 const updateNoticeMessageEl = document.getElementById("updateNoticeMessage");
 const updateNoticeLinkEl = document.getElementById("updateNoticeLink");
 const popupMainEl = document.querySelector(".popup-main");
+const popupFooterEl = document.querySelector(".popup-footer");
+const popupBackToTopEl = document.getElementById("popupBackToTop");
 
 const keywordBlockToggle = document.getElementById("keywordBlockEnabled");
 const keywordInput = document.getElementById("keywordInput");
@@ -286,6 +288,9 @@ function syncPopupContentRail() {
   if (!popupMainEl) return;
   const scrollbarWidth = Math.max(0, popupMainEl.offsetWidth - popupMainEl.clientWidth);
   document.documentElement.style.setProperty("--popup-scrollbar-width", `${scrollbarWidth}px`);
+  if (popupFooterEl) {
+    document.documentElement.style.setProperty("--popup-footer-height", `${popupFooterEl.getBoundingClientRect().height}px`);
+  }
 }
 
 syncPopupContentRail();
@@ -293,6 +298,28 @@ if (popupMainEl && globalThis.ResizeObserver) {
   new ResizeObserver(syncPopupContentRail).observe(popupMainEl);
 }
 window.addEventListener("resize", syncPopupContentRail);
+
+function syncPopupBackToTop() {
+  if (!popupMainEl || !popupBackToTopEl) return;
+  const visible = popupMainEl.scrollTop > 250;
+  popupBackToTopEl.classList.toggle("is-visible", visible);
+  popupBackToTopEl.setAttribute("aria-hidden", String(!visible));
+  popupBackToTopEl.tabIndex = visible ? 0 : -1;
+}
+
+function scrollPopupToTop() {
+  if (!popupMainEl) return;
+  const reducedMotion = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+  popupMainEl.scrollTo({ top: 0, behavior: reducedMotion ? "auto" : "smooth" });
+}
+
+popupMainEl?.addEventListener("scroll", syncPopupBackToTop, { passive: true });
+popupBackToTopEl?.addEventListener("click", scrollPopupToTop);
+popupTabs.forEach((tab) => tab.addEventListener("click", () => requestAnimationFrame(syncPopupBackToTop)));
+syncPopupBackToTop();
+if (popupFooterEl && globalThis.ResizeObserver) {
+  new ResizeObserver(syncPopupContentRail).observe(popupFooterEl);
+}
 
 function showUpdateNoticeLink(candidate, label) {
   return globalThis.DCBPopupReleaseLink?.configure(updateNoticeLinkEl, candidate, label);
