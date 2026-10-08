@@ -6,11 +6,20 @@
 
 **Less noise. More focus.**
 
-A Chrome extension that helps you control what you see on DCinside.
+A browser extension for Chrome and Firefox that helps you control what you see on DCinside.
 
 Block unwanted galleries, posts, comments, users, keywords, images, and other distractions — without sending your personal block lists to a developer-run server.
 
 [한국어](README.ko.md)
+
+<p>
+  <a href="https://chromewebstore.google.com/detail/fnfmdbldnhadkadklplhcjcojjiaopgg">
+    <img src="https://img.shields.io/badge/Install-Chrome%20Web%20Store-4285F4?logo=googlechrome&logoColor=white&style=for-the-badge" alt="Install from the Chrome Web Store">
+  </a>
+  <a href="https://addons.mozilla.org/ko/firefox/addon/dcinside-gallery-blocker/">
+    <img src="https://img.shields.io/badge/Install-Firefox%20Add--ons-FF7139?logo=firefoxbrowser&logoColor=white&style=for-the-badge" alt="Install from Firefox Add-ons">
+  </a>
+</p>
 
 <p>
   <a href="https://chromewebstore.google.com/detail/fnfmdbldnhadkadklplhcjcojjiaopgg">
@@ -22,9 +31,10 @@ Block unwanted galleries, posts, comments, users, keywords, images, and other di
   <a href="https://chromewebstore.google.com/detail/fnfmdbldnhadkadklplhcjcojjiaopgg">
     <img src="https://img.shields.io/chrome-web-store/stars/fnfmdbldnhadkadklplhcjcojjiaopgg?label=Rating&style=for-the-badge" alt="Chrome Web Store Rating">
   </a>
+  <a href="https://addons.mozilla.org/ko/firefox/addon/dcinside-gallery-blocker/">
+    <img src="https://img.shields.io/amo/v/dcinside-gallery-blocker?label=Firefox%20Add-ons&style=for-the-badge" alt="Firefox Add-ons Version">
+  </a>
 </p>
-
-**[Install from the Chrome Web Store](https://chromewebstore.google.com/detail/fnfmdbldnhadkadklplhcjcojjiaopgg)**
 
 </div>
 
@@ -34,19 +44,22 @@ Block unwanted galleries, posts, comments, users, keywords, images, and other di
 
 | | |
 | --- | --- |
-| Chrome Web Store users | **792** |
-| Store rating | **4.8 / 5** |
-| Ratings | **18** |
-| Current release | **7.3.42.2026** |
-| Platform | **Chrome 116+ · Manifest V3** |
+| Chrome Web Store version | **7.3.45.2026** |
+| Firefox Add-ons version | **7.3.45.2026** |
+| Chrome Web Store users | **1,000** |
+| Chrome Web Store rating | **4.8 / 5 (28 ratings)** |
+| Firefox Add-ons ratings | **No ratings yet** |
+| Supported browsers | **Chrome 121+ · Firefox 140+ · Manifest V3** |
 | Stack | **JavaScript · HTML · CSS** |
-| Distribution | **Chrome Web Store** |
+| Distribution | **Chrome Web Store · Firefox Add-ons** |
 
-> Store numbers above are a snapshot from August 2026. The badges at the top may show newer values.
+> Store information was checked on October 9, 2026 (KST). Chrome currently shows 1,000 users and 28 ratings; Firefox currently has no ratings and does not show a user count on its listing. Store versions are listed separately because they may diverge.
 
 ---
 
 ## Why I Built It
+
+Current reading-related work includes enabling previews by default, adjusting comment wrapping, video playback, and text-con hiding, adding reversible font settings, and offering optional on-device text analysis. See the [development and validation guide](docs/reading-and-detection.md) for model-inclusive setup and the [user guide](docs/text-detection.html) for the analysis scope.
 
 DCinside is a fast-moving community. Even if you avoid a particular gallery, its posts, users, or links can still show up in search results, sidebars, recently visited lists, and the site's popular posts page.
 
@@ -54,7 +67,7 @@ I originally built this extension for a simple reason: I wanted to decide for my
 
 A basic gallery blacklist worked at first, but it did not solve the whole problem. Blocking one page did not stop unwanted links, comments, users, images, or newly loaded content from appearing elsewhere.
 
-What started as a small personal blocker gradually grew into a full Chrome extension for filtering and customizing DCinside.
+What started as a small personal blocker gradually grew into a cross-browser extension for filtering and customizing DCinside.
 
 > **Give users more control over what they see.**
 
@@ -62,7 +75,7 @@ What started as a small personal blocker gradually grew into a full Chrome exten
 
 ## What You Can Do
 
-The names below follow the current extension UI. Korean labels are included in backticks so the README can be matched directly to the product.
+The names below follow the current extension UI. Korean labels are included in backticks so the README can be matched directly to the product. The core filtering and settings code is shared between the Chrome and Firefox builds, while browser-specific execution paths can affect timing or behavior; see [How It Works](#how-it-works).
 
 ### Gallery blocking
 
@@ -70,7 +83,7 @@ Add a gallery by ID or URL with **Gallery Blocking (`갤러리 차단`)**, then 
 
 - **Smart (`스마트`)** — shows a warning first and still lets you enter when you intentionally want to.
 - **Beginner (`초보`)** — shows a warning, then returns you to the previous page after the configured delay.
-- **Hard (`하드`)** — blocks the gallery before it loads by using Chrome's network-blocking API.
+- **Hard (`하드`)** — uses the extension's browser-level network-blocking path to stop the gallery before it loads. The exact timing can differ by browser.
 
 You can also add the gallery you are currently viewing with **Block Current Gallery (`현재 갤러리 차단`)**.
 
@@ -121,7 +134,7 @@ DCinside has a dedicated page that collects popular and trending posts from acro
 
 I built the first version for myself. Once other people started using it, the project became less about adding features and more about maintaining software people actually relied on.
 
-Chrome Web Store reviews have directly shaped bug fixes, performance improvements, storage changes, UI changes, and new features.
+Store reviews and user feedback have directly shaped bug fixes, performance improvements, storage changes, UI changes, and new features.
 
 The development loop became:
 
@@ -155,9 +168,9 @@ One user reported that right-click blocking no longer worked in any of the galle
 
 The first fix focused on finding author information more reliably.
 
-Further testing showed that author lookup was only part of the problem. As block lists grew, the previous storage design could also run into Chrome Sync limits.
+Further testing showed that author lookup was only part of the problem. As block lists grew, the previous storage design could also run into browser sync-storage limits.
 
-I kept small, frequently changed preferences in Chrome Sync, moved larger UID/IP block data into local extension storage, and split the block list across **256 buckets**.
+I kept small, frequently changed preferences in browser sync storage, moved larger UID/IP block data into local extension storage, and split the block list across **256 buckets**.
 
 ```text
 Before
@@ -201,15 +214,15 @@ That bug changed how I think about maintenance:
 
 ## How It Works
 
-A Chrome extension is split across several execution contexts, each with a different job.
+The Chrome and Firefox builds share one Manifest V3 codebase. Each build is split across several execution contexts, each with a different job.
 
 ```mermaid
 flowchart TD
     UI["Popup & Settings"]
-    Storage["Chrome Storage"]
-    Background["Background Service Worker"]
+    Storage["Extension Storage"]
+    Background["Background Context"]
     Content["Content Scripts"]
-    Rules["Network Blocking Rules"]
+    Rules["Browser Network Rules"]
     Site["DCinside"]
 
     UI --> Storage
@@ -225,11 +238,22 @@ In this project:
 
 - **Popup and settings pages** handle user preferences.
 - **Content scripts** watch DCinside pages and hide or modify unwanted content.
-- **The service worker** handles browser-level jobs such as network rules, messaging, and right-click actions.
-- **Chrome Storage** keeps settings and personal block data.
-- **Declarative Net Request** handles strict network-level gallery blocking.
+- **The background context** handles browser-level jobs such as network rules, messaging, and right-click actions.
+- **Extension storage** keeps settings and personal block data. The shared code uses the `chrome.*` compatibility namespace, which is also available in Firefox for these APIs.
+- **Declarative Net Request** handles strict network-level gallery blocking through the browser's supported extension API.
 
 The extension UI and filtering logic are built with plain JavaScript, HTML, and CSS. Most features need no external service. The optional on-device aggressive-expression detector also runs locally, and the verified ONNX model plus pinned browser runtime are included in the repository.
+
+### Browser-specific execution paths
+
+Both builds share the popup and settings UI, DCinside content filters, extension storage, background messaging, and the local text detector. The integration path differs by browser:
+
+| Chrome | Firefox |
+| --- | --- |
+| Chrome 121+ uses a Manifest V3 service worker and registers the complete eager content-script profile with `chrome.scripting.registerContentScripts`. | Firefox 140+ starts with the static `firefox-bootstrap.js` entrypoint, then the background context injects the Firefox profile with `scripting.executeScript`/`insertCSS`; `feature-loader.js` loads enabled optional features lazily in batches. |
+| The registered profile keeps the Chromium timing used by the Chrome build. | The static bridge is designed to recover the content entrypoint after an `about:debugging` temporary-extension reload. |
+
+These paths intentionally share the same feature code while keeping browser-specific startup and API behavior. Feature timing and some browser-specific behavior can therefore differ between the two store builds.
 
 ---
 
@@ -273,12 +297,12 @@ Handling these layers separately also lets users choose how strict they want blo
 
 ### Making large user block lists reliable
 
-The original storage design was fine for small block lists, but larger UID/IP lists could hit Chrome Sync limits and require increasingly large rewrites.
+The original storage design was fine for small block lists, but larger UID/IP lists could hit browser sync-storage limits and require increasingly large rewrites.
 
 The current approach separates small preferences from larger block data:
 
-- smaller settings can stay in `chrome.storage.sync`
-- larger user block data can use `chrome.storage.local`
+- smaller settings can stay in the browser's sync area (`chrome.storage.sync` in the shared API namespace)
+- larger user block data can use the browser's local extension area (`chrome.storage.local`)
 - UID/IP/nickname values are normalized before storage
 - block keys are hashed with FNV-1a
 - records are distributed across 256 buckets
@@ -294,23 +318,23 @@ That keeps image blocking from depending on a particular image URL.
 
 ### Cross-Context Messaging
 
-The popup, options page, content scripts, and background service worker all run in separate extension contexts.
+The popup, options page, content scripts, and background context all run in separate extension contexts.
 
-Because they do not share one JavaScript runtime, they communicate through Chrome's messaging APIs.
+Because they do not share one JavaScript runtime, they communicate through the extension messaging APIs.
 
 ```text
 Popup / Options
        ↕
-Chrome Messaging
+Extension Messaging API
        ↕
-Service Worker
+Background Context
        ↕
-Chrome Messaging
+Extension Messaging API
        ↕
 Content Scripts
 ```
 
-Post previews and account lookups are routed through the service worker instead of letting each content script make its own request.
+Post previews and account lookups are routed through the background context instead of letting each content script make its own request.
 
 The request broker restricts traffic to approved DCinside hosts, supported protocols, allowed HTTP methods, and a limited set of headers.
 
@@ -353,7 +377,7 @@ DCinside Gallery Blocker does not require a separate account or a developer-oper
 
 The project does not include analytics SDKs or tracking pixels.
 
-Most settings and personal block data stay inside Chrome's extension storage. Small preferences may use Chrome Sync, while larger data such as user blocks, notes, image records, and caches can stay in local extension storage.
+Most settings and personal block data stay inside the browser's extension storage. Small preferences may use browser sync (Chrome Sync or Firefox Sync), while larger data such as user blocks, notes, image records, and caches can stay in local extension storage.
 
 Some features request information directly from approved DCinside services when needed. The developer does not run a separate backend for collecting user block lists or browsing history.
 
@@ -365,15 +389,15 @@ Some features request information directly from approved DCinside services when 
 | --- | --- |
 | Language | JavaScript |
 | Interface | HTML, CSS |
-| Platform | Chrome Extension |
+| Platforms | Chrome and Firefox extensions |
 | Extension model | Manifest V3 |
-| Minimum Chrome version | 116 |
-| Local data | Chrome Storage API |
+| Minimum versions | Chrome 121 · Firefox 140 |
+| Local data | Browser Extension Storage API |
 | Network blocking | Declarative Net Request |
-| Background tasks | Service Worker |
+| Background tasks | Chrome service worker · Firefox event page |
 | Dynamic page handling | MutationObserver |
 | Browser integration | Context Menus, Active Tab |
-| Distribution | Chrome Web Store |
+| Distribution | Chrome Web Store · Firefox Add-ons |
 
 ---
 
@@ -381,12 +405,23 @@ Some features request information directly from approved DCinside services when 
 
 ### Chrome Web Store
 
-**[Install DCinside Gallery Blocker](https://chromewebstore.google.com/detail/fnfmdbldnhadkadklplhcjcojjiaopgg)**
+**[Install DCinside Gallery Blocker from the Chrome Web Store](https://chromewebstore.google.com/detail/fnfmdbldnhadkadklplhcjcojjiaopgg)**
 
 1. Click **Add to Chrome**.
 2. Open the extension from the Chrome toolbar.
 3. Add the galleries or content you want to block.
 4. Choose the blocking mode that fits how you browse.
+
+### Firefox Add-ons
+
+**[Install DCinside Gallery Blocker from Firefox Add-ons](https://addons.mozilla.org/ko/firefox/addon/dcinside-gallery-blocker/)**
+
+1. Open the listing in Firefox and click **Add to Firefox**.
+2. Review the requested permissions and click **Add**.
+3. Open the extension from the Firefox toolbar.
+4. Add the galleries or content you want to block, then choose a blocking mode.
+
+The store release, startup path, and some behavior can differ between Chrome and Firefox; use the store listing for the browser you are installing.
 
 **Smart (`스마트`)** is a good starting point if you want fewer distractions without completely locking yourself out of a gallery.
 
@@ -402,12 +437,22 @@ git clone https://github.com/diligencefrozen/DCinside-Gallery-Blocker.git
 
 Then:
 
+### Chrome
+
 1. Open `chrome://extensions`.
 2. Turn on **Developer mode**.
 3. Click **Load unpacked**.
 4. Select the project folder containing `manifest.json`.
 
-No dependency installation or build step is required to load the checked-out extension in Chrome. The repository includes the verified local detector model and browser runtime used by the optional on-device aggressive-expression detection feature.
+### Firefox
+
+1. Open `about:debugging#/runtime/this-firefox`.
+2. Click **This Firefox**, then **Load Temporary Add-on…**.
+3. Select the repository's `manifest.json`.
+
+The Firefox installation is temporary and normally lasts until Firefox restarts. The repository's static Firefox bootstrap is designed to restore the content entrypoint when a temporary add-on is reloaded.
+
+No dependency installation or build step is required to load the checked-out extension in either browser. The repository includes the verified local detector model and browser runtime used by the optional on-device aggressive-expression detection feature.
 
 If you want to rebuild the detector runtime or create a fresh release folder, install the pinned dependencies and run:
 
@@ -449,6 +494,6 @@ to:
 
 **Clean up DCinside. Keep what matters.**
 
-[Chrome Web Store](https://chromewebstore.google.com/detail/fnfmdbldnhadkadklplhcjcojjiaopgg) · [한국어](README.ko.md)
+[Chrome Web Store](https://chromewebstore.google.com/detail/fnfmdbldnhadkadklplhcjcojjiaopgg) · [Firefox Add-ons](https://addons.mozilla.org/ko/firefox/addon/dcinside-gallery-blocker/) · [한국어](README.ko.md)
 
 </div>

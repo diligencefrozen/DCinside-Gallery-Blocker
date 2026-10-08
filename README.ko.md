@@ -7,9 +7,18 @@
 **Less noise. More focus.**
 
 보고 싶지 않은 갤러리와 글, 댓글, 사용자, 이미지 등을 가려  
-디시인사이드를 조금 더 편하게 볼 수 있도록 만든 Chrome 확장 프로그램입니다.
+디시인사이드에서 보고 싶은 내용을 직접 정리할 수 있는 Chrome·Firefox 공통 확장 프로그램입니다.
 
 [English](README.md)
+
+<p>
+  <a href="https://chromewebstore.google.com/detail/fnfmdbldnhadkadklplhcjcojjiaopgg">
+    <img src="https://img.shields.io/badge/Install-Chrome%20Web%20Store-4285F4?logo=googlechrome&logoColor=white&style=for-the-badge" alt="Chrome 웹 스토어에서 설치">
+  </a>
+  <a href="https://addons.mozilla.org/ko/firefox/addon/dcinside-gallery-blocker/">
+    <img src="https://img.shields.io/badge/Install-Firefox%20Add--ons-FF7139?logo=firefoxbrowser&logoColor=white&style=for-the-badge" alt="Firefox Add-ons에서 설치">
+  </a>
+</p>
 
 <p>
   <a href="https://chromewebstore.google.com/detail/fnfmdbldnhadkadklplhcjcojjiaopgg">
@@ -21,9 +30,10 @@
   <a href="https://chromewebstore.google.com/detail/fnfmdbldnhadkadklplhcjcojjiaopgg">
     <img src="https://img.shields.io/chrome-web-store/stars/fnfmdbldnhadkadklplhcjcojjiaopgg?label=Rating&style=for-the-badge" alt="Chrome 웹 스토어 평점">
   </a>
+  <a href="https://addons.mozilla.org/ko/firefox/addon/dcinside-gallery-blocker/">
+    <img src="https://img.shields.io/amo/v/dcinside-gallery-blocker?label=Firefox%20Add-ons&style=for-the-badge" alt="Firefox Add-ons 버전">
+  </a>
 </p>
-
-**[Chrome 웹 스토어에서 설치하기](https://chromewebstore.google.com/detail/fnfmdbldnhadkadklplhcjcojjiaopgg)**
 
 </div>
 
@@ -33,15 +43,16 @@
 
 | 구분 | 내용 |
 | --- | --- |
-| Chrome 웹 스토어 사용자 | **792명** |
-| 평점 | **5점 만점에 4.8점** |
-| 평점 수 | **18개** |
-| 현재 버전 | **7.3.42.2026** |
-| 지원 환경 | **Chrome 116 이상 · Manifest V3** |
+| Chrome 웹 스토어 버전 | **7.3.45.2026** |
+| Firefox Add-ons 버전 | **7.3.45.2026** |
+| Chrome 웹 스토어 사용자 | **1,000명** |
+| Chrome 웹 스토어 평점 | **5점 만점에 4.8점 (28개 평가)** |
+| Firefox Add-ons 평점 | **아직 없음** |
+| 지원 브라우저 | **Chrome 121 이상 · Firefox 140 이상 · Manifest V3** |
 | 개발 언어 | **JavaScript · HTML · CSS** |
-| 배포 | **Chrome 웹 스토어** |
+| 배포 | **Chrome 웹 스토어 · Firefox Add-ons** |
 
-> 사용자 수와 평점은 2026년 8월에 확인한 값입니다. 위의 배지는 이후 최신 값으로 바뀔 수 있습니다.
+> 스토어 정보는 2026년 10월 9일(한국 시간)에 확인했습니다. Chrome에는 사용자 1,000명과 28개 평가가 표시되고, Firefox에는 아직 평점이 없으며 사용자 수가 표시되지 않습니다. 두 스토어의 버전은 서로 달라질 수 있으므로 구분해 적었습니다.
 
 ---
 
@@ -65,7 +76,7 @@
 
 ## 무엇을 할 수 있나요?
 
-README의 기능 이름은 현재 확장 프로그램의 팝업·설정 화면에서 사용하는 이름을 기준으로 적었습니다.
+README의 기능 이름은 현재 확장 프로그램의 팝업·설정 화면에서 사용하는 이름을 기준으로 적었습니다. 핵심 필터링·설정 코드는 Chrome과 Firefox에서 공유하지만 브라우저별 실행 경로에 따라 적용 시점이나 동작이 달라질 수 있습니다. 자세한 내용은 [작동 방식](#어떻게-작동하나요)을 확인하세요.
 
 ### 갤러리 차단
 
@@ -73,7 +84,7 @@ README의 기능 이름은 현재 확장 프로그램의 팝업·설정 화면�
 
 - `스마트` — 먼저 경고 화면을 보여 줍니다. 그래도 들어가고 싶다면 한 번은 들어갈 수 있습니다.
 - `초보` — 경고 화면을 보여 준 뒤 설정한 시간이 지나면 이전 화면으로 돌아갑니다.
-- `하드` — 해당 갤러리가 열리기 전에 Chrome의 네트워크 차단 기능으로 막습니다.
+- `하드` — 브라우저의 네트워크 차단 경로를 사용해 갤러리가 열리기 전에 막습니다. 브라우저에 따라 적용 시점이 다를 수 있습니다.
 
 현재 보고 있는 갤러리는 **`현재 갤러리 차단`**으로 바로 차단 목록에 넣을 수 있습니다.
 
@@ -160,7 +171,7 @@ README의 기능 이름은 현재 확장 프로그램의 팝업·설정 화면�
 
 하지만 확인 범위를 넓히면서 사용자 차단 목록을 저장하는 방식도 함께 살펴보았습니다.
 
-기존 구조에서는 사용자 UID와 IP 차단 목록이 계속 늘어나면 Chrome 동기화 저장소의 용량과 저장 방식에 따른 제한을 받을 수 있었습니다. 이 때문에 새로운 사용자를 차단하려고 해도 차단 정보가 제대로 저장되지 않거나, 차단 기능이 정상적으로 이어지지 않을 수 있었습니다.
+기존 구조에서는 사용자 UID와 IP 차단 목록이 계속 늘어나면 브라우저 동기화 저장소의 용량과 저장 방식에 따른 제한을 받을 수 있었습니다. 이 때문에 새로운 사용자를 차단하려고 해도 차단 정보가 제대로 저장되지 않거나, 차단 기능이 정상적으로 이어지지 않을 수 있었습니다.
 
 그래서 자주 켜고 끄는 작은 설정은 기존 동기화 저장소에 남기고, 계속 늘어날 수 있는 사용자 UID와 IP 차단 목록은 로컬 기반의 대용량 저장 구조로 분리했습니다.
 
@@ -210,15 +221,15 @@ README의 기능 이름은 현재 확장 프로그램의 팝업·설정 화면�
 
 ## 어떻게 작동하나요?
 
-Chrome 확장 프로그램은 하나의 파일이 모든 일을 처리하는 방식이 아닙니다.
+Chrome과 Firefox 빌드는 하나의 Manifest V3 코드베이스를 공유합니다. 각 빌드는 서로 다른 실행 영역에서 역할을 나누어 처리합니다.
 
 팝업, 설정 화면, 디시인사이드 페이지에서 작동하는 코드, 브라우저 뒤에서 작동하는 코드는 서로 다른 실행 영역에서 돌아갑니다.
 
 ```mermaid
 flowchart TD
     UI["팝업과 설정 화면"]
-    Storage["Chrome 저장 공간"]
-    Background["백그라운드 Service Worker"]
+    Storage["확장 프로그램 저장 공간"]
+    Background["백그라운드 실행 영역"]
     Content["Content Script"]
     Rules["네트워크 차단 규칙"]
     Site["DCinside"]
@@ -236,11 +247,22 @@ flowchart TD
 
 - **팝업과 설정 화면** — 무엇을 차단할지, 어떤 기능을 켤지 정합니다.
 - **Content Script** — 디시인사이드 화면을 살펴보고 필요 없는 글이나 요소를 숨깁니다.
-- **Service Worker** — **`하드`** 차단에 필요한 처리, 메시지 처리, 마우스 오른쪽 버튼 메뉴처럼 브라우저 쪽에서 처리해야 하는 일을 맡습니다.
-- **Chrome Storage** — 차단 목록과 각종 설정을 저장합니다.
-- **Declarative Net Request** — **`하드`** 방식을 선택했을 때 갤러리가 열리기 전에 접근을 막습니다.
+- **백그라운드 실행 영역** — **`하드`** 차단에 필요한 처리, 메시지 처리, 마우스 오른쪽 버튼 메뉴처럼 브라우저 쪽에서 처리해야 하는 일을 맡습니다.
+- **확장 프로그램 저장 공간** — 차단 목록과 각종 설정을 저장합니다. 공통 코드는 `chrome.*` 호환 API 이름을 사용하며, 이 저장 API는 Firefox에서도 사용할 수 있습니다.
+- **Declarative Net Request** — **`하드`** 방식을 선택했을 때 브라우저가 제공하는 네트워크 차단 API로 갤러리 접근을 막습니다.
 
 화면과 차단 기능 대부분은 JavaScript, HTML, CSS로 동작하며 별도의 개발자 서버를 사용하지 않습니다. 선택 기능인 기기 내 공격적 표현 감지도 로컬에서 작동하며, 검증된 ONNX 모델과 브라우저용 실행 파일을 저장소에 함께 포함합니다.
+
+### 브라우저별 실행 경로
+
+두 빌드는 팝업·설정 화면, 디시인사이드 콘텐츠 필터, 확장 프로그램 저장 공간, 백그라운드 메시지, 기기 내 문장 분석기를 공유합니다. 브라우저와 연결하는 방법은 다음과 같이 다릅니다.
+
+| Chrome | Firefox |
+| --- | --- |
+| Chrome 121 이상에서는 Manifest V3 Service Worker가 전체 콘텐츠 스크립트 프로필을 `chrome.scripting.registerContentScripts`로 등록하고 즉시 실행 흐름을 유지합니다. | Firefox 140 이상에서는 manifest에 포함된 정적 `firefox-bootstrap.js`로 시작합니다. 이후 백그라운드 실행 영역이 `scripting.executeScript`와 `insertCSS`로 Firefox 프로필을 주입하고, `feature-loader.js`가 켜진 선택 기능을 묶음 단위로 늦게 불러옵니다. |
+| 등록된 프로필은 Chromium용 실행 시점을 사용합니다. | 정적 연결 경로는 `about:debugging`에서 임시 부가 기능을 다시 불러온 뒤에도 콘텐츠 진입점을 복구하도록 구성되어 있습니다. |
+
+두 브라우저는 같은 기능 모듈을 공유하지만 시작 순서와 API 연결 방식은 다릅니다. 따라서 기능이 적용되는 시점과 일부 브라우저별 동작은 스토어 배포본에 따라 달라질 수 있습니다.
 
 ---
 
@@ -280,7 +302,7 @@ flowchart TD
 
 ### 사용자 차단 목록이 늘어나면서 생긴 저장 한도 문제
 
-처음에는 사용자 UID와 IP 차단 목록을 Chrome 동기화 저장소 중심으로 관리했습니다.
+처음에는 사용자 UID와 IP 차단 목록을 브라우저 동기화 저장 공간 중심으로 관리했습니다.
 
 차단한 사용자가 많지 않을 때는 문제가 없었지만, 목록이 계속 늘어나면 저장소의 용량과 저장 방식에 따른 제한을 받게 됩니다.
 
@@ -288,8 +310,8 @@ flowchart TD
 
 그래서 작은 설정과 큰 차단 목록의 저장 방식을 나눴습니다.
 
-- 자주 켜고 끄는 작은 설정은 `chrome.storage.sync`
-- 계속 늘어날 수 있는 사용자 차단 자료는 `chrome.storage.local`
+- 자주 켜고 끄는 작은 설정은 브라우저 동기화 영역(`chrome.storage.sync` 호환 API)
+- 계속 늘어날 수 있는 사용자 차단 자료는 브라우저의 로컬 확장 프로그램 영역(`chrome.storage.local` 호환 API)
 - UID, IP, 닉네임은 저장하기 전에 일정한 형식으로 정리
 - 차단 정보는 256개의 묶음으로 나누어 저장
 - 사용자를 추가하거나 지울 때 필요한 묶음만 수정
@@ -304,27 +326,27 @@ flowchart TD
 
 ### 확장 프로그램의 실행 영역 간 메시지 통신
 
-Chrome 확장 프로그램의 팝업, 설정 화면, Content Script, Service Worker는 모두 같은 곳에서 실행되지 않습니다.
+확장 프로그램의 팝업, 설정 화면, Content Script, 백그라운드 실행 영역은 모두 같은 곳에서 실행되지 않습니다.
 
 각 기능은 서로 다른 실행 영역에서 작동하기 때문에, 한쪽의 함수를 다른 쪽에서 바로 실행할 수 없습니다.
 
-그래서 Chrome의 메시지 전달 기능을 사용해 필요한 정보와 작업 요청을 주고받도록 구성했습니다.
+그래서 확장 프로그램 메시지 전달 API를 사용해 필요한 정보와 작업 요청을 주고받도록 구성했습니다.
 
 ```text
 팝업 / 설정 화면
        ↕
-Chrome 메시지 통신
+확장 프로그램 메시지 통신
        ↕
-Service Worker
+백그라운드 실행 영역
        ↕
-Chrome 메시지 통신
+확장 프로그램 메시지 통신
        ↕
 Content Script
 ```
 
-예를 들어 디시인사이드 화면에서 작동하는 Content Script가 브라우저 뒤에서 처리해야 하는 작업이 필요하면 Service Worker에 메시지를 보내 요청합니다.
+예를 들어 디시인사이드 화면에서 작동하는 Content Script가 브라우저 뒤에서 처리해야 하는 작업이 필요하면 백그라운드 실행 영역에 메시지를 보내 요청합니다.
 
-글 미리 보기나 계정 정보 확인처럼 외부 요청이 필요한 기능도 Content Script마다 따로 처리하지 않고, 필요한 요청을 Service Worker로 전달해 처리합니다.
+글 미리 보기나 계정 정보 확인처럼 외부 요청이 필요한 기능도 Content Script마다 따로 처리하지 않고, 필요한 요청을 백그라운드 실행 영역으로 전달해 처리합니다.
 
 이때 요청할 수 있는 디시인사이드 주소, 통신 방식, 일부 요청 정보도 미리 제한해 정해 둔 범위 안에서만 처리되도록 구성했습니다.
 
@@ -369,9 +391,9 @@ src/
 
 개발자가 따로 운영하는 사용자 정보 데이터베이스도 두고 있지 않으며, 이용자를 추적하기 위한 분석 도구나 추적용 픽셀도 넣지 않았습니다.
 
-대부분의 설정과 개인 차단 자료는 Chrome의 확장 프로그램 저장 공간 안에 보관됩니다.
+대부분의 설정과 개인 차단 자료는 브라우저의 확장 프로그램 저장 공간 안에 보관됩니다.
 
-작은 설정은 Chrome 동기화 저장 공간을 사용할 수 있고, 사용자 차단 목록, 메모, 이미지 기록, 임시 자료처럼 큰 정보는 해당 브라우저의 로컬 저장 공간에 보관할 수 있습니다.
+작은 설정은 브라우저 동기화 저장 공간(Chrome Sync 또는 Firefox Sync)을 사용할 수 있고, 사용자 차단 목록, 메모, 이미지 기록, 임시 자료처럼 큰 정보는 해당 브라우저의 로컬 저장 공간에 보관할 수 있습니다.
 
 일부 기능은 필요할 때 허용된 디시인사이드 주소에서 정보를 직접 가져옵니다. 사용자의 차단 목록이나 방문 기록을 모으기 위한 별도의 개발자 서버는 운영하지 않습니다.
 
@@ -383,14 +405,15 @@ src/
 | --- | --- |
 | 프로그래밍 언어 | JavaScript |
 | 화면 구성 | HTML, CSS |
-| 확장 프로그램 방식 | Chrome Manifest V3 |
-| 최소 Chrome 버전 | 116 |
-| 설정과 자료 저장 | Chrome Storage API |
+| 지원 브라우저 | Chrome·Firefox 확장 프로그램 |
+| 확장 프로그램 방식 | Manifest V3 |
+| 최소 버전 | Chrome 121 · Firefox 140 |
+| 설정과 자료 저장 | 브라우저 Extension Storage API |
 | 네트워크 단계 차단 | Declarative Net Request |
-| 브라우저 뒤 작업 | Service Worker |
+| 브라우저 뒤 작업 | Chrome Service Worker · Firefox 이벤트 페이지 |
 | 화면 변화 확인 | MutationObserver |
 | 브라우저 기능 연결 | Context Menus, Active Tab |
-| 배포 | Chrome 웹 스토어 |
+| 배포 | Chrome 웹 스토어 · Firefox Add-ons |
 
 ---
 
@@ -398,12 +421,23 @@ src/
 
 ### Chrome 웹 스토어
 
-**[Chrome 웹 스토어에서 설치하기](https://chromewebstore.google.com/detail/fnfmdbldnhadkadklplhcjcojjiaopgg)**
+**[Chrome 웹 스토어에서 디시갤 차단기 설치하기](https://chromewebstore.google.com/detail/fnfmdbldnhadkadklplhcjcojjiaopgg)**
 
 1. **Chrome에 추가**를 누릅니다.
 2. 설치가 끝나면 Chrome 도구 모음에서 디시갤 차단기를 엽니다.
 3. 보고 싶지 않은 갤러리나 내용을 등록합니다.
 4. 원하는 차단 방법을 고릅니다.
+
+### Firefox Add-ons
+
+**[Firefox Add-ons에서 디시갤 차단기 설치하기](https://addons.mozilla.org/ko/firefox/addon/dcinside-gallery-blocker/)**
+
+1. Firefox에서 위 스토어 페이지를 열고 **Firefox에 추가**를 누릅니다.
+2. 요청된 권한을 확인한 뒤 **추가**를 누릅니다.
+3. Firefox 도구 모음에서 디시갤 차단기를 엽니다.
+4. 보고 싶지 않은 갤러리나 내용을 등록하고 원하는 차단 방법을 고릅니다.
+
+Chrome과 Firefox는 스토어 배포 버전, 시작 경로, 일부 동작이 다를 수 있으므로 설치하는 브라우저의 스토어 정보를 확인하세요.
 
 처음 사용한다면 `스마트` 방식을 권합니다.
 
@@ -413,7 +447,9 @@ src/
 
 ## 직접 실행하기
 
-저장소를 내려받거나 복제한 뒤 다음 주소를 엽니다.
+저장소를 내려받거나 복제한 뒤 브라우저별 안내에 따라 확장 프로그램을 불러옵니다.
+
+### Chrome
 
 ```text
 chrome://extensions
@@ -425,7 +461,19 @@ chrome://extensions
 2. **압축해제된 확장 프로그램을 로드합니다**를 누릅니다.
 3. `manifest.json`이 있는 프로젝트 폴더를 선택합니다.
 
-저장소에는 기기 내 공격적 표현 감지에 필요한 검증된 로컬 모델과 브라우저용 실행 파일도 함께 포함되어 있어, Chrome에서 직접 불러오기 위해 별도의 설치나 빌드 과정은 필요하지 않습니다.
+### Firefox
+
+```text
+about:debugging#/runtime/this-firefox
+```
+
+1. **이 Firefox**를 선택합니다.
+2. **임시 부가 기능 로드…**를 누릅니다.
+3. 저장소의 `manifest.json`을 선택합니다.
+
+Firefox에서 직접 불러온 확장 프로그램은 임시 설치이므로 Firefox를 다시 시작하면 사라집니다. 저장소의 정적 Firefox bootstrap은 `about:debugging`에서 임시 부가 기능을 다시 불러온 뒤 콘텐츠 진입점을 복구하도록 구성되어 있습니다.
+
+저장소에는 기기 내 공격적 표현 감지에 필요한 검증된 로컬 모델과 브라우저용 실행 파일도 함께 포함되어 있어, 두 브라우저에서 직접 불러오기 위해 별도의 설치나 빌드 과정은 필요하지 않습니다.
 
 감지용 실행 파일을 다시 만들거나 새 배포본을 생성하려면 다음 명령을 사용합니다.
 
@@ -471,6 +519,6 @@ npm run package:extension
 
 **보고 싶은 것에 더 집중하세요.**
 
-[English](README.md) · [Chrome 웹 스토어](https://chromewebstore.google.com/detail/fnfmdbldnhadkadklplhcjcojjiaopgg)
+[English](README.md) · [Chrome 웹 스토어](https://chromewebstore.google.com/detail/fnfmdbldnhadkadklplhcjcojjiaopgg) · [Firefox Add-ons](https://addons.mozilla.org/ko/firefox/addon/dcinside-gallery-blocker/)
 
 </div>
