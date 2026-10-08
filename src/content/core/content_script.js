@@ -2417,6 +2417,7 @@ syncSettings(handleUrl);
     // button/custom container. Promote those explicit markers before the
     // generic control cleanup below removes the host element.
     appendAdjacentPreviewYouTubeMedia(source, clone, baseUrl);
+
     normalizePreviewYouTubeEmbeds(clone, baseUrl);
     clone.querySelectorAll([
       "#comment_wrap", ".comment_wrap", ".all-comment", ".cmt_list", ".reply_list", ".cmt_write_box", ".comment_write",
@@ -2759,6 +2760,7 @@ syncSettings(handleUrl);
     if (/data-(?:video-url|embed-src)\s*=\s*["'][^"']*(?:youtube(?:-nocookie)?\.com|youtu\.be)/i.test(source)) return true;
     if (/(?:data-video-id|data-videoid|video-id)\s*=\s*["'][A-Za-z0-9_-]{11}["']/i.test(source)
       && /(?:youtube|ytm|video-cover|cued-overlay)/i.test(source)) return true;
+
     return /<iframe\b[^>]*(?:youtube(?:-nocookie)?\.com|youtu\.be|youtube[-_ ]?(?:player|embed))/i.test(source);
   }
 
