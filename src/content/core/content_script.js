@@ -1024,12 +1024,14 @@ syncSettings(handleUrl);
 
   const YOUTUBE_EMBED_CONTAINER_SELECTOR = [
     ...YOUTUBE_EMBED_SOURCE_ATTRS.map((name) => `[${name}]`),
+    "embed",
     "video-cover", "cued-overlay", "[class*='ytmVideoCoverHost']", "[class*='ytmCuedOverlayHost']",
     "[class*='ytmVideoInfo']"
   ].join(",");
   const YOUTUBE_DISCOVERY_SELECTOR = [
     "[data-youtube-url]", "[data-youtube-src]", "[data-youtube-id]", "[data-yt-video-id]", "[data-ytid]",
     "[data-embed-src]", "[data-video-url]", "[data-video-id]", "[data-videoid]", "[video-id]",
+    "embed",
     "video-cover", "cued-overlay", "[class*='ytmVideoCoverHost']", "[class*='ytmCuedOverlayHost']",
     "[class*='ytmVideoInfo']"
   ].join(",");
@@ -1045,7 +1047,8 @@ syncSettings(handleUrl);
     // Do not reinterpret ordinary href/text links as players. Only explicit
     // data media attributes on a non-image element are eligible here.
     if (element.matches?.("img,source,video")) return null;
-    for (const name of YOUTUBE_EMBED_SOURCE_ATTRS) {
+    const sourceAttrs = element.matches?.("embed") ? ["src", ...YOUTUBE_EMBED_SOURCE_ATTRS] : YOUTUBE_EMBED_SOURCE_ATTRS;
+    for (const name of sourceAttrs) {
       const value = element.getAttribute(name);
       if (!value) continue;
       const idOnly = /^(?:data-youtube-id|data-yt-video-id|data-ytid)$/.test(name)
@@ -1078,11 +1081,21 @@ syncSettings(handleUrl);
     const selector = YOUTUBE_EMBED_CONTAINER_SELECTOR;
     const candidates = [...(root.querySelectorAll?.(selector) || [])];
     if (root.matches?.(selector)) candidates.unshift(root);
+    const seen = new Set();
+    root.querySelectorAll?.("iframe").forEach((iframe) => {
+      const media = previewYouTubeMediaFromFrame(iframe, baseUrl);
+      if (media) seen.add(media.embedUrl);
+    });
     for (const element of candidates) {
       if (!element.parentNode || element.closest?.("iframe,.dcbpv-youtube-wrap,.dcbpv-movie-wrap,.dcbpv-poll-frame")) continue;
       if (isUtilityContainer(element)) continue;
       const media = previewYouTubeMediaFromElement(element, baseUrl);
       if (!media) continue;
+      if (seen.has(media.embedUrl)) {
+        element.remove();
+        continue;
+      }
+      seen.add(media.embedUrl);
       const factory = element.ownerDocument || document;
       const iframe = factory.createElement("iframe");
       iframe.className = "dcbpv-youtube-frame";
@@ -1095,20 +1108,30 @@ syncSettings(handleUrl);
 
   function appendAdjacentPreviewYouTubeMedia(source, clone, baseUrl){
     if (!source?.parentElement || !clone?.appendChild) return;
-    if (previewYouTubeFramePresent(source.innerHTML || "", baseUrl)) return;
 
     const parent = source.parentElement;
     const children = [...parent.children];
     const sourceIndex = children.indexOf(source);
     if (sourceIndex < 0) return;
 
+    const existingUrls = new Set();
+    source.querySelectorAll?.("iframe").forEach((iframe) => {
+      const media = previewYouTubeMediaFromFrame(iframe, baseUrl);
+      if (media) existingUrls.add(media.embedUrl);
+    });
     const mediaNodes = children.filter((node) => {
       if (node === source || isUtilityContainer(node) || isCommentArea(node)) return false;
-      if (node.matches?.(YOUTUBE_EMBED_CONTAINER_SELECTOR)) {
-        return !!previewYouTubeMediaFromElement(node, baseUrl);
-      }
-      return [...(node.querySelectorAll?.("iframe") || [])]
-        .some((iframe) => !!previewYouTubeMediaFromFrame(iframe, baseUrl));
+      const candidates = node.matches?.("iframe")
+        ? [node]
+        : node.matches?.(YOUTUBE_EMBED_CONTAINER_SELECTOR)
+          ? [node]
+          : [...(node.querySelectorAll?.("iframe") || [])];
+      const media = candidates.map((candidate) => candidate.matches?.("iframe")
+        ? previewYouTubeMediaFromFrame(candidate, baseUrl)
+        : previewYouTubeMediaFromElement(candidate, baseUrl)).find(Boolean);
+      if (!media || existingUrls.has(media.embedUrl)) return false;
+      existingUrls.add(media.embedUrl);
+      return true;
     });
     if (!mediaNodes.length) return;
 
@@ -1709,7 +1732,8 @@ syncSettings(handleUrl);
       ".recently", ".visit_history", "#visit_history", "#recently_gallery",
       ".favorite", ".relation", ".related", ".concept_list",
       ".autoimg", ".auto_img", "[id*=auto]", "[class*=auto]",
-      ".pop_wrap", ".layer", ".modal", ".ly_wrap", "[id*=layer]",
+      ".pop_wrap", ".layer", ".modal", ".ly_wrap",
+      "[id^=layer], [id$=layer], [id*=\"-layer\"], [id*=\"_layer\"], [id*=\"layer-\"], [id*=\"layer_\"]",
       "aside", "nav", "header", "footer"
     ].join(",")));
   }
@@ -2748,6 +2772,14 @@ syncSettings(handleUrl);
     } catch (_) { return false; }
   }
 
+  function previewYouTubeIframePresent(html, baseUrl){
+    if (!html) return false;
+    try {
+      const doc = new DOMParser().parseFromString(String(html), "text/html");
+      return [...doc.querySelectorAll("iframe")].some((iframe) => !!previewYouTubeMediaFromFrame(iframe, baseUrl));
+    } catch (_) { return false; }
+  }
+
   function previewMayContainDynamicYouTube(data){
     // This probe decides whether a missing player needs the bounded rendered
     // fallback. Do not truncate the source: a mobile article can place its
@@ -2761,7 +2793,7 @@ syncSettings(handleUrl);
     if (/(?:data-video-id|data-videoid|video-id)\s*=\s*["'][A-Za-z0-9_-]{11}["']/i.test(source)
       && /(?:youtube|ytm|video-cover|cued-overlay)/i.test(source)) return true;
 
-    return /<iframe\b[^>]*(?:youtube(?:-nocookie)?\.com|youtu\.be|youtube[-_ ]?(?:player|embed))/i.test(source);
+    return /<(?:iframe|embed)\b[^>]*(?:youtube(?:-nocookie)?\.com|youtu\.be|youtube[-_ ]?(?:player|embed))/i.test(source);
   }
 
   function isWeakPreviewData(data){
@@ -2785,8 +2817,8 @@ syncSettings(handleUrl);
 
     if (!result.title || isLayerLikeText(result.title)) result.title = backup.title;
     if (!result.writerHTML && backup.writerHTML) result.writerHTML = backup.writerHTML;
-    const backupHasYoutube = previewYouTubeFramePresent(backup.articleHTML, backup.fetchedUrl || backup.url);
-    const primaryHasYoutube = previewYouTubeFramePresent(result.articleHTML, result.fetchedUrl || result.url);
+    const backupHasYoutube = previewYouTubeIframePresent(backup.articleHTML, backup.fetchedUrl || backup.url);
+    const primaryHasYoutube = previewYouTubeIframePresent(result.articleHTML, result.fetchedUrl || result.url);
     if ((!result.articleHTML || isHashOnlyText(articleText) || isWeakPreviewData(primary) && !isWeakPreviewData(backup)
       || backupHasYoutube && !primaryHasYoutube) && backup.articleHTML) {
       result.articleHTML = backup.articleHTML;
@@ -3215,7 +3247,7 @@ syncSettings(handleUrl);
     });
   }
 
-  async function fetchPreviewViaRenderedFrame(articleUrl, signal){
+  async function fetchPreviewViaRenderedFrame(articleUrl, signal, { requireYouTube = false } = {}){
     let frame = null;
     const started = Date.now();
 
@@ -3284,7 +3316,9 @@ syncSettings(handleUrl);
         if (!renderedHtml) continue;
 
         const renderedData = parseDesktopFallback(renderedHtml, articleUrl, parsed.href);
-        if (!isWeakPreviewData(renderedData)) {
+        const hasRequiredYouTube = !requireYouTube
+          || previewYouTubeIframePresent(renderedData.articleHTML, renderedData.fetchedUrl || renderedData.url);
+        if (!isWeakPreviewData(renderedData) && hasRequiredYouTube) {
           renderedData.renderedFrame = true;
           renderedData.renderedFrameTookMs = Date.now() - started;
           return renderedData;
@@ -3600,9 +3634,9 @@ syncSettings(handleUrl);
     // dynamically-created YouTube iframe. Only marked pages take this bounded
     // rendered-frame fallback; ordinary previews keep the fast path.
     if (!renderedFrameAttempted && data && previewMayContainDynamicYouTube(data)
-      && !previewYouTubeFramePresent(data.articleHTML, data.fetchedUrl || data.url)) {
-      const renderedData = await fetchPreviewViaRenderedFrame(url, signal);
-      if (renderedData && previewYouTubeFramePresent(renderedData.articleHTML, renderedData.fetchedUrl || renderedData.url)) {
+      && !previewYouTubeIframePresent(data.articleHTML, data.fetchedUrl || data.url)) {
+      const renderedData = await fetchPreviewViaRenderedFrame(url, signal, { requireYouTube: true });
+      if (renderedData && previewYouTubeIframePresent(renderedData.articleHTML, renderedData.fetchedUrl || renderedData.url)) {
         data = mergePreviewData(renderedData, data);
       }
     }
@@ -4674,7 +4708,7 @@ syncSettings(handleUrl);
     // previously opened post does not keep rendering an iframe-less snapshot.
     const cachedNeedsYoutubeRefresh = !!cached
       && previewMayContainDynamicYouTube(cached)
-      && !previewYouTubeFramePresent(cached.articleHTML, cached.fetchedUrl || cached.url);
+      && !previewYouTubeIframePresent(cached.articleHTML, cached.fetchedUrl || cached.url);
     if (cached && !cachedNeedsYoutubeRefresh) {
       const trace = beginPreviewTrace(url, requestKey, true);
       activeAbort?.abort();
