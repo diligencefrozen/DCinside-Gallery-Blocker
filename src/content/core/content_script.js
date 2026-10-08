@@ -887,6 +887,7 @@ syncSettings(handleUrl);
     if (!container) return null;
     // Resolve only validated YouTube frames before dropping lazy/event/style
     // attributes. This same path also covers serialized comments and cache HTML.
+    normalizePreviewYouTubeEmbeds(container, baseUrl);
     normalizePreviewYouTubeFrames(container, baseUrl);
     container.querySelectorAll("script,style,noscript,template,object,embed,base,meta,link,form,svg,math").forEach((node) => node.remove());
     const urlAttributes = new Set(["src", "href", "xlink:href", "poster", "background", "action", "formaction"]);
@@ -949,7 +950,7 @@ syncSettings(handleUrl);
     const path = source.pathname;
     const id = source.hostname === "youtu.be"
       ? path.match(/^\/([A-Za-z0-9_-]{11})\/?$/)?.[1]
-      : path.match(/^\/(?:embed|shorts)\/([A-Za-z0-9_-]{11})\/?$/)?.[1] ||
+      : path.match(/^\/(?:embed|shorts|live)\/([A-Za-z0-9_-]{11})\/?$/)?.[1] ||
         (/^\/watch\/?$/.test(path) ? source.searchParams.get("v") : "");
     if (!/^[A-Za-z0-9_-]{11}$/.test(id || "")) return null;
 
@@ -996,6 +997,7 @@ syncSettings(handleUrl);
     const watch = new URL("https://www.youtube.com/watch");
     watch.searchParams.set("v", id);
     if (start !== null && start > 0) watch.searchParams.set("t", `${start}s`);
+    if (/^[A-Za-z0-9_-]{2,100}$/.test(list || "")) watch.searchParams.set("list", list);
     return { id, embedUrl: embed.href, watchUrl: watch.href };
   }
 
@@ -1012,6 +1014,83 @@ syncSettings(handleUrl);
       if (media) return media;
     }
     return null;
+  }
+
+  const YOUTUBE_EMBED_SOURCE_ATTRS = [
+    "data-youtube-url", "data-youtube-src", "data-youtube-id", "data-yt-video-id", "data-ytid",
+    "data-embed-src", "data-video-url", "data-video-id", "data-videoid", "video-id",
+    "data-src", "data-original", "data-original-src", "data-original-url", "data-url"
+  ];
+
+  const YOUTUBE_EMBED_CONTAINER_SELECTOR = [
+    ...YOUTUBE_EMBED_SOURCE_ATTRS.map((name) => `[${name}]`),
+    "video-cover", "cued-overlay", "[class*='ytmVideoCoverHost']", "[class*='ytmCuedOverlayHost']",
+    "[class*='ytmVideoInfo']"
+  ].join(",");
+  const YOUTUBE_DISCOVERY_SELECTOR = [
+    "[data-youtube-url]", "[data-youtube-src]", "[data-youtube-id]", "[data-yt-video-id]", "[data-ytid]",
+    "[data-embed-src]", "[data-video-url]", "[data-video-id]", "[data-videoid]", "[video-id]",
+    "video-cover", "cued-overlay", "[class*='ytmVideoCoverHost']", "[class*='ytmCuedOverlayHost']",
+    "[class*='ytmVideoInfo']"
+  ].join(",");
+
+  function isYouTubeMarkedContainer(element){
+    if (!element?.matches) return false;
+    const marker = `${element.tagName || ""} ${element.id || ""} ${String(element.className || "")}`;
+    return /(?:youtube|ytmVideo|ytmCued|video-cover|cued-overlay)/i.test(marker);
+  }
+
+  function previewYouTubeMediaFromElement(element, baseUrl){
+    if (!element?.getAttribute || element.matches?.("iframe")) return null;
+    // Do not reinterpret ordinary href/text links as players. Only explicit
+    // data media attributes on a non-image element are eligible here.
+    if (element.matches?.("img,source,video")) return null;
+    for (const name of YOUTUBE_EMBED_SOURCE_ATTRS) {
+      const value = element.getAttribute(name);
+      if (!value) continue;
+      const idOnly = /^(?:data-youtube-id|data-yt-video-id|data-ytid)$/.test(name)
+        && /^[A-Za-z0-9_-]{11}$/.test(value.trim());
+      const markedId = /^(?:data-video-id|data-videoid|video-id)$/.test(name)
+        && isYouTubeMarkedContainer(element)
+        && /^[A-Za-z0-9_-]{11}$/.test(value.trim());
+      if (/^(?:data-video-id|data-videoid|video-id)$/.test(name) && !markedId) continue;
+      const media = idOnly || markedId
+        ? previewYouTubeUrl(`https://www.youtube.com/embed/${value.trim()}`, baseUrl)
+        : previewYouTubeUrl(value, baseUrl);
+      if (media) return media;
+    }
+
+    // Mobile YouTube player markup may expose the video only through a nested
+    // watch link inside a ytm*/video-cover custom element. Treat that link as
+    // media metadata only in this explicitly marked player context; ordinary
+    // article hyperlinks remain ordinary links.
+    if (isYouTubeMarkedContainer(element)) {
+      for (const link of element.querySelectorAll?.("a[href]") || []) {
+        const media = previewYouTubeUrl(link.getAttribute("href"), baseUrl);
+        if (media) return media;
+      }
+    }
+    return null;
+  }
+
+  function normalizePreviewYouTubeEmbeds(root, baseUrl){
+    if (!root) return;
+    const selector = YOUTUBE_EMBED_CONTAINER_SELECTOR;
+    const candidates = [...(root.querySelectorAll?.(selector) || [])];
+    if (root.matches?.(selector)) candidates.unshift(root);
+    for (const element of candidates) {
+      if (!element.parentNode || element.closest?.("iframe,.dcbpv-youtube-wrap,.dcbpv-movie-wrap,.dcbpv-poll-frame")) continue;
+      if (isUtilityContainer(element)) continue;
+      const media = previewYouTubeMediaFromElement(element, baseUrl);
+      if (!media) continue;
+      const factory = element.ownerDocument || document;
+      const iframe = factory.createElement("iframe");
+      iframe.className = "dcbpv-youtube-frame";
+      iframe.dataset.dcbpvYoutubeSource = "1";
+      iframe.src = media.embedUrl;
+      iframe.title = "YouTube 동영상 플레이어";
+      element.replaceWith(iframe);
+    }
   }
 
   function normalizePreviewYouTubeFrames(root, baseUrl){
@@ -1160,15 +1239,33 @@ syncSettings(handleUrl);
   function pickImageCandidate(img, baseUrl, options = {}){
     const urls = collectImageCandidates(img, baseUrl);
     const allowVideo = options.allowVideo !== false;
-    return urls.find((url) => {
+    const eligible = (url) => {
       if (isPlaceholderImageUrl(url)) return false;
       if (!allowVideo && /\.(?:mp4|webm)(?:[?#]|$)/i.test(url)) return false;
       return true;
-    }) || "";
+    };
+
+    // Mobile DCInside commonly keeps the animated original in data-gif or
+    // data-webp while data-src/src still points at a static thumbnail. Prefer
+    // those explicit animation sources before falling back to the generic
+    // candidate order. This does not treat data-mp4 by itself as an animation.
+    for (const name of ["data-gif", "data-webp"]) {
+      const preferred = mediaUrlsFromText(img.getAttribute(name))
+        .map((url) => makeAbsolute(url, baseUrl))
+        .find(eligible);
+      if (preferred) return preferred;
+    }
+    return urls.find(eligible) || "";
   }
 
   function bindImageFallbacks(img, baseUrl){
-    const candidates = collectImageCandidates(img, baseUrl).filter((url) => !isPlaceholderImageUrl(url));
+    const allCandidates = collectImageCandidates(img, baseUrl).filter((url) => !isPlaceholderImageUrl(url));
+    const hasImageSource = allCandidates.some((url) => !/\.(?:mp4|webm)(?:[?#]|$)/i.test(url));
+    // Never fall back from an animated image to a video URL. The latter would
+    // turn a GIF/WebP failure into an unrelated player and lose image semantics.
+    const candidates = hasImageSource
+      ? allCandidates.filter((url) => !/\.(?:mp4|webm)(?:[?#]|$)/i.test(url))
+      : allCandidates;
     if (!candidates.length) return;
 
     img.dataset.dcbpvFallbackQueue = candidates.join("\n");
@@ -1377,6 +1474,37 @@ syncSettings(handleUrl);
     }
   }
 
+  const PREVIEW_ANIMATED_MEDIA_CLASS = "dcbpv-animated-media";
+
+  function hasAnimatedMediaHint(node){
+    if (!node?.getAttribute) return false;
+    const attrs = Array.from(node.attributes || []);
+    const className = String(node.className || "");
+    if (/(?:^|[\s_-])(?:gif|webp)-mp4(?:$|[\s_-])|dcbpv-animated-media|animated[-_ ]?(?:gif|webp|media)/i.test(className)) return true;
+    return attrs.some((attr) => {
+      const name = attr.name.toLowerCase();
+      if (name === "data-gif" || name === "data-webp") return /\.(?:mp4|webm)(?:[?#]|$)/i.test(decodeMediaUrl(attr.value));
+      return name === "data-dcbpv-animated" && /^(?:1|true|yes)$/i.test(attr.value.trim());
+    });
+  }
+
+  function configureAnimatedPreviewVideo(video){
+    if (!video?.classList) return;
+    video.classList.add(PREVIEW_ANIMATED_MEDIA_CLASS);
+    video.dataset.dcbpvAnimated = "1";
+    video.autoplay = true;
+    video.loop = true;
+    video.muted = true;
+    video.defaultMuted = true;
+    video.playsInline = true;
+    video.preload = "auto";
+    video.setAttribute("autoplay", "");
+    video.setAttribute("loop", "");
+    video.setAttribute("muted", "");
+    video.setAttribute("playsinline", "");
+    video.removeAttribute("controls");
+  }
+
   function normalizeDcMedia(root, baseUrl){
     root.querySelectorAll('iframe[src*="/board/poll/vote"],iframe[data-src*="/board/poll/vote"]').forEach((iframe) => {
       normalizePreviewPollFrame(iframe, baseUrl);
@@ -1410,28 +1538,32 @@ syncSettings(handleUrl);
       wrapper.append(iframe, note);
     });
 
+    normalizePreviewYouTubeEmbeds(root, baseUrl);
     normalizePreviewYouTubeFrames(root, baseUrl);
 
     root.querySelectorAll("img").forEach((img) => {
       if (img.dataset.dcbpvMediaSettled === "1") return;
       img.dataset.dcbpvMediaSettled = "1";
       const currentSrc = img.getAttribute("src") || "";
-      const gifUrl = pickImageCandidate(img, baseUrl, { allowVideo: false });
+      const explicitImageUrl = ["data-gif", "data-webp"]
+        .flatMap((name) => mediaUrlsFromText(img.getAttribute(name)).map((url) => makeAbsolute(url, baseUrl)))
+        .find((url) => !isPlaceholderImageUrl(url) && !/\.(?:mp4|webm)(?:[?#]|$)/i.test(url)) || "";
+      const gifUrl = explicitImageUrl || pickImageCandidate(img, baseUrl, { allowVideo: false });
       const mp4Url = collectImageCandidates(img, baseUrl).find((url) => /\.(?:mp4|webm)(?:[?#]|$)/i.test(url)) || "";
+      const animationMp4 = hasAnimatedMediaHint(img) && mp4Url;
       const isLoadingImage = isPlaceholderImageUrl(currentSrc) || img.classList.contains("lazy") || img.classList.contains("img_loading");
       const isInComment = !!img.closest(".all-comment,.dcbpv-comment-scope,.dcbpv-comment-item,.dcbpv-comment-body,.comment_wrap,#comment_wrap,.cmt_list,.reply_box,.comment_dccon,.dccon_comment_box,.dccon_area");
       const attrBlob = Array.from(img.attributes || []).map((attr) => `${attr.name}=${attr.value}`).join(" ");
       const wasDccon = /(?:written_dccon|comment_dccon|dccon_img|coment_dccon_img|\bdccon\b|dccon\.php|reqpath=['\"]?\/dccon)/i.test(`${img.className || ""} ${currentSrc} ${gifUrl} ${mp4Url} ${attrBlob}`);
 
-      if (mp4Url && isLoadingImage && !gifUrl) {
+      if (animationMp4 && !explicitImageUrl) {
         const video = (img.ownerDocument || document).createElement("video");
-        video.src = makeAbsolute(mp4Url, baseUrl);
-        video.autoplay = true;
-        video.loop = true;
-        video.muted = true;
-        video.playsInline = true;
+        video.src = makeAbsolute(animationMp4, baseUrl);
         video.className = img.className;
-        if (isInComment || wasDccon) video.classList.add("dcbpv-dccon");
+        configureAnimatedPreviewVideo(video);
+        // A comment location alone does not make a media item a DCCon. Keep
+        // ordinary animated comment media out of the DCCon hide/filter path.
+        if (wasDccon) video.classList.add("dcbpv-dccon");
         video.title = img.getAttribute("title") || "";
         video.setAttribute("aria-label", img.getAttribute("alt") || "");
         video.removeAttribute("width");
@@ -1440,7 +1572,7 @@ syncSettings(handleUrl);
         return;
       }
 
-      if (gifUrl && (isLoadingImage || !currentSrc || isPlaceholderImageUrl(currentSrc))) {
+      if (gifUrl && (explicitImageUrl || isLoadingImage || !currentSrc || isPlaceholderImageUrl(currentSrc))) {
         img.src = gifUrl;
       } else if (currentSrc) {
         img.src = makeAbsolute(currentSrc, baseUrl);
@@ -1450,7 +1582,7 @@ syncSettings(handleUrl);
 
       bindImageFallbacks(img, baseUrl);
       img.classList.remove("lazy", "img_loading", "gif-mp4", "webp-mp4", "written_dccon");
-      if (wasDccon || (isInComment && (/dccon\.php/i.test(gifUrl) || mp4Url))) {
+      if (wasDccon || (isInComment && /dccon\.php/i.test(gifUrl))) {
         img.classList.add("dcbpv-dccon");
       }
       img.loading = "lazy";
@@ -1472,13 +1604,20 @@ syncSettings(handleUrl);
         video.classList.add("dcbpv-dccon");
       }
       const animatedSticker = video.classList.contains("dcbpv-dccon");
-      video.autoplay = animatedSticker;
-      video.loop = animatedSticker;
-      video.muted = animatedSticker;
-      video.defaultMuted = animatedSticker;
-      video.controls = !animatedSticker;
-      video.preload = animatedSticker ? "auto" : "metadata";
-      video.playsInline = true;
+      const animatedMedia = video.dataset.dcbpvAnimated === "1" || video.classList.contains(PREVIEW_ANIMATED_MEDIA_CLASS) || hasAnimatedMediaHint(video);
+      if (animatedMedia || animatedSticker) configureAnimatedPreviewVideo(video);
+      else {
+        video.autoplay = false;
+        video.loop = false;
+        video.muted = false;
+        video.defaultMuted = false;
+        video.controls = true;
+        video.preload = "metadata";
+        video.playsInline = true;
+        video.removeAttribute("autoplay");
+        video.removeAttribute("loop");
+        video.removeAttribute("muted");
+      }
       video.querySelectorAll("source[src]").forEach((source) => {
         source.src = makeAbsolute(source.getAttribute("src"), baseUrl);
       });
@@ -1489,6 +1628,7 @@ syncSettings(handleUrl);
     root.querySelectorAll(".written_dccon,.comment_dccon,.dccon_img,.coment_dccon_img,img[class*='dccon'],video[class*='dccon']").forEach((node) => {
       node.classList.remove("written_dccon");
       node.classList.add("dcbpv-dccon");
+      if (node.tagName === "VIDEO") configureAnimatedPreviewVideo(node);
     });
   }
 
@@ -1589,7 +1729,9 @@ syncSettings(handleUrl);
 
     const hasPayload = (node) => {
       const text = node.textContent.replace(/\s+/g, " ").trim();
-      return Boolean(text || node.querySelector("img,video,iframe"));
+      const youtubeEmbed = [...(node.querySelectorAll?.(YOUTUBE_DISCOVERY_SELECTOR) || [])]
+        .some((element) => !!previewYouTubeMediaFromElement(element, doc.baseURI || location.href));
+      return Boolean(text || node.querySelector("img,video,iframe") || youtubeEmbed);
     };
 
     let candidates = collect(exactSelectors).filter(hasPayload);
@@ -1607,6 +1749,8 @@ syncSettings(handleUrl);
       if (node.matches(".writing_view_box,.gallview_contents")) score += 28;
       if (node.closest(".gallview,.gallview_wrap,.view_wrap,.view_content_wrap,.writing_view_box,article")) score += 24;
       if (node.querySelector("img,video,iframe")) score += 16;
+      if ([...(node.querySelectorAll?.(YOUTUBE_DISCOVERY_SELECTOR) || [])]
+        .some((element) => !!previewYouTubeMediaFromElement(element, doc.baseURI || location.href))) score += 20;
       if (node.querySelector("#comment_wrap,.comment_wrap,.all-comment,.cmt_write_box,textarea,input[name=captcha],#recomm_btn,#nonrecomm_btn,.btn_recommend_box")) score -= 85;
       if (isUtilityContainer(node)) score -= 180;
       if (/자동\s*짤방|최근\s*방문|즐겨찾기|레이어\s*닫기|설정\s*저장|댓글돌이|댓글\s*입력/.test(text)) score -= 140;
@@ -2238,6 +2382,10 @@ syncSettings(handleUrl);
     if (!source) return "";
     const isPumCard = source.matches?.("#pum_container.cloned_card,#pum_container");
     const clone = source.cloneNode(true);
+    // Mobile article embeds can keep the validated YouTube URL only on a
+    // button/custom container. Promote those explicit markers before the
+    // generic control cleanup below removes the host element.
+    normalizePreviewYouTubeEmbeds(clone, baseUrl);
     clone.querySelectorAll([
       "#comment_wrap", ".comment_wrap", ".all-comment", ".cmt_list", ".reply_list", ".cmt_write_box", ".comment_write",
       "#recomm_btn", "#recomm_btn_member", "#nonrecomm_btn", ".btn_recommend_box", ".recom_bottom_box", ".recommend_box",
@@ -2540,6 +2688,8 @@ syncSettings(handleUrl);
 
   function hasPreviewArticleMedia(html, baseUrl){
     const doc = new DOMParser().parseFromString(String(html || ""), "text/html");
+    if ([...doc.querySelectorAll(YOUTUBE_EMBED_CONTAINER_SELECTOR)]
+      .some((element) => !!previewYouTubeMediaFromElement(element, baseUrl))) return true;
     return [...doc.querySelectorAll("img[src],video[src],video source[src],iframe[src],iframe[data-src],iframe[data-original],iframe[data-url]")].some((node) => {
       const raw = decodeMediaUrl(node.getAttribute("src") || node.getAttribute("data-src") || node.getAttribute("data-original") || node.getAttribute("data-url"));
       if (!raw || node.classList.contains("dcbpv-img-broken")) return false;
@@ -2559,7 +2709,9 @@ syncSettings(handleUrl);
     if (!html) return false;
     try {
       const doc = new DOMParser().parseFromString(String(html), "text/html");
-      return [...doc.querySelectorAll("iframe")].some((iframe) => !!previewYouTubeMediaFromFrame(iframe, baseUrl));
+      return [...doc.querySelectorAll("iframe")].some((iframe) => !!previewYouTubeMediaFromFrame(iframe, baseUrl))
+        || [...doc.querySelectorAll(YOUTUBE_EMBED_CONTAINER_SELECTOR)]
+          .some((element) => !!previewYouTubeMediaFromElement(element, baseUrl));
     } catch (_) { return false; }
   }
 
@@ -2571,6 +2723,7 @@ syncSettings(handleUrl);
       .filter(Boolean).map((value) => String(value).slice(0, 64000)).join(" ");
     const source = `${article} ${raw}`;
     if (/(?:ytmVideoCoverHost|ytmCuedOverlayHost|video-cover|cued-overlay|data-(?:youtube|yt)-)/i.test(source)) return true;
+    if (/data-(?:video-url|embed-src)\s*=\s*["'][^"']*(?:youtube(?:-nocookie)?\.com|youtu\.be)/i.test(source)) return true;
     return /<iframe\b[^>]*(?:youtube(?:-nocookie)?\.com|youtu\.be|youtube[-_ ]?(?:player|embed))/i.test(source);
   }
 
@@ -3380,10 +3533,11 @@ syncSettings(handleUrl);
     // 댓글은 본문 렌더링 이후 별도의 AJAX 단계에서 가져온다.
     // commentsHTML이 비었다는 이유만으로 데스크톱 본문을 한 번 더 기다리면
     // 정상적인 모바일 본문도 표시가 늦어지므로, 본문 품질/작성자 정보가 부족할 때만 fallback한다.
-    const needsDesktopMediaFallback = data
-      && !previewYouTubeFramePresent(data.articleHTML, data.fetchedUrl || data.url)
-      && previewMayContainDynamicYouTube(data);
-    if (!data || isWeakPreviewData(data) || !data.writerHTML || needsDesktopMediaFallback) {
+    // A YouTube marker in otherwise usable mobile data is not a reason to
+    // fetch the desktop article. The mobile source remains authoritative;
+    // the bounded rendered-frame fallback below is reserved for embeds that
+    // genuinely require browser-created player DOM.
+    if (!data || isWeakPreviewData(data) || !data.writerHTML) {
       try {
         const desktopResponse = await fetchText(url, signal, cacheMode);
         const desktopData = parseDesktopFallback(desktopResponse.text, url, desktopResponse.finalUrl || url);
