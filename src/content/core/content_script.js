@@ -1530,8 +1530,32 @@ syncSettings(handleUrl);
 
   const PREVIEW_ANIMATED_MEDIA_CLASS = "dcbpv-animated-media";
 
+  function isNativeAnimatedImageVideo(node){
+    if (!node?.matches?.("video")) return false;
+    const hasPlaybackFlags = [["autoplay", "autoplay"], ["loop", "loop"], ["muted", "muted"], ["playsinline", "playsInline"]]
+      .every(([attribute, property]) => node.hasAttribute(attribute) || node[property] === true);
+    if (!hasPlaybackFlags || node.hasAttribute("controls")) return false;
+
+    const hasSource = !!node.getAttribute("src")
+      || !!node.getAttribute("data-src")
+      || !!node.querySelector?.("source[src],source[data-src]");
+    if (!hasSource) return false;
+
+    // DCInside serves GIF replacements through viewimage.php. Read the native
+    // image hooks before sanitization, then preserve the animated media marker.
+    const nativeHook = [
+      node.getAttribute("onmousedown"),
+      ...[...(node.querySelectorAll?.("source") || [])].map((source) => source.getAttribute("onerror"))
+    ].filter(Boolean).join(" ");
+    const inImageWrap = !!node.closest?.(".imgwrap");
+    const hasGifHook = /(?:mp4_overlay|change_gif)/i.test(nativeHook);
+    const hasImageFileMarker = inImageWrap && (!!node.getAttribute("data-fileno") || !!node.getAttribute("data-src"));
+    return hasGifHook || hasImageFileMarker;
+  }
+
   function hasAnimatedMediaHint(node){
     if (!node?.getAttribute) return false;
+    if (isNativeAnimatedImageVideo(node)) return true;
     const attrs = Array.from(node.attributes || []);
     const className = String(node.className || "");
     if (/(?:^|[\s_-])(?:gif|webp)-mp4(?:$|[\s_-])|dcbpv-animated-media|animated[-_ ]?(?:gif|webp|media)/i.test(className)) return true;
