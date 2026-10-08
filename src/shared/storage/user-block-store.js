@@ -718,4 +718,10 @@
     getUsage,
     isRelevantChange
   };
+  // Content scripts may start before this document_end store profile. Notify
+  // an already-rendered preview when the canonical block store becomes
+  // available so it can rerun its matcher with the v2 bucket tokens.
+  if (typeof document !== "undefined") {
+    document.dispatchEvent(new CustomEvent("dcb-userblock:store-ready"));
+  }
 })(globalThis);

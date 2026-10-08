@@ -396,6 +396,18 @@ syncSettings(handleUrl);
     '"': "&quot;"
   }[ch]));
 
+  const decodePreviewEntities = (value) => String(value ?? "").replace(/&(?:amp|lt|gt|quot|apos|nbsp);|&#(?:x[\da-f]+|\d+);/gi, (entity) => {
+    const key = entity.slice(1, -1).toLowerCase();
+    if (key === "amp") return "&";
+    if (key === "lt") return "<";
+    if (key === "gt") return ">";
+    if (key === "quot") return '"';
+    if (key === "apos") return "'";
+    if (key === "nbsp") return "\u00a0";
+    const code = key.startsWith("#x") ? Number.parseInt(key.slice(2), 16) : Number.parseInt(key.slice(1), 10);
+    return Number.isSafeInteger(code) && code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : entity;
+  });
+
   const asText = (root, selector) => root?.querySelector?.(selector)?.textContent?.trim() || "";
 
   const makeAbsolute = (value, baseUrl) => {
@@ -1547,7 +1559,7 @@ syncSettings(handleUrl);
       .map((line) => line.trim())
       .filter(Boolean);
     if (!lines.length) return "";
-    return `<div class="dcbpv-text-comments">${lines.map((line) => `<p>${escapeText(line)}</p>`).join("")}</div>`;
+    return `<div class="dcbpv-text-comments">${lines.map((line) => `<p>${escapeText(decodePreviewEntities(line))}</p>`).join("")}</div>`;
   }
 
   function textBetweenMarkers(doc, startPattern, endPattern){
@@ -1772,26 +1784,61 @@ syncSettings(handleUrl);
       .join(" ");
   }
 
+  const previewCommentUnitSelector = [
+    ".dcbpv-comment-item",
+    "li[id^='comment_li_']",
+    "li.ub-content",
+    "li.reply_item",
+    "[data-comment-id]",
+    "[data-comment-no]",
+    ".comment_item",
+    ".comment-item",
+    ".cmt_item"
+  ].join(",");
+
+  function previewOwnWriter(node){
+    if (!node) return null;
+    const writerSelector = ".gall_writer,.ub-writer,.writer_info,.user_info,.cmt_nickbox,.refresherUserData";
+    if (node.matches?.(writerSelector)) return node;
+    const candidates = [...(node.querySelectorAll?.(writerSelector) || [])];
+    if (!candidates.length) return null;
+    if (!node.matches?.(previewCommentUnitSelector)) return candidates[0];
+    return candidates.find((candidate) => candidate.closest?.(previewCommentUnitSelector) === node) || candidates[0];
+  }
+
   function previewWriterMeta(node){
     if (!node) return { nick: "", uid: "", ip: "" };
-    const writer = node.matches?.(".gall_writer,.ub-writer,.writer_info,.user_info,.cmt_nickbox") ? node : node.querySelector?.(".gall_writer,.ub-writer,.writer_info,.user_info,.cmt_nickbox");
+    const writer = previewOwnWriter(node);
     const identityText = [previewIdentityText(node), previewIdentityText(writer)].join(" ");
-    const nick = writer?.getAttribute?.("data-nick")
-      || node.getAttribute?.("data-nick")
-      || writer?.querySelector?.(".nickname em,.nickname,.nick_name,em")?.textContent?.trim()
+    const readAttr = (names, scope = writer) => names.map((name) => scope?.getAttribute?.(name) || "").find(Boolean) || "";
+    const readDescendantAttr = (names) => {
+      const selector = names.map((name) => `[${name}]`).join(",");
+      for (const scope of [writer, node]) {
+        const value = readAttr(names, scope) || [...(scope?.querySelectorAll?.(selector) || [])]
+          .map((element) => readAttr(names, element))
+          .find(Boolean);
+        if (value) return value;
+      }
+      return "";
+    };
+    const nick = readAttr(["data-nick", "data-user-nick", "data-user_nick"], writer)
+      || readAttr(["data-nick", "data-user-nick", "data-user_nick"], node)
+      || writer?.querySelector?.(".nickname em,.nickname,.nick_name,.user_nick,em")?.getAttribute?.("title")
+      || writer?.querySelector?.(".nickname em,.nickname,.nick_name,.user_nick,em")?.textContent?.trim()
       || writer?.textContent?.replace(/메모\s*추가|삭제|수정|답글/g, "").replace(/\([^)]*\)/g, "").replace(/\s+/g, " ").trim()
       || "";
-    const uid = previewUidToken(writer?.getAttribute?.("data-uid"))
-      || previewUidToken(node.getAttribute?.("data-uid"))
-      || previewUidToken(writer?.getAttribute?.("data-memo-uid"))
+    const uid = previewUidToken(readDescendantAttr(["data-uid", "data-user-id", "data-userid", "data-user_id", "data-memo-uid", "data-full-uid"]))
       || previewUidToken(writer?.querySelector?.(".dcb-uid-badge")?.dataset?.fullUid)
+      || previewUidToken(writer?.querySelector?.(".dcb-uid-badge")?.getAttribute?.("data-full-uid"))
+      || previewUidToken(writer?.querySelector?.(".dcb-uid-badge")?.getAttribute?.("title"))
+      || previewUidToken(writer?.querySelector?.(".refresherUserData")?.getAttribute?.("title"))
       || gallogUidFromText(identityText)
       || "";
-    const writerIpEl = writer?.querySelector?.(".ip,.writer_ip");
-    const ip = previewIpPrefix(writer?.getAttribute?.("data-ip"), { allowDateLike: true })
-      || previewIpPrefix(node.getAttribute?.("data-ip"), { allowDateLike: true })
-      || previewIpPrefix(writer?.getAttribute?.("data-memo-ip"), { allowDateLike: true })
+    const writerIpEl = writer?.querySelector?.(".ip,.writer_ip,.refresherUserData.ip,[data-ip],[data-memo-ip]");
+    const ip = previewIpPrefix(readDescendantAttr(["data-ip", "data-memo-ip"]), { allowDateLike: true })
       || previewIpPrefixFromElement(writerIpEl)
+      || previewIpPrefix(writerIpEl?.getAttribute?.("data-ip"), { allowDateLike: true })
+      || previewIpPrefix(writerIpEl?.getAttribute?.("data-memo-ip"), { allowDateLike: true })
       || previewIpPrefix(identityText)
       || "";
     return { nick, uid, ip };
@@ -2087,13 +2134,37 @@ syncSettings(handleUrl);
   }
 
   function commentMetaFromRecord(record){
-    const nick = stripPreviewHtmlText(recordText(record, ["name", "nick", "nickname", "user_name", "userName", "member_nick", "memberNick"])) || "익명";
+    const identitySources = [
+      record,
+      record?.writer,
+      record?.author,
+      record?.user,
+      record?.member,
+      record?.user_data,
+      record?.userData
+    ].filter((value) => value && typeof value === "object");
+    const readIdentity = (keys) => identitySources.map((source) => recordText(source, keys)).find(Boolean) || "";
+    const writerMarkup = [record?.writer, record?.author, record?.user]
+      .find((value) => typeof value === "string" && value.trim());
+    let writerMeta = { nick: "", uid: "", ip: "" };
+    if (writerMarkup && looksLikeHtml(writerMarkup)) {
+      try {
+        const writerDoc = new DOMParser().parseFromString(`<span>${writerMarkup}</span>`, "text/html");
+        writerMeta = previewWriterMeta(writerDoc.body?.firstElementChild || writerDoc.body);
+      } catch (_) {}
+    }
+    const nick = stripPreviewHtmlText(readIdentity(["name", "nick", "nickname", "user_name", "userName", "member_nick", "memberNick", "user_nick", "userNick"]))
+      || writerMeta.nick
+      || (writerMarkup && !looksLikeHtml(writerMarkup) ? stripPreviewHtmlText(writerMarkup) : "")
+      || "익명";
     const identityBlob = commentRecordIdentityBlob(record);
-    const uid = previewUidToken(recordText(record, ["user_id", "userId", "uid", "member_id", "memberId", "gallog_id", "gallogId"]))
+    const uid = previewUidToken(readIdentity(["user_id", "userId", "uid", "member_id", "memberId", "gallog_id", "gallogId"]))
+      || writerMeta.uid
       || gallogUidFromText(identityBlob)
-      || previewUidToken(recordText(record, ["gallog", "gallog_url", "gallogUrl"]))
+      || previewUidToken(readIdentity(["gallog", "gallog_url", "gallogUrl"]))
       || "";
-    const ip = previewIpPrefix(recordText(record, ["ip", "ip_addr", "ipaddr", "user_ip"]), { allowDateLike: true })
+    const ip = previewIpPrefix(readIdentity(["ip", "ip_addr", "ipaddr", "user_ip"]), { allowDateLike: true })
+      || writerMeta.ip
       || previewIpPrefix(identityBlob)
       || "";
     return { nick, uid, ip };
@@ -2266,13 +2337,14 @@ syncSettings(handleUrl);
       const text = node.textContent.replace(/\s+/g, " ").trim();
       if (!text && !node.querySelector("img,video")) return;
       if (node.closest(".cmt_write_box,.comment_write,form")) return;
-      if (!node.querySelector(".cmt_info,.usertxt,.cmt_txtbox,.comment_txt,.reply_txt,.date_time,.gall_writer,.ub-writer")) return;
+      if (!node.querySelector(".cmt_info,.usertxt,.cmt_txtbox,.comment_txt,.reply_txt,.date_time,.gall_writer,.ub-writer,.cmt_nickbox,.nickname")) return;
       found.push(node);
     };
 
     sources.forEach((scope) => {
-      scope.querySelectorAll?.("li[id^='comment_li_'],li.ub-content").forEach((node) => {
-        if (node.id?.startsWith("comment_li_") || node.querySelector(".cmt_info,.usertxt,.cmt_txtbox")) add(node);
+      scope.querySelectorAll?.("li[id^='comment_li_'],li.ub-content,li.reply_item,[data-comment-id],[data-comment-no],.comment_item,.comment-item,.cmt_item").forEach((node) => {
+        if (node.id?.startsWith("comment_li_") || node.querySelector(".cmt_info,.usertxt,.cmt_txtbox,.comment_txt,.reply_txt,.gall_writer,.ub-writer,.cmt_nickbox,.nickname")) add(node);
+        else if (node.matches("li.reply_item,[data-comment-id],[data-comment-no],.comment_item,.comment-item,.cmt_item")) add(node);
       });
       scope.querySelectorAll?.(".cmt_info,.comment_info,.reply_info").forEach((node) => add(node.closest("li") || node));
     });
@@ -2280,24 +2352,26 @@ syncSettings(handleUrl);
     return found;
   }
 
+  function previewCommentRowHTML(item, baseUrl){
+    const meta = commentMetaFromElement(item);
+    const nick = meta.nick || commentNick(item);
+    const date = commentDate(item);
+    const body = commentBodyHTML(item, baseUrl);
+    const plain = htmlToPlain(body);
+    if (!plain && !/<(?:img|video)\b/i.test(body)) return "";
+    if (/^(등록순|최신순|답글순|댓글닫기|새로고침|본문 보기|전체 댓글)/.test(plain)) return "";
+    const depthClass = item.classList?.contains("reply") || item.classList?.contains("reply_line") || item.querySelector?.(".reply_info") ? " reply" : "";
+    const deletedClass = /삭제된 댓글|운영자에 의해/.test(plain) ? " deleted" : "";
+    const doryClass = commentLooksAutomated(item, { ...meta, nick }) ? " dory" : "";
+    const packageAttr = previewDcconPackageAttr(previewDcconPackageIdxFromElement(item));
+    const threadAttr = previewNativeThreadAttributes(item);
+    return `<div class="dcbpv-comment-item${depthClass}${deletedClass}${doryClass}" data-dcbpv-comment="1" data-nick="${escapeText(nick)}" data-uid="${escapeText(meta.uid)}" data-ip="${escapeText(meta.ip)}"${packageAttr}${threadAttr}><div class="dcbpv-comment-meta">${previewWriterBadge({ nick, uid: meta.uid, ip: meta.ip, loc: "preview-comment" })}${date ? `<span>${escapeText(date)}</span>` : ""}</div><div class="dcbpv-comment-body">${body}</div></div>`;
+  }
+
   function buildCommentsHTML(doc, root, baseUrl){
     const items = collectCommentItems(doc, root);
     if (items.length) {
-      const rows = items.map((item) => {
-        const meta = commentMetaFromElement(item);
-        const nick = meta.nick || commentNick(item);
-        const date = commentDate(item);
-        const body = commentBodyHTML(item, baseUrl);
-        const plain = htmlToPlain(body);
-        if (!plain && !/<(?:img|video)\b/i.test(body)) return "";
-        if (/^(등록순|최신순|답글순|댓글닫기|새로고침|본문 보기|전체 댓글)/.test(plain)) return "";
-        const depthClass = item.classList?.contains("reply") || item.classList?.contains("reply_line") || item.querySelector?.(".reply_info") ? " reply" : "";
-        const deletedClass = /삭제된 댓글|운영자에 의해/.test(plain) ? " deleted" : "";
-        const doryClass = commentLooksAutomated(item, { ...meta, nick }) ? " dory" : "";
-        const packageAttr = previewDcconPackageAttr(previewDcconPackageIdxFromElement(item));
-        const threadAttr = previewNativeThreadAttributes(item);
-        return `<div class="dcbpv-comment-item${depthClass}${deletedClass}${doryClass}" data-dcbpv-comment="1" data-nick="${escapeText(nick)}" data-uid="${escapeText(meta.uid)}" data-ip="${escapeText(meta.ip)}"${packageAttr}${threadAttr}><div class="dcbpv-comment-meta">${previewWriterBadge({ nick, uid: meta.uid, ip: meta.ip, loc: "preview-comment" })}${date ? `<span>${escapeText(date)}</span>` : ""}</div><div class="dcbpv-comment-body">${body}</div></div>`;
-      }).filter(Boolean);
+      const rows = items.map((item) => previewCommentRowHTML(item, baseUrl)).filter(Boolean);
       if (rows.length) return `<div class="dcbpv-comment-list">${rows.join("")}</div>`;
     }
 
@@ -2310,6 +2384,15 @@ syncSettings(handleUrl);
     ].join(",")).forEach((node) => node.remove());
     normalizeDcMedia(clone, baseUrl);
     stripUnsafe(clone, baseUrl);
+
+    // Normalize native response variants into the same exact comment rows
+    // before returning fallback markup. Without this pass the preview bridge
+    // cannot identify or hide a blocked author in raw native HTML.
+    const fallbackItems = collectCommentItems(clone, clone);
+    if (fallbackItems.length) {
+      const fallbackRows = fallbackItems.map((item) => previewCommentRowHTML(item, baseUrl)).filter(Boolean);
+      if (fallbackRows.length) return `<div class="dcbpv-comment-list">${fallbackRows.join("")}</div>`;
+    }
     return clone.innerHTML.trim();
   }
 
@@ -2765,7 +2848,10 @@ syncSettings(handleUrl);
     if (typeof value !== "object") return [];
 
     const body = recordText(value, ["memo", "contents", "content", "comment", "comment_memo", "text", "body"]);
-    const hasIdentity = recordText(value, ["name", "nick", "nickname", "user_name", "user_id", "ip", "reg_date", "date_time"]);
+    const identitySources = [value, value.writer, value.author, value.user, value.member, value.user_data, value.userData]
+      .filter((source) => source && typeof source === "object");
+    const hasIdentity = identitySources.some((source) => recordText(source, ["name", "nick", "nickname", "user_name", "user_nick", "user_id", "uid", "ip", "reg_date", "date_time"]))
+      || [value.writer, value.author, value.user].some((source) => typeof source === "string" && source.trim());
     if (body && hasIdentity) return [value];
 
     const priority = ["comments", "comment", "list", "comment_list", "data", "result"];
@@ -2782,7 +2868,7 @@ syncSettings(handleUrl);
   function commentRecordBody(record, baseUrl){
     const raw = recordText(record, ["memo", "contents", "content", "comment", "comment_memo", "text", "body"]);
     if (!raw) return "";
-    if (!looksLikeHtml(raw)) return escapeText(raw).replace(/\n/g, "<br>");
+    if (!looksLikeHtml(raw)) return escapeText(decodePreviewEntities(raw)).replace(/\n/g, "<br>");
 
     const doc = new DOMParser().parseFromString(`<div>${raw}</div>`, "text/html");
     normalizeDcMedia(doc, baseUrl);
@@ -3463,9 +3549,12 @@ syncSettings(handleUrl);
     let storeAvailable = false;
     try {
       if (globalThis.DCBUserBlockStore?.getAllTokens) {
-        storeAvailable = true;
         const reader = globalThis.DCBUserBlockStore.getAllTokensReadOnly || globalThis.DCBUserBlockStore.getAllTokens;
-        storeTokens = await reader();
+        const tokens = await reader();
+        if (Array.isArray(tokens)) {
+          storeTokens = tokens;
+          storeAvailable = true;
+        }
       }
     } catch (_) {}
 
@@ -3522,9 +3611,12 @@ syncSettings(handleUrl);
   function previewWriterFromNode(node){
     const meta = previewWriterMeta(node);
     return {
-      nick: meta.nick || node?.getAttribute?.("data-nick") || "",
-      uid: previewUidToken(meta.uid || node?.getAttribute?.("data-uid") || ""),
-      ip: previewIpPrefix(meta.ip || node?.getAttribute?.("data-ip") || "", { allowDateLike: true })
+      // Canonical preview rows own these attributes. Prefer them over the
+      // first descendant writer so nested reply markup cannot change the row's
+      // author identity during filtering.
+      nick: node?.getAttribute?.("data-nick") || meta.nick || "",
+      uid: previewUidToken(node?.getAttribute?.("data-uid") || meta.uid || ""),
+      ip: previewIpPrefix(node?.getAttribute?.("data-ip") || meta.ip || "", { allowDateLike: true })
     };
   }
 
@@ -4369,6 +4461,18 @@ syncSettings(handleUrl);
     }
     schedulePreviewFilterRerender();
   });
+
+  const rerenderPreviewForUserBlock = () => {
+    if (!currentPreviewData) return;
+    if (previewUserBlockMutationPending) {
+      previewUserBlockRerenderPending = true;
+      return;
+    }
+    schedulePreviewFilterRerender(0);
+  };
+
+  document.addEventListener("dcb-userblock:refresh", rerenderPreviewForUserBlock);
+  document.addEventListener("dcb-userblock:store-ready", rerenderPreviewForUserBlock);
 
   async function openPreview(url, options = {}){
     if (!url || !previewEnabled) return;
