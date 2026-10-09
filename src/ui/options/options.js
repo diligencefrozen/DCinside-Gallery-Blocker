@@ -30,6 +30,80 @@
   });
 })();
 
+/* 설정 목차: 앵커 이동과 현재 위치 표시 */
+(() => {
+  const toggle = document.getElementById("settingsNavToggle");
+  const nav = document.getElementById("settingsNav");
+  const closeButton = document.getElementById("settingsNavClose");
+  const links = [...document.querySelectorAll(".settings-nav-list a[href^='#']")];
+  const items = links.map((link) => ({
+    link,
+    section: document.getElementById(link.hash.slice(1))
+  })).filter((item) => item.section);
+  if (!nav || !items.length) return;
+
+  const reducedMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  const close = ({ restoreFocus = false } = {}) => {
+    nav.classList.remove("is-open");
+    toggle?.setAttribute("aria-expanded", "false");
+    if (restoreFocus) toggle?.focus();
+  };
+  const activate = (item) => {
+    items.forEach(({ link }) => {
+      const active = link === item?.link;
+      link.classList.toggle("active", active);
+      if (active) link.setAttribute("aria-current", "location");
+      else link.removeAttribute("aria-current");
+    });
+  };
+
+  links.forEach((link) => {
+    link.addEventListener("click", (event) => {
+      const item = items.find((entry) => entry.link === link);
+      if (!item) return;
+      event.preventDefault();
+      item.section.scrollIntoView({ behavior: reducedMotion() ? "auto" : "smooth", block: "start" });
+      history.replaceState(null, "", link.hash);
+      activate(item);
+      close({ restoreFocus: true });
+    });
+  });
+
+  closeButton?.addEventListener("click", () => close({ restoreFocus: true }));
+  toggle?.addEventListener("click", () => {
+    const open = !nav.classList.contains("is-open");
+    nav.classList.toggle("is-open", open);
+    toggle.setAttribute("aria-expanded", String(open));
+    if (open) (closeButton || links[0])?.focus();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && nav.classList.contains("is-open")) close({ restoreFocus: true });
+  });
+
+  let visible = null;
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (entry.isIntersecting) visible = items.find((item) => item.section === entry.target) || visible;
+    });
+    if (visible) activate(visible);
+  }, { rootMargin: "-18% 0px -65% 0px", threshold: [0, 0.2, 1] });
+  items.forEach((item) => observer.observe(item.section));
+  activate(items[0]);
+
+  let scrollFrame = 0;
+  window.addEventListener("scroll", () => {
+    if (scrollFrame) return;
+    scrollFrame = requestAnimationFrame(() => {
+      scrollFrame = 0;
+      const root = document.scrollingElement;
+      const top = Math.max(root?.scrollTop || 0, window.scrollY || 0);
+      const bottom = top + window.innerHeight >= (root?.scrollHeight || document.documentElement.scrollHeight) - 8;
+      if (top <= 8) activate(items[0]);
+      else if (bottom) activate(items[items.length - 1]);
+    });
+  }, { passive: true });
+})();
+
 /* ───── 상수 ───── */
 const builtinBlocked = ["dcbest"];
 
@@ -125,7 +199,7 @@ const BACKUP_KEYS = [
   "hideMainEnabled", "hideGallEnabled", "hideSearchEnabled",
   "enabled", "galleryBlockEnabled", "builtinDcbestBlockEnabled", "blockMode", "quickBlockButtonPosition", "quickBlockButtonPositionSavedAt", "autoRefreshEnabled",
   "autoRefreshInterval", "delay", "showUidBadge", "showMemberIpInfo", "linkWarnEnabled", "hideDCGray",
-  "previewEnabled", "hideAnonymousEnabled", "hideForeignIpEnabled", "gamemecaBlockEnabled", "doryBlockEnabled", "noticeBlockEnabled", "compactListEnabled",
+  "previewEnabled", "readPostsHighlightEnabled", "hideAnonymousEnabled", "hideForeignIpEnabled", "gamemecaBlockEnabled", "doryBlockEnabled", "noticeBlockEnabled", "compactListEnabled",
   "userMemoEnabled", "userMemos",
   IMAGE_BLOCK_CONFIG_KEY, IMAGE_BLOCK_RECORD_KEY, IMAGE_BLOCK_AUTHOR_TARGET_KEY, IMAGE_ACCOUNT_RULE_KEY,
   DCCON_BLOCK_STATE_KEY,
@@ -164,6 +238,7 @@ const BACKUP_DEFAULTS = {
   linkWarnEnabled: true,
   hideDCGray: undefined,
   previewEnabled: true,
+  readPostsHighlightEnabled: true,
   hideAnonymousEnabled: false,
   hideForeignIpEnabled: false,
   gamemecaBlockEnabled: true,
@@ -257,6 +332,12 @@ const compactListEnabledEl = document.getElementById("compactListEnabled");
 const userMemoEnabledEl = document.getElementById("userMemoEnabled");
 
 const previewEnabledEl = document.getElementById("previewEnabled");
+const readPostsHighlightEnabledEl = document.getElementById("optionReadPostsHighlightEnabled");
+const readPostsHighlightController = UI_SETTINGS_CACHE?.booleanSetting?.(
+  "readPostsHighlightEnabled",
+  readPostsHighlightEnabledEl,
+  true
+);
 const hideCommentEl = document.getElementById("hideComment");
 const hideImgCommentEl = document.getElementById("hideImgComment");
 const hideDcconEl = document.getElementById("hideDccon");
@@ -735,6 +816,10 @@ function sanitizeImport(raw) {
     }
   });
 
+  if (Object.prototype.hasOwnProperty.call(patch, "readPostsHighlightEnabled")) {
+    patch.readPostsHighlightEnabled = normalizeReadPostsHighlightValue(patch.readPostsHighlightEnabled);
+  }
+
   if (Object.prototype.hasOwnProperty.call(patch, QUICK_BLOCK_POSITION_KEY)) {
     patch[QUICK_BLOCK_POSITION_KEY] = normalizeQuickBlockPosition(patch[QUICK_BLOCK_POSITION_KEY]);
 
@@ -748,6 +833,13 @@ function sanitizeImport(raw) {
   if (!Object.keys(patch).length) throw new Error("empty");
 
   return patch;
+}
+
+function normalizeReadPostsHighlightValue(value) {
+  if (typeof value === "boolean") return value;
+  if (value === 1 || (typeof value === "string" && value.trim().toLowerCase() === "true")) return true;
+  if (value === 0 || (typeof value === "string" && value.trim().toLowerCase() === "false")) return false;
+  return true;
 }
 
 function downloadJson(filename, data) {
@@ -794,6 +886,7 @@ async function exportSettings() {
     ]);
 
     const sync = { ...BACKUP_DEFAULTS, ...(syncSnapshot && typeof syncSnapshot === "object" ? syncSnapshot : {}) };
+    sync.readPostsHighlightEnabled = normalizeReadPostsHighlightValue(sync.readPostsHighlightEnabled);
     [
       "blockedUids",
       "userMemos",
@@ -895,6 +988,9 @@ function parseBackupPayload(raw) {
     }
 
     if (!Object.keys(sync).length && !Object.keys(local).length && !blockedUids?.length) throw new Error("empty");
+    sync.readPostsHighlightEnabled = Object.prototype.hasOwnProperty.call(sync, "readPostsHighlightEnabled")
+      ? normalizeReadPostsHighlightValue(sync.readPostsHighlightEnabled)
+      : true;
     return { sync, local, blockedUids };
   }
 
@@ -927,6 +1023,9 @@ function parseBackupPayload(raw) {
     local[QUICK_BLOCK_POSITION_SAVED_AT_KEY] = stamp;
   }
 
+  sync.readPostsHighlightEnabled = Object.prototype.hasOwnProperty.call(sync, "readPostsHighlightEnabled")
+    ? normalizeReadPostsHighlightValue(sync.readPostsHighlightEnabled)
+    : true;
   return { sync, local, blockedUids };
 }
 
@@ -2079,6 +2178,18 @@ if (previewEnabledEl) {
   });
 }
 
+if (readPostsHighlightEnabledEl) {
+  readPostsHighlightEnabledEl.addEventListener("change", e => {
+    const enabled = !!e.target.checked;
+    readPostsHighlightEnabledEl.checked = enabled;
+    if (readPostsHighlightController) readPostsHighlightController.save(enabled);
+    else {
+      UI_SETTINGS_CACHE?.merge?.({ readPostsHighlightEnabled: enabled });
+      chrome.storage.sync.set({ readPostsHighlightEnabled: enabled });
+    }
+  });
+}
+
 if (hideAnonymousEl) {
   hideAnonymousEl.addEventListener("change", e => {
     chrome.storage.sync.set({ hideAnonymousEnabled: !!e.target.checked });
@@ -2250,6 +2361,7 @@ function applyOptionsSettings(conf = {}, { refreshAsync = true } = {}) {
     hideDccon = false,
     hideTextCon = false,
     previewEnabled = true,
+    readPostsHighlightEnabled = true,
     hideAnonymousEnabled = false,
     hideForeignIpEnabled = false,
     gamemecaBlockEnabled = true,
@@ -2303,6 +2415,11 @@ function applyOptionsSettings(conf = {}, { refreshAsync = true } = {}) {
   if (hideDcconEl) hideDcconEl.checked = !!hideDccon;
   if (hideTextConEl) hideTextConEl.checked = !!hideTextCon;
   if (previewEnabledEl) previewEnabledEl.checked = !!previewEnabled;
+  if (readPostsHighlightController) {
+    readPostsHighlightController.render(readPostsHighlightEnabled !== false);
+  } else if (readPostsHighlightEnabledEl) {
+    readPostsHighlightEnabledEl.checked = readPostsHighlightEnabled !== false;
+  }
   if (hideAnonymousEl) hideAnonymousEl.checked = !!hideAnonymousEnabled;
   if (hideForeignIpEl) hideForeignIpEl.checked = !!hideForeignIpEnabled;
   if (gamemecaBlockEnabledEl) gamemecaBlockEnabledEl.checked = gamemecaBlockEnabled !== false;
@@ -2457,6 +2574,14 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
     if (changes.previewEnabled && previewEnabledEl) {
       previewEnabledEl.checked = changes.previewEnabled.newValue !== false;
+    }
+
+    if (changes.readPostsHighlightEnabled) {
+      if (readPostsHighlightController) {
+        readPostsHighlightController.applyChange(changes.readPostsHighlightEnabled);
+      } else if (readPostsHighlightEnabledEl) {
+        readPostsHighlightEnabledEl.checked = changes.readPostsHighlightEnabled.newValue !== false;
+      }
     }
 
     if (changes.hideAnonymousEnabled && hideAnonymousEl) {

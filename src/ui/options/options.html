@@ -19,6 +19,30 @@
     padding:40px 0;
   }
   .wrapper{width:100%;max-width:760px;display:flex;flex-direction:column;gap:48px;padding:0 24px;}
+  .options-shell{width:min(1040px,100%);display:grid;grid-template-columns:210px minmax(0,760px);gap:24px;align-items:start;padding:0 24px;}
+  .options-content{max-width:760px;padding:0;}
+  .settings-nav-toggle{display:none;}
+  .settings-nav{position:sticky;top:24px;max-height:calc(100vh - 48px);overflow:auto;padding:14px 10px;border:1px solid rgba(148,163,184,.2);border-radius:14px;background:rgba(22,27,34,.92);box-shadow:0 8px 20px rgba(0,0,0,.22);}
+  .settings-nav-close{display:none;}
+  .settings-nav-title{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:2px 10px 10px;color:#f0f6fc;font-size:13px;font-weight:800;}
+  .settings-nav-list{display:flex;flex-direction:column;gap:3px;list-style:none;margin:0;padding:0;}
+  .settings-nav-list a{position:relative;display:block;padding:8px 10px;border-radius:9px;color:#9aa9bd;text-decoration:none;font-size:12px;line-height:1.35;transition:color .18s ease,background .18s ease,transform .18s ease;}
+  .settings-nav-list a::before{content:"";position:absolute;left:0;top:7px;bottom:7px;width:2px;border-radius:2px;background:transparent;transition:background .18s ease;}
+  .settings-nav-list a:hover,.settings-nav-list a:focus-visible{color:#e6edf3;background:rgba(79,124,255,.12);transform:translateX(2px);}
+  .settings-nav-list a:focus-visible{outline:2px solid rgba(147,197,253,.7);outline-offset:2px;}
+  .settings-nav-list a.active{color:#dbeafe;background:rgba(79,124,255,.18);font-weight:800;}
+  .settings-nav-list a.active::before{background:var(--accent);}
+  section[id]{scroll-margin-top:24px;}
+  @media(max-width:980px){
+    body{padding:20px 0;}
+    .options-shell{display:block;width:100%;padding:0 16px;}
+    .options-content{padding:0;}
+    .settings-nav-toggle{display:inline-flex;align-items:center;gap:7px;margin:0 0 14px;padding:9px 12px;font-size:13px;}
+    .settings-nav{position:fixed;left:16px;right:16px;top:70px;z-index:30;max-height:min(70vh,560px);transform:translateY(-12px);opacity:0;visibility:hidden;pointer-events:none;transition:opacity .18s ease,transform .18s ease,visibility .18s ease;}
+    .settings-nav-close{display:inline-flex;margin:0 0 10px auto;padding:6px 9px;font-size:12px;}
+    .settings-nav.is-open{transform:translateY(0);opacity:1;visibility:visible;pointer-events:auto;}
+  }
+  @media(prefers-reduced-motion:reduce){.settings-nav-list a,.settings-nav-list a::before,.settings-nav{transition:none;}html{scroll-behavior:auto;}}
   .card{
     background:var(--bg-2); border-radius:18px; padding:28px 32px;
     box-shadow:0 6px 12px rgba(0,0,0,.35);
@@ -999,8 +1023,28 @@
 <link rel="stylesheet" href="../shared/reading-settings.css">
 </head>
 <body>
-<main class="wrapper">
-  <section class="card" style="align-items:center;text-align:center">
+<main class="options-shell">
+  <button class="settings-nav-toggle" id="settingsNavToggle" type="button" aria-expanded="false" aria-controls="settingsNav">☰ 설정 목차</button>
+  <aside class="settings-nav" id="settingsNav" aria-label="설정 목차">
+    <div class="settings-nav-title">설정 바로가기 <button class="settings-nav-close" id="settingsNavClose" type="button">닫기</button></div>
+    <nav>
+      <ul class="settings-nav-list">
+        <li><a href="#settingsIntro">🏠 소개 · 후원</a></li>
+        <li><a href="#settingsDetection">🧪 공격적 표현 감지</a></li>
+        <li><a href="#settingsFonts">🎨 글꼴 · 다크모드</a></li>
+        <li><a href="#settingsBackup">💾 설정 백업 · 복원</a></li>
+        <li><a href="#settingsGallery">🛡️ 갤러리 차단 · 자동화</a></li>
+        <li><a href="#settingsDisplay">👁️ 화면 표시 · 읽은 글</a></li>
+        <li><a href="#settingsKeywords">🔎 키워드 차단 · 숨기기</a></li>
+        <li><a href="#settingsUsers">👤 사용자 · 갤러리 관리</a></li>
+        <li><a href="#settingsAreas">🧹 영역 · 콘텐츠 숨기기</a></li>
+        <li><a href="#settingsImages">🖼️ 이미지 · 활동량 차단</a></li>
+        <li><a href="#settingsNotes">📝 메모 · 문의</a></li>
+      </ul>
+    </nav>
+  </aside>
+  <div class="wrapper options-content">
+  <section class="card" id="settingsIntro" style="align-items:center;text-align:center">
     <h1>디시갤 차단기 설정</h1>
     <p class="note">차단할 갤러리와 숨길 영역을 손쉽게 관리하세요.</p>
   </section>
@@ -1028,7 +1072,7 @@
     </div>
   </section>
 
-  <section class="dcb-detection-card" data-text-detection-settings aria-label="공격적 표현 감지 설정">
+  <section class="dcb-detection-card" id="settingsDetection" data-text-detection-settings aria-label="공격적 표현 감지 설정">
     <div class="dcb-detection-heading">
       <strong class="dcb-detection-title">🧪 공격적 표현 감지 <span class="dcb-detection-badge">기기 내 AI · 실험</span></strong>
       <label class="switch" aria-label="공격적 표현 감지 사용"><input type="checkbox" data-detection-field="enabled"><span class="slider"></span></label>
@@ -1065,7 +1109,7 @@
     <button type="button" data-detection-retry>기기 내 AI 다시 시도</button>
   </section>
 
-  <section class="card stack font-card">
+  <section class="card stack font-card" id="settingsFonts">
     <div class="font-hero">
       <div class="font-brand-block">
         <span class="font-mark-lg">Aa</span>
@@ -1137,7 +1181,7 @@
     </div>
   </section>
 
-  <section class="card">
+  <section class="card" id="settingsBackup">
     <h2>📦 설정 백업/복원</h2>
     <p class="note">현재 저장된 설정을 JSON 파일로 내보내거나 불러올 수 있습니다.</p>
     <div class="row">
@@ -1148,7 +1192,7 @@
     <p class="note">불러오면 기존 설정이 덮어씌워집니다. (chrome.storage.sync 기준)</p>
   </section>
 
-  <section class="card stack">
+  <section class="card stack" id="settingsGallery">
     <h2>🚧 갤러리 접근 차단</h2>
     <p class="note">차단 갤러리에 들어갔을 때 어떤 방식으로 막을지 설정합니다.</p>
 
@@ -1233,7 +1277,7 @@
     <p class="note">최소 10초, 최대 600초(10분)까지 설정할 수 있습니다. 여러 창·탭의 요청은 순서대로 간격을 조정하며, 접속 제한 응답이나 반복 실패가 감지되면 자동으로 꺼집니다.</p>
   </section>
 
-  <section class="card stack">
+  <section class="card stack" id="settingsDisplay">
     <h2>🧩 화면/표시 빠른 설정</h2>
     <p class="note">자주 쓰는 표시 옵션을 한 곳에 모았습니다. 숨길 영역의 세부 CSS 선택자는 아래 영역 숨기기 섹션에서 관리합니다.</p>
 
@@ -1317,6 +1361,17 @@
 
       <div class="setting-row">
         <div class="setting-copy">
+          <strong id="optionReadPostsHighlightLabel">읽은 글 표시하기</strong>
+          <span id="optionReadPostsHighlightDescription">읽은 게시글을 목록에서 구분해 표시합니다.</span>
+        </div>
+        <label class="switch" title="읽은 글 표시하기" aria-label="읽은 글 표시하기">
+          <input type="checkbox" id="optionReadPostsHighlightEnabled" aria-labelledby="optionReadPostsHighlightLabel" aria-describedby="optionReadPostsHighlightDescription">
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <div class="setting-row">
+        <div class="setting-copy">
           <strong>이용자 메모</strong>
           <span>확장프로그램 내부 메모 표시 기능을 켜거나 끕니다.</span>
         </div>
@@ -1339,7 +1394,7 @@
     </div>
   </section>
 
-  <section class="card keyword-panel">
+  <section class="card keyword-panel" id="settingsKeywords">
     <h2>🔎 키워드 차단 모드</h2>
 
     <div class="row" style="justify-content:space-between;align-items:center">
@@ -1404,7 +1459,7 @@
     </div>
   </section>
 
-  <section class="card keyword-panel">
+  <section class="card keyword-panel" id="settingsKeywordsHide">
     <h2>👁️ 키워드 숨기기 모드</h2>
 
     <div class="row" style="justify-content:space-between;align-items:center">
@@ -1472,7 +1527,7 @@
     </div>
   </section>
 
-  <section class="card">
+  <section class="card" id="settingsUsers">
     <h2>사용자 차단</h2>
 
     <div class="quick-guide-card" role="note" aria-label="빠른 이용자 차단 안내">
@@ -1535,7 +1590,7 @@
     <ul id="recList"></ul>
   </section>
 
-  <section class="card">
+  <section class="card" id="settingsAreas">
     <h2>🧹 메인 페이지 영역 숨기기</h2>
     <p class="note">디시인사이드 메인에서 제거할 영역을 지정하세요.<br>
       페이지에서 원하는 영역을 우클릭한 뒤 <b>🧹 이 영역 숨기기</b>를 누르면 자동으로 추가됩니다.<br>
@@ -1693,7 +1748,7 @@
 
 
 
-  <section class="card image-block-card" aria-label="이미지 차단 옵션">
+  <section class="card image-block-card" id="settingsImages" aria-label="이미지 차단 옵션">
     <div class="image-block-head">
       <div class="image-block-copy">
         <h2>🖼️ 이미지 차단</h2>
@@ -1764,7 +1819,7 @@
     </div>
   </section>
 
-  <section class="card">
+  <section class="card" id="settingsNotes">
     <h2>📝 이용자 메모 관리</h2>
     <p class="note">회원은 아이디 기준, 비회원은 아이피 기준으로 저장됩니다.</p>
 
@@ -1785,6 +1840,7 @@
     <p class="note">확장프로그램 사용 중 문제를 발견했거나 개선 아이디어가 있다면, 아래 이슈 페이지에 남겨주세요.</p>
     <a class="support-link" href="https://chromewebstore.google.com/detail/%EB%94%94%EC%8B%9C%EA%B0%A4-%EC%B0%A8%EB%8B%A8%EA%B8%B0/fnfmdbldnhadkadklplhcjcojjiaopgg/reviews?hl=ko" target="_blank" rel="noopener noreferrer">문의하기</a>
   </section>
+  </div>
 </main>
 
 <button id="dcbScrollTop" type="button" aria-label="맨 위로 이동" title="맨 위로 이동" hidden>↑</button>

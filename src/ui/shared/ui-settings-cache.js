@@ -80,6 +80,65 @@
     persist();
   }
 
+  function booleanSetting(key, element, defaultValue = true) {
+    let revision = 0;
+    let pendingWrites = 0;
+    let settling = false;
+    let writeQueue = Promise.resolve();
+
+    function render(value) {
+      if (!element || pendingWrites || settling) return;
+      element.checked = typeof value === "boolean" ? value : defaultValue;
+    }
+
+    function applyChange(change) {
+      if (!change || typeof change !== "object") return;
+      if (pendingWrites || settling) {
+        merge({ [key]: element?.checked === true });
+        return;
+      }
+      revision += 1;
+      const value = Object.prototype.hasOwnProperty.call(change, "newValue")
+        ? change.newValue
+        : undefined;
+      if (typeof value === "boolean") {
+        merge({ [key]: value });
+        render(value);
+      } else {
+        const next = { ...snapshot };
+        delete next[key];
+        replace(next);
+        render(defaultValue);
+      }
+    }
+
+    function save(value) {
+      const next = !!value;
+      const saveRevision = ++revision;
+      pendingWrites += 1;
+      merge({ [key]: next });
+      if (element) element.checked = next;
+
+      writeQueue = writeQueue.then(() => new Promise((resolve) => {
+        chrome.storage.sync.set({ [key]: next }, resolve);
+      })).then(() => {
+        pendingWrites -= 1;
+        if (pendingWrites) return;
+        settling = true;
+        const readRevision = revision;
+        chrome.storage.sync.get({ [key]: defaultValue }, (stored) => {
+          if (revision !== readRevision || revision !== saveRevision || pendingWrites) return;
+          const authoritative = typeof stored?.[key] === "boolean" ? stored[key] : defaultValue;
+          merge({ [key]: authoritative });
+          settling = false;
+          render(authoritative);
+        });
+      });
+    }
+
+    return Object.freeze({ render, save, applyChange });
+  }
+
   function finishInitialSync(value) {
     const stored = safeObject(value);
     const next = { ...stored };
@@ -119,6 +178,7 @@
     read,
     replace,
     merge,
+    booleanSetting,
     ready
   });
 })();

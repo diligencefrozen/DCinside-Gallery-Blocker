@@ -6,6 +6,7 @@
 
   const api = typeof browser !== "undefined" ? browser : chrome;
   const STORAGE_KEY = "dcbReadPosts";
+  const HIGHLIGHT_KEY = "readPostsHighlightEnabled";
   const READ_CLASS = "dcb-read-post";
   const ROW_SELECTOR = ".gall_list tr[data-no]";
 
@@ -33,6 +34,10 @@
   let readPosts = new Set();
   let storageRevision = 0;
   let hydration = null;
+  // Keep native rows visible until the saved display preference is known.
+  let highlightEnabled = false;
+  let highlightRevision = 0;
+  let highlightHydration = null;
   const rowsByIdentity = new Map();
   const identityByRow = new WeakMap();
 
@@ -57,7 +62,7 @@
         rowsByIdentity.get(identity).add(row);
       }
     }
-    row.classList.toggle(READ_CLASS, !!identity && readPosts.has(identity));
+    row.classList.toggle(READ_CLASS, highlightEnabled && !!identity && readPosts.has(identity));
   }
 
   function collectRows(root, rows) {
@@ -83,7 +88,7 @@
       if (!row.isConnected) {
         identityByRow.delete(row);
         rows.delete(row);
-      } else row.classList.toggle(READ_CLASS, readPosts.has(identity));
+      } else row.classList.toggle(READ_CLASS, highlightEnabled && readPosts.has(identity));
     }
     if (!rows.size) rowsByIdentity.delete(identity);
   }
@@ -123,7 +128,34 @@
     try { Promise.resolve(api.runtime.sendMessage({ type: "dcb.readPosts.mark" })).catch(() => {}); } catch (_) {}
   }
 
+  function refreshHighlightSetting() {
+    if (highlightHydration) return highlightHydration;
+    if (!api.storage.sync) {
+      highlightEnabled = true;
+      reconcile();
+      return Promise.resolve();
+    }
+    const revision = highlightRevision;
+    highlightHydration = api.storage.sync.get({ [HIGHLIGHT_KEY]: true }).then((stored) => {
+      // A setting changed in another UI must win over an older get() response.
+      if (revision === highlightRevision) highlightEnabled = stored?.[HIGHLIGHT_KEY] !== false;
+      reconcile();
+    }).catch(() => {
+      // Missing or unavailable settings use the documented ON default.
+      if (revision !== highlightRevision) return;
+      highlightEnabled = true;
+      reconcile();
+    }).finally(() => { highlightHydration = null; });
+    return highlightHydration;
+  }
+
   api.storage.onChanged.addListener((changes, area) => {
+    if (area === "sync" && Object.prototype.hasOwnProperty.call(changes, HIGHLIGHT_KEY)) {
+      highlightRevision += 1;
+      highlightEnabled = changes[HIGHLIGHT_KEY].newValue !== false;
+      reconcile();
+      return;
+    }
     if (area !== "local" || !Object.prototype.hasOwnProperty.call(changes, STORAGE_KEY)) return;
     storageRevision += 1;
     replaceSnapshot(changes[STORAGE_KEY].newValue);
@@ -156,11 +188,13 @@
   window.addEventListener("pageshow", (event) => {
     if (!event.persisted) return;
     refreshSnapshot();
+    refreshHighlightSetting();
     recordVisit();
   });
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", () => reconcile(), { once: true });
   }
   refreshSnapshot();
+  refreshHighlightSetting();
   recordVisit();
 })();

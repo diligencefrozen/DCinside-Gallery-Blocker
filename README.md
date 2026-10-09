@@ -44,8 +44,8 @@ Block unwanted galleries, posts, comments, users, keywords, images, and other di
 
 | | |
 | --- | --- |
-| Chrome Web Store version | **7.3.45.2026** |
-| Firefox Add-ons version | **7.3.45.2026** |
+| Chrome Web Store version | **7.3.46.2026** |
+| Firefox Add-ons version | **7.3.46.2026** |
 | Chrome Web Store users | **1,000** |
 | Chrome Web Store rating | **4.8 / 5 (28 ratings)** |
 | Firefox Add-ons ratings | **No ratings yet** |

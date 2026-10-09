@@ -12,6 +12,7 @@ const hideDcconToggle = document.getElementById("hideDccon");
 const hideTextConToggle = document.getElementById("hideTextCon");
 const previewToggle = document.getElementById("previewEnabled");
 const autoRefreshToggle = document.getElementById("autoRefreshEnabled");
+const readPostsHighlightToggle = document.getElementById("popupReadPostsHighlightEnabled");
 const autoRefreshIntervalNum = document.getElementById("autoRefreshIntervalNum");
 const autoRefreshIntervalRange = document.getElementById("autoRefreshIntervalRange");
 const delayNum = document.getElementById("delayNum");
@@ -124,6 +125,7 @@ const DEFAULTS = {
 
   autoRefreshEnabled: false,
   autoRefreshInterval: 60,
+  readPostsHighlightEnabled: true,
   delay: 5,
 
   userBlockEnabled: true,
@@ -156,6 +158,11 @@ const DEFAULTS = {
 };
 
 const UI_SETTINGS_CACHE = globalThis.DCBUiSettingsCache;
+const readPostsHighlightController = UI_SETTINGS_CACHE?.booleanSetting?.(
+  "readPostsHighlightEnabled",
+  readPostsHighlightToggle,
+  true
+);
 
 let userBlockEnabledState = true;
 let userBlockTriggerModeState = "instant";
@@ -1582,6 +1589,7 @@ function applyPopupSettings(conf = {}, { refreshAsync = true } = {}) {
     keywordBlockTargets,
     autoRefreshEnabled,
     autoRefreshInterval,
+    readPostsHighlightEnabled,
     delay,
     userBlockEnabled,
     userBlockTriggerMode,
@@ -1628,6 +1636,11 @@ function applyPopupSettings(conf = {}, { refreshAsync = true } = {}) {
   setChecked(autoRefreshToggle, autoRefreshEnabled);
   setValue(autoRefreshIntervalNum, autoRefreshInterval);
   setValue(autoRefreshIntervalRange, autoRefreshInterval);
+  if (readPostsHighlightController) {
+    readPostsHighlightController.render(readPostsHighlightEnabled !== false);
+  } else {
+    setChecked(readPostsHighlightToggle, readPostsHighlightEnabled !== false);
+  }
   setValue(delayNum, delay);
   setValue(delayRange, delay);
 
@@ -1875,6 +1888,13 @@ if (keywordListEl) {
 
 if (autoRefreshToggle) {
   autoRefreshToggle.onchange = (e) => chrome.storage.sync.set({ autoRefreshEnabled: !!e.target.checked });
+}
+if (readPostsHighlightToggle) {
+  readPostsHighlightToggle.onchange = (e) => {
+    const enabled = !!e.target.checked;
+    if (readPostsHighlightController) readPostsHighlightController.save(enabled);
+    else chrome.storage.sync.set({ readPostsHighlightEnabled: enabled });
+  };
 }
 
 function updateAutoRefreshInterval(v) {
@@ -2189,6 +2209,13 @@ chrome.storage.onChanged.addListener((c, a) => {
     if (c.delay) {
       setValue(delayNum, c.delay.newValue);
       setValue(delayRange, c.delay.newValue);
+    }
+    if (c.readPostsHighlightEnabled) {
+      if (readPostsHighlightController) {
+        readPostsHighlightController.applyChange(c.readPostsHighlightEnabled);
+      } else {
+        setChecked(readPostsHighlightToggle, c.readPostsHighlightEnabled.newValue !== false);
+      }
     }
     if (c.userBlockEnabled) {
       userBlockEnabledState = c.userBlockEnabled.newValue !== false;
