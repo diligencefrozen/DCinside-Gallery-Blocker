@@ -23,10 +23,41 @@ function removeNow(selectors) {
   );
 }
 
+// Process only nodes introduced by the page.  The old callback rescanned the
+// entire document for every mutation, which becomes expensive on feed pages.
+function removeFromRoots(selectors, roots) {
+  for (const root of roots) {
+    if (!root || root.nodeType !== Node.ELEMENT_NODE) continue;
+    for (const selector of selectors) {
+      if (root.matches(selector)) root.remove();
+      else root.querySelectorAll(selector).forEach(el => el.remove());
+    }
+  }
+}
+
+function removeTargetMatches(selectors, target) {
+  if (!target || target.nodeType !== Node.ELEMENT_NODE) return;
+  for (const selector of selectors) {
+    if (target.matches(selector)) {
+      target.remove();
+      break;
+    }
+  }
+}
+
 /* MutationObserver – 동적 로딩 대응 */
 function startObserver(selectors) {
   if (observer) observer.disconnect();
-  observer = new MutationObserver(() => removeNow(selectors));
+  observer = new MutationObserver((records) => {
+    const roots = new Set();
+    for (const record of records) {
+      // Include the mutation target as well: selectors may depend on a
+      // descendant (for example :has()) becoming present.
+      removeTargetMatches(selectors, record.target);
+      if (record.type === "childList") record.addedNodes.forEach((node) => roots.add(node));
+    }
+    if (roots.size) removeFromRoots(selectors, roots);
+  });
   if (document.body) {
     observer.observe(document.body, { childList: true, subtree: true });
   } else {

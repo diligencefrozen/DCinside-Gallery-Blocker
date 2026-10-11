@@ -57,6 +57,7 @@
   let hideEnabled = false;
   let observer = null;
   let scanFrame = 0;
+  const pendingScopes = new Set();
 
   /* <style> 보장 */
   function ensureStyle() {
@@ -197,14 +198,50 @@
     });
   }
 
+  function hideInScope(scope) {
+    if (!scope || scope.nodeType !== Node.ELEMENT_NODE || !scope.isConnected) return;
+    const writers = [];
+    if (scope.matches?.(WRITER_SELECTOR)) writers.push(scope);
+    scope.querySelectorAll?.(WRITER_SELECTOR).forEach((writer) => writers.push(writer));
+    const targets = new Set();
+    for (const writer of writers) {
+      const target = findAnonymousTarget(writer);
+      if (target) targets.add(target);
+    }
+    for (const target of targets) {
+      const anonymous = [...(target.matches?.(WRITER_SELECTOR) ? [target] : []),
+        ...(target.querySelectorAll?.(WRITER_SELECTOR) || [])].some(isAnonymous);
+      target.classList.toggle(HIDDEN_CLASS, anonymous);
+    }
+  }
+
+  function scheduleScopeScan(scopes) {
+    scopes.forEach((scope) => {
+      if (scope?.nodeType === Node.ELEMENT_NODE) pendingScopes.add(scope);
+    });
+    if (!pendingScopes.size || scanFrame) return;
+    scanFrame = requestAnimationFrame(() => {
+      scanFrame = 0;
+      const scopesToScan = [...pendingScopes];
+      pendingScopes.clear();
+      scopesToScan.forEach(hideInScope);
+    });
+  }
+
   /* MutationObserver – 동적 로딩(리스트 리프레셔, 댓글 새로고침) 대응 */
   function startObserver() {
     if (observer) observer.disconnect();
     observer = new MutationObserver((records) => {
-      const shouldScan = records.some((record) =>
-        record.type === "attributes" || record.addedNodes.length || record.removedNodes.length
-      );
-      if (shouldScan) scheduleHideNow();
+      const scopes = new Set();
+      for (const record of records) {
+        if (record.target?.nodeType === Node.ELEMENT_NODE) scopes.add(record.target);
+        if (record.type === "childList") {
+          record.addedNodes.forEach((node) => {
+            if (node.nodeType === Node.ELEMENT_NODE) scopes.add(node);
+          });
+        }
+      }
+      scheduleScopeScan(scopes);
     });
 
     observer.observe(document.documentElement || document, {
@@ -237,6 +274,7 @@
       cancelAnimationFrame(scanFrame);
       scanFrame = 0;
     }
+    pendingScopes.clear();
     clearHiddenElements();
     const style = document.getElementById(STYLE_ID);
     if (style) style.remove();
