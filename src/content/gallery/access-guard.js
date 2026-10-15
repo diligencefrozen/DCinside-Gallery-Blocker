@@ -31,6 +31,7 @@
   };
 
   let redirectTimer = null;
+  let lastRedirectHref = "";
 
   function norm(v) {
     return String(v || "").trim().toLowerCase();
@@ -60,6 +61,14 @@
   function extractGalleryId(input) {
     const raw = String(input || "").trim();
     if (!raw) return "";
+
+    if (/^id\s*=\s*/i.test(raw)) {
+      return norm(raw.replace(/^id\s*=\s*/i, "").split(/[&#?\s]/)[0]);
+    }
+
+    if (/^[a-z0-9_-]+$/i.test(raw)) {
+      return norm(raw);
+    }
 
     try {
       const url = new URL(raw, location.href);
@@ -545,6 +554,8 @@
   }
 
   function goSafePage() {
+    if (lastRedirectHref === location.href) return;
+    lastRedirectHref = location.href;
     try {
       location.replace(REDIRECT_URL);
     } catch {
@@ -582,11 +593,13 @@
     const gid = getGalleryIdFromUrl(location.href);
 
     if (!settings.enabled) {
+      lastRedirectHref = "";
       clearBlockedOverlay();
       return;
     }
 
     if (!gid || !isBlockedGallery(gid)) {
+      lastRedirectHref = "";
       clearBlockedOverlay();
       return;
     }

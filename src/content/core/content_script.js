@@ -735,7 +735,9 @@ syncSettings(handleUrl);
       overlay.classList.remove("dcbpv-enter");
       overlay.removeAttribute("data-dcbpv-url");
       overlay.removeAttribute("data-dcbpv-error-url");
-      overlay.replaceChildren();
+      // Keep the current panel until the next render assigns innerHTML in one
+      // synchronous step. This avoids an intermediate blank frame during
+      // settings/filter rerenders while preserving the existing shell node.
     }
     return overlay;
   }

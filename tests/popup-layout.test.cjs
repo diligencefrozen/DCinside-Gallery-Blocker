@@ -77,8 +77,8 @@ test('popup keeps only main content scrollable and the donation footer visible a
     assert.equal(layout.footerBorderTop, '1px');
     assert.ok(layout.footerTop >= 0 && layout.footerBottom <= 600);
     assert.equal(layout.documentOverflowX, 0);
-    assert.equal(layout.selectValue, 'instant');
-    assert.equal(layout.selectText, '우클릭 즉시 차단/해제');
+    assert.equal(layout.selectValue, 'contextMenu');
+    assert.equal(layout.selectText, '우클릭 메뉴에서 차단/해제');
     assert.equal(layout.selectInsideContainer, true);
     assert.ok(layout.selectWidth >= layout.requiredSelectWidth, `${layout.selectWidth}px select is too narrow for ${layout.selectText}`);
     assert.ok(Math.abs(layout.topCardLeft - layout.donationLeft) <= 1);

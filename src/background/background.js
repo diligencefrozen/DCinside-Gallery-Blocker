@@ -1497,7 +1497,7 @@ async function applyInstalledSettings({ reason, previousVersion }, epoch) {
     }
 
     if (typeof seed.userBlockTriggerMode === "undefined") {
-      patch.userBlockTriggerMode = "instant";
+      patch.userBlockTriggerMode = "contextMenu";
     }
 
     if (typeof seed.userBlockHoverHintEnabled === "undefined") {

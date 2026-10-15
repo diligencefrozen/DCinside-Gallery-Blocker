@@ -28,10 +28,10 @@ test('unsupported formats fail explicitly instead of using string ordering', () 
   }
 });
 
-test('7.3.42.2026 is the manifest source of truth for installed release status', () => {
-  assert.equal(manifest.version, '7.3.42.2026');
-  assert.equal(version.compare('7.3.42.2026', manifest.version) > 0, false);
-  assert.equal(version.compare('7.3.43.2026', manifest.version) > 0, true);
+test('7.3.48.2026 is the manifest source of truth for installed release status', () => {
+  assert.equal(manifest.version, '7.3.48.2026');
+  assert.equal(version.compare('7.3.48.2026', manifest.version) > 0, false);
+  assert.equal(version.compare('7.3.49.2026', manifest.version) > 0, true);
   assert.match(background, /chrome\.runtime\.getManifest\(\)\.version/);
   assert.match(background, /comparePublishedVersions\(publishedVersion, installedVersion\) > 0/);
 });

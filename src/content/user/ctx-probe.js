@@ -69,7 +69,7 @@
   const LEGACY_CONTEXT_TOKEN_TTL = 8000;
 
   let userBlockEnabledCache = true;
-  let userBlockTriggerModeCache = "instant";
+  let userBlockTriggerModeCache = "contextMenu";
   let userBlockHoverHintEnabledCache = true;
   let lastContextBlockToken = "";
   let lastContextBlockCandidates = [];
@@ -77,7 +77,7 @@
   const inFlightBlockTokens = new Set();
 
   function normalizeUserBlockTriggerMode(v) {
-    return USER_BLOCK_TRIGGER_MODES.has(v) ? v : "instant";
+    return USER_BLOCK_TRIGGER_MODES.has(v) ? v : "contextMenu";
   }
 
   function isHoverHintEffective() {
@@ -92,7 +92,7 @@
     globalThis.DCBRuntimeSettingsCache.get(
       {
         userBlockEnabled: true,
-        userBlockTriggerMode: "instant",
+        userBlockTriggerMode: "contextMenu",
         userBlockHoverHintEnabled: true
       },
       (res) => {
@@ -122,7 +122,7 @@
     });
   } catch (_) {
     userBlockEnabledCache = true;
-    userBlockTriggerModeCache = "instant";
+    userBlockTriggerModeCache = "contextMenu";
     userBlockHoverHintEnabledCache = true;
   }
 

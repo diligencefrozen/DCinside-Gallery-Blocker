@@ -129,7 +129,7 @@ const DEFAULTS = {
   delay: 5,
 
   userBlockEnabled: true,
-  userBlockTriggerMode: "instant",
+  userBlockTriggerMode: "contextMenu",
   userBlockHoverHintEnabled: true,
   blockedUids: [],
   hideDCGray: undefined,
@@ -165,7 +165,7 @@ const readPostsHighlightController = UI_SETTINGS_CACHE?.booleanSetting?.(
 );
 
 let userBlockEnabledState = true;
-let userBlockTriggerModeState = "instant";
+let userBlockTriggerModeState = "contextMenu";
 let userBlockHoverHintEnabledState = true;
 let uidListState = [];
 let uidFilterState = "all";
@@ -515,7 +515,7 @@ function setValue(el, value) {
 }
 
 function normalizeUserBlockTriggerMode(v) {
-  return v === "contextMenu" ? "contextMenu" : "instant";
+  return v === "instant" ? "instant" : "contextMenu";
 }
 
 function applyUserBlockHoverHintControl() {
