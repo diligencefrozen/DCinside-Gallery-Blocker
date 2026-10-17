@@ -9,6 +9,7 @@ const RULE_NS = 40_000;                 // DNR rule id namespace
 const RULE_MAX_OFFSET = 20_000;         // 이 확장프로그램이 쓰는 동적 규칙 범위
 const AREA_PICKER_MENU_ID = "dcb-area-picker-select";
 const USER_BLOCK_CONTEXT_MENU_ID = "dcb-user-block-context";
+const USER_BLOCK_TOGGLE_CONTEXT_MENU_ID = "dcb-user-block-toggle";
 const USER_MEMO_CONTEXT_MENU_ID = "dcb-user-memo-context";
 const KEYWORD_HOT_CACHE_KEY = "dcbKeywordSettingsHotCacheV1";
 const KEYWORD_HOT_CACHE_VERSION = 1;
@@ -1359,75 +1360,129 @@ function isStatsSupportedUrl(value) {
 }
 
 /* 우클릭 메뉴 재구성 */
+function updateUserBlockToggleContextMenu(checked) {
+  try {
+    const update = chrome.contextMenus?.update?.(
+      USER_BLOCK_TOGGLE_CONTEXT_MENU_ID,
+      { checked: checked !== false }
+    );
+    if (update && typeof update.catch === "function") update.catch(() => {});
+  } catch (_) {}
+}
+
+function refreshUserBlockToggleContextMenu() {
+  try {
+    return chrome.storage.sync.get({ userBlockEnabled: true })
+      .then((sync) => updateUserBlockToggleContextMenu(sync?.userBlockEnabled !== false))
+      .catch(() => {});
+  } catch (_) {
+    return Promise.resolve();
+  }
+}
+
+let userBlockToggleWriteQueue = Promise.resolve();
+function persistUserBlockToggleFromContextMenu(enabled) {
+  userBlockToggleWriteQueue = userBlockToggleWriteQueue
+    .catch(() => {})
+    .then(async () => {
+      try {
+        await chrome.storage.sync.set({ userBlockEnabled: enabled === true });
+      } catch (_) {
+        await refreshUserBlockToggleContextMenu();
+        return;
+      }
+      await refreshUserBlockToggleContextMenu();
+    });
+  return userBlockToggleWriteQueue;
+}
+
 function resetContextMenus() {
   try {
     if (!chrome.contextMenus?.removeAll) return;
 
-    chrome.contextMenus.removeAll(() => {
-      void chrome.runtime.lastError;
+    const rebuild = (userBlockEnabled) => {
+      chrome.contextMenus.removeAll(() => {
+        void chrome.runtime.lastError;
 
-      try {
-        chrome.contextMenus.create({
-          id: AREA_PICKER_MENU_ID,
-          title: "🧹 이 영역 숨기기",
-          contexts: ["all"],
-          documentUrlPatterns: [
-            "*://gall.dcinside.com/*",
-            "*://www.dcinside.com/*",
-            "*://search.dcinside.com/*"
-          ]
-        }, () => void chrome.runtime.lastError);
+        try {
+          chrome.contextMenus.create({
+            id: AREA_PICKER_MENU_ID,
+            title: "🧹 이 영역 숨기기",
+            contexts: ["all"],
+            documentUrlPatterns: [
+              "*://gall.dcinside.com/*",
+              "*://www.dcinside.com/*",
+              "*://search.dcinside.com/*"
+            ]
+          }, () => void chrome.runtime.lastError);
 
-        chrome.contextMenus.create({
-          id: USER_BLOCK_CONTEXT_MENU_ID,
-          title: "🚫 이 사용자 차단/해제",
-          contexts: ["all"],
-          documentUrlPatterns: [
-            "*://gall.dcinside.com/*"
-          ]
-        }, () => void chrome.runtime.lastError);
+          chrome.contextMenus.create({
+            id: USER_BLOCK_TOGGLE_CONTEXT_MENU_ID,
+            title: "사용자 차단 활성화",
+            type: "checkbox",
+            checked: userBlockEnabled,
+            contexts: ["all"],
+            documentUrlPatterns: [
+              "*://gall.dcinside.com/*"
+            ]
+          }, () => void chrome.runtime.lastError);
 
-        chrome.contextMenus.create({
-          id: USER_MEMO_CONTEXT_MENU_ID,
-          title: "📝 이 사용자 메모하기",
-          contexts: ["all"],
-          documentUrlPatterns: [
-            "*://gall.dcinside.com/*"
-          ]
-        }, () => void chrome.runtime.lastError);
+          chrome.contextMenus.create({
+            id: USER_BLOCK_CONTEXT_MENU_ID,
+            title: "🚫 이 사용자 차단/해제",
+            contexts: ["all"],
+            documentUrlPatterns: [
+              "*://gall.dcinside.com/*"
+            ]
+          }, () => void chrome.runtime.lastError);
 
-        chrome.contextMenus.create({
-          id: DCCON_BLOCK_CONTEXT_MENU_ID,
-          title: "🧩 디시콘 차단",
-          contexts: ["page", "image", "video"],
-          documentUrlPatterns: [
-            "*://gall.dcinside.com/*"
-          ]
-        }, () => void chrome.runtime.lastError);
+          chrome.contextMenus.create({
+            id: USER_MEMO_CONTEXT_MENU_ID,
+            title: "📝 이 사용자 메모하기",
+            contexts: ["all"],
+            documentUrlPatterns: [
+              "*://gall.dcinside.com/*"
+            ]
+          }, () => void chrome.runtime.lastError);
 
-        chrome.contextMenus.create({
-          id: DCCON_BLOCK_ITEM_MENU_ID,
-          parentId: DCCON_BLOCK_CONTEXT_MENU_ID,
-          title: "이 디시콘만 차단",
-          contexts: ["page", "image", "video"],
-          documentUrlPatterns: [
-            "*://gall.dcinside.com/*"
-          ]
-        }, () => void chrome.runtime.lastError);
+          chrome.contextMenus.create({
+            id: DCCON_BLOCK_CONTEXT_MENU_ID,
+            title: "🧩 디시콘 차단",
+            contexts: ["page", "image", "video"],
+            documentUrlPatterns: [
+              "*://gall.dcinside.com/*"
+            ]
+          }, () => void chrome.runtime.lastError);
 
-        chrome.contextMenus.create({
-          id: DCCON_BLOCK_GROUP_MENU_ID,
-          parentId: DCCON_BLOCK_CONTEXT_MENU_ID,
-          title: "이 디시콘 그룹 전체 차단",
-          contexts: ["page", "image", "video"],
-          documentUrlPatterns: [
-            "*://gall.dcinside.com/*"
-          ]
-        }, () => void chrome.runtime.lastError);
-      } catch (_) {
-        // contextMenus 초기화 타이밍 문제는 핵심 차단 기능과 무관하므로 무시한다.
-      }
-    });
+          chrome.contextMenus.create({
+            id: DCCON_BLOCK_ITEM_MENU_ID,
+            parentId: DCCON_BLOCK_CONTEXT_MENU_ID,
+            title: "이 디시콘만 차단",
+            contexts: ["page", "image", "video"],
+            documentUrlPatterns: [
+              "*://gall.dcinside.com/*"
+            ]
+          }, () => void chrome.runtime.lastError);
+
+          chrome.contextMenus.create({
+            id: DCCON_BLOCK_GROUP_MENU_ID,
+            parentId: DCCON_BLOCK_CONTEXT_MENU_ID,
+            title: "이 디시콘 그룹 전체 차단",
+            contexts: ["page", "image", "video"],
+            documentUrlPatterns: [
+              "*://gall.dcinside.com/*"
+            ]
+          }, () => void chrome.runtime.lastError);
+          void refreshUserBlockToggleContextMenu();
+        } catch (_) {
+          // contextMenus 초기화 타이밍 문제는 핵심 차단 기능과 무관하므로 무시한다.
+        }
+      });
+    };
+
+    Promise.resolve(chrome.storage.sync.get({ userBlockEnabled: true }))
+      .then((sync) => rebuild(sync?.userBlockEnabled !== false))
+      .catch(() => rebuild(true));
   } catch (_) {
     // contextMenus 권한/초기화 타이밍 문제는 차단 기능과 무관하므로 무시한다.
   }
@@ -1497,7 +1552,7 @@ async function applyInstalledSettings({ reason, previousVersion }, epoch) {
     }
 
     if (typeof seed.userBlockTriggerMode === "undefined") {
-      patch.userBlockTriggerMode = "contextMenu";
+      patch.userBlockTriggerMode = "instant";
     }
 
     if (typeof seed.userBlockHoverHintEnabled === "undefined") {
@@ -1771,6 +1826,10 @@ function scheduleDnrSync() {
 
 /* 저장소 변경 시에만 DNR 규칙을 다시 계산한다. 동적 규칙은 background 재기동 사이에도 유지된다. */
 chrome.storage.onChanged.addListener((c, area) => {
+  if (area === "sync" && c.userBlockEnabled) {
+    updateUserBlockToggleContextMenu(c.userBlockEnabled.newValue !== false);
+  }
+
   if (settingsMutationApplying) {
     if (area === "sync") Object.assign(settingsChangesDuringBatch, c);
     if (area === "local") {
@@ -3266,6 +3325,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
 /* ───── 우클릭 메뉴: 사용자 차단 / 영역 숨기기 선택 ───── */
 chrome.contextMenus?.onClicked?.addListener((info, tab) => {
+  if (info.menuItemId === USER_BLOCK_TOGGLE_CONTEXT_MENU_ID) {
+    void persistUserBlockToggleFromContextMenu(info.checked === true);
+    return;
+  }
+
   if (!tab?.id) return;
 
   if (

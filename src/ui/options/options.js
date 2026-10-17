@@ -214,7 +214,7 @@ const BACKUP_DEFAULTS = {
   removeSelectorsGall: [],
   removeSelectorsSearch: [],
   userBlockEnabled: true,
-  userBlockTriggerMode: "contextMenu",
+  userBlockTriggerMode: "instant",
   userBlockHoverHintEnabled: true,
   blockedUids: [],
   hideComment: false,
@@ -413,7 +413,7 @@ function sanitizeUid(s) {
 }
 
 let userBlockEnabledState = true;
-let userBlockTriggerModeState = "contextMenu";
+let userBlockTriggerModeState = "instant";
 let userBlockHoverHintEnabledState = true;
 
 function setChecked(el, value) {
@@ -1392,7 +1392,7 @@ function updateSel(list, key, targetUl) {
 
 /* ───── 사용자 차단(UID) ───── */
 function normalizeUserBlockTriggerMode(v) {
-  return v === "instant" ? "instant" : "contextMenu";
+  return v === "contextMenu" ? "contextMenu" : "instant";
 }
 
 function applyOptionUserBlockHoverHintControl() {
@@ -2339,7 +2339,7 @@ function applyOptionsSettings(conf = {}, { refreshAsync = true } = {}) {
     removeSelectorsGall = [],
     removeSelectorsSearch = [],
     userBlockEnabled = true,
-    userBlockTriggerMode = "contextMenu",
+    userBlockTriggerMode = "instant",
     userBlockHoverHintEnabled = true,
     enabled = true,
     galleryBlockEnabled,
