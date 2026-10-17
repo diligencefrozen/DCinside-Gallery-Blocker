@@ -944,6 +944,11 @@
       return getCommentUnblockContext(writer, owner)?.nickbox || null;
     }
 
+    const list = findListContainer(writer);
+    const listTitle = list?.querySelector?.(":scope > td.gall_tit.ub-word") ||
+      list?.querySelector?.("td.gall_tit.ub-word");
+    if (listTitle) return listTitle;
+
     return (
       (writer.matches?.(".gall_writer, .ub-writer") ? writer : null) ||
       writer.querySelector?.(":scope > .gall_writer, :scope > .ub-writer") ||
@@ -970,6 +975,17 @@
         host.parentElement === nickbox &&
         !host.closest?.(UNBLOCK_FORBIDDEN_HOST_SELECTOR)
       );
+    }
+
+    if (target.matches?.("td.gall_tit.ub-word")) {
+      const titleLink = target.querySelector?.(":scope > a[view-msg]") ||
+        target.querySelector?.(":scope > a[href]:not(.reply_numbox)") ||
+        target.querySelector?.(":scope > a") ||
+        target.querySelector?.("a[view-msg]");
+      if (titleLink) {
+        titleLink.insertAdjacentElement("afterend", host);
+        return host.parentElement === target && host.previousElementSibling === titleLink;
+      }
     }
 
     // 게시글/목록에서는 기존 설명형 버튼을 유지한다.
