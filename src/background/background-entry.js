@@ -7,4 +7,5 @@ import "../shared/detection-config.js";
 import "../../vendor/detector/inference-runtime.mjs";
 import "./text-detection.js";
 import "./content-script-profiles.js";
+import "./preview-comment.js";
 import "./background.js";

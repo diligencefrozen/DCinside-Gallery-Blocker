@@ -333,6 +333,9 @@ syncSettings(handleUrl);
   const PREVIEW_THROTTLE_STATUSES = new Set([403, 429, 503]);
 
   const cache = new Map();
+  // Text drafts live only in this tab's memory. Passwords stay in the input DOM.
+  const previewDrafts = new Map();
+  let previewComposer = null;
   let activeAbort = null;
   let activeRequestKey = "";
   let activeOpenPromise = null;
@@ -609,6 +612,15 @@ syncSettings(handleUrl);
       #${OVERLAY_ID} .dcbpv-comments-actions{display:inline-flex!important;position:static!important;align-items:center!important;justify-content:flex-end!important;flex:0 0 auto!important;min-width:0!important;max-width:100%!important;width:auto!important;height:auto!important;margin:0 0 0 auto!important;padding:0!important;float:none!important;clear:none!important;gap:12px!important;white-space:nowrap!important}
       #${OVERLAY_ID} .dcbpv-comments-actions :is(button,a){display:inline-flex!important;position:static!important;align-items:center!important;justify-content:center!important;width:auto!important;min-width:0!important;height:auto!important;max-width:none!important;margin:0!important;border:0!important;padding:3px 0!important;float:none!important;clear:none!important;background:transparent!important;color:#475569!important;font:inherit!important;font-size:12px!important;line-height:1.5!important;cursor:pointer;text-decoration:none}
       #${OVERLAY_ID} .dcbpv-comments-actions :is(button,a):hover{text-decoration:underline}
+      #${OVERLAY_ID} .dcbpv-composer{margin:14px 0;padding:14px;border:1px solid #94a3b8;border-radius:10px;color:#253047;background:#f8fafc;box-sizing:border-box}
+      #${OVERLAY_ID} .dcbpv-composer iframe{display:block;width:100%;height:360px;min-width:0;border:0;margin:8px 0;background:#f8fafc}
+      #${OVERLAY_ID} .dcbpv-composer iframe[hidden]{display:none!important}
+      #${OVERLAY_ID} .dcbpv-saved-draft{box-sizing:border-box;width:100%;margin:8px 0;padding:8px;background:#fff;color:#172033;border:1px solid #94a3b8;white-space:pre-wrap}
+      #${OVERLAY_ID} .dcbpv-compose-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:8px;font-size:12px}
+      #${OVERLAY_ID} .dcbpv-compose-actions a{color:#3158a6}
+      #${OVERLAY_ID} .dcbpv-composer [role=status]{margin:8px 0 0;font-size:13px;white-space:normal;overflow-wrap:anywhere}
+      #${OVERLAY_ID} .dcbpv-reply-button{border:0;background:transparent;color:#475569;font-size:12px;cursor:pointer;margin-left:auto}
+      #${OVERLAY_ID} .dcbpv-composer button:disabled,#${OVERLAY_ID} .dcbpv-reply-button:disabled{opacity:.5;cursor:default}
       #${OVERLAY_ID} .dcbpv-html{font-size:15.5px;line-height:1.8;color:#273449;word-break:normal;overflow-wrap:anywhere;min-width:0;max-width:100%;white-space:normal}
       #${OVERLAY_ID} .dcbpv-article{max-width:820px;margin:0 auto}
       #${OVERLAY_ID} .dcbpv-article :is(div,p,span,a,blockquote,ul,ol,li){max-width:100%;overflow-wrap:anywhere}
@@ -791,6 +803,9 @@ syncSettings(handleUrl);
     if (act === "close") return closePreview();
     if (act === "retry") return openPreview(overlay.dataset.dcbpvErrorUrl, { force: true });
     if (!data) return;
+    if (act === "compose") return openPreviewComposer(data);
+    if (act === "compose-reply") return openPreviewComposer(data, event.target.closest("[data-target]")?.dataset.target || "");
+    if (act === "compose-cancel") return cancelPreviewComposer();
     if (act === "open") return window.open(data.url, "_blank", "noopener");
     if (act === "report" && data.reportUrl) return window.open(data.reportUrl, "_blank", "noopener");
     if (act === "reload") return openPreview(data.url, { force: true });
@@ -824,6 +839,7 @@ syncSettings(handleUrl);
   }
 
   function closePreview({ preserveSession = false } = {}){
+    suspendPreviewComposer();
     const overlay = resetPreviewSurface();
     if (overlay) overlay.remove();
     currentPreviewData = null;
@@ -847,6 +863,7 @@ syncSettings(handleUrl);
   }
 
   function renderLoading(){
+    suspendPreviewComposer();
     installPreviewCss();
     const overlay = resetPreviewSurface() || previewOverlay();
     currentPreviewData = null;
@@ -863,6 +880,7 @@ syncSettings(handleUrl);
   }
 
   function renderError(message, url){
+    suspendPreviewComposer();
     installPreviewCss();
     const overlay = resetPreviewSurface() || previewOverlay();
     currentPreviewData = null;
@@ -4395,10 +4413,10 @@ syncSettings(handleUrl);
     };
     const id = cleanId(element
       ? source.getAttribute("data-no") || source.getAttribute("data-comment-no") || source.id
-      : source.c_no ?? source.comment_no ?? source.no);
+      : source.no ?? source.comment_no ?? source.c_no);
     const parent = cleanId(element
       ? source.getAttribute("data-parent-no") || source.getAttribute("data-p-no") || source.getAttribute("p-no") || source.closest(".reply_list[p-no]")?.getAttribute("p-no")
-      : source.parent_no ?? source.p_no ?? source.parent_id);
+      : source.parent_no ?? source.p_no ?? source.parent_id ?? (Number(source.depth ?? source.c_depth) > 0 ? source.c_no : null));
     const rawDepth = element ? source.getAttribute("data-depth") ?? source.getAttribute("data-c-depth") : source.c_depth ?? source.depth;
     const depth = rawDepth != null && String(rawDepth).trim() !== "" ? Number(rawDepth) : NaN;
     return `${id ? ` data-dcbpv-native-id="${escapeText(id)}"` : ""}${parent ? ` data-dcbpv-native-parent="${escapeText(parent)}"` : ""}${Number.isInteger(depth) && depth >= 0 ? ` data-dcbpv-native-depth="${depth}"` : ""}`;
@@ -4531,6 +4549,192 @@ syncSettings(handleUrl);
     return `<div class="dcbpv-empty">${data.commentError ? "댓글을 불러오지 못했습니다. 새로고침하거나 원문에서 확인해 주세요." : "표시할 댓글이 없습니다."}${previewCommentDebugEnabled(data.url) && commentDebugLines.length ? `<br><small>${escapeText(commentDebugLines.join(" | "))}</small>` : ""}</div>`;
   }
 
+  function composerMessage(result){
+    if ([403, 429, 503].includes(result?.status)) return `서버에서 요청을 제한했습니다 (${result.status}). 원문에서 확인해 주세요.`;
+    return ({ authentication: "추가 인증이 필요합니다. 인증 영역을 확인하거나 원문에서 작성해 주세요.",
+      input: "내용과 닉네임·비밀번호를 확인해 주세요.", target: "답글 대상을 확인할 수 없습니다. 원문에서 확인해 주세요.",
+      rejected: "서버가 등록을 거절했습니다. 작성 권한·인증을 원문에서 확인해 주세요.",
+      uncertain: "등록 여부를 확인하지 못했습니다. 중복 등록을 피하려면 원문을 먼저 확인해 주세요.",
+      busy: "이미 전송 중입니다.", network: "연결하지 못했습니다. 초안은 보존됩니다.",
+      cancelled: "전송을 취소했습니다." })[result?.code] || "이 게시글의 작성 폼을 확인하지 못했습니다. 원문에서 작성해 주세요.";
+  }
+
+  function savePreviewDraft(state = previewComposer){
+    if (!state) return;
+    previewDrafts.delete(state.key);
+    previewDrafts.set(state.key, { draft: state.draft || "", target: state.target || "", uncertain: !!state.uncertain });
+    while (previewDrafts.size > 32) previewDrafts.delete(previewDrafts.keys().next().value);
+  }
+
+  function suspendPreviewComposer(){
+    const state = previewComposer;
+    if (!state) return;
+    savePreviewDraft(state);
+    // A navigation during dispatch is ambiguous; never offer blind resubmission.
+    if (state.submitting) {
+      previewDrafts.get(state.key).uncertain = true;
+      cache.delete(state.key);
+      state.frame.dataset.dcbpvCancelled = "1";
+    }
+    state.form.remove();
+    previewComposer = null;
+  }
+
+  function cancelPreviewComposer(){
+    if (previewComposer?.submitting) return;
+    suspendPreviewComposer();
+    document.querySelector(`#${OVERLAY_ID} .dcbpv-composer-slot`)?.replaceChildren();
+    document.querySelector(`#${OVERLAY_ID} [data-act='compose']`)?.focus();
+  }
+
+  function updateComposerStatus(state, text){
+    if (previewComposer !== state) return;
+    state.form.querySelector("[role='status']").textContent = text;
+    state.form.querySelector("[data-act='compose-cancel']").disabled = state.submitting;
+    state.form.querySelector("[data-composer-target]").textContent = state.target ? `댓글 #${state.target}에 답글` : "댓글 작성";
+  }
+
+  function showPreviewSavedDraft(state){
+    if (!state.draft || state.form.querySelector(".dcbpv-saved-draft")) return;
+    const input = document.createElement("textarea");
+    input.className = "dcbpv-saved-draft";
+    input.readOnly = true;
+    input.rows = 4;
+    input.setAttribute("aria-label", "보존된 댓글 초안");
+    input.value = state.draft;
+    state.frame.hidden = true;
+    state.form.insertBefore(input, state.frame);
+  }
+
+  function decoratePreviewReplyActions(overlay){
+    const rows = [...overlay.querySelectorAll(".dcbpv-comment-item")];
+    rows.forEach(row => {
+      row.querySelector("[data-act='compose-reply']")?.remove();
+      const id = row.dataset.dcbpvNativeId;
+      if (!/^[1-9]\d*$/.test(id || "") || row.matches(".deleted,.dory")
+        || rows.filter(other => other.dataset.dcbpvNativeId === id).length !== 1) return;
+      // Provisional action is enabled only after the native document validates it.
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "dcbpv-reply-button";
+      button.dataset.act = "compose-reply";
+      button.dataset.target = id;
+      button.textContent = "답글";
+      button.disabled = !previewComposer?.targets?.some(target => target.id === id);
+      button.title = button.disabled ? "댓글쓰기를 열면 답글 대상을 확인합니다" : "이 댓글에 답글 작성";
+      row.querySelector(".dcbpv-comment-meta")?.appendChild(button);
+    });
+  }
+
+  async function openPreviewComposer(data, target){
+    const key = previewCacheKey(data.url);
+    target = target ?? (previewComposer?.key === key ? previewComposer.target : previewDrafts.get(key)?.target) ?? "";
+    if (previewComposer?.completed) suspendPreviewComposer();
+    if (previewComposer?.key === key) {
+      if (previewComposer.submitting) return;
+      if (target && !previewComposer.targets?.some(item => item.id === target)) return;
+      if (previewComposer.target === target) {
+        previewComposer.frame.focus();
+        previewComposer.form.scrollIntoView({ block: "nearest" });
+        return;
+      }
+    }
+    suspendPreviewComposer();
+    const saved = previewDrafts.get(key) || {};
+    const state = previewComposer = { key, url: data.url, target, draft: saved.draft || "",
+      uncertain: saved.uncertain, ready: false, submitting: false, targets: [], token: crypto.randomUUID() };
+    const form = state.form = document.createElement("div");
+    form.className = "dcbpv-composer";
+    form.innerHTML = `<strong data-composer-target>댓글 작성</strong>
+      <div class="dcbpv-compose-actions"><span data-composer-count></span>
+      <button class="dcbpv-btn" type="button" data-act="compose-cancel">취소</button>
+      <a target="_blank" rel="noopener noreferrer">원문에서 댓글 작성</a></div>
+      <p role="status" aria-live="polite"></p>`;
+    form.querySelector("a").href = `${data.url.split("#")[0]}#focus_cmt`;
+    const overlay = document.getElementById(OVERLAY_ID);
+    overlay.querySelector(".dcbpv-composer-slot").replaceChildren(form);
+    form.scrollIntoView({ block: "nearest" });
+    updateComposerStatus(state, "작성 폼을 확인하는 중…");
+    const frame = state.frame = document.createElement("iframe");
+    frame.dataset.dcbpvComposeFrame = state.token;
+    frame.title = "DCinside 댓글 작성 및 인증";
+    frame.setAttribute("sandbox", "allow-scripts allow-same-origin");
+    frame.style.visibility = "hidden";
+    const loaded = new Promise(resolve => {
+      const timer = setTimeout(() => resolve(false), 12000);
+      frame.addEventListener("load", () => { clearTimeout(timer); resolve(true); }, { once: true });
+    });
+    frame.src = data.url.split("#")[0];
+    form.insertBefore(frame, form.querySelector(".dcbpv-compose-actions"));
+    try {
+      if (!await loaded || previewComposer !== state) return;
+      if (state.uncertain) { showPreviewSavedDraft(state); updateComposerStatus(state, composerMessage({ code: "uncertain" })); return; }
+      const result = await sendRuntimeFetchMessage({ type: "dcb.previewComment", operation: "prepare", url: state.url, key: state.token, draft: state.draft, target: state.target });
+      if (previewComposer !== state) return;
+      if (!result?.ok) { showPreviewSavedDraft(state); updateComposerStatus(state, composerMessage(result)); return; }
+      state.ready = !result.captcha;
+      state.targets = result.targets || [];
+      state.maxLength = result.maxLength;
+      if (!result.captcha) {
+        frame.style.visibility = "visible";
+        frame.contentDocument?.querySelector("#dcbpv-native-editor textarea")?.focus({ preventScroll: true });
+      }
+      decoratePreviewReplyActions(overlay);
+      updateComposerStatus(state, state.uncertain ? composerMessage({ code: "uncertain" })
+        : result.captcha ? composerMessage({ code: "authentication" }) : result.auth ? "입력창의 인증을 완료한 뒤 등록해 주세요." : "");
+    } catch (_) { updateComposerStatus(state, composerMessage(null)); }
+    finally { if (previewComposer === state && !state.ready) updateComposerStatus(state, form.querySelector("[role='status']").textContent === "작성 폼을 확인하는 중…" ? composerMessage(null) : form.querySelector("[role='status']").textContent); }
+  }
+
+  window.addEventListener("message", event => {
+    const state = previewComposer;
+    const payload = event.data;
+    if (!state || event.source !== window || event.origin !== location.origin
+      || payload?.type !== "dcb.previewComment.event" || payload.key !== state.token) return;
+    const form = state.form;
+    if (payload.kind === "escape") { closePreview(); return; }
+    if (payload.kind === "draft") {
+      state.draft = String(payload.draft || "").slice(0, 10000);
+      form.querySelector("[data-composer-count]").textContent = `${state.draft.length}${state.maxLength ? ` / ${state.maxLength}` : ""}자`;
+      savePreviewDraft(state);
+      return;
+    }
+    if (payload.kind === "submitting") {
+      state.submitting = true;
+      savePreviewDraft(state);
+      updateComposerStatus(state, "전송 중…");
+      return;
+    }
+    if (payload.kind !== "result") return;
+    const result = payload.result;
+    state.submitting = false;
+    if (result?.ok || result?.code === "uncertain") cache.delete(state.key);
+    if (result?.ok) previewDrafts.delete(state.key);
+    if (!result?.ok) {
+      state.uncertain = result?.code === "uncertain";
+      savePreviewDraft(state);
+      updateComposerStatus(state, composerMessage(result));
+      return;
+    }
+    state.draft = "";
+    state.completed = true;
+    form.querySelector("[data-composer-count]").textContent = `0 / ${state.maxLength}자`;
+    state.target = "";
+    state.frame.hidden = true;
+    const data = currentPreviewData;
+    if (data && previewCacheKey(data.url) === state.key) {
+      // Discard any pre-submission read response still in flight.
+      previewRequestVersion += 1;
+      activeAbort?.abort();
+      data.commentsHTML = commentRecordsToHtml(result.comments, data.url);
+      data.commentTitle = `댓글 ${result.total}개`;
+      data.commentError = "";
+      updatePreviewComments(data);
+      document.querySelector(`#${OVERLAY_ID} [data-dcbpv-native-id='${CSS.escape(result.addedId)}']`)?.scrollIntoView({ block: "nearest" });
+    }
+    updateComposerStatus(state, "등록된 댓글을 확인했습니다.");
+  });
+
   function updatePreviewComments(data){
     const overlay = document.getElementById(OVERLAY_ID);
     if (!overlay || overlay.dataset.dcbpvUrl !== data.url) return false;
@@ -4543,6 +4747,7 @@ syncSettings(handleUrl);
 
     if (commentTitle) commentTitle.textContent = data.commentTitle || "댓글";
     commentRoot.innerHTML = previewCommentHtml(data, false);
+    decoratePreviewReplyActions(overlay);
     preparePreviewPresentation(overlay);
     const trace = activePreviewTrace;
     settlePreviewMedia(commentRoot, data.fetchedUrl || data.url, data.url, trace);
@@ -4572,6 +4777,26 @@ syncSettings(handleUrl);
     const renderStartedAt = previewNow();
     const trace = activePreviewTrace;
     installPreviewCss();
+    const composer = previewComposer?.key === previewCacheKey(data.url) ? previewComposer : null;
+    const composerFocus = composer?.form?.contains(document.activeElement) ? document.activeElement : null;
+    const existingOverlay = document.getElementById(OVERLAY_ID);
+    if (composer && existingOverlay?.dataset.dcbpvUrl === data.url) {
+      // Replacing/moving an iframe reloads it and discards native input/security
+      // state. Refresh only presentation areas while the editor is open.
+      const article = existingOverlay.querySelector(".dcbpv-article");
+      article.innerHTML = data.articleHTML;
+      delete article.dataset.dcbpvFiltered;
+      delete article.dataset.dcbpvOriginalHtml;
+      existingOverlay.querySelector(".dcbpv-title a").textContent = data.title;
+      existingOverlay.querySelector(".dcbpv-writer").innerHTML = data.writerHTML || "작성자 정보 없음";
+      existingOverlay.querySelector(".dcbpv-vote-up").textContent = data.counts.up || "0";
+      existingOverlay.querySelector(".dcbpv-vote-down").textContent = data.counts.down || "0";
+      updatePreviewComments(data);
+      settlePreviewMedia(article, data.fetchedUrl || data.url);
+      markRenderedPreviewRead(data, existingOverlay);
+      return;
+    }
+    if (previewComposer && !composer) suspendPreviewComposer();
     const overlay = resetPreviewSurface() || previewOverlay();
     currentPreviewData = data;
 
@@ -4603,11 +4828,12 @@ syncSettings(handleUrl);
               <h3 class="dcbpv-section-title dcbpv-comments-title">${escapeText(data.commentTitle || "댓글")}</h3>
               <span class="dcbpv-thread-count"></span>
               <div class="dcbpv-comments-actions">
-                <a href="${escapeText(data.url.split("#")[0])}#focus_cmt" target="_blank" rel="noreferrer noopener">댓글쓰기</a>
+                <button type="button" data-act="compose">댓글쓰기</button>
                 <button type="button" data-act="reload">새로고침</button>
               </div>
             </div>
             <article class="dcbpv-html dcbpv-comment-html">${commentEmptyHtml}</article>
+            <div class="dcbpv-composer-slot"></div>
           </section>
         </main>
         <nav class="dcbpv-actions" aria-label="게시글 작업">
@@ -4618,6 +4844,11 @@ syncSettings(handleUrl);
       </section>`;
 
     mountPreview(overlay);
+    if (composer) {
+      overlay.querySelector(".dcbpv-composer-slot").appendChild(composer.form);
+      composerFocus?.focus({ preventScroll: true });
+    }
+    decoratePreviewReplyActions(overlay);
     preparePreviewPresentation(overlay);
     settlePreviewMedia(overlay, data.fetchedUrl || data.url, data.url, trace);
     applyPreviewFeatureBridge(overlay, data, trace);
@@ -4757,7 +4988,8 @@ syncSettings(handleUrl);
     clearPreviewLoadingTimer();
     previewLoadingTimer = setTimeout(() => {
       previewLoadingTimer = 0;
-      if (requestVersion === previewRequestVersion && !articleRendered) renderLoading();
+      if (requestVersion === previewRequestVersion && !articleRendered
+        && previewComposer?.key !== requestKey) renderLoading();
     }, 140);
 
     const clearLoadingTimer = () => {
