@@ -57,7 +57,7 @@ test('backup v8 stores all sync settings and restores without forced reload', ()
   assert.match(source, /chrome\.storage\.sync\.get\(null\)/);
   assert.match(source, /version:\s*8/);
   assert.match(source, /storage:\s*\{\s*sync,/s);
-  assert.match(source, /await Promise\.all\(jobs\)/);
+  assert.match(source, /await commitBackupImportCaches\(sync, local, blockedUids\)/);
   assert.match(source, /applyOptionsSettings\(\{ \.\.\.BACKUP_DEFAULTS, \.\.\.sync \}, \{ refreshAsync: false \}\)/);
 
   const importStart = source.indexOf('function importSettingsFromFile');

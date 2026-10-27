@@ -381,6 +381,7 @@
     writer.removeAttribute("data-dcb-writer-density");
     writer.removeAttribute("data-dcb-writer-name-fit");
     name?.classList.remove("dcb-writer-name-clipped");
+    writer.removeAttribute('data-dcb-writer-wrap');
     setProperty(writer, "--dcb-writer-available", `${Math.floor(available)}px`);
 
     const children = [...parts.tools.children];
@@ -452,6 +453,9 @@
         }
       }
     }
+    // The native 133px reply column can be narrower than the irreducible IP,
+    // provider and memo controls. Wrap tools instead of overflowing the body.
+    if(parts.context==='comment' && excess()>1)writer.setAttribute('data-dcb-writer-wrap','true');
   }
 
   function visitWriters(node, callback, descendants = true) {
@@ -479,6 +483,10 @@
       return;
     }
     records.forEach((record) => {
+      const target=record.target?.nodeType===Node.TEXT_NODE?record.target.parentElement:record.target;
+      if(target?.matches?.('style') || [...(record.addedNodes||[]),...(record.removedNodes||[])].some(node=>node.matches?.('style,link[rel="stylesheet"]'))){
+        activeWriters.forEach(writer=>{states.get(writer).key='';scheduleFit(writer);});
+      }
       if (record.target === document.documentElement && record.attributeName === "class") {
         const next = document.documentElement.classList.contains("dcb-compact-list-mode");
         if (next !== compactMode) {

@@ -56,7 +56,9 @@ async function previewCommentInPage(request) {
         || row.closest('.dory,.deleted,.del')) return;
       targets.push({ id: target, parent });
     });
-    return targets.filter(t => targets.filter(other => other.id === t.id).length === 1);
+    const counts = new Map();
+    for (const target of targets) counts.set(target.id, (counts.get(target.id) || 0) + 1);
+    return targets.filter(target => counts.get(target.id) === 1);
   };
   const uniqueTargets = frame.__dcbpvEditor?.targets || nativeTargets();
   const hasChallenge = !!win._TS_CMT_?.mode;
@@ -263,8 +265,10 @@ async function previewCommentInPage(request) {
     session.acceptRecords = records => {
       session.records=records;
       const valid=records.filter(row=>/^[1-9]\d*$/.test(String(row.no)) && row.del_yn!=='Y' && !/삭제된 댓글/.test(row.memo||''));
+      const counts=new Map();
+      for(const row of valid){const id=String(row.no);counts.set(id,(counts.get(id)||0)+1);}
       session.targets=valid.map(row=>({id:String(row.no),parent:Number(row.depth)>0?String(row.c_no):String(row.no)}))
-        .filter(row=>/^[1-9]\d*$/.test(row.parent)&&valid.filter(other=>String(other.no)===row.id).length===1&&valid.filter(other=>String(other.no)===row.parent).length===1);
+        .filter(row=>/^[1-9]\d*$/.test(row.parent)&&counts.get(row.id)===1&&counts.get(row.parent)===1);
     };
     button.addEventListener('click', async event => {
       const nativeRejected=event.defaultPrevented;

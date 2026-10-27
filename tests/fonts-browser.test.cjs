@@ -48,7 +48,7 @@ async function openFixture(settings = {}) {
         get(defaults, callback) {
           const snapshot = { ...defaults, ...window.testStore };
           if (window.deferReads) window.testReads.push(() => callback(snapshot));
-          else callback(snapshot);
+          else callback?.(snapshot);
         },
         set(patch, callback) { window.setSettings(patch); callback?.(); }
       },
@@ -63,6 +63,7 @@ async function openFixture(settings = {}) {
       listeners.forEach(listener => listener(changes, 'sync'));
     };
   }, settings);
+  await require('./helpers/content-runtime.cjs')(page);
   await page.addScriptTag({ path: path.join(root, 'src/content/appearance/font-config.js') });
   return page;
 }
@@ -85,6 +86,7 @@ test('fonts stay opt-in; OFF fully restores page text and preserves controls and
     assert.deepEqual(await readAppearance(page, ids), before);
 
     await page.evaluate(() => setSettings({ dcbApplyFontToDc: true, dcbFontScale: 140, dcbFontFamily: 'Nanum Gothic' }));
+    await page.waitForFunction(()=>Math.abs(parseFloat(getComputedStyle(document.getElementById('post')).fontSize)-22.4)<.03);
     const scaled = await readAppearance(page, ids);
     for (const id of ids.slice(0, 14)) {
       assert.ok(Math.abs(scaled[id].size - before[id].size * 1.4) < 0.03, `${id} scales once from the native size`);
@@ -93,6 +95,7 @@ test('fonts stay opt-in; OFF fully restores page text and preserves controls and
     for (const id of ids.slice(14)) assert.deepEqual(scaled[id], before[id], `${id} retains native appearance`);
 
     await page.evaluate(() => setSettings({ dcbFontScale: 120 }));
+    await page.waitForFunction(()=>Math.abs(parseFloat(getComputedStyle(document.getElementById('post')).fontSize)-19.2)<.03);
     const resized = await readAppearance(page, ['post', 'nested', 'memoSpan']);
     assert.equal(resized.post.size, 19.2);
     assert.equal(resized.nested.size, 19.2);
@@ -168,16 +171,16 @@ test('writers and native user menus inside reading content retain their appearan
   } finally { await page.close(); }
 });
 
-test('a stale asynchronous storage response cannot re-enable a disabled font', async () => {
+test('shared settings changes disable fonts without another storage read', async () => {
   const page = await openFixture({ dcbApplyFontToDc: true });
   try {
     await page.evaluate(() => { window.deferReads = true; });
     await page.addScriptTag({ path: path.join(root, 'src/content/appearance/font-manager.js') });
     await page.evaluate(() => {
       setSettings({ dcbApplyFontToDc: false });
-      window.testReads[1]();
-      window.testReads[0]();
     });
+    await page.waitForTimeout(60);
+    assert.equal(await page.evaluate(()=>window.testReads.length),0);
     assert.equal(await page.locator('#dcb-page-font-style, [data-dcb-font-size]').count(), 0);
   } finally { await page.close(); }
 });

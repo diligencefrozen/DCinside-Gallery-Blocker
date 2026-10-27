@@ -11,12 +11,19 @@ const statsSource = fs.readFileSync('src/shared/block-stats.js', 'utf8');
 const historySource = fs.readFileSync('src/shared/block-stats-history.js', 'utf8');
 
 test('block stats helper loads before normal content scripts', () => {
-  const statsIndex = manifest.content_scripts.findIndex(entry => entry.js?.includes('src/shared/block-stats.js'));
+  const context={};vm.runInNewContext(fs.readFileSync('src/background/content-script-profiles.js','utf8'),context);
   assert.equal(manifest.content_scripts[0].run_at, 'document_start');
-  assert.ok(manifest.content_scripts[0].js.includes('src/content/core/critical-filter-bootstrap.js'));
-  assert.equal(statsIndex, 1, 'first-paint filtering is the only bootstrap allowed before block statistics');
-  assert.equal(manifest.content_scripts[statsIndex].run_at, 'document_start');
-  assert.match(statsSource, /MutationObserver/);
+  assert.ok(manifest.content_scripts[0].js.includes('src/content/core/firefox-bootstrap.js'));
+  for(const profile of [context.DCBContentScriptProfiles.chrome]){
+    const stats=profile.findIndex(entry=>entry.js?.includes('src/shared/block-stats.js'));
+    assert.ok(stats>=0);assert.equal(profile[stats].runAt,'document_start');
+    assert.ok(profile.slice(0,stats+1).some(entry=>entry.js?.includes('src/shared/dom-mutation-bus.js')));
+    const core=profile.findIndex(entry=>entry.js?.includes('src/content/core/content_script.js'));
+    if(core>=0)assert.ok(stats<core);
+  }
+  const loader=fs.readFileSync('src/content/core/feature-loader.js','utf8');
+  assert.match(loader,/add\("block-stats", true, "visual"\)/);
+  assert.match(background,/"block-stats": \["src\/shared\/block-stats.js"\]/);
   assert.match(statsSource, /dcb\.stats\.sync/);
 });
 
@@ -184,7 +191,8 @@ test('content-side stats use absolute snapshots, retry transient failures, and d
 
 test('content-side observer incrementally recovers dynamic blocker markers', () => {
   assert.match(statsSource, /복구 표식은 각 차단기가 registerSelector\(\)를 쓰지 않아도/);
-  assert.match(statsSource, /attributeFilter: RECOVERY_ATTRIBUTE_FILTER/);
+  assert.match(statsSource, /attributes: \[\.\.\.RECOVERY_ATTRIBUTE_FILTER\]/);
+  assert.match(statsSource, /DCBDomMutationBus.subscribe/);
   assert.match(statsSource, /scanRecoveryMarkers\(root\)/);
   assert.match(statsSource, /scanActivatedStyleRecovery\(root\)/);
   assert.match(statsSource, /\.dcb-selective-dccon-hidden[\s\S]{0,120}category: "dccon"/);

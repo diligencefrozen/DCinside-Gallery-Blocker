@@ -37,6 +37,7 @@ async function fixture(html, initial = {}) {
       listeners.forEach((listener) => listener(changes, 'sync'));
     };
   }, initial);
+  await require('./helpers/content-runtime.cjs')(page);
   await page.addScriptTag({ path: path.join(__dirname, '../src/content/dccon/cleaner-dccon.js') });
   return page;
 }

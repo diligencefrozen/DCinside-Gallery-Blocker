@@ -103,7 +103,9 @@ async function fixture(settings = {}, local = {}) {
     });
   }, { sync: { showUidBadge: true, userMemoEnabled: true, showMemberIpInfo: true, ...settings },
     local: { userMemos: { [`uid:${longUid}`]: { memo: longMemo, color: '#506e9c' } }, ...local } });
-  for (const file of ['appearance/font-config.js', 'user/uid-badge.js', 'user/user-memo.js', 'appearance/font-manager.js']) {
+  await require('./helpers/content-runtime.cjs')(page);
+  await page.addStyleTag({path:path.join(root,'src/content/appearance/writer-layout.css')});
+  for (const file of ['appearance/font-config.js', 'user/writer-layout.js', 'user/uid-badge.js', 'user/user-memo.js', 'appearance/font-manager.js']) {
     await page.addScriptTag({ path: path.join(root, 'src/content', file) });
   }
   await page.addScriptTag({ path: path.join(root, 'src/shared/ip-network-classifier.js') });
@@ -121,7 +123,7 @@ async function assertAuthorBounds(page, ids = ['nested', 'member', 'direct', 're
     const row = document.getElementById(id);
     const host = row.querySelector('.cmt_nickbox');
     const box = node => { const r = node.getBoundingClientRect(); return { left:r.left, right:r.right, top:r.top, bottom:r.bottom, width:r.width }; };
-    return { id, host:box(host), body:box(row.querySelector('.cmt_txtbox')),
+    return { id, host:box(host), body:box(row.querySelector('.cmt_txtbox')),html:host.innerHTML,
       items:[...host.querySelectorAll('.gall_writer,.nickname,.ip,.dc-member-ip-chip,.dcb-writer-tools,.dcb-uid-badge,.dcb-user-memo-trigger')].map(node => {
         const range = document.createRange();
         range.selectNodeContents(node);
@@ -135,7 +137,7 @@ async function assertAuthorBounds(page, ids = ['nested', 'member', 'direct', 're
     assert.ok(row.host.right < row.body.left, `${row.id}: author and body retain separate columns`);
     for (const item of row.items) {
       assert.ok(item.rect.left >= row.host.left - 1 && item.rect.right <= row.host.right + 1,
-        `${row.id}: ${item.name} stays within ${row.host.width}px author column (${JSON.stringify(item.rect)})`);
+        `${row.id}: ${item.name} stays within ${JSON.stringify(row.host)} author column (${JSON.stringify(item.rect)}); ${row.html}`);
       if (item.name === 'ip') assert.equal(item.lines, 1, `${row.id}: IP remains a single unbroken token`);
       if (item.name.includes('dc-member-ip-chip')) {
         assert.ok(item.textBounds.right <= item.rect.right - 1, `${row.id}: provider text is not squeezed or clipped`);
@@ -153,8 +155,8 @@ test('long authors, nested and sibling IPs, account IDs and saved memos stay ins
   const page = await fixture();
   try {
     await page.locator('#member .dcb-user-memo-trigger.has-memo').waitFor();
-    assert.equal(await page.locator('#nested .nickname > .ip + .dc-member-ip-chip').count(), 1);
-    assert.equal(await page.locator('#direct .gall_writer > .ip + .dc-member-ip-chip').count(), 1);
+    assert.equal(await page.locator('#nested .dcb-writer-tools > .dc-member-ip-chip').count(), 1);
+    assert.equal(await page.locator('#direct .dcb-writer-tools > .dc-member-ip-chip').count(), 1);
     await assertAuthorBounds(page);
     fs.mkdirSync(path.join(root, 'test-results'), { recursive:true });
     await page.screenshot({ path:path.join(root, 'test-results/comment-author-layout.png'), fullPage:true });
@@ -168,12 +170,16 @@ test('140 percent body text and independently larger author text preserve layout
       nick:getComputedStyle(document.querySelector('#nested .nickname')).fontSize }));
     const native = await sizes();
     await page.evaluate(() => changeSettings({ dcbApplyFontToDc:true, dcbFontScale:140 }));
+    await page.waitForFunction(()=>getComputedStyle(document.querySelector('#nested .usertxt')).fontSize==='18.2px');
     assert.equal(parseFloat((await sizes()).body), 18.2);
     await assertAuthorBounds(page);
     const largeAuthors = await page.addStyleTag({ content:'.comment_box .nickname{font-size:16.8px!important}.comment_box .ip{font-size:15.4px!important}' });
+    await settle(page);
     await assertAuthorBounds(page);
     await largeAuthors.evaluate(node => node.remove());
+    await settle(page);
     await page.evaluate(() => changeSettings({ dcbApplyFontToDc:false }));
+    await page.waitForFunction(()=>getComputedStyle(document.querySelector('#nested .usertxt')).fontSize==='13px');
     assert.deepEqual(await sizes(), native);
     await assertAuthorBounds(page);
   } finally { await page.close(); }

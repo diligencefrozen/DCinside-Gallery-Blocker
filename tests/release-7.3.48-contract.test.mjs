@@ -7,16 +7,16 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
 
-test('new installation seeds context-menu user blocking while retaining instant choice', () => {
+test('new installation keeps instant user blocking as the approved default', () => {
   const background = read('src/background/background.js');
   const probe = read('src/content/user/ctx-probe.js');
   const popup = read('src/ui/popup/popup.js');
   const options = read('src/ui/options/options.js');
-  assert.match(background, /patch\.userBlockTriggerMode\s*=\s*"contextMenu"/);
-  assert.match(probe, /userBlockTriggerModeCache\s*=\s*"contextMenu"/);
-  assert.match(probe, /return USER_BLOCK_TRIGGER_MODES\.has\(v\) \? v : "contextMenu"/);
-  assert.match(popup, /userBlockTriggerMode:\s*"contextMenu"/);
-  assert.match(options, /userBlockTriggerMode:\s*"contextMenu"/);
+  assert.match(background, /patch\.userBlockTriggerMode\s*=\s*"instant"/);
+  assert.match(probe, /userBlockTriggerModeCache\s*=\s*"instant"/);
+  assert.match(probe, /return USER_BLOCK_TRIGGER_MODES\.has\(v\) \? v : "instant"/);
+  assert.match(popup, /userBlockTriggerMode:\s*"instant"/);
+  assert.match(options, /userBlockTriggerMode:\s*"instant"/);
   assert.match(probe, /userBlockTriggerModeCache === "instant"/);
 });
 
@@ -37,3 +37,4 @@ test('preview rerenders keep the existing shell until replacement content is rea
   assert.doesNotMatch(reset, /overlay\.replaceChildren\(\)/);
   assert.match(reset, /Keep the current panel until the next render/);
 });
+

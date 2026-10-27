@@ -2636,6 +2636,42 @@ const DCB_FETCH_ALLOWED_HOSTS = new Set([
   "www.dcinside.com",
   "search.dcinside.com"
 ]);
+const DCB_FETCH_MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
+const dcbReadRequests = new Map();
+function dcbReadAllowed(target, method, body = '') {
+  if (!/^https?:$/.test(target.protocol) || target.username || target.password || target.port) return false;
+  if (target.hostname === 'gall.dcinside.com') {
+    if (/^\/(?:mgallery\/|mini\/|person\/)?board\/view\/?$/.test(target.pathname)) {
+      return method === 'GET' && /^[a-zA-Z0-9_]+$/.test(target.searchParams.get('id') || '') && /^[1-9]\d*$/.test(target.searchParams.get('no') || '');
+    }
+    if (/^\/board\/comment\/?$/.test(target.pathname) && ['GET','POST'].includes(method)) {
+      const fields = method === 'POST' ? new URLSearchParams(body) : target.searchParams;
+      const allowed = new Set(['id','no','cmt_id','cmt_no','focus_cno','focus_pno','e_s_n_o','comment_page','sort','prevCnt','board_type','_GALLTYPE_','secret_article_key','clean','nptest']);
+      return [...fields.keys()].every(key => allowed.has(key) && fields.getAll(key).length === 1)
+        && /^[a-zA-Z0-9_]+$/.test(fields.get('id') || '') && /^[1-9]\d*$/.test(fields.get('no') || '');
+    }
+  }
+  return method === 'GET' && target.hostname === 'm.dcinside.com'
+    && /^\/(?:board\/(?:[a-zA-Z0-9_]+\/)?|mini\/|person\/)?[a-zA-Z0-9_]+\/[1-9]\d*\/?$/.test(target.pathname);
+}
+
+async function dcbReadBoundedText(response) {
+  if (Number(response.headers.get('content-length')) > DCB_FETCH_MAX_RESPONSE_BYTES) throw new Error('응답 크기 제한을 초과했습니다.');
+  const reader = response.body?.getReader();
+  if (!reader) return '';
+  const decoder = new TextDecoder();
+  let text = '', size = 0;
+  try {
+    for (;;) {
+      const {done, value} = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > DCB_FETCH_MAX_RESPONSE_BYTES) { await reader.cancel(); throw new Error('응답 크기 제한을 초과했습니다.'); }
+      text += decoder.decode(value, {stream:true});
+    }
+    return text + decoder.decode();
+  } finally { reader.releaseLock(); }
+}
 
 async function dcbFetchDcinsideHtml(rawUrl, options = {}) {
   let target;
@@ -2654,6 +2690,9 @@ async function dcbFetchDcinsideHtml(rawUrl, options = {}) {
   }
 
   const method = String(options.method || "GET").toUpperCase();
+  if (String(options.body || '').length > 16384 || !dcbReadAllowed(target, method, String(options.body || ''))) {
+    return {ok:false,status:0,error:'허용되지 않은 읽기 요청입니다.',text:''};
+  }
   if (["/board/forms/comment_submit", "/board/comment/comment_delete_submit"].includes(target.pathname.replace(/\/$/, ""))) {
     return { ok: false, status: 0, error: "댓글 등록은 전용 작성 경로에서만 가능합니다.", text: "" };
   }
@@ -2676,7 +2715,7 @@ async function dcbFetchDcinsideHtml(rawUrl, options = {}) {
     method,
     credentials: "include",
     cache: options.cache === "reload" ? "reload" : "default",
-    redirect: "follow",
+    redirect: "error",
     headers
   };
   const controller = new AbortController();
@@ -2702,7 +2741,7 @@ async function dcbFetchDcinsideHtml(rawUrl, options = {}) {
 
   try {
     const response = await fetch(target.href, requestInit);
-    const text = await response.text();
+    const text = await dcbReadBoundedText(response);
     return {
       ok: response.ok,
       status: response.status,
@@ -2725,18 +2764,33 @@ async function dcbFetchDcinsideHtml(rawUrl, options = {}) {
   } finally {
     clearTimeout(timeoutId);
     detachExternalAbort?.();
+    controller.abort(); // Also stop an oversized response whose body was unread.
   }
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (msg?.type !== "dcb.fetchText") return;
+  if (!['dcb.fetchText','dcb.cancelFetch'].includes(msg?.type)) return;
 
-  if (!accountSignalSenderAllowed(sender)) {
+  if (!accountSignalSenderAllowed(sender) || sender.id !== chrome.runtime.id || !Number.isInteger(sender.tab?.id)
+    || !Number.isInteger(sender.frameId) || !/^[a-f0-9-]{36}$/.test(msg.requestId || '')) {
     sendResponse({ ok: false, status: 0, error: "허용되지 않은 요청 출처입니다.", text: "" });
     return;
   }
 
+  const owner = `${sender.tab.id}:${sender.frameId}:${sender.documentId || sender.url}`;
+  const key = `${owner}:${msg.requestId}`;
+  if (msg.type === 'dcb.cancelFetch') {
+    dcbReadRequests.get(key)?.controller.abort();
+    sendResponse({ok:true}); return;
+  }
+  if (dcbReadRequests.has(key) || [...dcbReadRequests.values()].filter(entry => entry.owner === owner).length >= 8) {
+    sendResponse({ok:false,status:0,error:'동시 요청 제한입니다.',text:''}); return;
+  }
+  const controller = new AbortController();
+  dcbReadRequests.set(key, {owner, tabId:sender.tab.id, controller});
+
   dcbFetchDcinsideHtml(msg.url, {
+    signal: controller.signal,
     cache: msg.cache,
     method: msg.method,
     body: msg.body,
@@ -2748,9 +2802,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     .catch((error) => {
       const message = error?.message || String(error);
       sendResponse({ ok: false, status: 0, error: message, text: "" });
-    });
+    }).finally(() => dcbReadRequests.delete(key));
 
   return true;
+});
+
+chrome.tabs.onRemoved.addListener(tabId => {
+  for (const [key, entry] of dcbReadRequests) if (entry.tabId === tabId) { entry.controller.abort(); dcbReadRequests.delete(key); }
+});
+chrome.tabs.onUpdated.addListener((tabId, info) => {
+  if (info.status !== 'loading') return;
+  for (const [key, entry] of dcbReadRequests) if (entry.tabId === tabId) { entry.controller.abort(); dcbReadRequests.delete(key); }
 });
 
 

@@ -336,6 +336,7 @@ syncSettings(handleUrl);
   // Text drafts live only in this tab's memory. Passwords stay in the input DOM.
   const previewDrafts = new Map();
   let previewComposer = null;
+  let previewVote = null;
   let activeAbort = null;
   let activeRequestKey = "";
   let activeOpenPromise = null;
@@ -447,6 +448,11 @@ syncSettings(handleUrl);
   }
 
   function writePreviewCache(url, data){
+    // Raw documents are needed only while resolving comments/media. Do not
+    // retain page scripts, hidden fields or duplicate HTML after completion.
+    data.dynamicYouTube = previewMayContainDynamicYouTube(data);
+    delete data.rawHtml;
+    delete data.desktopRawHtml;
     const key = previewCacheKey(url);
     cache.delete(key);
     cache.set(key, { time: Date.now(), data });
@@ -681,6 +687,11 @@ syncSettings(handleUrl);
       #${OVERLAY_ID} .dcbpv-comment-body p{margin:0}
       #${OVERLAY_ID} .dcbpv-legacy-vote,#${OVERLAY_ID} .dcbpv-vote{display:flex;align-items:center;gap:24px;margin:24px 0 20px;padding:14px 0;border:0;border-top:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;border-radius:0;background:transparent;color:#64748b;font-size:13px;font-weight:600}
       #${OVERLAY_ID} .dcbpv-vote-reaction:first-child{color:#405c9c}
+      #${OVERLAY_ID} button.dcbpv-vote-reaction{border:1px solid #dbe2ec;border-radius:8px;padding:7px 10px;background:transparent;color:inherit;font:inherit;cursor:pointer}
+      #${OVERLAY_ID} .dcbpv-vote-reaction:disabled{opacity:.5;cursor:default}
+      #${OVERLAY_ID} .dcbpv-vote-panel{margin:0 0 16px;padding:10px;border:1px solid #dbe2ec;border-radius:10px;min-width:0}
+      #${OVERLAY_ID} .dcbpv-vote-panel iframe{display:block;width:100%;height:180px;border:0}
+      #${OVERLAY_ID} .dcbpv-vote-panel p{font-size:13px;overflow-wrap:anywhere}
       #${OVERLAY_ID} .dcbpv-empty{padding:22px 0;text-align:center;border:0;color:#64748b;background:transparent}
       #${OVERLAY_ID} .dcbpv-actions{display:flex;flex-shrink:0;gap:10px;flex-wrap:wrap;margin:0;padding:14px 26px;border-top:1px solid #e2e8f0;background:#fbfcfe}
       #${OVERLAY_ID} .dcbpv-btn{flex:0 0 auto;min-width:88px;border:1px solid #dbe2ec;border-radius:10px;background:transparent;color:#334155;padding:9px 20px;cursor:pointer;font-weight:600;font-size:13px;transition:.12s}
@@ -738,6 +749,7 @@ syncSettings(handleUrl);
   }
 
   function resetPreviewSurface(){
+    disposePreviewVote();
     stopPreviewDcconObserver();
     previewMovieRequests.forEach((controller) => controller.abort());
     previewMovieRequests.clear();
@@ -817,6 +829,8 @@ syncSettings(handleUrl);
     if (act === "close") return closePreview();
     if (act === "retry") return openPreview(overlay.dataset.dcbpvErrorUrl, { force: true });
     if (!data) return;
+    if (act === 'vote-up' || act === 'vote-down') return openPreviewVote(data,act);
+    if (act === 'vote-close') {if(previewVote)previewVote.panel.hidden=true;return;}
     if (act === "compose") return togglePreviewComposer(data);
     if (act === "compose-reply") return openPreviewComposer(data, event.target.closest("[data-target]")?.dataset.target || "invalid",{focus:true});
     if (act === "compose-reply-cancel") return openPreviewComposer(data,'',{focus:true});
@@ -2859,6 +2873,7 @@ syncSettings(handleUrl);
   }
 
   function previewMayContainDynamicYouTube(data){
+    if (data?.dynamicYouTube) return true;
     // This probe decides whether a missing player needs the bounded rendered
     // fallback. Do not truncate the source: a mobile article can place its
     // player metadata after a long text/body section.
@@ -2943,8 +2958,18 @@ syncSettings(handleUrl);
 
     const options = typeof request === "string" ? { cache: request } : (request || {});
     const fetchStartedAt = previewNow();
-    const response = await sendRuntimeFetchMessage({
+    const requestId = crypto.randomUUID();
+    let rejectAbort;
+    const aborted = new Promise((_, reject) => { rejectAbort = reject; });
+    const onAbort = () => {
+      sendRuntimeFetchMessage({ type: 'dcb.cancelFetch', requestId }).catch(() => {});
+      rejectAbort(new DOMException('Aborted', 'AbortError'));
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+    let response;
+    try { response = await Promise.race([sendRuntimeFetchMessage({
       type: "dcb.fetchText",
+      requestId,
       url,
       cache: options.cache || "default",
       method: options.method || "GET",
@@ -2952,7 +2977,8 @@ syncSettings(handleUrl);
       headers: options.headers || undefined,
       accept: options.accept || undefined,
       referrer: options.referrer || undefined
-    });
+    }), aborted]); }
+    finally { signal?.removeEventListener('abort', onAbort); }
 
     addPreviewPhase("fetchMs", fetchStartedAt);
     if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
@@ -2987,6 +3013,7 @@ syncSettings(handleUrl);
 
     const init = {
       method,
+      signal,
       credentials: "include",
       cache: options.cache === "reload" ? "reload" : "default",
       redirect: "follow",
@@ -3560,6 +3587,7 @@ syncSettings(handleUrl);
           ? await fetchTextDirect(requestUrl, signal, requestOptions)
           : await fetchText(requestUrl, signal, requestOptions);
       } catch (firstError) {
+        if (signal?.aborted || firstError?.name === 'AbortError' || PREVIEW_THROTTLE_STATUSES.has(Number(firstError?.status))) throw firstError;
         // 미니/인물 댓글은 background service worker fetch가 페이지 내부 AJAX와 다르게 보일 수 있다.
         // direct가 실패하면 기존 background 브릿지로, background가 실패하면 direct로 교차 fallback한다.
         try {
@@ -3599,6 +3627,7 @@ syncSettings(handleUrl);
           const html = await tryRequest("POST", endpoint, body);
           if (html) return { html, debug };
         } catch (error) {
+          if (signal?.aborted || error?.name === 'AbortError') throw error;
           lastError = error;
           const item = { method: "POST", endpoint, status: Number(error?.status || 0), error: error?.message || String(error), body: safeCommentBodyForLog(body) };
           debug.push(item);
@@ -3625,6 +3654,7 @@ syncSettings(handleUrl);
           const html = await tryRequest("GET", endpoint, body);
           if (html) return { html, debug };
         } catch (error) {
+          if (signal?.aborted || error?.name === 'AbortError') throw error;
           lastError = error;
           const item = { method: "GET", endpoint, status: Number(error?.status || 0), error: error?.message || String(error), body: safeCommentBodyForLog(body) };
           debug.push(item);
@@ -4646,6 +4676,8 @@ syncSettings(handleUrl);
   }
   function decoratePreviewReplyActions(overlay){
     const rows=[...overlay.querySelectorAll('.dcbpv-comment-item')];
+    const counts=new Map(), owned=new Set(previewComposer?.owned || []);
+    for(const row of rows){const id=row.dataset.dcbpvNativeId;counts.set(id,(counts.get(id)||0)+1);}
     rows.forEach(row=>{
       row.querySelectorAll('[data-act=compose-reply],[data-act=compose-delete]').forEach(node=>node.remove());
       const meta=row.querySelector('.dcbpv-comment-meta');if(!meta)return;
@@ -4653,11 +4685,11 @@ syncSettings(handleUrl);
       if(!actions){actions=document.createElement('span');actions.className='dcbpv-comment-actions';meta.appendChild(actions);}
       meta.querySelectorAll(':scope > .dcbpv-time,:scope > span:not(.gall_writer):not(.ub-writer):not(.dcbpv-comment-actions)').forEach(node=>{node.classList.add('dcbpv-time');actions.appendChild(node);});
       const id=row.dataset.dcbpvNativeId;
-      if(!/^[1-9]\d*$/.test(id||'')||row.matches('.deleted,.dory')||rows.filter(other=>other.dataset.dcbpvNativeId===id).length!==1)return;
+      if(!/^[1-9]\d*$/.test(id||'')||row.matches('.deleted,.dory')||counts.get(id)!==1)return;
       const reply=document.createElement('button');reply.type='button';reply.className='dcbpv-reply-button';reply.dataset.act='compose-reply';reply.dataset.target=id;reply.textContent='답글';
       reply.setAttribute('aria-label',`${row.dataset.nick||'이 댓글'}에게 답글`);
       actions.appendChild(reply);
-      if(previewComposer?.owned?.includes(id)){
+      if(owned.has(id)){
         const remove=document.createElement('button');remove.type='button';remove.className='dcbpv-delete-button';remove.dataset.act='compose-delete';remove.dataset.target=id;remove.textContent='×';remove.title='내 댓글 삭제';remove.setAttribute('aria-label','내 댓글 삭제');remove.disabled=!!previewComposer.submitting;actions.appendChild(remove);
       }
     });
@@ -4777,6 +4809,48 @@ syncSettings(handleUrl);
     });
   }
 
+  function disposePreviewVote(){
+    if(!previewVote)return;
+    clearTimeout(previewVote.timer);previewVote.panel.remove();previewVote=null;
+  }
+  async function openPreviewVote(data,action){
+    const overlay=document.getElementById(OVERLAY_ID);
+    if(!overlay||data.articleUnavailable||overlay.querySelector('.dcbpv-article[data-dcbpv-filtered]'))return;
+    const article=previewCacheKey(data.url);
+    if(previewVote?.article===article){previewVote.panel.hidden=false;previewVote.panel.scrollIntoView({block:'nearest'});return;}
+    disposePreviewVote();
+    const panel=document.createElement('section');panel.className='dcbpv-vote-panel';panel.setAttribute('aria-label','원문 투표');
+    panel.innerHTML='<button type="button" data-act="vote-close">투표창 접기</button><p role="status">원문 투표 버튼을 불러오는 중…</p>';
+    const link=document.createElement('a');link.href=data.url;link.target='_blank';link.rel='noopener noreferrer';link.textContent='원문에서 확인';panel.append(link);
+    const frame=document.createElement('iframe'),key=crypto.randomUUID();
+    frame.dataset.dcbpvVoteFrame=key;frame.title='원문 개추·비추 투표';frame.style.visibility='hidden';
+    const state=previewVote={article,panel,frame,key,busy:false};
+    const loaded=new Promise(resolve=>{frame.addEventListener('load',()=>resolve(true),{once:true});state.timer=setTimeout(()=>resolve(false),15000);});
+    frame.src=data.url;panel.insertBefore(frame,link);overlay.querySelector('.dcbpv-vote').after(panel);panel.scrollIntoView({block:'nearest'});
+    if(!await loaded||previewVote!==state){if(previewVote===state)panel.querySelector('[role=status]').textContent='원문 투표 화면을 불러오지 못했습니다. 원문에서 확인해 주세요.';return;}
+    clearTimeout(state.timer);
+    const result=await sendRuntimeFetchMessage({type:'dcb.previewVote',operation:'prepare',url:data.url,key}).catch(()=>null);
+    if(previewVote!==state)return;
+    if(!result?.ok){frame.hidden=true;panel.querySelector('[role=status]').textContent=result?.error||'이 게시글의 투표를 사용할 수 없습니다. 원문에서 확인해 주세요.';return;}
+    frame.style.visibility='visible';panel.querySelector('[role=status]').textContent='아래 원문 버튼을 직접 누르면 한 번 투표합니다.';
+    try{frame.contentDocument.querySelector(action==='vote-up'?'.btn_recom_up':'.btn_recom_down')?.focus({preventScroll:true});}catch(_){}
+  }
+  window.addEventListener('message',event=>{
+    const state=previewVote,payload=event.data;
+    if(!state||event.source!==window||event.origin!==location.origin||payload?.type!=='dcb.previewVote.event'||payload.key!==state.key)return;
+    if(payload.kind==='size'){if(Number.isFinite(payload.height)&&payload.height>=100&&payload.height<=800)state.frame.style.height=`${payload.height}px`;return;}
+    if(payload.kind==='busy'){state.busy=true;state.panel.querySelector('[role=status]').textContent='투표 결과 확인 중…';return;}
+    if(payload.kind!=='result')return;
+    state.busy=false;state.panel.querySelector('[role=status]').textContent=String(payload.message||'');
+    if(payload.ok||payload.uncertain)cache.delete(state.article);
+    const data=currentPreviewData,overlay=document.getElementById(OVERLAY_ID);
+    if(!payload.ok||!data||previewCacheKey(data.url)!==state.article||!overlay)return;
+    for(const [key,selector] of [['up','.dcbpv-vote-up'],['upMember','.dcbpv-vote-member'],['down','.dcbpv-vote-down']]){
+      const value=payload.counts?.[key];if(typeof value!=='string'||!/^\d+$/.test(value))continue;
+      data.counts[key]=value;const node=overlay.querySelector(selector);if(node)node.textContent=key==='upMember'?`(${value})`:value;
+    }
+  });
+
   function renderPreview(data, { commentsPending = false } = {}){
     const renderStartedAt = previewNow();
     const trace = activePreviewTrace;
@@ -4795,6 +4869,7 @@ syncSettings(handleUrl);
       existingOverlay.querySelector(".dcbpv-writer").innerHTML = data.writerHTML || "작성자 정보 없음";
       existingOverlay.querySelector(".dcbpv-vote-up").textContent = data.counts.up || "0";
       existingOverlay.querySelector(".dcbpv-vote-down").textContent = data.counts.down || "0";
+      existingOverlay.querySelector('.dcbpv-vote-member').textContent=data.counts.upMember?`(${data.counts.upMember})`:'';
       updatePreviewComments(data);
       settlePreviewMedia(article, data.fetchedUrl || data.url);
       markRenderedPreviewRead(data, existingOverlay);
@@ -4824,8 +4899,8 @@ syncSettings(handleUrl);
             <article class="dcbpv-html dcbpv-article">${data.articleHTML || `<div class="dcbpv-empty">본문을 표시할 수 없습니다.</div>`}</article>
           </section>
           <div class="dcbpv-vote">
-            <span class="dcbpv-vote-reaction">↑ 개추 <span class="dcbpv-vote-up">${data.counts.up || "0"}</span>${data.counts.upMember ? ` <span class="dcbpv-vote-member">(${data.counts.upMember})</span>` : ""}</span>
-            <span class="dcbpv-vote-reaction">↓ 비추 <span class="dcbpv-vote-down">${data.counts.down || "0"}</span></span>
+            <button type="button" data-act="vote-up" aria-label="개추 투표 열기" class="dcbpv-vote-reaction">↑ 개추 <span class="dcbpv-vote-up">${escapeText(data.counts.up || "0")}</span> <span class="dcbpv-vote-member">${data.counts.upMember ? `(${escapeText(data.counts.upMember)})` : ""}</span></button>
+            <button type="button" data-act="vote-down" aria-label="비추 투표 열기" class="dcbpv-vote-reaction">↓ 비추 <span class="dcbpv-vote-down">${escapeText(data.counts.down || "0")}</span></button>
           </div>
           <section class="dcbpv-section dcbpv-comments">
             <div class="dcbpv-comments-header">
@@ -4965,6 +5040,7 @@ syncSettings(handleUrl);
   async function openPreview(url, options = {}){
     if (!url || !previewEnabled) return;
     const requestKey = previewCacheKey(url);
+    if(previewVote&&previewVote.article!==requestKey)disposePreviewVote();
     if(previewComposer && previewComposer.key!==requestKey)suspendPreviewComposer();
     const cached = !options.force ? readPreviewCache(url) : null;
     // Older cache entries can contain a valid article body while losing the

@@ -51,6 +51,7 @@ async function fixture(html, settings = { enabled: true }) {
     };
     window.fetch = () => { throw new Error('The content detector must not fetch externally'); };
   }, settings);
+  await require('./helpers/content-runtime.cjs')(page);
   for (const file of ['src/shared/detection-config.js', 'src/content/detection/text-detector.js']) {
     await page.addScriptTag({ path: path.join(__dirname, '..', file) });
   }

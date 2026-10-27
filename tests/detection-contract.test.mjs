@@ -9,28 +9,31 @@ const workerSource = await readFile(new URL("../src/background/text-detection.js
 function fixture(overrides = {}, inferenceFailure = "") {
   const listeners = [];
   const calls = [];
-  let documentExists = false;
+  let active=0, maxActive=0;
   const context = vm.createContext({
     URL, setTimeout: () => 1, clearTimeout() {},
+    DCBLocalInference: {analyze: async items => {
+      active++;maxActive=Math.max(maxActive,active);calls.push({type:'local-inference',items});
+      await Promise.resolve();active--;
+      return inferenceFailure ? {ok:false,error:inferenceFailure} : {ok:true,results:items.map(()=>({score:0.8}))};
+    },release:async()=>{}},
     chrome: {
       runtime: { id: "test-extension", getURL: path => `chrome-extension://test-extension/${path}`,
-        getContexts: async () => documentExists ? [{}] : [],
         onMessage: { addListener: fn => listeners.push(fn) },
         sendMessage: async message => {
           calls.push(message);
           return inferenceFailure ? { ok: false, error: inferenceFailure }
             : { ok: true, results: message.items.map(() => ({ score: 0.8 })) };
         } },
-      storage: { sync: { get: async () => ({ dcbTextDetection: { enabled: true, ...overrides } }) },
+      storage: { local:{get:async()=>({}),set:async()=>{}},sync: { get: async () => ({ dcbTextDetection: { enabled: true, ...overrides } }) },
         session: { set: async () => {} }, onChanged: { addListener() {} } },
-      offscreen: { createDocument: async options => { calls.push(options); documentExists = true; }, closeDocument: async () => {} }
     }
   });
   vm.runInContext(configSource, context);
   vm.runInContext(workerSource, context);
   const sender = { id: "test-extension", tab: { id: 1 }, url: "https://gall.dcinside.com/board/view/?id=test&no=1" };
   const item = { kind: "comment", title: "제목", body: "문장 분석 테스트입니다." };
-  return { config: context.DCBTextDetection, calls, sender, item,
+  return { config: context.DCBTextDetection, calls, sender, item,maxActive:()=>maxActive,
     request: (message = { type: "DCB_DETECT_TEXT", items: [item] }, from = sender) => new Promise(resolve => listeners[0](message, from, resolve)) };
 }
 
@@ -73,8 +76,8 @@ test("concurrent tabs share one runtime and process serial batches", async () =>
   const app = fixture();
   const replies = await Promise.all([app.request(), app.request(), app.request()]);
   assert.ok(replies.every(reply => reply.ok && reply.results[0].score === 0.8));
-  assert.equal(app.calls.filter(call => call.url).length, 1);
-  assert.equal(app.calls.filter(call => call.type === "DCB_INFERENCE").length, 3);
+  assert.equal(app.maxActive(),1);
+  assert.equal(app.calls.filter(call => call.type === "local-inference").length, 3);
 });
 
 test("missing model runtime falls back to a disclosed conservative detector", async () => {
@@ -96,7 +99,7 @@ test("long posts use at most three bounded chunks and return the maximum score",
     type: "DCB_DETECT_TEXT",
     items: [{ kind: "post", title: "긴 글", body: "문장 ".repeat(1100) }]
   });
-  const inference = app.calls.find(call => call.type === "DCB_INFERENCE");
+  const inference = app.calls.find(call => call.type === "local-inference");
   assert.equal(inference.items.length, 3);
   assert.equal(reply.results.length, 1);
   assert.equal(reply.results[0].score, 0.8);
@@ -106,5 +109,5 @@ test("manual retry reuses the guarded prewarm path", async () => {
   const app = fixture();
   const reply = await app.request({ type: "DCB_DETECTION_RETRY" });
   assert.equal(reply.ok, true);
-  assert.equal(app.calls.filter(call => call.type === "DCB_INFERENCE").length, 1);
+  assert.equal(app.calls.filter(call => call.type === "local-inference").length, 1);
 });

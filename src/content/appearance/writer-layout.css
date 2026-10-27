@@ -69,6 +69,16 @@
   overflow: visible !important;
 }
 
+.dcb-writer-layout.dcb-writer-row[data-dcb-writer-context="comment"][data-dcb-writer-wrap],
+.dcb-writer-layout[data-dcb-writer-context="comment"][data-dcb-writer-wrap] .dcb-writer-row {
+  flex-wrap: wrap !important;
+}
+.dcb-writer-layout[data-dcb-writer-context="comment"][data-dcb-writer-wrap] .dcb-writer-tools {
+  flex-wrap: wrap !important;
+  max-width: 100% !important;
+  margin-left: 0 !important;
+}
+
 .dcb-writer-layout .dcb-writer-row,
 .dcb-writer-layout.dcb-writer-row:not([data-dcb-writer-native-shell]) {
   max-width: min(100%, var(--dcb-writer-available, 100%)) !important;
