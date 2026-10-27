@@ -2654,7 +2654,7 @@ async function dcbFetchDcinsideHtml(rawUrl, options = {}) {
   }
 
   const method = String(options.method || "GET").toUpperCase();
-  if (target.pathname.replace(/\/$/, "") === "/board/forms/comment_submit") {
+  if (["/board/forms/comment_submit", "/board/comment/comment_delete_submit"].includes(target.pathname.replace(/\/$/, ""))) {
     return { ok: false, status: 0, error: "댓글 등록은 전용 작성 경로에서만 가능합니다.", text: "" };
   }
   if (!/^(GET|POST)$/.test(method)) {

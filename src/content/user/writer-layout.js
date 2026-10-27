@@ -338,6 +338,18 @@
     if (!state || !writer.isConnected) { unwatch(writer, state); return; }
     const parts = getParts(writer);
     if (!parts?.tools || parts.context === "unknown") return;
+    // Preview comments have a wrapping identity column, separate from time and
+    // actions. The single-line fitter must not reserve the adjacent grid column
+    // a second time or truncate ordinary nicknames to two characters.
+    if(parts.context === 'preview-comment'){
+      FIT_PROPERTIES.forEach(property=>writer.style.removeProperty(property));
+      writer.style.removeProperty('--dcb-writer-available');
+      writer.removeAttribute('data-dcb-writer-density');
+      writer.removeAttribute('data-dcb-writer-name-fit');
+      parts.nameText?.classList.remove('dcb-writer-name-clipped');
+      if(parts.nameText)parts.nameText.title=parts.nameText.textContent;
+      return;
+    }
     if (state.row !== parts.row || state.nameText !== parts.nameText || state.icon !== parts.icon || state.nativeIp !== parts.nativeIp) {
       normalize(writer);
       return;

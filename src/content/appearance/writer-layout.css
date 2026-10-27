@@ -214,6 +214,31 @@
 }
 
 /* Brackets belong to the badge; only its inner value may ellipsize. */
+.dcb-writer-layout[data-dcb-writer-context="preview-comment"],
+.dcb-writer-layout[data-dcb-writer-context="preview-comment"] .dcb-writer-row {
+  width: auto !important;
+  flex-wrap: wrap !important;
+  gap: 4px !important;
+  white-space: normal !important;
+}
+
+.dcb-writer-layout[data-dcb-writer-context="preview-comment"] :is(.dcb-writer-name,.dcb-writer-name-text) {
+  flex: 0 1 auto !important;
+  max-width: 100% !important;
+  white-space: normal !important;
+  overflow-wrap: anywhere;
+}
+
+.dcb-writer-layout[data-dcb-writer-context="preview-comment"] .dcb-writer-tools {
+  flex-wrap: wrap !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
+
+.dcb-writer-layout[data-dcb-writer-context="preview-comment"] .dcb-writer-tools > :is(.dcb-uid-badge,.dcb-user-memo-trigger) {
+  max-width: 100% !important;
+}
+
 .dcb-writer-layout .dcb-uid-value,
 .dcb-writer-layout .dcb-memo-value {
   display: block;

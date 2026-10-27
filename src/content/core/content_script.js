@@ -613,7 +613,11 @@ syncSettings(handleUrl);
       #${OVERLAY_ID} .dcbpv-comments-actions :is(button,a){display:inline-flex!important;position:static!important;align-items:center!important;justify-content:center!important;width:auto!important;min-width:0!important;height:auto!important;max-width:none!important;margin:0!important;border:0!important;padding:3px 0!important;float:none!important;clear:none!important;background:transparent!important;color:#475569!important;font:inherit!important;font-size:12px!important;line-height:1.5!important;cursor:pointer;text-decoration:none}
       #${OVERLAY_ID} .dcbpv-comments-actions :is(button,a):hover{text-decoration:underline}
       #${OVERLAY_ID} .dcbpv-composer{margin:14px 0;padding:14px;border:1px solid #94a3b8;border-radius:10px;color:#253047;background:#f8fafc;box-sizing:border-box}
-      #${OVERLAY_ID} .dcbpv-composer iframe{display:block;width:100%;height:360px;min-width:0;border:0;margin:8px 0;background:#f8fafc}
+      #${OVERLAY_ID} .dcbpv-composer iframe{display:block;width:100%;height:140px;min-width:0;border:0;margin:8px 0;background:transparent}
+      #${OVERLAY_ID} .dcbpv-composer[hidden],#${OVERLAY_ID} .dcbpv-compose-heading [hidden]{display:none}
+      #${OVERLAY_ID} .dcbpv-compose-heading{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+      #${OVERLAY_ID} .dcbpv-delete-button{border:0;background:transparent;color:#be123c;cursor:pointer;padding:2px 6px;font-size:18px;line-height:1}
+      @media(prefers-color-scheme:dark){#${OVERLAY_ID} .dcbpv-composer{background:#0f172a;color:#e2e8f0}#${OVERLAY_ID} .dcbpv-compose-actions a{color:#93c5fd}}
       #${OVERLAY_ID} .dcbpv-composer iframe[hidden]{display:none!important}
       #${OVERLAY_ID} .dcbpv-saved-draft{box-sizing:border-box;width:100%;margin:8px 0;padding:8px;background:#fff;color:#172033;border:1px solid #94a3b8;white-space:pre-wrap}
       #${OVERLAY_ID} .dcbpv-compose-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:8px;font-size:12px}
@@ -664,8 +668,11 @@ syncSettings(handleUrl);
       #${OVERLAY_ID} .dcbpv-comment-item[data-dcb-thread-depth="3"]::before{box-shadow:calc(-1 * var(--dcbpv-thread-indent)) 0 #ced9eb,calc(-2 * var(--dcbpv-thread-indent)) 0 #ced9eb}
       #${OVERLAY_ID} .dcbpv-comment-item[data-dcb-thread-depth]:not([data-dcb-thread-depth="0"])::after{content:"";position:absolute;left:-20px;top:26px;width:14px;height:1px;background:#ced9eb}
       #${OVERLAY_ID} .dcbpv-comment-item.deleted{color:#94a3b8}
-      #${OVERLAY_ID} .dcbpv-comment-meta{display:flex;flex-wrap:nowrap;justify-content:space-between;gap:8px;align-items:center;min-width:0;margin-bottom:5px;font-size:12px;color:#778399}
-      #${OVERLAY_ID} .dcbpv-comment-meta > :is(span,a,strong):not(.gall_writer):not(.ub-writer){margin-left:0;flex:0 0 auto;white-space:nowrap}
+      #${OVERLAY_ID} .dcbpv-comment-meta{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 12px;align-items:start;min-width:0;margin-bottom:5px;font-size:12px;color:#778399}
+      #${OVERLAY_ID} .dcbpv-comment-meta > *{min-width:0;max-width:100%;overflow-wrap:anywhere}
+      #${OVERLAY_ID} .dcbpv-comment-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:6px 10px}
+      #${OVERLAY_ID} .dcbpv-time{white-space:normal;font-variant-numeric:tabular-nums}
+      @media(max-width:540px){#${OVERLAY_ID} .dcbpv-comment-meta{grid-template-columns:minmax(0,1fr)}#${OVERLAY_ID} .dcbpv-comment-actions{justify-content:flex-start}#${OVERLAY_ID} .dcbpv-composer{padding:8px}}
       #${OVERLAY_ID} .dcbpv-comment-meta strong{color:#0f172a;font-size:13px}
       #${OVERLAY_ID} .dcbpv-comment-body{min-width:0;max-width:100%;font-size:15px;line-height:1.75;color:#273449;word-break:normal;overflow-wrap:anywhere;white-space:normal!important}
       #${OVERLAY_ID} .dcbpv-comment-body :is(div,p,span,a,em,strong,blockquote,pre,ul,ol,li){float:none!important;position:static!important;width:auto!important;min-width:0!important;max-width:100%!important;height:auto!important;max-height:none!important;white-space:pre-wrap!important;overflow:visible!important;text-overflow:clip!important;overflow-wrap:anywhere!important;word-break:normal!important;font-size:inherit;line-height:inherit}
@@ -799,12 +806,21 @@ syncSettings(handleUrl);
 
     if (event.target === overlay) return closePreview();
     const act = event.target.closest("[data-act]")?.dataset.act;
+    if(!act && data && event.button===0){
+      const body=event.target.closest('.dcbpv-comment-body');
+      if(body && !event.target.closest('a,button,input,textarea,img,video,audio,iframe,.dcbpv-dccon,.dccon,.coment_dccon_img,.coment_dccon_txt') && !window.getSelection()?.toString()){
+        const row=body.closest('.dcbpv-comment-item');
+        if(row && !row.matches('.deleted,.dory')) return openPreviewComposer(data,row.dataset.dcbpvNativeId||'invalid',{focus:true});
+      }
+    }
     if (!act) return;
     if (act === "close") return closePreview();
     if (act === "retry") return openPreview(overlay.dataset.dcbpvErrorUrl, { force: true });
     if (!data) return;
-    if (act === "compose") return openPreviewComposer(data);
-    if (act === "compose-reply") return openPreviewComposer(data, event.target.closest("[data-target]")?.dataset.target || "");
+    if (act === "compose") return togglePreviewComposer(data);
+    if (act === "compose-reply") return openPreviewComposer(data, event.target.closest("[data-target]")?.dataset.target || "invalid",{focus:true});
+    if (act === "compose-reply-cancel") return openPreviewComposer(data,'',{focus:true});
+    if (act === "compose-delete") return openPreviewDelete(event.target.closest('[data-target]')?.dataset.target||'');
     if (act === "compose-cancel") return cancelPreviewComposer();
     if (act === "open") return window.open(data.url, "_blank", "noopener");
     if (act === "report" && data.reportUrl) return window.open(data.reportUrl, "_blank", "noopener");
@@ -2516,7 +2532,25 @@ syncSettings(handleUrl);
   }
 
   function commentDate(item){
-    return item.querySelector(".date_time,.gall_date,.date,.regdate,.time")?.textContent?.replace(/\s+/g, " ").trim() || "";
+    const node=item.querySelector(".date_time,.gall_date,.date,.regdate,.time");
+    return node?.getAttribute('datetime') || node?.getAttribute('title') || node?.textContent?.replace(/\s+/g, " ").trim() || "";
+  }
+
+  function formatPreviewCommentTime(raw){
+    const text=String(raw||'').trim();
+    let match=text.match(/^(\d{4})[-.](\d{2})[-.](\d{2})[ T](\d{2}):(\d{2}):(\d{2})$/);
+    if(!match && /^\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:\d{2})$/.test(text)){
+      const date=new Date(text);
+      if(Number.isFinite(date.getTime())){
+        const parts=Object.fromEntries(new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}).formatToParts(date).map(p=>[p.type,p.value]));
+        match=['',parts.year,parts.month,parts.day,parts.hour,parts.minute,parts.second];
+      }
+    }
+    if(!match)return text;
+    const [,year,month,day,hour,minute,second]=match;
+    const check=new Date(Date.UTC(+year,+month-1,+day,+hour,+minute,+second));
+    if(check.getUTCFullYear()!==+year||check.getUTCMonth()!==+month-1||check.getUTCDate()!==+day||+hour>23||+minute>59||+second>59)return text;
+    return `${year}.${month}.${day} ${+hour<12?'AM':'PM'} ${String(+hour%12||12).padStart(2,'0')}:${minute}:${second}`;
   }
 
   const PREVIEW_DCCON_PACKAGE_ATTRS = [
@@ -4522,14 +4556,9 @@ syncSettings(handleUrl);
 
   function preparePreviewPresentation(overlay){
     ensurePreviewFilterStyle();
-    overlay.querySelectorAll(".dcbpv-comment-meta > span:not(.gall_writer):not(.ub-writer)").forEach((time) => {
-      const fullTime = time.textContent.trim();
-      const clock = fullTime.match(/(?:^|\s)(\d{2}:\d{2}(?::\d{2})?)$/)?.[1];
-      if (clock && clock !== fullTime) {
-        time.title = fullTime;
-        time.dataset.dcbpvFullTime = fullTime;
-        time.textContent = clock;
-      }
+    overlay.querySelectorAll('.dcbpv-time').forEach((time) => {
+      const fullTime=time.dataset.dcbpvFullTime||time.textContent.trim();
+      time.title=fullTime;time.dataset.dcbpvFullTime=fullTime;time.textContent=formatPreviewCommentTime(fullTime);
     });
     overlay.querySelectorAll(".gall_writer,.ub-writer").forEach((writer) => globalThis.DCBWriterLayout?.normalize(writer));
     updatePreviewThreadDesign(overlay);
@@ -4550,190 +4579,165 @@ syncSettings(handleUrl);
   }
 
   function composerMessage(result){
-    if ([403, 429, 503].includes(result?.status)) return `서버에서 요청을 제한했습니다 (${result.status}). 원문에서 확인해 주세요.`;
-    return ({ authentication: "추가 인증이 필요합니다. 인증 영역을 확인하거나 원문에서 작성해 주세요.",
-      input: "내용과 닉네임·비밀번호를 확인해 주세요.", target: "답글 대상을 확인할 수 없습니다. 원문에서 확인해 주세요.",
-      rejected: "서버가 등록을 거절했습니다. 작성 권한·인증을 원문에서 확인해 주세요.",
-      uncertain: "등록 여부를 확인하지 못했습니다. 중복 등록을 피하려면 원문을 먼저 확인해 주세요.",
-      busy: "이미 전송 중입니다.", network: "연결하지 못했습니다. 초안은 보존됩니다.",
-      cancelled: "전송을 취소했습니다." })[result?.code] || "이 게시글의 작성 폼을 확인하지 못했습니다. 원문에서 작성해 주세요.";
+    if ([403,429,503].includes(result?.status)) return `서버에서 요청을 제한했습니다 (${result.status}). 잠시 후 원문을 확인해 주세요.`;
+    if(result?.refreshFailed) return result.ok ? '삭제됐지만 목록을 갱신하지 못했습니다. 댓글을 새로고침해 주세요.' : '서버 응답 후 목록을 갱신하지 못해 등록 여부를 확인할 수 없습니다. 중복 등록 전에 원문을 확인해 주세요.';
+    return ({authentication:'인증 영역에서 확인한 뒤 다시 눌러 주세요.', 'image-captcha':'자동입력 방지 코드를 확인해 주세요. 새 문제는 인증 이미지의 새로고침을 눌러 주세요.',
+      input:'내용과 닉네임·비밀번호를 확인해 주세요.',target:'답글 대상의 원문 ID를 확인할 수 없습니다.',ownership:'본인 댓글의 삭제 권한을 확인할 수 없습니다.',
+      rejected:'서버가 등록을 거절했습니다. 작성 권한과 입력 내용을 확인해 주세요.', 'delete-rejected':'삭제하지 못했습니다. 비밀번호·삭제 권한을 확인해 주세요.',
+      uncertain:'처리 여부를 확인하지 못했습니다. 중복 요청 전에 원문을 확인해 주세요.',busy:'이미 처리 중입니다.',network:'연결하지 못했습니다. 입력 내용은 유지됩니다.',cancelled:'요청을 취소했습니다.'})[result?.code] || '원문 작성 폼을 불러오지 못했습니다. 원문에서 확인해 주세요.';
   }
-
-  function savePreviewDraft(state = previewComposer){
-    if (!state) return;
+  function savePreviewDraft(state=previewComposer){
+    if(!state)return;
+    state.drafts[state.target]=state.draft||'';
     previewDrafts.delete(state.key);
-    previewDrafts.set(state.key, { draft: state.draft || "", target: state.target || "", uncertain: !!state.uncertain });
-    while (previewDrafts.size > 32) previewDrafts.delete(previewDrafts.keys().next().value);
+    previewDrafts.set(state.key,{draft:state.draft||'',drafts:{...state.drafts},target:state.target||'',uncertain:!!state.uncertain});
+    while(previewDrafts.size>32)previewDrafts.delete(previewDrafts.keys().next().value);
   }
-
   function suspendPreviewComposer(){
-    const state = previewComposer;
-    if (!state) return;
-    savePreviewDraft(state);
-    // A navigation during dispatch is ambiguous; never offer blind resubmission.
-    if (state.submitting) {
-      previewDrafts.get(state.key).uncertain = true;
-      cache.delete(state.key);
-      state.frame.dataset.dcbpvCancelled = "1";
-    }
-    state.form.remove();
-    previewComposer = null;
+    const state=previewComposer;if(!state)return;
+    savePreviewDraft(state);clearTimeout(state.statusTimer);
+    if(state.submitting){previewDrafts.get(state.key).uncertain=true;cache.delete(state.key);state.frame.dataset.dcbpvCancelled='1';}
+    state.form.remove();previewComposer=null;
   }
-
+  function syncComposerToggle(){
+    const state=previewComposer;
+    const button=document.querySelector(`#${OVERLAY_ID} [data-act='compose']`);
+    if(!button)return;
+    const expanded=!!state&&!state.collapsed;
+    button.textContent=expanded?'댓글 입력창 닫기':'댓글 입력창 열기';
+    button.setAttribute('aria-expanded',String(expanded));button.setAttribute('aria-controls','dcbpv-composer');
+    if(state)state.form.hidden=!expanded;
+  }
   function cancelPreviewComposer(){
-    if (previewComposer?.submitting) return;
-    suspendPreviewComposer();
-    document.querySelector(`#${OVERLAY_ID} .dcbpv-composer-slot`)?.replaceChildren();
+    if(!previewComposer)return;
+    previewComposer.collapsed=true;syncComposerToggle();
     document.querySelector(`#${OVERLAY_ID} [data-act='compose']`)?.focus();
   }
-
-  function updateComposerStatus(state, text){
-    if (previewComposer !== state) return;
-    state.form.querySelector("[role='status']").textContent = text;
-    state.form.querySelector("[data-act='compose-cancel']").disabled = state.submitting;
-    state.form.querySelector("[data-composer-target]").textContent = state.target ? `댓글 #${state.target}에 답글` : "댓글 작성";
+  function togglePreviewComposer(data){
+    if(!previewComposer)return openPreviewComposer(data,undefined,{focus:true});
+    previewComposer.collapsed=!previewComposer.collapsed;syncComposerToggle();
+    if(!previewComposer.collapsed)previewComposer.frame.contentDocument?.querySelector('#dcbpv-native-editor textarea')?.focus({preventScroll:true});
   }
-
+  function updateComposerStatus(state,text){
+    if(previewComposer!==state)return;
+    clearTimeout(state.statusTimer);
+    state.form.querySelector('[role=status]').textContent=text;
+    const nick=document.querySelector(`#${OVERLAY_ID} [data-dcbpv-native-id='${CSS.escape(state.target||'')}']`)?.dataset.nick;
+    state.form.querySelector('[data-composer-target]').textContent=state.target?`↳ ${nick||`댓글 #${state.target}`}에게 답글`:'댓글 작성';
+    state.form.querySelector('[data-act=compose-reply-cancel]').hidden=!state.target;
+    state.form.querySelector('[data-act=compose-reply-cancel]').disabled=state.submitting;
+  }
   function showPreviewSavedDraft(state){
-    if (!state.draft || state.form.querySelector(".dcbpv-saved-draft")) return;
-    const input = document.createElement("textarea");
-    input.className = "dcbpv-saved-draft";
-    input.readOnly = true;
-    input.rows = 4;
-    input.setAttribute("aria-label", "보존된 댓글 초안");
-    input.value = state.draft;
-    state.frame.hidden = true;
-    state.form.insertBefore(input, state.frame);
+    if(!state.draft||state.form.querySelector('.dcbpv-saved-draft'))return;
+    const input=document.createElement('textarea');input.className='dcbpv-saved-draft';input.readOnly=true;input.rows=4;
+    input.setAttribute('aria-label','보존된 댓글 초안');input.value=state.draft;state.frame.hidden=true;state.form.insertBefore(input,state.frame);
   }
-
+  function applyComposerMetadata(state,result){
+    if(result.targets)state.targets=result.targets;
+    if(result.owned)state.owned=result.owned;
+    if(result.maxLength)state.maxLength=result.maxLength;
+    const overlay=document.getElementById(OVERLAY_ID);
+    for(const entry of result.dates||[]){
+      if(!/^\d+$/.test(entry.id)||!/^\d{4}[-.]/.test(entry.date))continue;
+      const time=overlay?.querySelector(`[data-dcbpv-native-id='${entry.id}'] .dcbpv-time`);
+      if(time){time.dataset.dcbpvFullTime=entry.date;time.textContent=formatPreviewCommentTime(entry.date);time.title=entry.date;}
+    }
+    if(overlay)decoratePreviewReplyActions(overlay);
+  }
   function decoratePreviewReplyActions(overlay){
-    const rows = [...overlay.querySelectorAll(".dcbpv-comment-item")];
-    rows.forEach(row => {
-      row.querySelector("[data-act='compose-reply']")?.remove();
-      const id = row.dataset.dcbpvNativeId;
-      if (!/^[1-9]\d*$/.test(id || "") || row.matches(".deleted,.dory")
-        || rows.filter(other => other.dataset.dcbpvNativeId === id).length !== 1) return;
-      // Provisional action is enabled only after the native document validates it.
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "dcbpv-reply-button";
-      button.dataset.act = "compose-reply";
-      button.dataset.target = id;
-      button.textContent = "답글";
-      button.disabled = !previewComposer?.targets?.some(target => target.id === id);
-      button.title = button.disabled ? "댓글쓰기를 열면 답글 대상을 확인합니다" : "이 댓글에 답글 작성";
-      row.querySelector(".dcbpv-comment-meta")?.appendChild(button);
+    const rows=[...overlay.querySelectorAll('.dcbpv-comment-item')];
+    rows.forEach(row=>{
+      row.querySelectorAll('[data-act=compose-reply],[data-act=compose-delete]').forEach(node=>node.remove());
+      const meta=row.querySelector('.dcbpv-comment-meta');if(!meta)return;
+      let actions=meta.querySelector('.dcbpv-comment-actions');
+      if(!actions){actions=document.createElement('span');actions.className='dcbpv-comment-actions';meta.appendChild(actions);}
+      meta.querySelectorAll(':scope > .dcbpv-time,:scope > span:not(.gall_writer):not(.ub-writer):not(.dcbpv-comment-actions)').forEach(node=>{node.classList.add('dcbpv-time');actions.appendChild(node);});
+      const id=row.dataset.dcbpvNativeId;
+      if(!/^[1-9]\d*$/.test(id||'')||row.matches('.deleted,.dory')||rows.filter(other=>other.dataset.dcbpvNativeId===id).length!==1)return;
+      const reply=document.createElement('button');reply.type='button';reply.className='dcbpv-reply-button';reply.dataset.act='compose-reply';reply.dataset.target=id;reply.textContent='답글';
+      reply.setAttribute('aria-label',`${row.dataset.nick||'이 댓글'}에게 답글`);
+      actions.appendChild(reply);
+      if(previewComposer?.owned?.includes(id)){
+        const remove=document.createElement('button');remove.type='button';remove.className='dcbpv-delete-button';remove.dataset.act='compose-delete';remove.dataset.target=id;remove.textContent='×';remove.title='내 댓글 삭제';remove.setAttribute('aria-label','내 댓글 삭제');remove.disabled=!!previewComposer.submitting;actions.appendChild(remove);
+      }
     });
   }
-
-  async function openPreviewComposer(data, target){
-    const key = previewCacheKey(data.url);
-    target = target ?? (previewComposer?.key === key ? previewComposer.target : previewDrafts.get(key)?.target) ?? "";
-    if (previewComposer?.completed) suspendPreviewComposer();
-    if (previewComposer?.key === key) {
-      if (previewComposer.submitting) return;
-      if (target && !previewComposer.targets?.some(item => item.id === target)) return;
-      if (previewComposer.target === target) {
-        previewComposer.frame.focus();
-        previewComposer.form.scrollIntoView({ block: "nearest" });
-        return;
+  async function openPreviewComposer(data,target,{focus=false}={}){
+    const key=previewCacheKey(data.url);
+    const stateBefore=previewComposer;
+    if(stateBefore?.key===key){
+      const state=stateBefore;
+      if(state.submitting)return;
+      if(target!==undefined&&target!==state.target){
+        if(target&&!state.targets.some(row=>row.id===target)){updateComposerStatus(state,composerMessage({code:'target'}));return;}
+        const result=await sendRuntimeFetchMessage({type:'dcb.previewComment',operation:'select',url:state.url,key:state.token,target,draft:state.drafts[target]||''}).catch(()=>null);
+        if(previewComposer!==state)return;
+        if(!result?.ok){updateComposerStatus(state,composerMessage(result));return;}
+        state.target=target;state.draft=state.drafts[target]||'';applyComposerMetadata(state,result);
       }
+      state.collapsed=false;syncComposerToggle();updateComposerStatus(state,'');
+      if(focus){state.form.scrollIntoView({block:'nearest'});state.frame.contentDocument?.querySelector('#dcbpv-native-editor textarea')?.focus({preventScroll:true});}
+      return;
     }
     suspendPreviewComposer();
-    const saved = previewDrafts.get(key) || {};
-    const state = previewComposer = { key, url: data.url, target, draft: saved.draft || "",
-      uncertain: saved.uncertain, ready: false, submitting: false, targets: [], token: crypto.randomUUID() };
-    const form = state.form = document.createElement("div");
-    form.className = "dcbpv-composer";
-    form.innerHTML = `<strong data-composer-target>댓글 작성</strong>
-      <div class="dcbpv-compose-actions"><span data-composer-count></span>
-      <button class="dcbpv-btn" type="button" data-act="compose-cancel">취소</button>
-      <a target="_blank" rel="noopener noreferrer">원문에서 댓글 작성</a></div>
-      <p role="status" aria-live="polite"></p>`;
-    form.querySelector("a").href = `${data.url.split("#")[0]}#focus_cmt`;
-    const overlay = document.getElementById(OVERLAY_ID);
-    overlay.querySelector(".dcbpv-composer-slot").replaceChildren(form);
-    form.scrollIntoView({ block: "nearest" });
-    updateComposerStatus(state, "작성 폼을 확인하는 중…");
-    const frame = state.frame = document.createElement("iframe");
-    frame.dataset.dcbpvComposeFrame = state.token;
-    frame.title = "DCinside 댓글 작성 및 인증";
-    frame.setAttribute("sandbox", "allow-scripts allow-same-origin");
-    frame.style.visibility = "hidden";
-    const loaded = new Promise(resolve => {
-      const timer = setTimeout(() => resolve(false), 12000);
-      frame.addEventListener("load", () => { clearTimeout(timer); resolve(true); }, { once: true });
-    });
-    frame.src = data.url.split("#")[0];
-    form.insertBefore(frame, form.querySelector(".dcbpv-compose-actions"));
-    try {
-      if (!await loaded || previewComposer !== state) return;
-      if (state.uncertain) { showPreviewSavedDraft(state); updateComposerStatus(state, composerMessage({ code: "uncertain" })); return; }
-      const result = await sendRuntimeFetchMessage({ type: "dcb.previewComment", operation: "prepare", url: state.url, key: state.token, draft: state.draft, target: state.target });
-      if (previewComposer !== state) return;
-      if (!result?.ok) { showPreviewSavedDraft(state); updateComposerStatus(state, composerMessage(result)); return; }
-      state.ready = !result.captcha;
-      state.targets = result.targets || [];
-      state.maxLength = result.maxLength;
-      if (!result.captcha) {
-        frame.style.visibility = "visible";
-        frame.contentDocument?.querySelector("#dcbpv-native-editor textarea")?.focus({ preventScroll: true });
-      }
-      decoratePreviewReplyActions(overlay);
-      updateComposerStatus(state, state.uncertain ? composerMessage({ code: "uncertain" })
-        : result.captcha ? composerMessage({ code: "authentication" }) : result.auth ? "입력창의 인증을 완료한 뒤 등록해 주세요." : "");
-    } catch (_) { updateComposerStatus(state, composerMessage(null)); }
-    finally { if (previewComposer === state && !state.ready) updateComposerStatus(state, form.querySelector("[role='status']").textContent === "작성 폼을 확인하는 중…" ? composerMessage(null) : form.querySelector("[role='status']").textContent); }
+    const saved=previewDrafts.get(key)||{};
+    const state=previewComposer={key,url:data.url,target:target??saved.target??'',draft:saved.draft||'',drafts:{...(saved.drafts||{})},uncertain:saved.uncertain,
+      ready:false,submitting:false,targets:[],owned:[],collapsed:false,token:crypto.randomUUID()};
+    const form=state.form=document.createElement('div');form.className='dcbpv-composer';form.id='dcbpv-composer';
+    form.innerHTML=`<div class="dcbpv-compose-heading"><strong data-composer-target>댓글 작성</strong><button class="dcbpv-btn" type="button" data-act="compose-reply-cancel" hidden>답글 취소</button></div>
+      <div class="dcbpv-compose-actions"><span data-composer-count></span><button class="dcbpv-btn" type="button" data-act="compose-cancel">접기</button><a target="_blank" rel="noopener noreferrer">원문에서 댓글 작성</a></div><p role="status" aria-live="polite"></p>`;
+    form.querySelector('a').href=`${data.url.split('#')[0]}#focus_cmt`;
+    document.querySelector(`#${OVERLAY_ID} .dcbpv-composer-slot`)?.replaceChildren(form);
+    syncComposerToggle();updateComposerStatus(state,'작성 폼을 확인하는 중…');
+    const frame=state.frame=document.createElement('iframe');frame.dataset.dcbpvComposeFrame=state.token;frame.title='DCinside 댓글 작성 및 인증';
+    frame.setAttribute('sandbox','allow-scripts allow-same-origin');frame.setAttribute('scrolling','no');frame.style.visibility='hidden';
+    const loaded=new Promise(resolve=>{const timer=setTimeout(()=>resolve(false),12000);frame.addEventListener('load',()=>{clearTimeout(timer);resolve(true);},{once:true});});
+    frame.src=data.url.split('#')[0];form.insertBefore(frame,form.querySelector('.dcbpv-compose-actions'));
+    try{
+      if(!await loaded||previewComposer!==state)return;
+      if(state.uncertain){showPreviewSavedDraft(state);updateComposerStatus(state,composerMessage({code:'uncertain'}));return;}
+      const result=await sendRuntimeFetchMessage({type:'dcb.previewComment',operation:'prepare',url:state.url,key:state.token,target:state.target,draft:state.draft});
+      if(previewComposer!==state)return;
+      if(!result?.ok){showPreviewSavedDraft(state);updateComposerStatus(state,composerMessage(result));return;}
+      state.ready=true;applyComposerMetadata(state,result);frame.style.visibility='visible';updateComposerStatus(state,'');
+      if(focus){form.scrollIntoView({block:'nearest'});frame.contentDocument?.querySelector('#dcbpv-native-editor textarea')?.focus({preventScroll:true});}
+    }catch(_){updateComposerStatus(state,composerMessage(null));}
+    finally{if(previewComposer===state&&!state.ready&&form.querySelector('[role=status]').textContent==='작성 폼을 확인하는 중…')updateComposerStatus(state,composerMessage(null));}
   }
-
-  window.addEventListener("message", event => {
-    const state = previewComposer;
-    const payload = event.data;
-    if (!state || event.source !== window || event.origin !== location.origin
-      || payload?.type !== "dcb.previewComment.event" || payload.key !== state.token) return;
-    const form = state.form;
-    if (payload.kind === "escape") { closePreview(); return; }
-    if (payload.kind === "draft") {
-      state.draft = String(payload.draft || "").slice(0, 10000);
-      form.querySelector("[data-composer-count]").textContent = `${state.draft.length}${state.maxLength ? ` / ${state.maxLength}` : ""}자`;
-      savePreviewDraft(state);
-      return;
+  async function openPreviewDelete(target){
+    const state=previewComposer;if(!state||state.submitting||!state.owned.includes(target))return;
+    state.collapsed=false;syncComposerToggle();
+    const result=await sendRuntimeFetchMessage({type:'dcb.previewComment',operation:'delete',url:state.url,key:state.token,target}).catch(()=>null);
+    if(previewComposer!==state)return;
+    if(!result?.ok)updateComposerStatus(state,composerMessage(result));
+    else{state.form.scrollIntoView({block:'nearest'});state.frame.contentDocument?.querySelector('[data-dcbpv-delete-confirm]')?.focus({preventScroll:true});}
+  }
+  window.addEventListener('message',event=>{
+    const state=previewComposer,payload=event.data;
+    if(!state||event.source!==window||event.origin!==location.origin||payload?.type!=='dcb.previewComment.event'||payload.key!==state.token)return;
+    if(payload.kind==='escape'){closePreview();return;}
+    if(payload.kind==='size'){if(Number.isFinite(payload.height)&&payload.height>=100&&payload.height<2000)state.frame.style.height=`${payload.height}px`;return;}
+    if(payload.kind==='auth'){updateComposerStatus(state,String(payload.message||''));return;}
+    if(payload.kind==='metadata'){if(payload.metadata?.ok)applyComposerMetadata(state,payload.metadata);return;}
+    if(payload.kind==='draft'){
+      state.target=String(payload.target||'');state.draft=String(payload.draft||'').slice(0,10000);savePreviewDraft(state);
+      state.form.querySelector('[data-composer-count]').textContent=`${state.draft.length}${state.maxLength?` / ${state.maxLength}`:''}자`;return;
     }
-    if (payload.kind === "submitting") {
-      state.submitting = true;
-      savePreviewDraft(state);
-      updateComposerStatus(state, "전송 중…");
-      return;
+    if(payload.kind==='submitting'){state.submitting=true;savePreviewDraft(state);updateComposerStatus(state,payload.operation==='delete'?'삭제 중…':'전송 중…');return;}
+    if(payload.kind!=='result')return;
+    const result=payload.result;state.submitting=false;
+    if(result?.ok||result?.code==='uncertain')cache.delete(state.key);
+    applyComposerMetadata(state,result||{});
+    if(!result?.ok){if(result.operation!=='delete')state.uncertain=result?.code==='uncertain';savePreviewDraft(state);updateComposerStatus(state,composerMessage(result));return;}
+    if(result.operation!=='delete'){state.drafts[state.target]='';state.draft='';state.target='';previewDrafts.delete(state.key);}
+    const data=currentPreviewData;
+    if(data&&previewCacheKey(data.url)===state.key&&Array.isArray(result.comments)&&Number.isFinite(result.total)){
+      previewRequestVersion+=1;activeAbort?.abort();data.commentsHTML=commentRecordsToHtml(result.comments,data.url);data.commentTitle=`댓글 ${result.total}개`;data.commentError='';updatePreviewComments(data);
     }
-    if (payload.kind !== "result") return;
-    const result = payload.result;
-    state.submitting = false;
-    if (result?.ok || result?.code === "uncertain") cache.delete(state.key);
-    if (result?.ok) previewDrafts.delete(state.key);
-    if (!result?.ok) {
-      state.uncertain = result?.code === "uncertain";
-      savePreviewDraft(state);
-      updateComposerStatus(state, composerMessage(result));
-      return;
-    }
-    state.draft = "";
-    state.completed = true;
-    form.querySelector("[data-composer-count]").textContent = `0 / ${state.maxLength}자`;
-    state.target = "";
-    state.frame.hidden = true;
-    const data = currentPreviewData;
-    if (data && previewCacheKey(data.url) === state.key) {
-      // Discard any pre-submission read response still in flight.
-      previewRequestVersion += 1;
-      activeAbort?.abort();
-      data.commentsHTML = commentRecordsToHtml(result.comments, data.url);
-      data.commentTitle = `댓글 ${result.total}개`;
-      data.commentError = "";
-      updatePreviewComments(data);
-      document.querySelector(`#${OVERLAY_ID} [data-dcbpv-native-id='${CSS.escape(result.addedId)}']`)?.scrollIntoView({ block: "nearest" });
-    }
-    updateComposerStatus(state, "등록된 댓글을 확인했습니다.");
+    updateComposerStatus(state,result.refreshFailed?composerMessage(result):result.operation==='delete'?'댓글을 삭제했습니다.':'등록된 댓글을 확인했습니다.');
+    if(!result.refreshFailed)state.statusTimer=setTimeout(()=>{if(previewComposer===state)updateComposerStatus(state,'');},3500);
   });
+
 
   function updatePreviewComments(data){
     const overlay = document.getElementById(OVERLAY_ID);
@@ -4828,7 +4832,7 @@ syncSettings(handleUrl);
               <h3 class="dcbpv-section-title dcbpv-comments-title">${escapeText(data.commentTitle || "댓글")}</h3>
               <span class="dcbpv-thread-count"></span>
               <div class="dcbpv-comments-actions">
-                <button type="button" data-act="compose">댓글쓰기</button>
+                <button type="button" data-act="compose" aria-expanded="true" aria-controls="dcbpv-composer">댓글 입력창 닫기</button>
                 <button type="button" data-act="reload">새로고침</button>
               </div>
             </div>
@@ -4856,6 +4860,8 @@ syncSettings(handleUrl);
     emitPreviewContent(overlay);
     addPreviewPhase("renderMs", renderStartedAt, trace);
     markRenderedPreviewRead(data, overlay);
+    if(!composer)void openPreviewComposer(data);
+    else syncComposerToggle();
   }
 
   function showShare(data){
@@ -4959,6 +4965,7 @@ syncSettings(handleUrl);
   async function openPreview(url, options = {}){
     if (!url || !previewEnabled) return;
     const requestKey = previewCacheKey(url);
+    if(previewComposer && previewComposer.key!==requestKey)suspendPreviewComposer();
     const cached = !options.force ? readPreviewCache(url) : null;
     // Older cache entries can contain a valid article body while losing the
     // dynamically-created YouTube iframe. Refresh only those entries so a
