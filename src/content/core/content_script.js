@@ -691,6 +691,7 @@ syncSettings(handleUrl);
       #${OVERLAY_ID} .dcbpv-vote-reaction:disabled{opacity:.5;cursor:default}
       #${OVERLAY_ID} .dcbpv-panel{position:relative}
       #${OVERLAY_ID} .dcbpv-composer.dcbpv-docked{position:absolute;z-index:5;left:16px;right:16px;bottom:var(--dcbpv-dock-bottom,70px);max-height:min(48dvh,480px);overflow:auto;margin:0;box-shadow:0 -6px 24px #0f172a26}
+      #${OVERLAY_ID} .dcbpv-scroll:has(.dcbpv-docked){overflow-anchor:none}
       #${OVERLAY_ID} [data-dcbpv-reply-active]{outline:2px solid #7aa2ef;outline-offset:-2px;border-radius:6px}
       #${OVERLAY_ID} button.dcbpv-vote-reaction{min-width:106px;min-height:44px;border-radius:24px;display:inline-flex;align-items:center;justify-content:center;gap:6px;transition:transform .16s,background .16s,border-color .16s}
       #${OVERLAY_ID} [data-act=vote-up]{color:#245bd1;background:#eef4ff;border-color:#aac5fc}
@@ -3984,7 +3985,7 @@ syncSettings(handleUrl);
       // author identity during filtering.
       nick: node?.getAttribute?.("data-nick") || meta.nick || "",
       uid: previewUidToken(node?.getAttribute?.("data-uid") || meta.uid || ""),
-      ip: previewIpPrefix(node?.getAttribute?.("data-ip") || meta.ip || "", { allowDateLike: true })
+      ip: previewIpPrefix(readPreviewWriterIp(node) || meta.ip || "", { allowDateLike: true })
     };
   }
 
@@ -4711,6 +4712,7 @@ syncSettings(handleUrl);
     input.setAttribute('aria-label','보존된 댓글 초안');input.value=state.draft;state.frame.hidden=true;state.form.insertBefore(input,state.frame);
   }
   function applyComposerMetadata(state,result){
+    if(typeof result.inlineCounter==='boolean')state.form.querySelector('[data-composer-count]').hidden=result.inlineCounter;
     if(result.targets)state.targets=result.targets;
     if(result.owned)state.owned=result.owned;
     if(result.maxLength)state.maxLength=result.maxLength;
@@ -4748,6 +4750,7 @@ syncSettings(handleUrl);
     if(stateBefore?.key===key){
       const state=stateBefore;
       if(state.submitting)return;
+      const readingScroll=state.form.closest('.dcbpv-scroll'),readingTop=readingScroll?.scrollTop;
       if(target!==undefined&&target!==state.target){
         if(target&&!state.targets.some(row=>row.id===target)){updateComposerStatus(state,composerMessage({code:'target'}));return;}
         const result=await sendRuntimeFetchMessage({type:'dcb.previewComment',operation:'select',url:state.url,key:state.token,target,draft:state.drafts[target]||''}).catch(()=>null);
@@ -4757,6 +4760,9 @@ syncSettings(handleUrl);
       }
       state.collapsed=false;syncComposerToggle();updateComposerStatus(state,'');
       if(focus)state.frame.contentDocument?.querySelector('#dcbpv-native-editor textarea')?.focus({preventScroll:true});
+      if(target!==undefined&&readingScroll){
+        readingScroll.scrollTop=readingTop;
+      }
       return;
     }
     suspendPreviewComposer();

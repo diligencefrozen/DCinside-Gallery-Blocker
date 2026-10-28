@@ -64,7 +64,13 @@ async function previewCommentInPage(request) {
   const hasChallenge = !!win._TS_CMT_?.mode;
   const challengeReady = () => !hasChallenge || !!win.ts_pass_left?.()
     || !!(win.turnstile && win.ts_cmt?.id != null && win.turnstile.getResponse(win.ts_cmt.id));
-  const notify = (kind, detail = {}) => window.postMessage({ type: 'dcb.previewComment.event', key: request.key, kind, ...detail }, location.origin);
+  const notify = (kind, detail = {}) => {
+    const status=doc.getElementById('dcbpv-inline-status');
+    if(status&&kind==='auth')status.textContent=detail.message||'';
+    if(status&&kind==='submitting')status.textContent='전송 중…';
+    if(status&&kind==='result')status.textContent=detail.result?.ok?'완료':'';
+    window.postMessage({ type: 'dcb.previewComment.event', key: request.key, kind, ...detail }, location.origin);
+  };
   if (request.operation === 'select' || request.operation === 'delete') {
     if (!frame.__dcbpvEditor) return fail('unavailable');
     return request.operation === 'select' ? frame.__dcbpvEditor.select(request.target, request.draft)
@@ -143,6 +149,14 @@ async function previewCommentInPage(request) {
     // (DCCon, vote+submit) are hidden; native security listeners stay attached.
     box.querySelectorAll('.repley_add_vote,.btn_dccon_guide').forEach(node => node.style.setProperty('display', 'none', 'important'));
     button.textContent='➤ 댓글 등록';button.setAttribute('aria-label','댓글 등록');
+    const tools=box.querySelector('.dccon_guidebox');
+    let toolbar=box.querySelector('.cmt_cont_bottm');
+    if(!toolbar){toolbar=doc.createElement('div');toolbar.className='cmt_cont_bottm';(box.querySelector('.cmt_txt_cont')||box).append(toolbar);}
+    if(tools)toolbar.append(tools);
+    toolbar.append(button); // Same-document moves retain native security listeners.
+    const counter=doc.createElement('small');counter.textContent=`${input.value.length} / ${maxLength}자`;
+    const inlineStatus=doc.createElement('span');inlineStatus.id='dcbpv-inline-status';inlineStatus.setAttribute('aria-live','polite');
+    if(tools){tools.append(counter,inlineStatus);counter.style.margin='0 8px';}
     const selection=doc.createElement('div');selection.id='dcbpv-selection';selection.hidden=true;surface.append(selection);
     const selectedLabel=doc.createElement('span'),clearSelection=doc.createElement('button');clearSelection.type='button';clearSelection.textContent='선택 취소';selection.append(selectedLabel,clearSelection);
     const showSelection=()=>{const media=session.mediaDrafts.get(session.target);selection.hidden=!media;selectedLabel.textContent=media?.kind==='dccon'?`디시콘 ${media.details.length}개 선택`:media?`글자콘: ${media.text}`:'';};
@@ -167,7 +181,7 @@ async function previewCommentInPage(request) {
       }
       showSelection();resize();button.focus({preventScroll:true});
     },true);
-    const sendDraft = () => { session.drafts.set(session.target, input.value); notify('draft', { draft: input.value, target: session.target }); };
+    const sendDraft = () => { counter.textContent=`${input.value.length} / ${maxLength}자`;session.drafts.set(session.target, input.value); notify('draft', { draft: input.value, target: session.target }); };
     input.addEventListener('input', sendDraft);
     box.addEventListener('keydown', event => {
       if (event.key === 'Enter') event.stopPropagation();
@@ -212,7 +226,7 @@ async function previewCommentInPage(request) {
     win.addEventListener('resize', resize);
     const nativeOwned = () => value('member_division') === 'Y' ? [...doc.querySelectorAll('.cmt_mdf_del[data-my="Y"][re_no]')]
       .filter(node => node.querySelector('.btn_cmt_delete')).map(node => node.getAttribute('re_no')) : [];
-    session.metadata = () => ({ ok: true, maxLength, member: value('member_division') === 'Y', targets: session.targets,
+    session.metadata = () => ({ ok: true, maxLength, inlineCounter:!!tools, member: value('member_division') === 'Y', targets: session.targets,
       owned: [...new Set([...nativeOwned(), ...session.owned.keys(), ...(session.records || []).filter(row => value('member_division') === 'Y' && row.my_cmt === 'Y' && row.del_btn === 'Y').map(row => String(row.no))])].filter(id=>!session.deleted.has(id)),
       dates: session.records ? session.records.map(row => ({id:String(row.no),date:String(row.reg_date || '')}))
         : [...doc.querySelectorAll('.cmt_info[data-no],.reply_info[data-no]')].map(row=>{const time=row.querySelector('.date_time');return {id:row.dataset.no,date:time?.getAttribute('title')||time?.textContent||''};}) });
@@ -316,6 +330,7 @@ async function previewCommentInPage(request) {
       if(!event.isTrusted || button.disabled || session.busy || session.uncertain) return;
       sendDraft();
       const media=session.mediaDrafts.get(session.target);
+      if(media?.kind==='dccon'&&media.double&&media.details.length!==2){notify('auth',{message:'더블콘은 디시콘 2개를 선택해 주세요.'});return;}
       if(!media&&(nativeRejected || !doc.service_code)){notify('result',{result:fail('authentication')});return;}
       session.busy=true; button.disabled=true; input.readOnly=true; notify('submitting');
       const submittedPassword=password?.value||'';
