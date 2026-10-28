@@ -1,0 +1,27 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),{chromium}=require('playwright');
+const read=p=>fs.readFileSync(p,'utf8');
+const writer='<div class="gall_writer ub-writer" data-nick="ㅇㅇ" data-uid="" data-ip="" data-loc="view"><div class="fl"><span><span class="nickname"><em>ㅇㅇ</em></span><span class="gall_date" title="2026-10-25 21:09:42">2026.10.25 21:09:42</span></span></div></div>';
+(async()=>{const b=await chromium.launch({headless:true});try{const p=await b.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.message));
+await p.route('**/*',r=>r.fulfill({contentType:'text/html',body:`<html><body><table class="gall_list"><tbody><tr class="ub-content" data-no="1" id="list"><td class="gall_writer"><em>10.28</em><span class="ip">06.28</span></td></tr></tbody></table><div class="view_content_wrap" id="article"><div class="gallview_head">${writer}</div><div class="write_div">본문</div><ul class="cmt_list"><li id="parent"><span class="gall_writer"><em>익명</em><span class="ip">10.28 13:54</span></span><ul class="reply_list"><li id="reply"><span class="gall_writer" data-ip="8.8.8.8">해외</span></li></ul></li></ul></div></body></html>`}));
+await p.goto('https://gall.dcinside.com/mini/board/view/?id=nobirthgall&no=18059');
+await p.evaluate(()=>{window.listeners=[];window.settings={hideForeignIpEnabled:true,hideAnonymousEnabled:false,showMemberIpInfo:true,userBlockEnabled:false,noticeBlockEnabled:false};window.chrome={runtime:{lastError:null,sendMessage:(m,f)=>f?.({ok:false})},storage:{local:{get:async defaults=>Object.fromEntries(Object.keys(defaults).map(k=>[k,{version:1,data:{sync:window.settings,tokens:[]}}]))},sync:{get:(d,f)=>f?.({...d,...window.settings})},onChanged:{addListener:f=>listeners.push(f)}}};window.DCBRuntimeSettingsCache={get:(d,f)=>f({...d,...window.settings}),onChanged:chrome.storage.onChanged};window.previewEnabled=true;window.PREVIEW_COMMENT_DEBUG=false;});
+for(const file of ['src/shared/ip-network-fast-classifier.js','src/shared/ip-network-classifier.js','src/content/core/critical-filter-bootstrap.js','src/content/cleaner/cleaner-foreign-ip.js','src/content/user/member-ip-view.js'])await p.addScriptTag({content:read(file)});
+const content=read('src/content/core/content_script.js');await p.addScriptTag({content:content.slice(content.indexOf('(function dcBlockPostPreview(){')).replace(/\}\)\(\);\s*$/,'window.miniTest={previewWriterMeta,renderPreview,closePreview};})();')});
+await p.waitForTimeout(100);
+assert.deepEqual(await p.evaluate(()=>['article','parent','list','reply'].map(id=>getComputedStyle(document.getElementById(id)).display==='none')),[false,false,false,true]);
+assert.equal(await p.locator('.dc-member-ip-chip[data-tone=foreign]').count(),0,'no foreign badge on anonymous/date-only writers');
+const cases=await p.evaluate(()=>{
+ const classifiers=[DCBFastIpNetworkClassifier,DCBIpNetworkClassifier];const results=[];
+ for(const html of ['<em>10.28</em>','<span class="ip">10.28</span>','<span class="ip">2026.10.28</span>','<span class="ip">10.28 13:54</span>','<span class="gall_writer" data-ip="8.8.8.8">other</span>','<span class="ip">118.235</span>']){const w=document.createElement('span');w.className='gall_writer';w.innerHTML=html;results.push([...classifiers.map(c=>c.readWriterIp(w)),miniTest.previewWriterMeta(w).ip]);}
+ return results;
+});assert.deepEqual(cases,[['','',''],['','',''],['','',''],['','',''],['','',''],['118.235','118.235','118.235']]);
+for(const foreign of [false,true])for(const anonymous of [false,true]){
+ await p.evaluate(({foreign,anonymous})=>{settings.hideForeignIpEnabled=foreign;settings.hideAnonymousEnabled=anonymous;for(const f of listeners)f({hideForeignIpEnabled:{newValue:foreign},hideAnonymousEnabled:{newValue:anonymous}},'sync');const url=location.href;miniTest.renderPreview({url,title:'익명',articleHTML:'<p id="preserved-body">본문 유지</p>',writerHTML:document.querySelector('.gallview_head').innerHTML,counts:{up:'0',down:'0'},commentsHTML:'',commentTitle:'댓글'});},{foreign,anonymous});
+ await p.waitForTimeout(120);assert.equal(await p.locator('#preserved-body').count(),1);assert.notEqual(await p.locator('#article').evaluate(e=>getComputedStyle(e).display),'none');await p.evaluate(()=>miniTest.closePreview());
+}
+await p.evaluate(()=>{document.querySelector('#reply .gall_writer').removeAttribute('data-ip');});await p.waitForTimeout(60);assert.notEqual(await p.locator('#reply').evaluate(e=>getComputedStyle(e).display),'none');
+await p.evaluate(()=>document.querySelector('.gallview_head .gall_writer').setAttribute('data-ip','8.8.8.8'));await p.waitForTimeout(60);assert.equal(await p.locator('#article').evaluate(e=>getComputedStyle(e).display),'none');
+await p.evaluate(()=>{settings.hideForeignIpEnabled=false;listeners.forEach(f=>f({hideForeignIpEnabled:{newValue:false}},'sync'));});await p.waitForTimeout(60);assert.notEqual(await p.locator('#article').evaluate(e=>getComputedStyle(e).display),'none');
+for(const classifier of ['DCBFastIpNetworkClassifier','DCBIpNetworkClassifier'])assert.deepEqual(await p.evaluate(name=>['','2026.10.28','bad 8.8.8.8','999.1.1.1'].map(v=>window[name].classify(v).category),classifier),['unknown','unknown','unknown','unknown']);
+assert.deepEqual(errors,[]);console.log('Anonymous mini IP: writer/date provenance, nested replies, preview settings matrix and restoration passed.');
+}finally{await b.close();}})().catch(e=>{console.error(e);process.exitCode=1});

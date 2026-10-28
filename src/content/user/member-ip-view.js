@@ -39,12 +39,9 @@
 
   function shouldSkipIpElement(ipEl) {
     if (!(ipEl instanceof Element)) return true;
-    if (!isDateLikeIpToken(ipEl.textContent || "")) return false;
-
-    // DCInside uses class="ip" both for anonymous IP fragments and for date text
-    // such as (06.28). Only allow date-shaped tokens when they are inside
-    // an actual writer/IP context; otherwise they are timestamps, not IPs.
-    return !isWriterIpContext(ipEl);
+    const writer=ipEl.closest('.gall_writer,.ub-writer,.writer_info,.user_info,.cmt_nickbox');
+    const evidence=classifier.readWriterIp(writer);
+    return !evidence || normalizeIpText(evidence)!==normalizeIpText(ipEl.textContent);
   }
   function ensureBadgeStyle() {
     let style = document.getElementById(STYLE_ID);
@@ -139,7 +136,7 @@
   function attachMemberIpBadge(ipEl) {
     if (!(ipEl instanceof Element)) return;
     if (ipEl.closest?.(`.${BADGE_CLASS}`)) return;
-    if (shouldSkipIpElement(ipEl)) return;
+    if (shouldSkipIpElement(ipEl)) {getExistingBadge(ipEl)?.remove();return;}
 
     const ip = normalizeIpText(ipEl.textContent || "");
     if (!ip) return;
@@ -163,8 +160,8 @@
   function attachMemberIpBadgeFromWriter(writer) {
     if (!(writer instanceof Element)) return;
 
-    const ip = normalizeIpText(writer.getAttribute("data-ip") || writer.getAttribute("data-memo-ip") || "");
-    if (!ip) return;
+    const ip = normalizeIpText(classifier.readWriterIp(writer));
+    if (!ip) {writer.querySelectorAll(`.${BADGE_CLASS}`).forEach(node=>node.remove());return;}
     const existing = writer.querySelector?.(`.${BADGE_CLASS}`);
     if (existing) {
       if (existing.hasAttribute("data-dcb-fast-badge") || existing.dataset.ip !== ip) applyMemberIpBadgeInfo(existing, ip);

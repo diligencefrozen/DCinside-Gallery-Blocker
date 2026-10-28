@@ -154,7 +154,8 @@
       const ref = [gallog?.getAttribute?.("href"), gallog?.getAttribute?.("onclick")].filter(Boolean).join(" ");
       uid = normalizeUid(ref.match(/gallog\.dcinside\.com\/?([A-Za-z0-9._-]{2,64})/i)?.[1]);
     }
-    const ip = normalizeIp([attr(writer, "data-ip"), attr(writer, "data-memo-ip"), writer.textContent].join(" "));
+    const ip = normalizeIp(globalThis.DCBFastIpNetworkClassifier?.readWriterIp(writer)
+      ?? (writer.getAttribute('data-ip') || writer.getAttribute('data-memo-ip') || ''));
     const nickNode = writer.matches?.(".nickname,.nick_name,.user_nick")
       ? writer : writer.querySelector?.(".nickname,.nick_name,.user_nick");
     const nick = normalizeNick(attr(writer, "data-nick") || nickNode?.title || nickNode?.textContent).toLowerCase();
@@ -186,7 +187,7 @@
     if (state.sync.hideForeignIpEnabled !== true) return false;
     const classifier = globalThis.DCBFastIpNetworkClassifier;
     if (!classifier) return false;
-    const rawIp = tokens?.ip || [attr(writer, "data-ip"), attr(writer, "data-memo-ip")].filter(Boolean).join(" ");
+    const rawIp = tokens?.ip ?? classifier.readWriterIp(writer);
     const category = classifier.classify(rawIp).category;
     return category === "foreign" || category === "anonymizer" || category === "relay";
   }
@@ -379,15 +380,16 @@
       || state.sync.hideForeignIpEnabled || (state.sync.showMemberIpInfo && !state.memberIpViewReady))) return;
     observer = new MutationObserver((records) => {
       for (const record of records) {
-        for (const node of record.addedNodes) processRoot(node);
-        if (record.type === "attributes") {
-          const row = record.target.closest?.(ROW_SELECTOR);
+        for (const node of record.addedNodes || []) processRoot(node);
+        {
+          const row = (record.target.nodeType===1 ? record.target : record.target.parentElement)?.closest?.(ROW_SELECTOR);
           if (row) processRow(row);
         }
       }
     });
     observer.observe(document.documentElement, {
       childList: true,
+      characterData: true,
       subtree: true,
       attributes: true,
       attributeFilter: ["data-uid", "data-full-uid", "data-ip", "data-nick", "data-memo-uid", "data-memo-ip", "title", "href"]

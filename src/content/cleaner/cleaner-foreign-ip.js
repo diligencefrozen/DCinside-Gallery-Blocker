@@ -55,7 +55,7 @@
   }
 
   function isBlockedWriter(writer) {
-    return BLOCKED_CATEGORIES.has(classifier.classify(readIp(writer)).category);
+    return BLOCKED_CATEGORIES.has(classifier.classify(classifier.readWriterIp(writer)).category);
   }
 
   function criticalFilterOwnsListRows() {
@@ -105,7 +105,7 @@
     const writers = target.matches?.(WRITER_SELECTOR)
       ? [target, ...(target.querySelectorAll?.(WRITER_SELECTOR) || [])]
       : [...(target.querySelectorAll?.(WRITER_SELECTOR) || [])];
-    setTargetHidden(target, writers.some(isBlockedWriter));
+    setTargetHidden(target, writers.some(writer => findTarget(writer) === target && isBlockedWriter(writer)));
   }
 
   function collectTargetsFromRoot(root, targets) {
@@ -182,7 +182,7 @@
 
         // Re-evaluate the container after removals (for example, when the only
         // foreign writer node disappears from an existing comment/row).
-        const parentTarget = findContainingTarget(record.target);
+        const parentTarget = findContainingTarget(record.target.nodeType===Node.ELEMENT_NODE ? record.target : record.target.parentElement);
         if (parentTarget) targets.add(parentTarget);
 
         for (const node of record.addedNodes) {
@@ -193,6 +193,7 @@
     });
     observer.observe(document.documentElement || document, {
       childList: true,
+      characterData: true,
       subtree: true,
       attributes: true,
       // Deliberately exclude "class": class mutations are extremely frequent

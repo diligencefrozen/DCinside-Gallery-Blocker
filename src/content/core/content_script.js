@@ -689,6 +689,19 @@ syncSettings(handleUrl);
       #${OVERLAY_ID} .dcbpv-vote-reaction:first-child{color:#405c9c}
       #${OVERLAY_ID} button.dcbpv-vote-reaction{border:1px solid #dbe2ec;border-radius:8px;padding:7px 10px;background:transparent;color:inherit;font:inherit;cursor:pointer}
       #${OVERLAY_ID} .dcbpv-vote-reaction:disabled{opacity:.5;cursor:default}
+      #${OVERLAY_ID} .dcbpv-panel{position:relative}
+      #${OVERLAY_ID} .dcbpv-composer.dcbpv-docked{position:absolute;z-index:5;left:16px;right:16px;bottom:var(--dcbpv-dock-bottom,70px);max-height:min(48dvh,480px);overflow:auto;margin:0;box-shadow:0 -6px 24px #0f172a26}
+      #${OVERLAY_ID} [data-dcbpv-reply-active]{outline:2px solid #7aa2ef;outline-offset:-2px;border-radius:6px}
+      #${OVERLAY_ID} button.dcbpv-vote-reaction{min-width:106px;min-height:44px;border-radius:24px;display:inline-flex;align-items:center;justify-content:center;gap:6px;transition:transform .16s,background .16s,border-color .16s}
+      #${OVERLAY_ID} [data-act=vote-up]{color:#245bd1;background:#eef4ff;border-color:#aac5fc}
+      #${OVERLAY_ID} [data-act=vote-down]{color:#bf3549;background:#fff1f3;border-color:#f3b4bf}
+      #${OVERLAY_ID} .dcbpv-vote-reaction svg{width:20px;height:20px;fill:currentColor}
+      #${OVERLAY_ID} .dcbpv-vote-reaction:not(:disabled):hover{transform:translateY(-2px)}
+      #${OVERLAY_ID} .dcbpv-vote-reaction:not(:disabled):active{transform:translateY(1px) scale(.98)}
+      #${OVERLAY_ID} .dcbpv-vote-reaction.dcbpv-confirmed{animation:dcbpv-recommend-confirm .18s ease-out}
+      @keyframes dcbpv-recommend-confirm{50%{transform:scale(1.06)}}
+      @media(prefers-reduced-motion:reduce){#${OVERLAY_ID} .dcbpv-vote-reaction{transition:none!important;animation:none!important;transform:none!important}}
+      @media(prefers-color-scheme:dark){#${OVERLAY_ID} [data-act=vote-up]{background:#172d51;color:#b5d1ff}#${OVERLAY_ID} [data-act=vote-down]{background:#471e2a;color:#ffc0cb}}
       #${OVERLAY_ID} .dcbpv-vote{flex-wrap:wrap;gap:12px}
       #${OVERLAY_ID} .dcbpv-recommend-status{flex-basis:100%;font-size:13px;overflow-wrap:anywhere}
       #${OVERLAY_ID} .dcbpv-recommend-status:empty{display:none}
@@ -2082,6 +2095,31 @@ syncSettings(handleUrl);
     return candidates.find((candidate) => candidate.closest?.(previewCommentUnitSelector) === node) || candidates[0];
   }
 
+// Only writer-owned evidence; ambiguous date-like .ip text fails open.
+  function readPreviewWriterIp(writer) {
+    if (!writer?.getAttribute) return "";
+    const owner = ".gall_writer,.ub-writer,.writer_info,.user_info,.cmt_nickbox,[data-dcbpv-comment]";
+    const valid = raw => {
+      const value = String(raw || "").trim().replace(/^\((.*)\)$/, "$1");
+      return /^\d{1,3}(?:\.\d{1,3}){1,3}$/.test(value)
+        && value.split(".").every(n => Number(n) <= 255) ? value : "";
+    };
+    for (const name of ["data-ip","data-memo-ip"]) {
+      const value = valid(writer.getAttribute(name));
+      if (value) return value;
+    }
+    for (const node of writer.querySelectorAll(".ip,.writer_ip,[data-ip],[data-memo-ip]")) {
+      if (node.closest(owner) !== writer || node.closest("time,.date,.gall_date,.dcbpv-time")) continue;
+      const explicit = valid(node.getAttribute("data-ip") || node.getAttribute("data-memo-ip"));
+      if (explicit) return explicit;
+      const value = valid(node.textContent);
+      if (!value) continue;
+      if (!node.matches(".writer_ip") && /^(?:\d{2,4}\.)?\d{1,2}\.\d{1,2}$/.test(value)) continue;
+      return value;
+    }
+    return "";
+  }
+
   function previewWriterMeta(node){
     if (!node) return { nick: "", uid: "", ip: "" };
     const writer = previewOwnWriter(node);
@@ -2110,13 +2148,7 @@ syncSettings(handleUrl);
       || previewUidToken(writer?.querySelector?.(".refresherUserData")?.getAttribute?.("title"))
       || gallogUidFromText(identityText)
       || "";
-    const writerIpEl = writer?.querySelector?.(".ip,.writer_ip,.refresherUserData.ip,[data-ip],[data-memo-ip]");
-    const ip = previewIpPrefix(readDescendantAttr(["data-ip", "data-memo-ip"]), { allowDateLike: true })
-      || previewIpPrefixFromElement(writerIpEl)
-      || previewIpPrefix(writerIpEl?.getAttribute?.("data-ip"), { allowDateLike: true })
-      || previewIpPrefix(writerIpEl?.getAttribute?.("data-memo-ip"), { allowDateLike: true })
-      || previewIpPrefix(identityText)
-      || "";
+    const ip = previewIpPrefix(readPreviewWriterIp(writer), { allowDateLike: true });
     return { nick, uid, ip };
   }
 
@@ -4639,7 +4671,7 @@ syncSettings(handleUrl);
     const expanded=!!state&&!state.collapsed;
     button.textContent=expanded?'댓글 입력창 닫기':'댓글 입력창 열기';
     button.setAttribute('aria-expanded',String(expanded));button.setAttribute('aria-controls','dcbpv-composer');
-    if(state)state.form.hidden=!expanded;
+    if(state){state.form.hidden=!expanded;syncComposerDock(state);}
   }
   function cancelPreviewComposer(){
     if(!previewComposer)return;
@@ -4659,6 +4691,19 @@ syncSettings(handleUrl);
     state.form.querySelector('[data-composer-target]').textContent=state.target?`↳ ${nick||`댓글 #${state.target}`}에게 답글`:'댓글 작성';
     state.form.querySelector('[data-act=compose-reply-cancel]').hidden=!state.target;
     state.form.querySelector('[data-act=compose-reply-cancel]').disabled=state.submitting;
+    syncComposerDock(state);
+  }
+  function syncComposerDock(state){
+    const overlay=document.getElementById(OVERLAY_ID),dock=!!state.target&&!state.collapsed;
+    if(!overlay)return;
+    const scroll=overlay.querySelector('.dcbpv-scroll'),top=scroll.scrollTop,slot=state.form.parentElement;
+    if(dock&&!state.form.classList.contains('dcbpv-docked'))slot.style.minHeight=`${state.form.getBoundingClientRect().height}px`;
+    state.form.classList.toggle('dcbpv-docked',dock);
+    if(!dock)slot.style.minHeight='';
+    state.form.style.setProperty('--dcbpv-dock-bottom',`${overlay.querySelector('.dcbpv-actions').getBoundingClientRect().height+8}px`);
+    overlay.querySelectorAll('[data-dcbpv-reply-active]').forEach(row=>row.removeAttribute('data-dcbpv-reply-active'));
+    if(dock)overlay.querySelector(`[data-dcbpv-native-id='${CSS.escape(state.target)}']`)?.setAttribute('data-dcbpv-reply-active','');
+    scroll.scrollTop=top;
   }
   function showPreviewSavedDraft(state){
     if(!state.draft||state.form.querySelector('.dcbpv-saved-draft'))return;
@@ -4711,7 +4756,7 @@ syncSettings(handleUrl);
         state.target=target;state.draft=state.drafts[target]||'';applyComposerMetadata(state,result);
       }
       state.collapsed=false;syncComposerToggle();updateComposerStatus(state,'');
-      if(focus){state.form.scrollIntoView({block:'nearest'});state.frame.contentDocument?.querySelector('#dcbpv-native-editor textarea')?.focus({preventScroll:true});}
+      if(focus)state.frame.contentDocument?.querySelector('#dcbpv-native-editor textarea')?.focus({preventScroll:true});
       return;
     }
     suspendPreviewComposer();
@@ -4735,7 +4780,7 @@ syncSettings(handleUrl);
       if(previewComposer!==state)return;
       if(!result?.ok){showPreviewSavedDraft(state);updateComposerStatus(state,composerMessage(result));return;}
       state.ready=true;applyComposerMetadata(state,result);frame.style.visibility='visible';updateComposerStatus(state,'');
-      if(focus){form.scrollIntoView({block:'nearest'});frame.contentDocument?.querySelector('#dcbpv-native-editor textarea')?.focus({preventScroll:true});}
+      if(focus)frame.contentDocument?.querySelector('#dcbpv-native-editor textarea')?.focus({preventScroll:true});
     }catch(_){updateComposerStatus(state,composerMessage(null));}
     finally{if(previewComposer===state&&!state.ready&&form.querySelector('[role=status]').textContent==='작성 폼을 확인하는 중…')updateComposerStatus(state,composerMessage(null));}
   }
@@ -4854,6 +4899,7 @@ syncSettings(handleUrl);
     if(!state||event.source!==window||event.origin!==location.origin||payload?.type!=='dcb.previewVote.event'||payload.key!==state.key)return;
     if(payload.kind!=='result')return;
     if(payload.ok||payload.uncertain)cache.delete(state.article);
+    if(payload.ok){const button=state.row.querySelector(`[data-act='${payload.counts?.down!==undefined&&payload.counts.down!==state.counts.down?'vote-down':'vote-up'}']`);button?.classList.add('dcbpv-confirmed');button?.addEventListener('animationend',()=>button.classList.remove('dcbpv-confirmed'),{once:true});}
     applyPreviewRecommendationCounts(state,payload.counts);
   });
 
@@ -4906,8 +4952,8 @@ syncSettings(handleUrl);
             <article class="dcbpv-html dcbpv-article">${data.articleHTML || `<div class="dcbpv-empty">본문을 표시할 수 없습니다.</div>`}</article>
           </section>
           <div class="dcbpv-vote">
-            <button type="button" disabled data-act="vote-up" aria-label="개추" class="dcbpv-vote-reaction">↑ 개추 <span class="dcbpv-vote-up">${escapeText(data.counts.up || "0")}</span> <span class="dcbpv-vote-member">${data.counts.upMember ? `(${escapeText(data.counts.upMember)})` : ""}</span></button>
-            <button type="button" disabled data-act="vote-down" aria-label="비추" class="dcbpv-vote-reaction">↓ 비추 <span class="dcbpv-vote-down">${escapeText(data.counts.down || "0")}</span></button>
+            <button type="button" disabled data-act="vote-up" aria-label="개추" class="dcbpv-vote-reaction"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 10h4v12H2zm6 12V10l6-8c3 0 3 3 2 6h4c2 0 3 2 2 4l-3 8c-.4 1.2-1 2-3 2z"/></svg> 개추 <strong class="dcbpv-vote-up">${escapeText(data.counts.up || "0")}</strong> <span class="dcbpv-vote-member">${data.counts.upMember ? `(${escapeText(data.counts.upMember)})` : ""}</span></button>
+            <button type="button" disabled data-act="vote-down" aria-label="비추" class="dcbpv-vote-reaction"><svg viewBox="0 0 24 24" aria-hidden="true"><path transform="rotate(180 12 12)" d="M2 10h4v12H2zm6 12V10l6-8c3 0 3 3 2 6h4c2 0 3 2 2 4l-3 8c-.4 1.2-1 2-3 2z"/></svg> 비추 <strong class="dcbpv-vote-down">${escapeText(data.counts.down || "0")}</strong></button>
             <span class="dcbpv-recommend-status" role="status" aria-live="polite"></span>
           </div>
           <section class="dcbpv-section dcbpv-comments">

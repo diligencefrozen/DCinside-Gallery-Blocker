@@ -172,7 +172,7 @@ const DOMESTIC_PROVIDER_SOURCE = `CMB대전방송/기타등등|CMB대전방송/�
 
   function normalizeIpText(raw) {
     const text = String(raw || "").trim();
-    const matched = text.match(/\b\d{1,3}(?:\.\d{1,3}){1,3}\b/);
+    const matched = text.replace(/^\((.*)\)$/, '$1').match(/^\d{1,3}(?:\.\d{1,3}){1,3}$/);
     if (!matched) return "";
 
     const nums = matched[0].split(".").map((v) => toInt(v));
@@ -270,6 +270,7 @@ const DOMESTIC_PROVIDER_SOURCE = `CMB대전방송/기타등등|CMB대전방송/�
   }
 
   function describeIpFragment(ip) {
+    if (!normalizeIpText(ip)) return { tone: "unknown", label: "", title: "IP 정보 없음" };
     const key = prefixKey(ip);
     const network = getDomesticNetwork(key);
 
@@ -308,6 +309,31 @@ const DOMESTIC_PROVIDER_SOURCE = `CMB대전방송/기타등등|CMB대전방송/�
       title: "국내 통신사 매칭 없음"
     };
   }
+// Only writer-owned evidence; ambiguous date-like .ip text fails open.
+  function readWriterIp(writer) {
+    if (!writer?.getAttribute) return "";
+    const owner = ".gall_writer,.ub-writer,.writer_info,.user_info,.cmt_nickbox,[data-dcbpv-comment]";
+    const valid = raw => {
+      const value = String(raw || "").trim().replace(/^\((.*)\)$/, "$1");
+      return /^\d{1,3}(?:\.\d{1,3}){1,3}$/.test(value)
+        && value.split(".").every(n => Number(n) <= 255) ? value : "";
+    };
+    for (const name of ["data-ip","data-memo-ip"]) {
+      const value = valid(writer.getAttribute(name));
+      if (value) return value;
+    }
+    for (const node of writer.querySelectorAll(".ip,.writer_ip,[data-ip],[data-memo-ip]")) {
+      if (node.closest(owner) !== writer || node.closest("time,.date,.gall_date,.dcbpv-time")) continue;
+      const explicit = valid(node.getAttribute("data-ip") || node.getAttribute("data-memo-ip"));
+      if (explicit) return explicit;
+      const value = valid(node.textContent);
+      if (!value) continue;
+      if (!node.matches(".writer_ip") && /^(?:\d{2,4}\.)?\d{1,2}\.\d{1,2}$/.test(value)) continue;
+      return value;
+    }
+    return "";
+  }
+
   function classify(raw) {
     const ip = normalizeIpText(raw);
     if (!ip) return { category: "unknown", ip: "", prefix: "" };
@@ -318,5 +344,5 @@ const DOMESTIC_PROVIDER_SOURCE = `CMB대전방송/기타등등|CMB대전방송/�
     if (RELAY_PREFIX_LOOKUP.has(prefix)) return { category: "relay", ip, prefix };
     return { category: "foreign", ip, prefix };
   }
-  globalThis.DCBIpNetworkClassifier = Object.freeze({ classify, normalizeIpText, prefixKey, describeIpFragment });
+  globalThis.DCBIpNetworkClassifier = Object.freeze({ classify, normalizeIpText, prefixKey, describeIpFragment, readWriterIp });
 })();

@@ -90,7 +90,7 @@
   }
 
   function normalizeIpText(raw) {
-    const matched = String(raw || "").match(/\b\d{1,3}(?:\.\d{1,3}){1,3}\b/);
+    const matched = String(raw || "").trim().replace(/^\((.*)\)$/, '$1').match(/^\d{1,3}(?:\.\d{1,3}){1,3}$/);
     if (!matched) return "";
     const nums = matched[0].split(".").map(toInt);
     if (nums.some((v) => !Number.isFinite(v) || v < 0 || v > 255)) return "";
@@ -139,7 +139,7 @@
 
   function describeIpFragment(raw) {
     const ip = normalizeIpText(raw);
-    if (!ip) return { tone: "foreign", label: "해외", title: "국내 통신사 매칭 없음" };
+    if (!ip) return { tone: "unknown", label: "", title: "IP 정보 없음" };
     const prefix = prefixKey(ip);
     const providerId = getDomesticProviderId(prefix);
     if (providerId >= 0) {
@@ -158,6 +158,31 @@
     return { tone: "foreign", label: "해외", title: "국내 통신사 매칭 없음" };
   }
 
+// Only writer-owned evidence; ambiguous date-like .ip text fails open.
+  function readWriterIp(writer) {
+    if (!writer?.getAttribute) return "";
+    const owner = ".gall_writer,.ub-writer,.writer_info,.user_info,.cmt_nickbox,[data-dcbpv-comment]";
+    const valid = raw => {
+      const value = String(raw || "").trim().replace(/^\((.*)\)$/, "$1");
+      return /^\d{1,3}(?:\.\d{1,3}){1,3}$/.test(value)
+        && value.split(".").every(n => Number(n) <= 255) ? value : "";
+    };
+    for (const name of ["data-ip","data-memo-ip"]) {
+      const value = valid(writer.getAttribute(name));
+      if (value) return value;
+    }
+    for (const node of writer.querySelectorAll(".ip,.writer_ip,[data-ip],[data-memo-ip]")) {
+      if (node.closest(owner) !== writer || node.closest("time,.date,.gall_date,.dcbpv-time")) continue;
+      const explicit = valid(node.getAttribute("data-ip") || node.getAttribute("data-memo-ip"));
+      if (explicit) return explicit;
+      const value = valid(node.textContent);
+      if (!value) continue;
+      if (!node.matches(".writer_ip") && /^(?:\d{2,4}\.)?\d{1,2}\.\d{1,2}$/.test(value)) continue;
+      return value;
+    }
+    return "";
+  }
+
   function classify(raw) {
     const ip = normalizeIpText(raw);
     if (!ip) return { category: "unknown", ip: "", prefix: "" };
@@ -169,5 +194,5 @@
     return { category: "foreign", ip, prefix };
   }
 
-  globalThis.DCBFastIpNetworkClassifier = Object.freeze({ classify, normalizeIpText, prefixKey, describeIpFragment });
+  globalThis.DCBFastIpNetworkClassifier = Object.freeze({ classify, normalizeIpText, prefixKey, describeIpFragment, readWriterIp });
 })();

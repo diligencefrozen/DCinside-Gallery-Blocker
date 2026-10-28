@@ -77,7 +77,7 @@ async function previewCommentInPage(request) {
     const box = input.closest('.cmt_write_box');
     if (!box) return fail('unavailable');
     const session = frame.__dcbpvEditor = { target: '', targets: uniqueTargets, owned: new Map(), deleted: new Set(), records: null,
-      uncertain: false, busy: false, captchaMode: '', captchaScope: '', widget: null, drafts: new Map() };
+      uncertain: false, busy: false, captchaMode: '', captchaScope: '', widget: null, drafts: new Map(), mediaDrafts: new Map() };
     const surface = doc.createElement('div');
     surface.id = 'dcbpv-editor-surface';
     doc.body.appendChild(surface);
@@ -118,7 +118,18 @@ async function previewCommentInPage(request) {
       #dcbpv-native-editor input:not([type=hidden]){box-sizing:border-box!important;max-width:100%!important;height:34px!important;padding:6px 8px!important;background:#fff!important;color:#172033!important;border:1px solid #94a3b8!important;border-radius:5px}
       #dcbpv-native-editor .user_info_input input{width:100%!important}
       #dcbpv-native-editor textarea{box-sizing:border-box!important;display:block!important;width:100%!important;min-width:0!important;height:100px!important;min-height:100px!important;margin:8px 0!important;padding:8px!important;border:1px solid #94a3b8!important;border-radius:6px!important;background:#fff!important;color:#172033!important;white-space:pre-wrap!important;resize:vertical!important}
-      #dcbpv-native-editor .dccon_guidebox,#dcbpv-native-editor .cmt_textarea_label,#dcbpv-native-editor .tip_box2{display:none!important}
+      #dcbpv-native-editor .cmt_textarea_label,#dcbpv-native-editor .tip_box2{display:none!important}
+      #dcbpv-native-editor .cmt_cont_bottm{display:flex!important;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
+      #dcbpv-native-editor .dccon_guidebox{position:relative!important;float:none!important;min-width:0;max-width:100%}
+      #dcbpv-native-editor :is(#div_con,#div_txtcon){position:relative!important;inset:auto!important;max-width:100%!important;width:min(440px,100%)!important;max-height:340px;overflow:auto;box-sizing:border-box}
+      #dcbpv-native-editor :is(#div_con,#div_txtcon) :is(.dccon_list,.dccon_listbox,.txt_dccon_box){max-width:100%!important;box-sizing:border-box}
+      #dcbpv-native-editor .repley_add{min-width:120px!important;min-height:42px!important;float:none!important;margin-left:auto!important;display:inline-flex;align-items:center;justify-content:center;gap:6px;font-weight:700;border-radius:10px;transition:transform .16s,background .16s}
+      #dcbpv-native-editor .repley_add:not(:disabled):hover{background:#2449bc;transform:translateY(-1px)}
+      #dcbpv-native-editor .repley_add:not(:disabled):active{transform:translateY(1px)}
+      #dcbpv-native-editor .repley_add:focus-visible{outline:3px solid #7ba7fa;outline-offset:2px}
+      #dcbpv-selection{order:3;display:flex;gap:8px;align-items:center;overflow-wrap:anywhere}
+      #dcbpv-selection[hidden]{display:none}
+      @media(prefers-reduced-motion:reduce){#dcbpv-native-editor .repley_add{transition:none!important;transform:none!important}}
       #dcbpv-native-editor .cmt_cont_bottm{height:auto!important;min-height:34px!important}
       #dcbpv-native-editor .repley_add,#dcbpv-delete-confirm button{padding:7px 16px;border:0;border-radius:6px;background:#315bea;color:#fff;cursor:pointer}
       #dcbpv-native-editor button:disabled,#dcbpv-delete-confirm button:disabled{opacity:.5;cursor:default}
@@ -130,7 +141,32 @@ async function previewCommentInPage(request) {
     doc.head.appendChild(style);
     // Keep CAPTCHA refresh and nickname controls. Only unrelated post actions
     // (DCCon, vote+submit) are hidden; native security listeners stay attached.
-    box.querySelectorAll('.repley_add_vote,.tx_dccon,.tx_txtcon,.btn_dccon_guide').forEach(node => node.style.setProperty('display', 'none', 'important'));
+    box.querySelectorAll('.repley_add_vote,.btn_dccon_guide').forEach(node => node.style.setProperty('display', 'none', 'important'));
+    button.textContent='➤ 댓글 등록';button.setAttribute('aria-label','댓글 등록');
+    const selection=doc.createElement('div');selection.id='dcbpv-selection';selection.hidden=true;surface.append(selection);
+    const selectedLabel=doc.createElement('span'),clearSelection=doc.createElement('button');clearSelection.type='button';clearSelection.textContent='선택 취소';selection.append(selectedLabel,clearSelection);
+    const showSelection=()=>{const media=session.mediaDrafts.get(session.target);selection.hidden=!media;selectedLabel.textContent=media?.kind==='dccon'?`디시콘 ${media.details.length}개 선택`:media?`글자콘: ${media.text}`:'';};
+    clearSelection.onclick=event=>{if(event.isTrusted&&!session.busy){session.mediaDrafts.delete(session.target);showSelection();}};
+    // Capture native selection before its delegated handler can submit/retry.
+    doc.addEventListener('click',event=>{
+      const icon=event.target.closest('.img_dccon'),textButton=event.target.closest('#btn_txtcon_submit');
+      if((!icon&&!textButton)||!box.contains(event.target))return;
+      event.preventDefault();event.stopImmediatePropagation();
+      if(!event.isTrusted||session.busy||session.uncertain)return;
+      if(icon){
+        const packageId=icon.getAttribute('package_idx'),detail=icon.getAttribute('detail_idx');
+        if(!/^[1-9]\d*$/.test(packageId||'')||!/^[1-9]\d*$/.test(detail||'')){notify('auth',{message:'이 디시콘은 원문에서 확인해 주세요.'});return;}
+        const double=!!doc.getElementById('double_dcon')?.checked,old=session.mediaDrafts.get(session.target);
+        const media=double&&old?.kind==='dccon'&&old.details.length===1?{...old,packages:[...old.packages,packageId],details:[...old.details,detail]}:{kind:'dccon',packages:[packageId],details:[detail],double,big:!!doc.getElementById('big_dcon')?.checked};
+        session.mediaDrafts.set(session.target,media);
+        if(!double||media.details.length===2)doc.getElementById('div_con').style.display='none';
+      }else{
+        const text=doc.getElementById('txtcon_input')?.value,colors=win.txtcon_sel_colors?.();
+        if(!text?.trim()||!colors){notify('auth',{message:'글자콘 내용과 색상을 확인해 주세요.'});return;}
+        session.mediaDrafts.set(session.target,{kind:'txtcon',text,bg:colors.bg,color:colors.txt});win.txtcon_panel_close?.();
+      }
+      showSelection();resize();button.focus({preventScroll:true});
+    },true);
     const sendDraft = () => { session.drafts.set(session.target, input.value); notify('draft', { draft: input.value, target: session.target }); };
     input.addEventListener('input', sendDraft);
     box.addEventListener('keydown', event => {
@@ -150,6 +186,7 @@ async function previewCommentInPage(request) {
       requestAnimationFrame(() => {
         resizing = false;
         if (win.ts_cmt?.box) expose(win.ts_cmt.box);
+        const selectText=doc.getElementById('btn_txtcon_submit');if(selectText&&selectText.textContent!=='선택')selectText.textContent='선택';
         doc.querySelectorAll('body > div').forEach(node => {
           if (node !== surface && node.querySelector('iframe[src*="recaptcha/"]')) expose(node);
         });
@@ -189,6 +226,9 @@ async function previewCommentInPage(request) {
       if (target && !session.targets.some(row => row.id === target)) return fail('target');
       sendDraft();
       session.target = target;
+      showSelection();
+      box.querySelectorAll('.tx_dccon').forEach(control=>{const parent=session.targets.find(row=>row.id===target)?.parent;if(parent){control.setAttribute('r_idx',parent);control.setAttribute('reply_no',target);}else{control.removeAttribute('r_idx');control.removeAttribute('reply_no');}});
+      doc.querySelectorAll('#div_con,#div_txtcon').forEach(panel=>panel.style.display='none');
       input.value = typeof draft === 'string' ? draft : session.drafts.get(target) || '';
       session.resetAuth();
       deleteBox.hidden = true;
@@ -275,15 +315,19 @@ async function previewCommentInPage(request) {
       event.preventDefault(); event.stopImmediatePropagation();
       if(!event.isTrusted || button.disabled || session.busy || session.uncertain) return;
       sendDraft();
-      if(nativeRejected || !doc.service_code){notify('result',{result:fail('authentication')});return;}
+      const media=session.mediaDrafts.get(session.target);
+      if(!media&&(nativeRejected || !doc.service_code)){notify('result',{result:fail('authentication')});return;}
       session.busy=true; button.disabled=true; input.readOnly=true; notify('submitting');
       const submittedPassword=password?.value||'';
       let result;
-      try {result=await previewCommentInPage({...request,operation:'submit',target:session.target,activation:event,memo:input.value,name:value(`name_${no}`)||'',password:submittedPassword});}
+      try {result=await previewCommentInPage({...request,operation:'submit',target:session.target,activation:event,memo:input.value,media,name:value(`name_${no}`)||'',password:submittedPassword});}
       catch(_){result=fail('uncertain');}
       session.busy=false; input.readOnly=false;
       session.uncertain=result.code==='uncertain'; button.disabled=session.uncertain;
       if(result.ok){
+        session.mediaDrafts.delete(session.target);showSelection();
+        if(media?.kind==='txtcon')win.txtcon_recent_add?.(media.text);
+        if(media?.kind==='dccon')win.recent_list='';
         session.owned.set(result.addedId,password ? submittedPassword : null);
         session.drafts.delete(session.target); session.target=''; input.value=''; session.drafts.set('','');
         session.resetAuth();
@@ -316,10 +360,12 @@ async function previewCommentInPage(request) {
   }
 
   const deleting = request.operation === 'delete-submit';
+  const media=request.media;
   const session = frame.__dcbpvEditor;
   if ((!deleting && request.operation !== 'submit') || !request.activation?.isTrusted || !session) return fail('unavailable');
   if (!deleting && !challengeReady()) return fail('authentication');
-  if (!deleting && (!request.memo?.trim() || request.memo.length > maxLength)) return fail('input');
+  if (!deleting && !media && (!request.memo?.trim() || request.memo.length > maxLength)) return fail('input');
+  if(media && (media!==session?.mediaDrafts.get(request.target||'') || !['dccon','txtcon'].includes(media.kind)))return fail('input');
   const target = request.target ? uniqueTargets.find(t => t.id === request.target) : null;
   if (!deleting && request.target && !target) return fail('target');
   if (deleting && !session.metadata().owned.includes(request.target)) return fail('ownership');
@@ -328,8 +374,9 @@ async function previewCommentInPage(request) {
   const hasPassword = !!doc.getElementById(`password_${suffix}`);
   const useGallNickname = value(request.target ? 'use_gall_nick_reply' : 'use_gall_nick') === 'Y';
   if (!deleting && ((hasName && !useGallNickname && !request.name?.trim()) || (hasPassword && request.password?.length < 2))) return fail('input');
-  const imageCode = !deleting && value('kcaptcha_use') === 'Y' ? value(`code_${no}`) : '';
-  if (!deleting && value('kcaptcha_use') === 'Y' && !imageCode?.trim()) return fail('image-captcha');
+  const requiresImage=!deleting&&(media ? !!doc.getElementById(`code_${no}`) : value('kcaptcha_use')==='Y');
+  const imageCode = requiresImage ? value(`code_${no}`) : '';
+  if (requiresImage && !imageCode?.trim()) return fail('image-captcha');
   // A per-document guard also survives background worker suspension/restart.
   if (frame.dataset.dcbpvWriting === '1') return fail('busy');
   frame.dataset.dcbpvWriting = '1';
@@ -359,7 +406,7 @@ async function previewCommentInPage(request) {
     if (!deleting && target && !before.comments.some(item => String(item.no) === target.id
       && String(Number(item.depth) > 0 ? item.c_no : item.no) === target.parent
       && item.del_yn !== 'Y')) return fail('target');
-    const auth = await session.authFields(`${deleting ? 'delete' : 'submit'}:${request.target || ''}`, deleting ? 'comment_delete_submit' : 'comment_submit');
+    const auth = await session.authFields(`${deleting ? 'delete' : 'submit'}:${request.target || ''}`, deleting ? 'comment_delete_submit' : media ? 'insert_icon' : 'comment_submit');
     if (!auth) return fail('authentication');
     if (!frame.isConnected || frame.dataset.dcbpvCancelled === '1') return fail('cancelled');
     if (deleting) {
@@ -411,8 +458,24 @@ async function previewCommentInPage(request) {
         body.set(key, val);
       }
     }
+    let endpoint='/board/forms/comment_submit',sendBody=body;
+    if(media){
+      // Official dccon.js?v=261026 / txtcon.js?v=261020 (2026-10-28).
+      sendBody=new URLSearchParams({id,no,ci_t:win.get_cookie?.('ci_c')||'',_GALLTYPE_:expectedType,'g-recaptcha-response':'',...auth});
+      if(!sendBody.get('ci_t'))return fail('authentication');
+      for(const key of ['name','password','code','check_6','check_7','check_8','gall_nick_name','use_gall_nick','cf-turnstile-response','ts_state','ts_focus_ms','ts_token_ms','ts_test'])if(body.has(key))sendBody.set(key,body.get(key));
+      if(target){sendBody.set('c_no',target.parent);sendBody.set('reply_no',target.id);}
+      if(useGallNickname&&!sendBody.get('name'))sendBody.set('name',body.get('gall_nick_name')||'');
+      if(media.kind==='dccon'){
+        endpoint='/dccon/insert_icon';
+        for(const [key,val] of Object.entries({package_idx:media.packages.join(','),detail_idx:media.details.join(','),double_con_chk:media.double?'1':'',input_type:'comment',t_vch2:String($(doc).data('t_vch2')),t_vch2_chk:String($(doc).data('t_vch2_chk')),c_gall_id:id,c_gall_no:no}))sendBody.set(key,val);
+        if(media.big)sendBody.set('bigdccon','1');
+      }else{endpoint='/txtcon/insert';for(const [key,val] of Object.entries({txtcon_text:media.text,txtcon_bg:media.bg,txtcon_color:media.color}))sendBody.set(key,val);}
+    }
     wrote = true;
-    const response = (await ajax('/board/forms/comment_submit', body.toString())).trim();
+    const response = (await ajax(endpoint, sendBody.toString())).trim();
+    if(media&&response==='code_fail'){win.kcaptcha_init?.(no);return fail('image-captcha');}
+    if(media&&['not_buy','expired','unuseable','not_exists','fail','form_error','fail1'].includes(response))return fail('rejected');
     if (response.split('||')[0].trim() === 'false') {
       const parts=response.split('||');
       if(parts[1]==='captcha') return fail('authentication',{captcha:parts[2]==='v3'?'v3':'v2'});
@@ -429,7 +492,9 @@ async function previewCommentInPage(request) {
       return parsed.body.textContent.replace(/\r\n/g, '\n').trim();
     };
     const added = after.comments.filter(item => /^[1-9]\d*$/.test(String(item.no)) && !previous.has(String(item.no))
-      && plain(item.memo) === request.memo.replace(/\r\n/g, '\n').trim()
+      && (media ? response==='ok' && (()=>{const parsed=new DOMParser().parseFromString(String(item.memo),'text/html');
+        if(media.kind==='dccon')return JSON.stringify([...parsed.querySelectorAll('.written_dccon[detail]')].map(node=>node.getAttribute('detail')))===JSON.stringify(media.details);
+        const text=parsed.querySelector('.coment_dccon_txt .txtcon_txt,.comment_dccon_txt .txtcon_txt');return !!text&&plain(text.innerHTML)===media.text.replace(/\r\n/g,'\n').trim();})() : plain(item.memo) === request.memo.replace(/\r\n/g, '\n').trim())
       && (target ? String(item.c_no) === target.parent : String(item.depth) === '0'));
     if (added.length !== 1 || Number(after.total_cnt) <= Number(before.total_cnt)) return fail('uncertain');
     return { ok: true, comments: after.comments, total: Number(after.total_cnt), addedId: String(added[0].no) };
