@@ -233,6 +233,8 @@ function nativeDocument(url, member = true, captcha = false, own = false, turnst
       await editor().locator('textarea').fill('captcha retry');await editor().locator('.repley_add').click();
       if(mode==='captcha-v2'){
         await editor().locator('#fixture-recaptcha').click();
+        await finish('인증 완료');
+        assert.equal(await page.locator('.dcbpv-composer [role="status"]').textContent(),'인증 완료');
         assert.equal(writes.length,1,'solving CAPTCHA never automatically re-posts');
         await editor().locator('body').evaluate(()=>window.fixtureRecaptchaOptions['expired-callback']());await finish('만료');
         await editor().locator('#fixture-recaptcha').click();
@@ -245,6 +247,8 @@ function nativeDocument(url, member = true, captcha = false, own = false, turnst
     reset();turnstile=true;await render(article('','72'));await open();
     await editor().locator('textarea').fill('turnstile');await editor().locator('.repley_add').click();
     assert.equal(writes.length,0);await editor().locator('#fixture-turnstile').click();assert.equal(writes.length,0);
+    await finish('인증 완료');
+    assert.equal(await page.locator('.dcbpv-composer [role="status"]').textContent(),'인증 완료');
     await editor().locator('.repley_add').click();await finish('등록된 댓글을 확인');
     assert.equal(writes.length,1);assert.equal(writes[0]['cf-turnstile-response'],'fixture-turnstile-token');await close();checks++;
 
@@ -261,6 +265,8 @@ function nativeDocument(url, member = true, captcha = false, own = false, turnst
     await editor().locator('[data-dcbpv-delete-confirm]').click();
     await editor().locator('#fixture-recaptcha').click();
     assert.equal(deletes.length,1,'solving deletion CAPTCHA never resubmits');
+    await finish('인증 완료');
+    assert.equal(await page.locator('.dcbpv-composer [role="status"]').textContent(),'인증 완료');
     assert.equal(await page.locator('[data-dcbpv-native-id="101"]').count(),1);
     responseMode='success';await editor().locator('[data-dcbpv-delete-confirm]').click();await finish('댓글을 삭제');
     assert.equal(deletes.length,2);assert.equal(deletes[1]['g-recaptcha-response'],'fixture-v2-token');

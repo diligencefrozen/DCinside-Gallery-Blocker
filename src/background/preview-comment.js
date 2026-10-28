@@ -217,7 +217,7 @@ async function previewCommentInPage(request) {
           for (let i=0; i<50 && !win.grecaptcha?.render; i++) await new Promise(resolve=>setTimeout(resolve,100));
         }
         if (session.widget == null) session.widget = win.grecaptcha.render(authHost, {sitekey:win.dc_rc_new_v2, size:'compact',
-          callback:()=>notify('auth',{message:'인증을 완료했습니다. 등록 또는 삭제 확인 버튼을 눌러 주세요.'}),
+          callback:()=>notify('auth',{message:'인증 완료'}),
           'expired-callback':()=>notify('auth',{message:'인증이 만료됐습니다. 인증 영역에서 다시 확인해 주세요.'})});
         else win.grecaptcha.reset(session.widget);
         resize();
@@ -308,7 +308,7 @@ async function previewCommentInPage(request) {
         if(!frame.isConnected){clearInterval(watch);observer.disconnect();sizeObserver.disconnect();return;}
         const status=win.ts_cmt?.st;
         if(status===previous)return;previous=status;resize();
-        const message={interactive:'사람인지 확인하는 인증 영역을 직접 완료해 주세요.',expired:'인증이 만료됐습니다. 인증 영역에서 다시 확인해 주세요.',error:'사이트 인증을 불러오지 못했습니다. 연결을 확인하거나 원문에서 인증해 주세요.',ok:'인증을 완료했습니다. 등록 버튼을 눌러 주세요.'}[status];
+        const message={interactive:'사람인지 확인하는 인증 영역을 직접 완료해 주세요.',expired:'인증이 만료됐습니다. 인증 영역에서 다시 확인해 주세요.',error:'사이트 인증을 불러오지 못했습니다. 연결을 확인하거나 원문에서 인증해 주세요.',ok:'인증 완료'}[status];
         if(message)notify('auth',{message});
       },500);
     }

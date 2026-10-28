@@ -1,105 +1,176 @@
-// Contract: official recommend_box.js?v=261026, inspected 2026-10-27.
-// This bridge prepares native UI only. It cannot issue a vote from a message.
-async function preparePreviewVote(request) {
-  const fail = () => ({ok:false,error:'원문 투표 버튼을 확인할 수 없습니다. 원문에서 확인해 주세요.'});
-  const frames=[...document.querySelectorAll('iframe[data-dcbpv-vote-frame]')].filter(f=>f.dataset.dcbpvVoteFrame===request.key);
-  if(frames.length!==1)return fail();
-  const frame=frames[0];let doc,win,url;
-  try {
-    win=frame.contentWindow;doc=win.document;url=new URL(doc.URL);
-    const expected=new URL(request.url);
-    if(url.origin!=='https://gall.dcinside.com'||url.pathname!==expected.pathname||url.searchParams.get('id')!==expected.searchParams.get('id')||url.searchParams.get('no')!==expected.searchParams.get('no'))return fail();
-  } catch(_){return fail();}
-  if(frame.__dcbpvVote)return {ok:true};
-  const id=url.searchParams.get('id'),no=url.searchParams.get('no');
+// Official recommend_box.js?v=261026 and kcaptcha.js, checked 2026-10-28.
+// MAIN installs trusted-click handlers only. No message can send a recommendation;
+// hidden fields, cookies and answers remain in this same-origin page context.
+function preparePreviewVote(request) {
+  const overlay=document.getElementById('dcb-preview-overlay');
+  const row=overlay?.querySelector('.dcbpv-vote');
+  if(!row||row.dataset.recommendKey!==request.key||overlay.dataset.dcbpvUrl!==request.url)return {ok:false};
+  if(row.__dcbRecommend)return {ok:true};
+  const url=new URL(request.url),id=url.searchParams.get('id'),no=url.searchParams.get('no');
   const type=url.pathname.startsWith('/mgallery/')?'M':url.pathname.startsWith('/mini/')?'MI':url.pathname.startsWith('/person/')?'PR':'G';
-  const box=doc.querySelector('.btn_recommend_box');
-  const buttons=[...doc.querySelectorAll('.btn_recom_up,.btn_recom_down')].filter(b=>b.getAttribute('data-no')===no&&box?.contains(b));
-  if(!box||!buttons.length||!win.jQuery?.ajaxPrefilter||!doc.getElementById('_view_form_')||win._GALLERY_TYPE_!==type||doc.getElementById('id')?.value!==id)return fail();
-  const registry=window.__dcbpvVoteRegistry ||= new Map();
-  const article=`${type}:${id}:${no}`;
-  let state=registry.get(article);
-  if(!state){state={busy:false,locked:new Set()};registry.set(article,state);}
-  while(registry.size>64){const key=[...registry.keys()].find(key=>key!==article&&!registry.get(key).busy);if(!key)break;registry.delete(key);}
-  frame.__dcbpvVote=state;
-  const notify=(kind,detail={})=>window.postMessage({type:'dcb.previewVote.event',key:request.key,kind,...detail},location.origin);
-  const modeOf=button=>button.classList.contains('btn_recom_down')?'D':'U';
-  const update=()=>buttons.forEach(button=>{button.disabled=state.busy||state.locked.has(modeOf(button))||win.mem_allow===0;button.setAttribute('aria-busy',String(state.busy));});
-  const surface=doc.createElement('div');surface.id='dcbpv-vote-surface';doc.body.append(surface);surface.append(box);
-  const status=doc.createElement('p');status.setAttribute('role','status');surface.append(status);
-  status.textContent=win.mem_allow===0?'멤버만 투표할 수 있습니다.':'아래 원문 버튼을 직접 눌러 투표하세요. 인증이 필요하면 먼저 입력해 주세요.';
-  const style=doc.createElement('style');style.textContent=`
-    html,body{margin:0!important;padding:0!important;min-width:0!important;width:100%!important;min-height:0!important;height:auto!important;background:transparent!important;overflow:hidden!important}
-    body>:not(#dcbpv-vote-surface){display:none!important}
-    #dcbpv-vote-surface{padding:8px;box-sizing:border-box;font:13px/1.5 sans-serif;color:#253047}
-    #dcbpv-vote-surface .btn_recommend_box{box-sizing:border-box;width:100%!important;min-width:0!important;height:auto!important;margin:0!important;padding:8px!important}
-    #dcbpv-vote-surface .recom_bottom_box,#dcbpv-vote-surface .btn_nhitgall,#dcbpv-vote-surface .btn_silbechu,#dcbpv-vote-surface .btn_snsmore,#dcbpv-vote-surface .btn_report{display:none!important}
-    #dcbpv-vote-surface input{max-width:100%;box-sizing:border-box}
-    #dcbpv-vote-surface button:disabled{opacity:.5;cursor:default}
-    @media(prefers-color-scheme:dark){#dcbpv-vote-surface{color:#e2e8f0}}
-  `;doc.head.append(style);
-  const resize=()=>{if(frame.isConnected)notify('size',{height:Math.max(140,Math.min(800,Math.ceil(surface.getBoundingClientRect().height)+8))});};
-  const observer=new ResizeObserver(resize);observer.observe(surface);
-  let permit=null;
-  for(const button of buttons){
-    button.type='button';button.setAttribute('aria-label',modeOf(button)==='U'?'개추 투표':'비추 투표');
-    button.addEventListener('click',event=>{
-      const mode=modeOf(button);
-      if(!event.isTrusted||state.busy||state.locked.has(mode)||!frame.isConnected){event.preventDefault();event.stopImmediatePropagation();return;}
-      permit={mode};
-      // The current native handler issues its AJAX synchronously in this click.
-      // A synthetic or delayed callback cannot reuse this permission.
-      queueMicrotask(()=>{permit=null;});
-    },true);
+  const article=`${type}:${id}:${no}`,registry=window.__dcbpvRecommendRegistry ||= new Map();
+  if(!registry.has(article))registry.set(article,{busy:false,locked:new Set(),counts:{}});
+  const state=registry.get(article);
+  const buttons=[...row.querySelectorAll('[data-act="vote-up"],[data-act="vote-down"]')];
+  const status=row.querySelector('[role="status"]');
+  let auth=null,controller=null,sent=false,disposed=false;
+  const active=()=>!disposed&&row.isConnected&&row.dataset.recommendKey===request.key&&overlay.dataset.dcbpvUrl===request.url;
+  const update=()=>{
+    if(!active())return;
+    buttons.forEach(button=>{button.disabled=state.busy||state.locked.has(button.dataset.act==='vote-up'?'U':'D');button.setAttribute('aria-busy',String(state.busy));});
+    auth?.querySelectorAll('button,input').forEach(node=>{node.disabled=state.busy;});
+  };
+  const message=(text,details={})=>{
+    if(!active())return;
+    if(details.settled){update();return;}
+    status.textContent=text;
+    if(details.fallback){const link=document.createElement('a');link.href=url.href;link.target='_blank';link.rel='noopener noreferrer';link.textContent=' 원문에서 개추·비추';status.append(link);}
+    update();
+    window.postMessage({type:'dcb.previewVote.event',key:request.key,kind:'result',...details,counts:{...state.counts}},location.origin);
+  };
+  state.notify=message;
+  const report=(text,details)=>{state.notice={text,details};state.notify?.(text,details);};
+  const dispose=()=>{disposed=true;controller?.abort();auth?.remove();auth=null;row.removeEventListener('click',click,true);observer.disconnect();if(state.notify===message)state.notify=null;};
+  row.__dcbRecommend={dispose};
+  const observer=new MutationObserver(()=>{if(!active())dispose();});
+  observer.observe(document.documentElement,{childList:true,subtree:true,attributes:true,attributeFilter:['data-recommend-key','data-dcbpv-url']});
+  const clearAuth=()=>{auth?.remove();auth=null;};
+  const error=(code,status=0)=>Object.assign(new Error(code),{code,status});
+  const cookie=()=>document.cookie.split(';').map(x=>x.trim()).find(x=>x.startsWith('ci_c='))?.slice(5)||'';
+  const sameArticle=doc=>{try{const value=new URL(doc.URL);return value.origin===url.origin&&value.pathname===url.pathname&&value.searchParams.get('id')===id&&value.searchParams.get('no')===no;}catch(_){return false;}};
+  async function context(signal){
+    let doc=null,win=null;
+    for(const frame of overlay.querySelectorAll('iframe[data-dcbpv-compose-frame]')){
+      try{if(sameArticle(frame.contentDocument)&&frame.contentDocument.getElementById('_view_form_')){doc=frame.contentDocument;win=frame.contentWindow;break;}}catch(_){}
+    }
+    if(!doc){
+      const response=await fetch(url.href,{credentials:'include',cache:'no-store',redirect:'error',signal});
+      if(!response.ok)throw error('http',response.status);
+      const html=await response.text();if(html.length>8*1024*1024)throw error('unavailable');
+      doc=new DOMParser().parseFromString(html,'text/html');
+    }
+    const form=doc.getElementById('_view_form_');
+    if(!form||doc.getElementById('id')?.value!==id||doc.getElementById('no')?.value!==no||doc.getElementById('_GALLTYPE_')?.value!==type||!doc.getElementById('e_s_n_o')?.value)throw error('unavailable');
+    // Read the literal server declaration; never execute fetched page scripts.
+    const declaration=[...doc.scripts].filter(s=>!s.src).map(s=>s.textContent.match(/\b(?:var\s+)?mem_allow\s*=\s*([01])\s*;/)?.[1]).find(v=>v!==undefined);
+    const member=win?.mem_allow??(declaration===undefined?undefined:Number(declaration));
+    if(member===0)throw error('member');
+    if(member!==1)throw error('unavailable');
+    const fields=new URLSearchParams();
+    // Equivalent to native _view_form_.serialize(): preserves duplicate hidden
+    // names and current server-generated security fields, without copying DOM.
+    for(const input of form.elements){
+      if(!input.name||input.disabled||/^(?:button|submit|reset|file)$/i.test(input.type)||(/^(?:checkbox|radio)$/i.test(input.type)&&!input.checked))continue;
+      if(input.tagName==='SELECT'&&input.multiple){for(const option of input.selectedOptions)fields.append(input.name,option.value);}
+      else fields.append(input.name,String(input.value).replace(/\r?\n/g,'\r\n'));
+    }
+    if(fields.toString().length>65536)throw error('unavailable');
+    return {doc,fields};
   }
-  win.jQuery.ajaxPrefilter((options,_original,xhr)=>{
-    let endpoint;try{endpoint=new URL(options.url,doc.URL);}catch(_){return;}
-    if(endpoint.origin!==url.origin||endpoint.pathname!=='/board/recommend/vote')return;
-    const fields=new URLSearchParams(options.data);
-    if(!permit||state.busy||!frame.isConnected||String(options.type).toUpperCase()!=='POST'||fields.get('id')!==id||fields.get('no')!==no||fields.get('mode')!==permit.mode||fields.get('_GALLTYPE_')!==type){xhr.abort();return;}
-    const mode=permit.mode;permit=null;state.busy=true;update();notify('busy');status.textContent='투표 결과를 확인하고 있습니다…';
-    const success=options.success,error=options.error;
-    let settled=false;
-    const finish=(message,detail={},lock=true)=>{
-      if(settled)return;settled=true;clearTimeout(timer);state.busy=false;if(lock)state.locked.add(mode);update();status.textContent=message;
-      notify('result',{message,...detail});resize();
+  function challenge(ctx,mode,invalid=false){
+    clearAuth();
+    const native=ctx.doc.getElementById(`kcaptcha_recommend_${no}`);
+    // Use the native challenge's declared type/target, not the comment CAPTCHA.
+    if(!native?.matches('.kcaptcha')||!/^\w{1,32}$/.test(native.dataset.type||'')||native.dataset.type==='comment'
+      ||(native.dataset.gall_id&&native.dataset.gall_id!==id)||(native.dataset.gall_type&&native.dataset.gall_type!==type))throw error('authentication');
+    const group=document.createElement('div');group.className='dcbpv-recommend-auth';group.setAttribute('aria-label',mode==='U'?'추천 인증':'비추천 인증');
+    const image=document.createElement('img');image.alt='추천 방지코드';image.width=130;image.height=40;
+    const refresh=document.createElement('button');refresh.type='button';refresh.textContent='새로고침';
+    const input=document.createElement('input');input.type='text';input.autocomplete='off';input.maxLength=20;input.placeholder='보안코드';input.setAttribute('aria-label','추천 방지코드 입력');
+    const confirm=document.createElement('button');confirm.type='button';confirm.textContent=mode==='U'?'추천':'비추천';
+    const cancel=document.createElement('button');cancel.type='button';cancel.textContent='취소';
+    let loaded=false,issuedAt=0;
+    const reload=()=>{
+      loaded=false;issuedAt=0;input.value='';
+      const src=new URL('/kcaptcha/image_v3/',url.origin);
+      src.search=new URLSearchParams({gall_id:id,kcaptcha_type:native.dataset.type,time:String(Date.now()),_GALLTYPE_:type});image.src=src.href;
     };
-    const timer=setTimeout(()=>finish('응답을 확인하지 못했습니다. 원문에서 결과를 확인해 주세요.',{uncertain:true}),20000);
-    options.success=function(data,...args){
-      const fields=String(data).trim().split('||');
-      if(fields[0]==='true'&&/^\d+$/.test(fields[1]||'')&&(mode==='D'||/^\d+$/.test(fields[2]||''))){
-        try{if(typeof success==='function')success.call(this,data,...args);}finally{
-          finish('투표가 반영됐습니다.',{ok:true,counts:mode==='U'?{up:fields[1],upMember:fields[2]}:{down:fields[1]}});
-        }
-      }else if(fields[0]==='false'){
-        const message=fields[1]==='nomember'?'비회원 투표가 제한된 게시글입니다.':String(fields[1]||'투표가 거절됐습니다.').slice(0,200);
-        // Let the original handler refresh its image challenge and show the
-        // site's restriction. It contains no vote retry in this contract.
-        try{if(typeof success==='function')success.call(this,data,...args);}finally{
-          finish(message,{rejected:true},!/코드|인증|captcha/i.test(message));
-        }
-      }else finish('응답을 확인하지 못했습니다. 원문에서 결과를 확인해 주세요.',{uncertain:true});
+    image.onload=()=>{loaded=true;issuedAt=Date.now();};
+    image.onerror=()=>message('인증 이미지를 불러오지 못했습니다.',{fallback:true});
+    refresh.onclick=event=>{if(event.isTrusted&&!state.busy)reload();};
+    cancel.onclick=event=>{if(event.isTrusted&&!state.busy){clearAuth();message('');}};
+    confirm.onclick=event=>{
+      if(!event.isTrusted||state.busy||!active()||auth!==group)return;
+      if(!loaded||!input.value.trim()){message('코드 이미지를 확인하고 코드를 입력해 주세요.');return;}
+      if(Date.now()-issuedAt>120000){reload();message('코드를 새로 확인해 주세요.');return;}
+      void run(mode,{group,ctx,answer:input.value.trim()});
     };
-    options.error=function(...args){
-      const http=Number(args[0]?.status||0);
-      finish(http?`서버가 투표를 처리하지 못했습니다 (HTTP ${http}). 원문에서 확인해 주세요.`:'연결이 끊겨 투표 결과를 확인하지 못했습니다. 원문에서 확인해 주세요.',{uncertain:true});
-      // Native error uses an alert only; keep the inline error instead.
-    };
-  });
-  update();resize();return {ok:true};
+    group.append(image,refresh,input,confirm,cancel);row.after(group);auth=group;reload();
+    message(invalid?'코드가 맞지 않습니다. 다시 입력해 주세요.':mode==='U'?'추천하려면 코드를 입력해 주세요.':'비추천하려면 코드를 입력해 주세요.');
+  }
+  async function run(mode,proof=null){
+    if(!active()||state.busy||state.locked.has(mode)||overlay.querySelector('.dcbpv-article[data-dcbpv-filtered="1"]'))return;
+    state.busy=true;state.notice=null;sent=false;controller=new AbortController();const signal=controller.signal;
+    const timer=setTimeout(()=>controller.abort(),20000);
+    if(!proof)clearAuth();
+    message(mode==='U'?'추천 처리 중…':'비추천 처리 중…');
+    try{
+      const ctx=proof?.ctx||await context(signal);
+      if(!active()||signal.aborted)return;
+      if(!ctx.doc.querySelector(`.${mode==='U'?'btn_recom_up':'btn_recom_down'}[data-no="${no}"]:not([disabled]):not(.not)`))throw error('unavailable');
+      const policy=ctx.doc.getElementById(`recommend_code_use_yn_${no}`);
+      const use=policy?.getAttribute('data-use-type');
+      if(policy?.value==='Y'&&!['all','recommend','non_recommend'].includes(use))throw error('authentication');
+      const required=policy?.value==='Y'&&(use==='all'||use===(mode==='U'?'recommend':'non_recommend'));
+      if(required&&!proof){challenge(ctx,mode);return;}
+      if(proof&&auth!==proof.group)return;
+      const token=cookie();if(!token)throw error('authentication');
+      const body=new URLSearchParams(ctx.fields);
+      for(const [name,value] of Object.entries({ci_t:token,id,no,mode,code_recommend:proof?.answer||'',_GALLTYPE_:type,link_id:id}))body.append(name,value);
+      // Same 3-hour first-check cookie as set_cookie_tmp in the official handler.
+      const firstCheck=`${id}${no}_Firstcheck${mode==='D'?'_down':''}`;
+      document.cookie=`${firstCheck}=Y; path=/; domain=dcinside.com; expires=${new Date(Date.now()+3*3600000).toUTCString()};`;
+      sent=true;
+      const response=await fetch('/board/recommend/vote',{method:'POST',credentials:'include',referrer:url.href,redirect:'error',signal,headers:{'Content-Type':'application/x-www-form-urlencoded; charset=UTF-8','X-Requested-With':'XMLHttpRequest'},body:body.toString()});
+      if(!response.ok)throw error('http',response.status);
+      const parts=(await response.text()).trim().split('||');
+      if(parts[0]==='true'&&/^\d+$/.test(parts[1]||'')&&(mode==='D'||/^\d+$/.test(parts[2]||''))){
+        Object.assign(state.counts,mode==='U'?{up:parts[1],upMember:parts[2]}:{down:parts[1]});state.locked.add(mode);clearAuth();
+        report(mode==='U'?'추천 완료':'비추천 완료',{ok:true});
+      }else if(parts[0]==='false'){
+        const reason=String(parts[1]||'추천하지 못했습니다.').slice(0,180);
+        if(/코드|자동입력/.test(reason)&&active()){challenge(ctx,mode,!!proof);}
+        else {state.locked.add(mode);clearAuth();report(reason==='nomember'?'비회원 추천이 제한된 게시글입니다.':reason,{fallback:true});}
+      }else{
+        // Unknown response cannot prove this user's action. A GET may refresh
+        // counts, but never turns an ambiguous response into a success/retry.
+        state.locked.add(mode);clearAuth();
+        try{
+          const read=await fetch(url.href,{credentials:'include',cache:'no-store',redirect:'error',signal});
+          if(read.ok){const doc=new DOMParser().parseFromString(await read.text(),'text/html');
+            for(const [key,selector] of [['up',`#recommend_view_up_${no}`],['upMember',`#recommend_view_up_fix_${no}`],['down',`#recommend_view_down_${no}`]]){
+              const count=doc.querySelector(selector)?.textContent.trim().replace(/,/g,'');if(/^\d+$/.test(count||''))state.counts[key]=count;
+            }
+          }
+        }catch(_){}
+        report('처리 여부를 확인하지 못했습니다. 원문에서 확인해 주세요.',{uncertain:true,fallback:true});
+      }
+    }catch(failure){
+      if(sent){state.locked.add(mode);clearAuth();}
+      const text=failure.code==='member'?'멤버만 추천할 수 있습니다.':failure.code==='authentication'?'인증을 원문에서 확인해 주세요.':failure.status?`추천하지 못했습니다 (HTTP ${failure.status}).`:'처리 여부를 확인하지 못했습니다. 원문에서 확인해 주세요.';
+      if(sent||active())report(text,{uncertain:sent,fallback:true});
+    }finally{clearTimeout(timer);state.busy=false;controller=null;update();state.notify?.('',{settled:true});}
+  }
+  function click(event){
+    const button=event.target.closest('[data-act="vote-up"],[data-act="vote-down"]');
+    if(!button||!row.contains(button)||!event.isTrusted)return;
+    event.preventDefault();void run(button.dataset.act==='vote-up'?'U':'D');
+  }
+  row.addEventListener('click',click,true);
+  update();
+  if(state.busy)message('개추·비추 처리 중…');
+  else if(state.notice)message(state.notice.text,state.notice.details);
+  // Non-secret state survives background restarts and preview close/reopen.
+  return {ok:true,counts:{...state.counts},busy:state.busy};
 }
 
 chrome.runtime.onMessage.addListener((message,sender,respond)=>{
   if(message?.type!=='dcb.previewVote')return;
-  let url,source;
-  try{url=new URL(message.url);source=new URL(sender.url);}catch(_){respond({ok:false});return;}
+  let url,source;try{url=new URL(message.url);source=new URL(sender.url);}catch(_){respond({ok:false});return;}
   if(message.operation!=='prepare'||sender.id!==chrome.runtime.id||sender.frameId!==0||!Number.isInteger(sender.tab?.id)
     ||source.origin!=='https://gall.dcinside.com'||url.origin!==source.origin||url.username||url.password
-    ||!/^\/(?:mgallery\/|mini\/|person\/)?board\/view\/$/.test(url.pathname)
-    ||!/^\w+$/.test(url.searchParams.get('id')||'')||!/^[1-9]\d*$/.test(url.searchParams.get('no')||'')||!/^[a-f0-9-]{36}$/.test(message.key||'')){
-    respond({ok:false});return;
-  }
+    ||!/^\/(?:mgallery\/|mini\/|person\/)?board\/view\/$/.test(url.pathname)||!/^\w+$/.test(url.searchParams.get('id')||'')
+    ||!/^[1-9]\d*$/.test(url.searchParams.get('no')||'')||!/^[a-f0-9-]{36}$/.test(message.key||'')){respond({ok:false});return;}
   chrome.scripting.executeScript({target:{tabId:sender.tab.id,frameIds:[0]},world:'MAIN',func:preparePreviewVote,args:[{url:url.href,key:message.key}]})
-    .then(results=>respond(results[0]?.result||{ok:false}),()=>respond({ok:false}));
-  return true;
+    .then(results=>respond(results[0]?.result||{ok:false}),()=>respond({ok:false}));return true;
 });
