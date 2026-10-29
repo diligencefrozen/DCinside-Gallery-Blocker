@@ -4666,6 +4666,7 @@ syncSettings(handleUrl);
   }
   function suspendPreviewComposer(){
     const state=previewComposer;if(!state)return;
+    state.cancelLoading?.();
     savePreviewDraft(state);clearTimeout(state.statusTimer);
     if(state.submitting){previewDrafts.get(state.key).uncertain=true;cache.delete(state.key);state.frame.dataset.dcbpvCancelled='1';}
     state.form.remove();previewComposer=null;
@@ -4687,7 +4688,7 @@ syncSettings(handleUrl);
   function togglePreviewComposer(data){
     if(!previewComposer)return openPreviewComposer(data,undefined,{focus:true});
     previewComposer.collapsed=!previewComposer.collapsed;syncComposerToggle();
-    if(!previewComposer.collapsed)previewComposer.frame.contentDocument?.querySelector('#dcbpv-native-editor textarea')?.focus({preventScroll:true});
+    if(!previewComposer.collapsed){previewComposer.startLoading?.();previewComposer.frame.contentDocument?.querySelector('#dcbpv-native-editor textarea')?.focus({preventScroll:true});}
   }
   function updateComposerStatus(state,text){
     if(previewComposer!==state)return;
@@ -4714,7 +4715,7 @@ syncSettings(handleUrl);
   function showPreviewSavedDraft(state){
     if(!state.draft||state.form.querySelector('.dcbpv-saved-draft'))return;
     const input=document.createElement('textarea');input.className='dcbpv-saved-draft';input.readOnly=true;input.rows=4;
-    input.setAttribute('aria-label','보존된 댓글 초안');input.value=state.draft;state.frame.hidden=true;state.form.insertBefore(input,state.frame);
+    input.setAttribute('aria-label','보존된 댓글 초안');input.value=state.draft;state.frame.hidden=true;state.form.insertBefore(input,state.frame.parentNode===state.form?state.frame:state.form.querySelector('.dcbpv-compose-actions'));
   }
   function applyComposerMetadata(state,result){
     if(typeof result.inlineCounter==='boolean')state.form.querySelector('[data-composer-count]').hidden=result.inlineCounter;
@@ -4759,6 +4760,12 @@ syncSettings(handleUrl);
     if(stateBefore?.key===key){
       const state=stateBefore;
       if(state.submitting)return;
+      // A reply click must start an offscreen editor immediately and wait for
+      // its one preparation before selecting the native reply target.
+      if(!state.ready&&state.loading){
+        state.startLoading?.();await state.loading;
+        if(previewComposer!==state||!state.ready)return;
+      }
       const readingScroll=state.form.closest('.dcbpv-scroll'),readingTop=readingScroll?.scrollTop;
       if(target!==undefined&&target!==state.target){
         if(target&&!state.targets.some(row=>row.id===target)){updateComposerStatus(state,composerMessage({code:'target'}));return;}
@@ -4786,9 +4793,27 @@ syncSettings(handleUrl);
     syncComposerToggle();updateComposerStatus(state,'작성 폼을 확인하는 중…');
     const frame=state.frame=document.createElement('iframe');frame.dataset.dcbpvComposeFrame=state.token;frame.title='DCinside 댓글 작성 및 인증';
     frame.setAttribute('sandbox','allow-scripts allow-same-origin');frame.setAttribute('scrolling','no');frame.style.visibility='hidden';
-    const loaded=new Promise(resolve=>{const timer=setTimeout(()=>resolve(false),12000);frame.addEventListener('load',()=>{clearTimeout(timer);resolve(true);},{once:true});});
-    frame.src=data.url.split('#')[0];form.insertBefore(frame,form.querySelector('.dcbpv-compose-actions'));
+    let finishLoading;
+    state.loading=new Promise(resolve=>{finishLoading=resolve;});
     try{
+      // Do not load a second full article (scripts, media and authentication)
+      // during first paint while its composer is still below the viewport.
+      const shouldLoad=await new Promise(resolve=>{
+        let settled=false,observer;
+        const settle=value=>{if(settled)return;settled=true;observer?.disconnect();state.startLoading=null;state.cancelLoading=null;resolve(value);};
+        state.startLoading=()=>settle(true);state.cancelLoading=()=>settle(false);
+        if(focus||typeof IntersectionObserver!=='function'){settle(true);return;}
+        observer=new IntersectionObserver(entries=>{
+          if(entries.some(entry=>entry.isIntersecting))settle(true);
+        },{root:form.closest('.dcbpv-scroll'),rootMargin:'200px 0px'});
+        observer.observe(form);
+      });
+      if(!shouldLoad||previewComposer!==state)return;
+      // Give the already-rendered preview a paint before starting native scripts.
+      await new Promise(resolve=>requestAnimationFrame(()=>setTimeout(resolve,0)));
+      if(previewComposer!==state)return;
+      const loaded=new Promise(resolve=>{const timer=setTimeout(()=>resolve(false),12000);frame.addEventListener('load',()=>{clearTimeout(timer);resolve(true);},{once:true});});
+      frame.src=data.url.split('#')[0];form.insertBefore(frame,form.querySelector('.dcbpv-compose-actions'));
       if(!await loaded||previewComposer!==state)return;
       if(state.uncertain){showPreviewSavedDraft(state);updateComposerStatus(state,composerMessage({code:'uncertain'}));return;}
       const result=await sendRuntimeFetchMessage({type:'dcb.previewComment',operation:'prepare',url:state.url,key:state.token,target:state.target,draft:state.draft});
@@ -4801,6 +4826,7 @@ syncSettings(handleUrl);
       if(focus)frame.contentDocument?.querySelector('#dcbpv-native-editor textarea')?.focus({preventScroll:true});
     }catch(_){updateComposerStatus(state,composerMessage(null));}
     finally{
+      finishLoading();
       if(previewComposer===state&&!state.ready){
         delete form.dataset.preparing;frame.hidden=true;frame.style.height='140px';
         showPreviewSavedDraft(state);
