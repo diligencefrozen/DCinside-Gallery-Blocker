@@ -620,6 +620,7 @@ syncSettings(handleUrl);
       #${OVERLAY_ID} .dcbpv-comments-actions :is(button,a):hover{text-decoration:underline}
       #${OVERLAY_ID} .dcbpv-composer{margin:14px 0;padding:14px;border:1px solid #94a3b8;border-radius:10px;color:#253047;background:#f8fafc;box-sizing:border-box}
       #${OVERLAY_ID} .dcbpv-composer iframe{display:block;width:100%;height:140px;min-width:0;border:0;margin:8px 0;background:transparent}
+      #${OVERLAY_ID} .dcbpv-composer[data-preparing] > iframe{height:140px!important;min-height:0!important;max-height:140px!important}
       #${OVERLAY_ID} .dcbpv-composer[hidden],#${OVERLAY_ID} .dcbpv-compose-heading [hidden]{display:none}
       #${OVERLAY_ID} .dcbpv-compose-heading{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
       #${OVERLAY_ID} .dcbpv-delete-button{border:0;background:transparent;color:#be123c;cursor:pointer;padding:2px 6px;font-size:18px;line-height:1}
@@ -4777,7 +4778,7 @@ syncSettings(handleUrl);
     const saved=previewDrafts.get(key)||{};
     const state=previewComposer={key,url:data.url,target:target??saved.target??'',draft:saved.draft||'',drafts:{...(saved.drafts||{})},uncertain:saved.uncertain,
       ready:false,submitting:false,targets:[],owned:[],collapsed:false,token:crypto.randomUUID()};
-    const form=state.form=document.createElement('div');form.className='dcbpv-composer';form.id='dcbpv-composer';
+    const form=state.form=document.createElement('div');form.className='dcbpv-composer';form.id='dcbpv-composer';form.dataset.preparing='';
     form.innerHTML=`<div class="dcbpv-compose-heading"><strong data-composer-target>댓글 작성</strong><button class="dcbpv-btn" type="button" data-act="compose-reply-cancel" hidden>답글 취소</button></div>
       <div class="dcbpv-compose-actions"><span data-composer-count></span><button class="dcbpv-btn" type="button" data-act="compose-cancel">접기</button><a target="_blank" rel="noopener noreferrer">원문에서 댓글 작성</a></div><p role="status" aria-live="polite"></p>`;
     form.querySelector('a').href=`${data.url.split('#')[0]}#focus_cmt`;
@@ -4793,10 +4794,19 @@ syncSettings(handleUrl);
       const result=await sendRuntimeFetchMessage({type:'dcb.previewComment',operation:'prepare',url:state.url,key:state.token,target:state.target,draft:state.draft});
       if(previewComposer!==state)return;
       if(!result?.ok){showPreviewSavedDraft(state);updateComposerStatus(state,composerMessage(result));return;}
-      state.ready=true;applyComposerMetadata(state,result);frame.style.visibility='visible';updateComposerStatus(state,'');
+      // A presentation/metadata error must not leave a prepared native editor
+      // invisible. Only apply its measured height after preparation succeeds.
+      state.ready=true;delete form.dataset.preparing;frame.style.visibility='visible';frame.style.height=`${state.editorHeight||140}px`;
+      updateComposerStatus(state,result.authMessage||'');applyComposerMetadata(state,result);
       if(focus)frame.contentDocument?.querySelector('#dcbpv-native-editor textarea')?.focus({preventScroll:true});
     }catch(_){updateComposerStatus(state,composerMessage(null));}
-    finally{if(previewComposer===state&&!state.ready&&form.querySelector('[role=status]').textContent==='작성 폼을 확인하는 중…')updateComposerStatus(state,composerMessage(null));}
+    finally{
+      if(previewComposer===state&&!state.ready){
+        delete form.dataset.preparing;frame.hidden=true;frame.style.height='140px';
+        showPreviewSavedDraft(state);
+        if(form.querySelector('[role=status]').textContent==='작성 폼을 확인하는 중…')updateComposerStatus(state,composerMessage(null));
+      }
+    }
   }
   async function openPreviewDelete(target){
     const state=previewComposer;if(!state||state.submitting||!state.owned.includes(target))return;
@@ -4820,7 +4830,7 @@ syncSettings(handleUrl);
       if(!open){slot.style.minHeight=state.pickerSlotHeight||'';state.frame.style.height=`${state.editorHeight||140}px`;scroll.scrollTop=state.pickerScrollTop||0;}
       return;
     }
-    if(payload.kind==='size'){if(Number.isFinite(payload.height)&&payload.height>=100&&payload.height<2000){state.editorHeight=payload.height;state.frame.style.height=`${payload.height}px`;}return;}
+    if(payload.kind==='size'){if(Number.isFinite(payload.height)&&payload.height>=100&&payload.height<2000){state.editorHeight=payload.height;if(state.ready&&!state.pickerOpen)state.frame.style.height=`${payload.height}px`;}return;}
     if(payload.kind==='auth'){updateComposerStatus(state,String(payload.message||''));return;}
     if(payload.kind==='metadata'){if(payload.metadata?.ok)applyComposerMetadata(state,payload.metadata);return;}
     if(payload.kind==='draft'){

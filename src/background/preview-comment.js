@@ -510,8 +510,13 @@ async function previewCommentInPage(request) {
     if(request.target)session.select(request.target,request.draft);
     sendDraft();resize();
     // Native authentication routines fetch only challenges, never submit here.
-    if(value('kcaptcha_use')==='Y')win.kcaptcha_init?.(no);
-    if(hasChallenge&&!challengeReady())win.ts_cmt_load?.();
+    // A site's challenge loader can throw independently of the valid editor.
+    // Preserve the form and report it; submission still requires authentication.
+    let prepareAuthError='';
+    try { if(value('kcaptcha_use')==='Y')win.kcaptcha_init?.(no); }
+    catch (_) { prepareAuthError='이미지 인증을 불러오지 못했습니다. 인증 새로고침 버튼으로 다시 시도해 주세요.';notify('auth',{message:prepareAuthError}); }
+    try { if(hasChallenge&&!challengeReady())win.ts_cmt_load?.(); }
+    catch (_) { prepareAuthError='사이트 인증을 불러오지 못했습니다. 작성 내용은 유지됩니다.';notify('auth',{message:prepareAuthError}); }
     if(hasChallenge){
       let previous='';
       const watch=setInterval(()=>{
@@ -522,7 +527,7 @@ async function previewCommentInPage(request) {
         if(message)notify('auth',{message});
       },500);
     }
-    return session.metadata();
+    return {...session.metadata(),authMessage:prepareAuthError};
   }
 
   const deleting = request.operation === 'delete-submit';
