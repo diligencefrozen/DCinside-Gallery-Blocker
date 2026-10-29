@@ -218,24 +218,43 @@ async function previewCommentInPage(request) {
     clearSelection.onclick=event=>{if(event.isTrusted&&!session.busy){session.mediaDrafts.delete(session.target);session.resetAuth();showSelection();resize();input.focus({preventScroll:true});}};
     const pickerHeader=doc.createElement('div');pickerHeader.id='dcbpv-picker-header';pickerHeader.hidden=true;
     const pickerCopy=doc.createElement('div'),pickerTitle=doc.createElement('strong'),pickerHint=doc.createElement('small'),pickerBack=doc.createElement('button');
-    pickerBack.type='button';pickerBack.textContent='작성창으로';pickerCopy.append(pickerTitle,pickerHint);pickerHeader.append(pickerCopy,pickerBack);surface.prepend(pickerHeader);
+    pickerBack.type='button';pickerBack.textContent='닫기';pickerBack.setAttribute('aria-label','콘 선택 팝업 닫기');pickerCopy.append(pickerTitle,pickerHint);pickerHeader.append(pickerCopy,pickerBack);surface.prepend(pickerHeader);
     const pickerLoading=doc.createElement('div');pickerLoading.id='dcbpv-picker-loading';pickerLoading.hidden=true;pickerLoading.setAttribute('role','status');pickerLoading.textContent='디시콘 목록을 불러오는 중…';surface.append(pickerLoading);
-    let lastPickerOpen=false,lastPickerHeight=0;
+    let lastPickerOpen=false,lastPickerHeight=0,pickerTimer;
+    const pickerNotice=message=>{session.pickerPending=false;pickerLoading.textContent=message;pickerLoading.hidden=false;pickerHint.textContent='현재 미리보기에서 닫고 다시 선택할 수 있습니다.';};
+    // The native list's login confirmation redirects the editor document.
+    // Keep that decision local to the picker; never replace the live composer.
+    const nativeConfirm=win.confirm.bind(win);
+    win.confirm=message=>{if(session.pickerOpen&&/로그인/.test(String(message))){pickerNotice('로그인이 필요한 목록입니다. 현재 작성 내용은 유지됩니다.');return false;}return nativeConfirm(message);};
     const publishPicker=(open,height=420)=>{height=Math.max(180,Math.min(620,Math.ceil(height)));if(open!==lastPickerOpen||(open&&height!==lastPickerHeight)){lastPickerOpen=open;lastPickerHeight=height;notify('picker',{open,height});}};
-    const closePicker=()=>{session.pickerDismissed=true;session.pickerPending=false;for(const panel of doc.querySelectorAll('#div_con,#div_txtcon'))panel.style.display='none';syncPicker();resize();box.querySelector(session.pickerKind==='txtcon'?'.tx_txtcon':'.tx_dccon')?.focus({preventScroll:true});};
+    const closePicker=()=>{clearTimeout(pickerTimer);session.pickerDismissed=true;session.pickerPending=false;for(const panel of doc.querySelectorAll('#div_con,#div_txtcon'))panel.style.display='none';syncPicker();resize();box.querySelector(session.pickerKind==='txtcon'?'.tx_txtcon':'.tx_dccon')?.focus({preventScroll:true});};
     pickerBack.onclick=closePicker;
     doc.addEventListener('click',event=>{
+      const action=event.target.closest('a,button,[onclick]');
+      if(session.pickerOpen&&action?.closest('#div_con,#div_txtcon')){
+        const href=action.getAttribute('href')||'',handler=action.getAttribute('onclick')||'';
+        if((href&&!/^#|^javascript:\s*(?:;|void\(0\);?)?$/i.test(href))||action.matches('.btn_my_dccon_edit')||/(?:window\.open|location\s*(?:\.|=))/.test(handler)){
+          event.preventDefault();event.stopImmediatePropagation();pickerHint.textContent='외부 페이지 이동은 지원하지 않습니다. 이 팝업에서 콘을 선택해 주세요.';return;
+        }
+      }
       const trigger=event.target.closest('.tx_dccon,.tx_txtcon');if(!trigger||!box.contains(trigger)||!event.isTrusted)return;
+      event.preventDefault(); // Native delegated selection still runs, without anchor navigation.
       if(session.busy||session.uncertain){event.preventDefault();event.stopImmediatePropagation();return;}
       session.pickerDismissed=false;
-      if(trigger.matches('.tx_dccon')){session.pickerKind='dccon';session.pickerPending=true;syncPicker();resize();}
+      if(trigger.matches('.tx_dccon')){
+        session.pickerKind='dccon';session.pickerPending=true;pickerLoading.textContent='디시콘 목록을 불러오는 중…';syncPicker();resize();
+        clearTimeout(pickerTimer);pickerTimer=setTimeout(()=>{if(frame.isConnected&&session.pickerPending)pickerNotice('디시콘 목록을 불러오지 못했습니다. 닫은 뒤 다시 시도해 주세요.');},15000);
+      }
       // Native delegated handler performs its single normal read; no extra fetch.
     },true);
     const syncPicker=()=>{
-      let panel=[...box.querySelectorAll('#div_con,#div_txtcon')].find(node=>node.style.display!=='none'&&!node.hidden&&win.getComputedStyle(node).display!=='none')||null;
+      // Native .show() sets inline display after inserting the list. Our picker
+      // mask hides it until its ancestor path is exposed, so computed display
+      // alone creates a deadlock: the loaded panel can never become visible.
+      let panel=[...box.querySelectorAll('#div_con,#div_txtcon')].find(node=>node.style.display!=='none'&&!node.hidden&&(!!node.style.display||win.getComputedStyle(node).display!=='none'))||null;
       if(session.pickerDismissed&&panel){panel.style.display='none';panel=null;}
-      if(panel)session.pickerPending=false;
-      const open=!!panel||!!session.pickerPending;
+      if(panel){session.pickerPending=false;clearTimeout(pickerTimer);}
+      const open=!!panel||!!session.pickerPending||(!session.pickerDismissed&&session.pickerOpen&&!pickerLoading.hidden);
       if(panel===session.picker&&open===session.pickerOpen)return;
       surface.querySelectorAll('.dcbpv-picker-path,.dcbpv-picker-panel').forEach(node=>node.classList.remove('dcbpv-picker-path','dcbpv-picker-panel'));
       session.picker=panel;session.pickerOpen=open;pickerHeader.hidden=!open;pickerLoading.hidden=!session.pickerPending;surface.classList.toggle('dcbpv-picking',open);doc.documentElement.classList.toggle('dcbpv-picking',open);
