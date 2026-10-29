@@ -4721,10 +4721,14 @@ syncSettings(handleUrl);
     if(result.owned)state.owned=result.owned;
     if(result.maxLength)state.maxLength=result.maxLength;
     const overlay=document.getElementById(OVERLAY_ID);
+    const times=new Map();
+    if(result.dates?.length)overlay?.querySelectorAll('[data-dcbpv-native-id]').forEach(row=>{
+      const time=row.querySelector('.dcbpv-time');if(time)times.set(row.dataset.dcbpvNativeId,time);
+    });
     for(const entry of result.dates||[]){
       if(!/^\d+$/.test(entry.id)||!/^\d{4}[-.]/.test(entry.date))continue;
-      const time=overlay?.querySelector(`[data-dcbpv-native-id='${entry.id}'] .dcbpv-time`);
-      if(time){time.dataset.dcbpvFullTime=entry.date;time.textContent=formatPreviewCommentTime(entry.date);time.title=entry.date;}
+      const time=times.get(entry.id);
+      if(time&&time.dataset.dcbpvFullTime!==entry.date){time.dataset.dcbpvFullTime=entry.date;time.textContent=formatPreviewCommentTime(entry.date);time.title=entry.date;}
     }
     if(overlay)decoratePreviewReplyActions(overlay);
   }
@@ -4912,7 +4916,8 @@ syncSettings(handleUrl);
       const link=document.createElement('a');link.href=data.url;link.target='_blank';link.rel='noopener noreferrer';link.textContent='원문에서 확인';status.append(link);return;
     }
     applyPreviewRecommendationCounts(state,result.counts);
-    if(Object.keys(state.counts).length)cache.delete(article);
+    // Preparing controls only restores already confirmed counts. Invalidate on
+    // a vote result, not on every subsequent opening of the same cached post.
   }
   window.addEventListener('message',event=>{
     const state=previewVote,payload=event.data;

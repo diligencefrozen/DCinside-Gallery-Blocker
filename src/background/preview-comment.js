@@ -294,7 +294,7 @@ async function previewCommentInPage(request) {
       if (event.key === 'Enter') event.stopPropagation();
       if (event.key === 'Escape' && !event.isComposing) { event.preventDefault(); notify('escape'); }
     });
-    let lastHeight = 0, resizing = false, lastMetadata = '';
+    let lastHeight = 0, resizing = false, lastMetadata = '', metadataDirty = true, authDiscoveryDirty = true;
     const expose = node => {
       if (!node.classList.contains('dcbpv-native-auth')) node.classList.add('dcbpv-native-auth');
       // comment.js v261029 places Turnstile beside the submit button. The
@@ -312,33 +312,60 @@ async function previewCommentInPage(request) {
       resizing = true;
       requestAnimationFrame(() => {
         resizing = false;
+        if (!frame.isConnected) { observer.disconnect(); sizeObserver.disconnect(); return; }
         syncPicker();
         if (win.ts_cmt?.box) expose(win.ts_cmt.box);
         const selectText=doc.getElementById('btn_txtcon_submit');if(selectText&&selectText.textContent!=='작성창에 첨부')selectText.textContent='작성창에 첨부';
-        doc.querySelectorAll('body > div').forEach(node => {
-          if (node !== surface && node.querySelector('iframe[src*="recaptcha/"]')) expose(node);
-        });
-        const bottoms = [surface, ...doc.querySelectorAll('.dcbpv-native-auth')].map(node => {
-          const rect = node.getBoundingClientRect();
-          return rect.width && rect.height ? rect.bottom : 0;
-        });
-        const height = Math.max(140, Math.ceil(Math.max(...bottoms)) + 8);
+        if (authDiscoveryDirty) {
+          authDiscoveryDirty = false;
+          doc.querySelectorAll('body > div').forEach(node => {
+            if (node !== surface && node.querySelector('iframe[src*="recaptcha/"]')) expose(node);
+          });
+        }
         if(session.picker){
           const panel=session.picker,top=panel.getBoundingClientRect().top;
           const bottom=Math.max(top,...[...panel.children].filter(node=>!['absolute','fixed'].includes(win.getComputedStyle(node).position)).map(node=>node.getBoundingClientRect().bottom));
           publishPicker(true,bottom-top+pickerHeader.getBoundingClientRect().height+30);
-        }else if (!session.pickerOpen && height !== lastHeight && height < 2000) { lastHeight = height; notify('size', { height }); }
+        }else if (!session.pickerOpen) {
+          const bottoms = [surface, ...doc.querySelectorAll('.dcbpv-native-auth')].map(node => {
+            const rect = node.getBoundingClientRect();
+            return rect.width && rect.height ? rect.bottom : 0;
+          });
+          const height = Math.max(140, Math.ceil(Math.max(...bottoms)) + 8);
+          if (height !== lastHeight && height < 2000) { lastHeight = height; notify('size', { height }); }
+        }
         // Native comments can finish loading after the iframe load event.
         // Publish only changed, non-secret metadata; never reload the editor.
-        if (session.metadata && !session.pickerOpen) {
+        if (metadataDirty && session.metadata && !session.pickerOpen) {
+          metadataDirty = false;
           if (!session.records) session.targets = nativeTargets();
           const metadata = session.metadata(), serialized = JSON.stringify(metadata);
           if (serialized !== lastMetadata) { lastMetadata = serialized; notify('metadata', {metadata}); }
         }
       });
     };
-    const observer = new MutationObserver(resize);
-    observer.observe(doc.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class', 'hidden'] });
+    // Hidden article/advertisement mutations must not repeatedly lay out the
+    // editor or rescan all comments. Keep comment metadata separate from UI size.
+    const commentScope='.comment_wrap,.cmt_list,.reply_list,.cmt_info[data-no],.reply_info[data-no]';
+    const observer = new MutationObserver(mutations => {
+      let needsResize=false;
+      for (const mutation of mutations) {
+        const target=mutation.target.nodeType===1?mutation.target:mutation.target.parentElement;
+        if (!target) continue;
+        if (surface.contains(target)) { needsResize=true; continue; }
+        if (target.closest(commentScope)) metadataDirty=true;
+        if (target.closest('.dcbpv-native-auth,.dcbpv-auth-path')) needsResize=true;
+        if (mutation.type==='childList') {
+          for (const node of [...mutation.addedNodes,...mutation.removedNodes]) {
+            if (node.nodeType!==1) continue;
+            if (node.matches(commentScope)||node.querySelector(commentScope)) metadataDirty=true;
+            if (node.matches('iframe')||node.querySelector('iframe[src*="recaptcha/"]')) authDiscoveryDirty=true;
+          }
+        } else if (mutation.attributeName==='src'&&target.matches('iframe')) authDiscoveryDirty=true;
+      }
+      if (needsResize||metadataDirty||authDiscoveryDirty) resize();
+    });
+    observer.observe(doc.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class', 'hidden', 'src', 'data-my', 'title'] });
     const sizeObserver = new ResizeObserver(resize);
     sizeObserver.observe(surface);
     win.addEventListener('resize', resize);
