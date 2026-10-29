@@ -692,6 +692,10 @@ syncSettings(handleUrl);
       #${OVERLAY_ID} .dcbpv-panel{position:relative}
       #${OVERLAY_ID} .dcbpv-composer.dcbpv-docked{position:absolute;z-index:5;left:16px;right:16px;bottom:var(--dcbpv-dock-bottom,70px);max-height:min(48dvh,480px);overflow:auto;margin:0;box-shadow:0 -6px 24px #0f172a26}
       #${OVERLAY_ID} .dcbpv-scroll:has(.dcbpv-docked){overflow-anchor:none}
+      #${OVERLAY_ID} .dcbpv-composer.dcbpv-picker-open{position:absolute;z-index:8;inset:12px;max-height:none;margin:0;padding:14px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 8px 32px #0f172a30}
+      #${OVERLAY_ID} .dcbpv-picker-open>.dcbpv-compose-heading,#${OVERLAY_ID} .dcbpv-picker-open>.dcbpv-compose-actions,#${OVERLAY_ID} .dcbpv-picker-open>[role=status]{display:none}
+      #${OVERLAY_ID} .dcbpv-picker-open>iframe{height:100%!important;min-height:0;flex:1;margin:0}
+      #${OVERLAY_ID} .dcbpv-scroll:has(.dcbpv-picker-open){overflow:hidden;overflow-anchor:none}
       #${OVERLAY_ID} [data-dcbpv-reply-active]{outline:2px solid #7aa2ef;outline-offset:-2px;border-radius:6px}
       #${OVERLAY_ID} button.dcbpv-vote-reaction{min-width:106px;min-height:44px;border-radius:24px;display:inline-flex;align-items:center;justify-content:center;gap:6px;transition:transform .16s,background .16s,border-color .16s}
       #${OVERLAY_ID} [data-act=vote-up]{color:#245bd1;background:#eef4ff;border-color:#aac5fc}
@@ -4802,7 +4806,15 @@ syncSettings(handleUrl);
     const state=previewComposer,payload=event.data;
     if(!state||event.source!==window||event.origin!==location.origin||payload?.type!=='dcb.previewComment.event'||payload.key!==state.token)return;
     if(payload.kind==='escape'){closePreview();return;}
-    if(payload.kind==='size'){if(Number.isFinite(payload.height)&&payload.height>=100&&payload.height<2000)state.frame.style.height=`${payload.height}px`;return;}
+    if(payload.kind==='picker'){
+      const open=payload.open===true;if(open===!!state.pickerOpen)return;
+      const scroll=state.form.closest('.dcbpv-scroll'),slot=state.form.parentElement;
+      if(open){state.pickerScrollTop=scroll.scrollTop;state.pickerSlotHeight=slot.style.minHeight;if(!state.target)slot.style.minHeight=`${state.form.getBoundingClientRect().height}px`;}
+      state.pickerOpen=open;state.form.classList.toggle('dcbpv-picker-open',open);
+      if(!open){slot.style.minHeight=state.pickerSlotHeight||'';state.frame.style.height=`${state.editorHeight||140}px`;scroll.scrollTop=state.pickerScrollTop||0;}
+      return;
+    }
+    if(payload.kind==='size'){if(Number.isFinite(payload.height)&&payload.height>=100&&payload.height<2000){state.editorHeight=payload.height;state.frame.style.height=`${payload.height}px`;}return;}
     if(payload.kind==='auth'){updateComposerStatus(state,String(payload.message||''));return;}
     if(payload.kind==='metadata'){if(payload.metadata?.ok)applyComposerMetadata(state,payload.metadata);return;}
     if(payload.kind==='draft'){

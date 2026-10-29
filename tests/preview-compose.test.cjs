@@ -35,8 +35,9 @@ function nativeDocument(url, member = true, captcha = false, own = false, turnst
       secure(document.querySelector('.repley_add'));
       const tools=document.createElement('div');tools.className='dccon_guidebox';tools.innerHTML='<button type="button" class="tx_dccon">디시콘</button><button type="button" class="tx_txtcon">글자콘</button><div id="div_con" style="display:none"><button class="img_dccon" package_idx="12" detail_idx="34"><img src="//dcimg5.dcinside.com/dccon.php?no=fixture" alt="fixture icon"></button></div><div id="div_txtcon" style="display:none"><textarea id="txtcon_input"></textarea><button id="btn_txtcon_submit">등록</button></div>';
       document.querySelector('.cmt_txt_cont').append(tools);
-      document.querySelector('.tx_dccon').onclick=()=>document.querySelector('#div_con').style.display='block';document.querySelector('.tx_txtcon').onclick=()=>document.querySelector('#div_txtcon').style.display='block';
-      window.txtcon_sel_colors=()=>({bg:'ffffff',txt:'000000'});window.txtcon_panel_close=()=>document.querySelector('#div_txtcon').style.display='none';window.nativeMediaSubmits=0;
+      for(const panel of tools.querySelectorAll('#div_con,#div_txtcon'))document.body.append(panel);
+      document.querySelector('.tx_dccon').onclick=event=>{const panel=document.querySelector('#div_con');event.target.after(panel);panel.style.display='block';};document.querySelector('.tx_txtcon').onclick=event=>{const panel=document.querySelector('#div_txtcon');event.target.after(panel);panel.style.display='block';};
+      window.txtcon_sel_colors=()=>({bg:'ffffff',txt:'000000'});window.txtcon_panel_close=()=>{const panel=document.querySelector('#div_txtcon');panel.style.display='none';document.body.append(panel);};window.nativeMediaSubmits=0;
       document.addEventListener('click',event=>{if(event.target.closest('.img_dccon,#btn_txtcon_submit'))window.nativeMediaSubmits++;});
       if(${turnstile}){
         window._TS_CMT_={mode:2};window.ts_cmt={st:'pending',id:1,box:null};let token='';
@@ -376,6 +377,42 @@ function nativeDocument(url, member = true, captcha = false, own = false, turnst
       }else if(mode!=='reject')assert.equal(await editor().locator('.repley_add').isDisabled(),true,'uncertain writes stay locked');
       await close();checks++;
     }
+    for(const width of [360,540,1100])for(const kind of ['dccon','txtcon']){
+      await page.setViewportSize({width,height:width===360?640:820});await page.emulateMedia({colorScheme:width===540?'dark':'light'});
+      reset();await render(article('',String(600+checks)));await open();
+      if(kind==='txtcon')await page.locator('[data-act=compose-reply][data-target="101"]').click();
+      const originalFrame=page.frames().find(f=>f.url().includes('no='+String(600+checks)));
+      await editor().locator('textarea[id^=memo_]').fill('첨부 전 초안');
+      await editor().locator('body').evaluate(body=>{
+        const panel=body.querySelector('#div_con'),icon=panel.querySelector('.img_dccon');
+        panel.style.width='700px';panel.style.height='900px';
+        const list=document.createElement('div');list.className='dcconlist';list.style.cssText='width:680px;height:700px;overflow:auto;display:grid;grid-template-columns:repeat(auto-fit,minmax(72px,1fr));gap:8px';
+        for(let i=0;i<30;i++){const copy=icon.cloneNode(true);copy.querySelector('img').src='https://dcimg5.dcinside.com/dccon.php?no=fixture';copy.style.height='72px';list.append(copy);}icon.remove();panel.append(list);
+      });
+      await editor().locator(kind==='dccon'?'.tx_dccon':'.tx_txtcon').click();
+      await page.locator('.dcbpv-picker-open').waitFor({state:'visible'});
+      const bounds=await page.locator('.dcbpv-picker-open').evaluate(node=>{const r=node.getBoundingClientRect();return {x:r.x,y:r.y,right:r.right,bottom:r.bottom,w:innerWidth,h:innerHeight,scroll:node.scrollHeight-node.clientHeight};});
+      assert.ok(bounds.x>=0&&bounds.y>=0&&bounds.right<=bounds.w&&bounds.bottom<=bounds.h&&bounds.scroll<=1,JSON.stringify(bounds));
+      assert.equal(await editor().locator('.repley_add').isVisible(),false,'picker hides the editor and its submit button');
+      assert.equal(await editor().locator('#dcbpv-picker-header button').isVisible(),true);
+      assert.equal(await editor().locator('html').evaluate(el=>el.scrollHeight<=innerHeight+1),true,'no iframe document scroll');
+      assert.equal(await editor().locator('.dcbpv-picker-panel').evaluate(el=>el.scrollWidth<=el.clientWidth+1),true,'picker fits narrow screen');
+      await page.screenshot({path:path.join(root,`test-results/preview-picker-${kind}-${width}.png`)});
+      if(kind==='dccon')await editor().locator('.img_dccon').first().click();else{await editor().locator('#txtcon_input').fill('첨부 확인');await editor().locator('#btn_txtcon_submit').click();}
+      await page.locator('.dcbpv-picker-open').waitFor({state:'hidden'});
+      assert.equal(writes.length,0,'attaching is not posting');
+      assert.equal(page.frames().find(f=>f.url().includes('no='+String(600+checks))),originalFrame,'picker never replaces the iframe');
+      assert.equal(await editor().locator(kind==='dccon'?'#dcbpv-selection-preview img':'#dcbpv-selection-preview .dcbpv-textcon').count(),1);
+      assert.equal(await editor().locator('textarea[id^=memo_]').isVisible(),false,'selected content is clear instead of an apparently empty editor');
+      await page.screenshot({path:path.join(root,`test-results/preview-attached-${kind}-${width}.png`)});
+      await editor().locator('#dcbpv-selection button').click();
+      assert.equal(await editor().locator('textarea[id^=memo_]').inputValue(),'첨부 전 초안');
+      await editor().locator(kind==='dccon'?'.tx_dccon':'.tx_txtcon').click();await page.locator('.dcbpv-picker-open').waitFor();
+      await editor().locator('#dcbpv-picker-header button').press('Escape');await page.locator('.dcbpv-picker-open').waitFor({state:'hidden'});
+      assert.equal(await page.locator('.dcbpv-composer').count(),1,'Escape closes only the picker');assert.equal(writes.length,0);
+      await close();checks++;
+    }
+    await page.emulateMedia({colorScheme:'light'});
     for(const count of [20,50]){
       await page.setViewportSize({width:count===20?360:1100,height:850});
       reset();records.push(...Array.from({length:count-2},(_,i)=>({no:String(103+i),c_no:'0',depth:0,name:'writer'+i,memo:'long comment '+i})));await render(article('',String(200+count)));await open();

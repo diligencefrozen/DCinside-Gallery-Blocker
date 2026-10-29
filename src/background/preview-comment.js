@@ -133,8 +133,29 @@ async function previewCommentInPage(request) {
       #dcbpv-native-editor .repley_add:not(:disabled):hover{background:#2449bc;transform:translateY(-1px)}
       #dcbpv-native-editor .repley_add:not(:disabled):active{transform:translateY(1px)}
       #dcbpv-native-editor .repley_add:focus-visible{outline:3px solid #7ba7fa;outline-offset:2px}
-      #dcbpv-selection{order:3;display:flex;gap:8px;align-items:center;overflow-wrap:anywhere}
+      #dcbpv-selection{order:3;display:flex;gap:12px;align-items:center;flex-wrap:wrap;overflow-wrap:anywhere;padding:12px;margin:8px 0;border:1px solid #a9bee7;border-radius:12px;background:#eef4ff}
       #dcbpv-selection[hidden]{display:none}
+      #dcbpv-selection-preview{display:flex;gap:6px;flex-shrink:0}
+      #dcbpv-selection-preview img{width:88px;height:88px;object-fit:contain;border-radius:8px}
+      #dcbpv-selection-preview .dcbpv-textcon{display:grid;place-items:center;box-sizing:border-box;width:100px;min-height:100px;padding:10px;border-radius:10px;white-space:pre-wrap;overflow-wrap:anywhere;font-weight:700;font-size:18px;text-align:center}
+      #dcbpv-selection-copy{flex:1;min-width:120px}#dcbpv-selection-copy small{display:block;margin-top:5px}
+      #dcbpv-selection button,#dcbpv-picker-header button{border:1px solid #a9bee7;border-radius:8px;background:#fff;color:#253047;padding:8px 12px;min-height:36px;cursor:pointer}
+      #dcbpv-editor-surface.dcbpv-has-media textarea[id^=memo_]{display:none!important}
+      #dcbpv-picker-header{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-shrink:0;padding:4px 0 12px;border-bottom:1px solid #d8e1ef}
+      #dcbpv-picker-header[hidden]{display:none}
+      #dcbpv-picker-header strong{font-size:17px}#dcbpv-picker-header small{display:block;margin-top:4px;color:#64748b}
+      html.dcbpv-picking,html.dcbpv-picking body{height:100%!important}
+      #dcbpv-editor-surface.dcbpv-picking{height:100%;min-height:0;gap:10px;overflow:hidden}
+      #dcbpv-editor-surface.dcbpv-picking>:not(#dcbpv-picker-header):not(.dcbpv-picker-path),
+      #dcbpv-editor-surface.dcbpv-picking .dcbpv-picker-path>:not(.dcbpv-picker-path):not(.dcbpv-picker-panel),
+      html.dcbpv-picking .dcbpv-native-auth{display:none!important}
+      #dcbpv-editor-surface.dcbpv-picking .dcbpv-picker-path{display:contents!important}
+      #dcbpv-editor-surface.dcbpv-picking .dcbpv-picker-panel{position:relative!important;inset:auto!important;float:none!important;box-sizing:border-box!important;width:100%!important;max-width:100%!important;min-height:0!important;max-height:none!important;flex:1;overflow:auto!important;margin:0!important;border:0!important;box-shadow:none!important;overscroll-behavior:contain}
+      #dcbpv-editor-surface.dcbpv-picking .dcbpv-picker-panel :is(.inner,.pop_content,.dccon_list_box,.dcconlist,.dccon_list,.dccon_listbox,.txt_dccon_box){box-sizing:border-box!important;width:auto!important;max-width:100%!important;height:auto!important;max-height:none!important;overflow:visible!important}
+      #dcbpv-editor-surface.dcbpv-picking .img_dccon{max-width:100%}#dcbpv-editor-surface.dcbpv-picking .img_dccon img{max-width:100%;object-fit:contain}
+      #dcbpv-editor-surface.dcbpv-picking #btn_txtcon_submit{position:sticky;bottom:0;min-height:42px;min-width:120px;border:0;border-radius:9px;background:#315bea;color:#fff;font-weight:700;cursor:pointer}
+      #dcbpv-editor-surface.dcbpv-picking #txtcon_input{height:72px!important;min-height:72px!important}
+      @media(prefers-color-scheme:dark){#dcbpv-selection{background:#1c2d49;border-color:#516a91}#dcbpv-selection button,#dcbpv-picker-header button{background:#24344e;color:#e2e8f0}#dcbpv-picker-header small{color:#a8b9d3}#dcbpv-editor-surface.dcbpv-picking .dcbpv-picker-panel{background:#1e293b;color:#e2e8f0}}
       @media(prefers-reduced-motion:reduce){#dcbpv-native-editor .repley_add{transition:none!important;transform:none!important}}
       #dcbpv-native-editor .cmt_cont_bottm{height:auto!important;min-height:34px!important}
       #dcbpv-native-editor .repley_add,#dcbpv-delete-confirm button{padding:7px 16px;border:0;border-radius:6px;background:#315bea;color:#fff;cursor:pointer}
@@ -158,9 +179,37 @@ async function previewCommentInPage(request) {
     const inlineStatus=doc.createElement('span');inlineStatus.id='dcbpv-inline-status';inlineStatus.setAttribute('aria-live','polite');
     if(tools){tools.append(counter,inlineStatus);counter.style.margin='0 8px';}
     const selection=doc.createElement('div');selection.id='dcbpv-selection';selection.hidden=true;surface.append(selection);
-    const selectedLabel=doc.createElement('span'),clearSelection=doc.createElement('button');clearSelection.type='button';clearSelection.textContent='선택 취소';selection.append(selectedLabel,clearSelection);
-    const showSelection=()=>{const media=session.mediaDrafts.get(session.target);selection.hidden=!media;selectedLabel.textContent=media?.kind==='dccon'?`디시콘 ${media.details.length}개 선택`:media?`글자콘: ${media.text}`:'';};
-    clearSelection.onclick=event=>{if(event.isTrusted&&!session.busy){session.mediaDrafts.delete(session.target);session.resetAuth();showSelection();}};
+    selection.setAttribute('role','status');selection.setAttribute('aria-live','polite');
+    const selectedPreview=doc.createElement('div');selectedPreview.id='dcbpv-selection-preview';
+    const selectedCopy=doc.createElement('div');selectedCopy.id='dcbpv-selection-copy';
+    const selectedLabel=doc.createElement('strong'),selectedHint=doc.createElement('small'),clearSelection=doc.createElement('button');
+    clearSelection.type='button';clearSelection.textContent='첨부 취소';selectedCopy.append(selectedLabel,selectedHint);selection.append(selectedPreview,selectedCopy,clearSelection);
+    const showSelection=()=>{
+      const media=session.mediaDrafts.get(session.target);selection.hidden=!media;surface.classList.toggle('dcbpv-has-media',!!media);selectedPreview.replaceChildren();
+      selectedLabel.textContent=media?.kind==='dccon'?`디시콘 ${media.details.length}개 첨부`:media?'글자콘 첨부':'';
+      selectedHint.textContent=input.value?'콘만 등록됩니다. 첨부 취소 시 작성 중인 글로 돌아갑니다.':'댓글 등록을 누르면 전송됩니다.';
+      if(media?.kind==='dccon')for(const src of media.assets){try{const url=new URL(src,win.location.href);if(!/^https?:$/.test(url.protocol)||!/^dcimg\d*\.dcinside\.com$/.test(url.hostname))continue;const image=doc.createElement('img');image.src=url.href;image.alt='선택한 디시콘';selectedPreview.append(image);}catch(_){}}
+      else if(media){const card=doc.createElement('div');card.className='dcbpv-textcon';card.textContent=media.text;const color=value=>/^#?[0-9a-f]{6}$/i.test(value)?'#'+value.replace('#',''):'';card.style.backgroundColor=color(media.bg);card.style.color=color(media.color);selectedPreview.append(card);}
+    };
+    clearSelection.onclick=event=>{if(event.isTrusted&&!session.busy){session.mediaDrafts.delete(session.target);session.resetAuth();showSelection();resize();input.focus({preventScroll:true});}};
+    const pickerHeader=doc.createElement('div');pickerHeader.id='dcbpv-picker-header';pickerHeader.hidden=true;
+    const pickerCopy=doc.createElement('div'),pickerTitle=doc.createElement('strong'),pickerHint=doc.createElement('small'),pickerBack=doc.createElement('button');
+    pickerBack.type='button';pickerBack.textContent='작성창으로';pickerCopy.append(pickerTitle,pickerHint);pickerHeader.append(pickerCopy,pickerBack);surface.prepend(pickerHeader);
+    const closePicker=()=>{for(const panel of doc.querySelectorAll('#div_con,#div_txtcon'))panel.style.display='none';syncPicker();resize();box.querySelector(session.pickerKind==='txtcon'?'.tx_txtcon':'.tx_dccon')?.focus({preventScroll:true});};
+    pickerBack.onclick=closePicker;
+    const syncPicker=()=>{
+      const panel=[...box.querySelectorAll('#div_con,#div_txtcon')].find(node=>node.style.display!=='none'&&!node.hidden&&win.getComputedStyle(node).display!=='none')||null;
+      if(panel===session.picker)return;
+      surface.querySelectorAll('.dcbpv-picker-path,.dcbpv-picker-panel').forEach(node=>node.classList.remove('dcbpv-picker-path','dcbpv-picker-panel'));
+      session.picker=panel;pickerHeader.hidden=!panel;surface.classList.toggle('dcbpv-picking',!!panel);doc.documentElement.classList.toggle('dcbpv-picking',!!panel);
+      if(panel){session.pickerKind=panel.id==='div_txtcon'?'txtcon':'dccon';panel.classList.add('dcbpv-picker-panel');for(let node=panel.parentElement;node&&node!==surface;node=node.parentElement)node.classList.add('dcbpv-picker-path');pickerTitle.textContent=session.pickerKind==='txtcon'?'글자콘 만들기':'디시콘 선택';pickerHint.textContent='선택한 콘을 작성창에서 확인한 후 등록하세요.';pickerBack.focus({preventScroll:true});}
+      notify('picker',{open:!!panel});
+    };
+    doc.addEventListener('keydown',event=>{
+      if(!session.picker)return;
+      if(event.key==='Escape'&&!event.isComposing){event.preventDefault();event.stopImmediatePropagation();closePicker();}
+      if(event.key==='Tab'){const nodes=[...surface.querySelectorAll('button,input,textarea,select,a[href],[tabindex="0"]')].filter(node=>!node.disabled&&node.getClientRects().length);const first=nodes[0],last=nodes[nodes.length-1];if(event.shiftKey&&doc.activeElement===first){event.preventDefault();last?.focus();}else if(!event.shiftKey&&doc.activeElement===last){event.preventDefault();first?.focus();}}
+    },true);
     // Capture native selection before its delegated handler can submit/retry.
     doc.addEventListener('click',event=>{
       const icon=event.target.closest('.img_dccon'),textButton=event.target.closest('#btn_txtcon_submit');
@@ -180,7 +229,7 @@ async function previewCommentInPage(request) {
         if(!text?.trim()||!colors){notify('auth',{message:'글자콘 내용과 색상을 확인해 주세요.'});return;}
         session.mediaDrafts.set(session.target,{kind:'txtcon',text,bg:colors.bg,color:colors.txt});win.txtcon_panel_close?.();
       }
-      session.resetAuth();showSelection();resize();button.focus({preventScroll:true});
+      session.resetAuth();showSelection();syncPicker();resize();if(!session.picker)button.focus({preventScroll:true});else pickerHint.textContent='더블콘에 사용할 디시콘을 하나 더 선택하세요.';
     },true);
     const sendDraft = () => { counter.textContent=`${input.value.length} / ${maxLength}자`;session.drafts.set(session.target, input.value); notify('draft', { draft: input.value, target: session.target }); };
     input.addEventListener('input', sendDraft);
@@ -200,8 +249,9 @@ async function previewCommentInPage(request) {
       resizing = true;
       requestAnimationFrame(() => {
         resizing = false;
+        syncPicker();
         if (win.ts_cmt?.box) expose(win.ts_cmt.box);
-        const selectText=doc.getElementById('btn_txtcon_submit');if(selectText&&selectText.textContent!=='선택')selectText.textContent='선택';
+        const selectText=doc.getElementById('btn_txtcon_submit');if(selectText&&selectText.textContent!=='작성창에 첨부')selectText.textContent='작성창에 첨부';
         doc.querySelectorAll('body > div').forEach(node => {
           if (node !== surface && node.querySelector('iframe[src*="recaptcha/"]')) expose(node);
         });
@@ -210,7 +260,7 @@ async function previewCommentInPage(request) {
           return rect.width && rect.height ? rect.bottom : 0;
         });
         const height = Math.max(140, Math.ceil(Math.max(...bottoms)) + 8);
-        if (height !== lastHeight && height < 2000) { lastHeight = height; notify('size', { height }); }
+        if (!session.picker && height !== lastHeight && height < 2000) { lastHeight = height; notify('size', { height }); }
         // Native comments can finish loading after the iframe load event.
         // Publish only changed, non-secret metadata; never reload the editor.
         if (session.metadata) {
