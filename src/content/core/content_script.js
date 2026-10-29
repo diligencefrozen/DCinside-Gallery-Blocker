@@ -692,7 +692,7 @@ syncSettings(handleUrl);
       #${OVERLAY_ID} .dcbpv-panel{position:relative}
       #${OVERLAY_ID} .dcbpv-composer.dcbpv-docked{position:absolute;z-index:5;left:16px;right:16px;bottom:var(--dcbpv-dock-bottom,70px);max-height:min(48dvh,480px);overflow:auto;margin:0;box-shadow:0 -6px 24px #0f172a26}
       #${OVERLAY_ID} .dcbpv-scroll:has(.dcbpv-docked){overflow-anchor:none}
-      #${OVERLAY_ID} .dcbpv-composer.dcbpv-picker-open{position:absolute;z-index:8;inset:12px;max-height:none;margin:0;padding:14px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 8px 32px #0f172a30}
+      #${OVERLAY_ID} .dcbpv-composer.dcbpv-picker-open{position:absolute;z-index:8;inset:auto;left:50%;top:50%;transform:translate(-50%,-50%);box-sizing:border-box;width:min(640px,calc(100% - 24px));height:min(var(--dcbpv-picker-height,420px),calc(100% - 24px));max-height:none;margin:0;padding:12px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 8px 32px #0f172a30}
       #${OVERLAY_ID} .dcbpv-picker-open>.dcbpv-compose-heading,#${OVERLAY_ID} .dcbpv-picker-open>.dcbpv-compose-actions,#${OVERLAY_ID} .dcbpv-picker-open>[role=status]{display:none}
       #${OVERLAY_ID} .dcbpv-picker-open>iframe{height:100%!important;min-height:0;flex:1;margin:0}
       #${OVERLAY_ID} .dcbpv-scroll:has(.dcbpv-picker-open){overflow:hidden;overflow-anchor:none}
@@ -4807,7 +4807,9 @@ syncSettings(handleUrl);
     if(!state||event.source!==window||event.origin!==location.origin||payload?.type!=='dcb.previewComment.event'||payload.key!==state.token)return;
     if(payload.kind==='escape'){closePreview();return;}
     if(payload.kind==='picker'){
-      const open=payload.open===true;if(open===!!state.pickerOpen)return;
+      const open=payload.open===true;
+      if(Number.isFinite(payload.height)&&payload.height>=180&&payload.height<=620)state.form.style.setProperty('--dcbpv-picker-height',`${payload.height+24}px`);
+      if(open===!!state.pickerOpen)return;
       const scroll=state.form.closest('.dcbpv-scroll'),slot=state.form.parentElement;
       if(open){state.pickerScrollTop=scroll.scrollTop;state.pickerSlotHeight=slot.style.minHeight;if(!state.target)slot.style.minHeight=`${state.form.getBoundingClientRect().height}px`;}
       state.pickerOpen=open;state.form.classList.toggle('dcbpv-picker-open',open);

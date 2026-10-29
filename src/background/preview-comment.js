@@ -127,34 +127,58 @@ async function previewCommentInPage(request) {
       #dcbpv-native-editor .cmt_textarea_label,#dcbpv-native-editor .tip_box2{display:none!important}
       #dcbpv-native-editor .cmt_cont_bottm{display:flex!important;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
       #dcbpv-native-editor .dccon_guidebox{position:relative!important;float:none!important;min-width:0;max-width:100%}
-      #dcbpv-native-editor :is(#div_con,#div_txtcon){position:relative!important;inset:auto!important;max-width:100%!important;width:min(440px,100%)!important;max-height:340px;overflow:auto;box-sizing:border-box}
+      #dcbpv-editor-surface:not(.dcbpv-picking) #dcbpv-native-editor :is(#div_con,#div_txtcon){position:relative!important;inset:auto!important;max-width:100%!important;width:min(440px,100%)!important;max-height:340px;overflow:auto;box-sizing:border-box}
       #dcbpv-native-editor :is(#div_con,#div_txtcon) :is(.dccon_list,.dccon_listbox,.txt_dccon_box){max-width:100%!important;box-sizing:border-box}
       #dcbpv-native-editor .repley_add{min-width:120px!important;min-height:42px!important;float:none!important;margin-left:auto!important;display:inline-flex;align-items:center;justify-content:center;gap:6px;font-weight:700;border-radius:10px;transition:transform .16s,background .16s}
       #dcbpv-native-editor .repley_add:not(:disabled):hover{background:#2449bc;transform:translateY(-1px)}
       #dcbpv-native-editor .repley_add:not(:disabled):active{transform:translateY(1px)}
       #dcbpv-native-editor .repley_add:focus-visible{outline:3px solid #7ba7fa;outline-offset:2px}
-      #dcbpv-selection{order:3;display:flex;gap:12px;align-items:center;flex-wrap:wrap;overflow-wrap:anywhere;padding:12px;margin:8px 0;border:1px solid #a9bee7;border-radius:12px;background:#eef4ff}
+      #dcbpv-selection{position:relative;order:3;display:flex;gap:10px;align-items:center;flex-wrap:wrap;overflow-wrap:anywhere;padding:10px;margin:8px 0;border:1px solid #a9bee7;border-radius:12px;background:#eef4ff}
       #dcbpv-selection[hidden]{display:none}
       #dcbpv-selection-preview{display:flex;gap:6px;flex-shrink:0}
-      #dcbpv-selection-preview img{width:88px;height:88px;object-fit:contain;border-radius:8px}
-      #dcbpv-selection-preview .dcbpv-textcon{display:grid;place-items:center;box-sizing:border-box;width:100px;min-height:100px;padding:10px;border-radius:10px;white-space:pre-wrap;overflow-wrap:anywhere;font-weight:700;font-size:18px;text-align:center}
-      #dcbpv-selection-copy{flex:1;min-width:120px}#dcbpv-selection-copy small{display:block;margin-top:5px}
+      #dcbpv-selection-preview img{width:64px;height:64px;object-fit:contain;border-radius:8px}
+      #dcbpv-selection-preview .dcbpv-textcon{display:grid;place-items:center;box-sizing:border-box;width:72px;min-height:72px;padding:7px;border-radius:10px;white-space:pre-wrap;overflow-wrap:anywhere;font-weight:700;font-size:14px;text-align:center}
+      #dcbpv-selection-copy{flex:1;min-width:90px;padding-right:24px}#dcbpv-selection-copy small{display:block;margin-top:5px}
+      #dcbpv-selection>button{position:absolute;top:4px;right:4px;padding:0!important;width:28px;min-height:28px!important;font-size:20px}
       #dcbpv-selection button,#dcbpv-picker-header button{border:1px solid #a9bee7;border-radius:8px;background:#fff;color:#253047;padding:8px 12px;min-height:36px;cursor:pointer}
       #dcbpv-editor-surface.dcbpv-has-media textarea[id^=memo_]{display:none!important}
       #dcbpv-picker-header{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-shrink:0;padding:4px 0 12px;border-bottom:1px solid #d8e1ef}
       #dcbpv-picker-header[hidden]{display:none}
-      #dcbpv-picker-header strong{font-size:17px}#dcbpv-picker-header small{display:block;margin-top:4px;color:#64748b}
+      #dcbpv-picker-header strong{font-size:17px}#dcbpv-picker-header small{display:block;margin-top:4px;color:#64748b}#dcbpv-picker-header button{flex-shrink:0;white-space:nowrap}
       html.dcbpv-picking,html.dcbpv-picking body{height:100%!important}
       #dcbpv-editor-surface.dcbpv-picking{height:100%;min-height:0;gap:10px;overflow:hidden}
-      #dcbpv-editor-surface.dcbpv-picking>:not(#dcbpv-picker-header):not(.dcbpv-picker-path),
+      #dcbpv-editor-surface.dcbpv-picking>:not(#dcbpv-picker-header):not(#dcbpv-picker-loading):not(.dcbpv-picker-path),
       #dcbpv-editor-surface.dcbpv-picking .dcbpv-picker-path>:not(.dcbpv-picker-path):not(.dcbpv-picker-panel),
       html.dcbpv-picking .dcbpv-native-auth{display:none!important}
       #dcbpv-editor-surface.dcbpv-picking .dcbpv-picker-path{display:contents!important}
       #dcbpv-editor-surface.dcbpv-picking .dcbpv-picker-panel{position:relative!important;inset:auto!important;float:none!important;box-sizing:border-box!important;width:100%!important;max-width:100%!important;min-height:0!important;max-height:none!important;flex:1;overflow:auto!important;margin:0!important;border:0!important;box-shadow:none!important;overscroll-behavior:contain}
       #dcbpv-editor-surface.dcbpv-picking .dcbpv-picker-panel :is(.inner,.pop_content,.dccon_list_box,.dcconlist,.dccon_list,.dccon_listbox,.txt_dccon_box){box-sizing:border-box!important;width:auto!important;max-width:100%!important;height:auto!important;max-height:none!important;overflow:visible!important}
       #dcbpv-editor-surface.dcbpv-picking .img_dccon{max-width:100%}#dcbpv-editor-surface.dcbpv-picking .img_dccon img{max-width:100%;object-fit:contain}
+      #dcbpv-editor-surface.dcbpv-picking .dccon_tab_btnbox{display:flex!important;align-items:center;gap:4px;width:100%!important;height:auto!important;min-height:44px;overflow:visible;float:none!important}
+      #dcbpv-editor-surface.dcbpv-picking .tab_btnlist{display:flex;flex-wrap:wrap;flex:1;min-width:0;width:auto!important;height:auto!important;gap:4px;padding:4px!important;margin:0;list-style:none}
+      #dcbpv-editor-surface.dcbpv-picking .tab_btnlist li,#dcbpv-editor-surface.dcbpv-picking .dccon_btn{width:40px!important;height:40px!important;float:none!important}
+      #dcbpv-editor-surface.dcbpv-picking .dccon_btn img{max-width:100%;max-height:100%;object-fit:contain}
+      #dcbpv-editor-surface.dcbpv-picking .tab_btnlist .frame{inset:0!important;box-sizing:border-box;width:40px!important;height:40px!important;pointer-events:none}
+      #dcbpv-editor-surface.dcbpv-picking :is(.btn_dccon_prev,.btn_dccon_next){position:static!important;flex:none;width:28px;height:40px}
+      #dcbpv-editor-surface.dcbpv-picking .dccon_list{display:flex;flex-wrap:wrap;gap:6px;padding:4px!important;margin:0!important;list-style:none}
+      #dcbpv-editor-surface.dcbpv-picking .dccon_list>li{float:none!important;margin:0!important}
+      #dcbpv-editor-surface.dcbpv-picking .dccon_list>li.dccon_list_btm{width:100%!important}
+      #dcbpv-editor-surface.dcbpv-picking .txt_dccon_box{display:grid;grid-template-columns:minmax(96px,112px) minmax(0,1fr);gap:10px;padding:8px!important}
+      #dcbpv-editor-surface.dcbpv-picking .txt_dccon_box>.head{display:none}
+      #dcbpv-editor-surface.dcbpv-picking .txtcon_box{margin:0!important;width:100%!important;height:auto!important;align-self:start}
+      #dcbpv-editor-surface.dcbpv-picking .txtcon_box .coment_dccon_txt{box-sizing:border-box;width:100%!important;height:auto!important;aspect-ratio:1;border-radius:12px}
+      #dcbpv-editor-surface.dcbpv-picking .color_section_box{display:flex;flex-direction:column;gap:12px;margin:0!important;width:auto!important;min-width:0}
+      #dcbpv-editor-surface.dcbpv-picking .color_section{float:none!important;width:auto!important;margin:0!important}
+      #dcbpv-editor-surface.dcbpv-picking .color_section h5{margin:0 0 6px;font-size:12px}
+      #dcbpv-editor-surface.dcbpv-picking .color_options{display:flex;flex-wrap:wrap;gap:6px}
+      #dcbpv-editor-surface.dcbpv-picking .btn_color{width:24px;height:24px;flex:none;margin:0!important;border-radius:6px}
+      #dcbpv-editor-surface.dcbpv-picking :is(.txt_section_box,.txtareabox,.latest_section_box){grid-column:1/-1;width:auto!important;min-width:0;margin:0!important}
+      #dcbpv-editor-surface.dcbpv-picking .latest{display:flex;flex-wrap:wrap;gap:6px;width:auto!important;height:auto!important}
+      #dcbpv-editor-surface.dcbpv-picking .latest_section_box:has(.latest:empty){display:none}
       #dcbpv-editor-surface.dcbpv-picking #btn_txtcon_submit{position:sticky;bottom:0;min-height:42px;min-width:120px;border:0;border-radius:9px;background:#315bea;color:#fff;font-weight:700;cursor:pointer}
-      #dcbpv-editor-surface.dcbpv-picking #txtcon_input{height:72px!important;min-height:72px!important}
+      #dcbpv-editor-surface.dcbpv-picking .txt_dccon_box>#btn_txtcon_submit{grid-column:1/-1;justify-self:end;margin:0!important}
+      #dcbpv-editor-surface.dcbpv-picking #txtcon_input{height:56px!important;min-height:56px!important}
+      #dcbpv-picker-loading{padding:20px 8px;text-align:center;color:#64748b}#dcbpv-picker-loading[hidden]{display:none}
       @media(prefers-color-scheme:dark){#dcbpv-selection{background:#1c2d49;border-color:#516a91}#dcbpv-selection button,#dcbpv-picker-header button{background:#24344e;color:#e2e8f0}#dcbpv-picker-header small{color:#a8b9d3}#dcbpv-editor-surface.dcbpv-picking .dcbpv-picker-panel{background:#1e293b;color:#e2e8f0}}
       @media(prefers-reduced-motion:reduce){#dcbpv-native-editor .repley_add{transition:none!important;transform:none!important}}
       #dcbpv-native-editor .cmt_cont_bottm{height:auto!important;min-height:34px!important}
@@ -183,7 +207,7 @@ async function previewCommentInPage(request) {
     const selectedPreview=doc.createElement('div');selectedPreview.id='dcbpv-selection-preview';
     const selectedCopy=doc.createElement('div');selectedCopy.id='dcbpv-selection-copy';
     const selectedLabel=doc.createElement('strong'),selectedHint=doc.createElement('small'),clearSelection=doc.createElement('button');
-    clearSelection.type='button';clearSelection.textContent='첨부 취소';selectedCopy.append(selectedLabel,selectedHint);selection.append(selectedPreview,selectedCopy,clearSelection);
+    clearSelection.type='button';clearSelection.textContent='×';clearSelection.setAttribute('aria-label','첨부 취소');clearSelection.title='첨부 취소';selectedCopy.append(selectedLabel,selectedHint);selection.append(selectedPreview,selectedCopy,clearSelection);
     const showSelection=()=>{
       const media=session.mediaDrafts.get(session.target);selection.hidden=!media;surface.classList.toggle('dcbpv-has-media',!!media);selectedPreview.replaceChildren();
       selectedLabel.textContent=media?.kind==='dccon'?`디시콘 ${media.details.length}개 첨부`:media?'글자콘 첨부':'';
@@ -195,18 +219,32 @@ async function previewCommentInPage(request) {
     const pickerHeader=doc.createElement('div');pickerHeader.id='dcbpv-picker-header';pickerHeader.hidden=true;
     const pickerCopy=doc.createElement('div'),pickerTitle=doc.createElement('strong'),pickerHint=doc.createElement('small'),pickerBack=doc.createElement('button');
     pickerBack.type='button';pickerBack.textContent='작성창으로';pickerCopy.append(pickerTitle,pickerHint);pickerHeader.append(pickerCopy,pickerBack);surface.prepend(pickerHeader);
-    const closePicker=()=>{for(const panel of doc.querySelectorAll('#div_con,#div_txtcon'))panel.style.display='none';syncPicker();resize();box.querySelector(session.pickerKind==='txtcon'?'.tx_txtcon':'.tx_dccon')?.focus({preventScroll:true});};
+    const pickerLoading=doc.createElement('div');pickerLoading.id='dcbpv-picker-loading';pickerLoading.hidden=true;pickerLoading.setAttribute('role','status');pickerLoading.textContent='디시콘 목록을 불러오는 중…';surface.append(pickerLoading);
+    let lastPickerOpen=false,lastPickerHeight=0;
+    const publishPicker=(open,height=420)=>{height=Math.max(180,Math.min(620,Math.ceil(height)));if(open!==lastPickerOpen||(open&&height!==lastPickerHeight)){lastPickerOpen=open;lastPickerHeight=height;notify('picker',{open,height});}};
+    const closePicker=()=>{session.pickerDismissed=true;session.pickerPending=false;for(const panel of doc.querySelectorAll('#div_con,#div_txtcon'))panel.style.display='none';syncPicker();resize();box.querySelector(session.pickerKind==='txtcon'?'.tx_txtcon':'.tx_dccon')?.focus({preventScroll:true});};
     pickerBack.onclick=closePicker;
+    doc.addEventListener('click',event=>{
+      const trigger=event.target.closest('.tx_dccon,.tx_txtcon');if(!trigger||!box.contains(trigger)||!event.isTrusted)return;
+      if(session.busy||session.uncertain){event.preventDefault();event.stopImmediatePropagation();return;}
+      session.pickerDismissed=false;
+      if(trigger.matches('.tx_dccon')){session.pickerKind='dccon';session.pickerPending=true;syncPicker();resize();}
+      // Native delegated handler performs its single normal read; no extra fetch.
+    },true);
     const syncPicker=()=>{
-      const panel=[...box.querySelectorAll('#div_con,#div_txtcon')].find(node=>node.style.display!=='none'&&!node.hidden&&win.getComputedStyle(node).display!=='none')||null;
-      if(panel===session.picker)return;
+      let panel=[...box.querySelectorAll('#div_con,#div_txtcon')].find(node=>node.style.display!=='none'&&!node.hidden&&win.getComputedStyle(node).display!=='none')||null;
+      if(session.pickerDismissed&&panel){panel.style.display='none';panel=null;}
+      if(panel)session.pickerPending=false;
+      const open=!!panel||!!session.pickerPending;
+      if(panel===session.picker&&open===session.pickerOpen)return;
       surface.querySelectorAll('.dcbpv-picker-path,.dcbpv-picker-panel').forEach(node=>node.classList.remove('dcbpv-picker-path','dcbpv-picker-panel'));
-      session.picker=panel;pickerHeader.hidden=!panel;surface.classList.toggle('dcbpv-picking',!!panel);doc.documentElement.classList.toggle('dcbpv-picking',!!panel);
-      if(panel){session.pickerKind=panel.id==='div_txtcon'?'txtcon':'dccon';panel.classList.add('dcbpv-picker-panel');for(let node=panel.parentElement;node&&node!==surface;node=node.parentElement)node.classList.add('dcbpv-picker-path');pickerTitle.textContent=session.pickerKind==='txtcon'?'글자콘 만들기':'디시콘 선택';pickerHint.textContent='선택한 콘을 작성창에서 확인한 후 등록하세요.';pickerBack.focus({preventScroll:true});}
-      notify('picker',{open:!!panel});
+      session.picker=panel;session.pickerOpen=open;pickerHeader.hidden=!open;pickerLoading.hidden=!session.pickerPending;surface.classList.toggle('dcbpv-picking',open);doc.documentElement.classList.toggle('dcbpv-picking',open);
+      if(session.pickerPending){pickerTitle.textContent='디시콘 선택';pickerHint.textContent='원문에서 사용 가능한 목록을 확인하고 있습니다.';pickerBack.focus({preventScroll:true});}
+      if(panel){session.pickerKind=panel.id==='div_txtcon'?'txtcon':'dccon';panel.classList.add('dcbpv-picker-panel');for(let node=panel.parentElement;node&&node!==surface;node=node.parentElement)node.classList.add('dcbpv-picker-path');pickerTitle.textContent=session.pickerKind==='txtcon'?'글자콘 만들기':'디시콘 선택';pickerHint.textContent='선택한 콘을 작성창에서 확인한 후 등록하세요.';(session.pickerKind==='txtcon'?doc.getElementById('txtcon_input'):pickerBack)?.focus({preventScroll:true});}
+      publishPicker(open,session.pickerPending?180:420);
     };
     doc.addEventListener('keydown',event=>{
-      if(!session.picker)return;
+      if(!session.pickerOpen)return;
       if(event.key==='Escape'&&!event.isComposing){event.preventDefault();event.stopImmediatePropagation();closePicker();}
       if(event.key==='Tab'){const nodes=[...surface.querySelectorAll('button,input,textarea,select,a[href],[tabindex="0"]')].filter(node=>!node.disabled&&node.getClientRects().length);const first=nodes[0],last=nodes[nodes.length-1];if(event.shiftKey&&doc.activeElement===first){event.preventDefault();last?.focus();}else if(!event.shiftKey&&doc.activeElement===last){event.preventDefault();first?.focus();}}
     },true);
@@ -240,6 +278,12 @@ async function previewCommentInPage(request) {
     let lastHeight = 0, resizing = false, lastMetadata = '';
     const expose = node => {
       if (!node.classList.contains('dcbpv-native-auth')) node.classList.add('dcbpv-native-auth');
+      // comment.js v261029 places Turnstile beside the submit button. The
+      // editor is already exposed; masking its siblings hides memo and toolbar.
+      if (surface.contains(node)) {
+        for(let parent=node.parentElement;parent&&parent!==surface;parent=parent.parentElement)if(parent.classList.contains('dcbpv-auth-path'))parent.classList.remove('dcbpv-auth-path');
+        return;
+      }
       for (let parent = node.parentElement; parent && parent !== doc.body && parent !== surface; parent = parent.parentElement) {
         if (!parent.classList.contains('dcbpv-auth-path')) parent.classList.add('dcbpv-auth-path');
       }
@@ -260,10 +304,14 @@ async function previewCommentInPage(request) {
           return rect.width && rect.height ? rect.bottom : 0;
         });
         const height = Math.max(140, Math.ceil(Math.max(...bottoms)) + 8);
-        if (!session.picker && height !== lastHeight && height < 2000) { lastHeight = height; notify('size', { height }); }
+        if(session.picker){
+          const panel=session.picker,top=panel.getBoundingClientRect().top;
+          const bottom=Math.max(top,...[...panel.children].filter(node=>!['absolute','fixed'].includes(win.getComputedStyle(node).position)).map(node=>node.getBoundingClientRect().bottom));
+          publishPicker(true,bottom-top+pickerHeader.getBoundingClientRect().height+30);
+        }else if (!session.pickerOpen && height !== lastHeight && height < 2000) { lastHeight = height; notify('size', { height }); }
         // Native comments can finish loading after the iframe load event.
         // Publish only changed, non-secret metadata; never reload the editor.
-        if (session.metadata) {
+        if (session.metadata && !session.pickerOpen) {
           if (!session.records) session.targets = nativeTargets();
           const metadata = session.metadata(), serialized = JSON.stringify(metadata);
           if (serialized !== lastMetadata) { lastMetadata = serialized; notify('metadata', {metadata}); }
