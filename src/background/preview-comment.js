@@ -83,7 +83,8 @@ async function previewCommentInPage(request) {
     const box = input.closest('.cmt_write_box');
     if (!box) return fail('unavailable');
     const session = frame.__dcbpvEditor = { target: '', targets: uniqueTargets, owned: new Map(), deleted: new Set(), records: null,
-      uncertain: false, busy: false, captchaMode: '', captchaScope: '', widget: null, drafts: new Map(), mediaDrafts: new Map() };
+      uncertain: false, busy: false, captchaMode: '', captchaScope: '', widget: null, drafts: new Map(), mediaDrafts: new Map(),
+      picker: null, pickerOpen: false, pickerPending: false, pickerDismissed: false };
     const surface = doc.createElement('div');
     surface.id = 'dcbpv-editor-surface';
     doc.body.appendChild(surface);
@@ -254,7 +255,10 @@ async function previewCommentInPage(request) {
       let panel=[...box.querySelectorAll('#div_con,#div_txtcon')].find(node=>node.style.display!=='none'&&!node.hidden&&(!!node.style.display||win.getComputedStyle(node).display!=='none'))||null;
       if(session.pickerDismissed&&panel){panel.style.display='none';panel=null;}
       if(panel){session.pickerPending=false;clearTimeout(pickerTimer);}
-      const open=!!panel||!!session.pickerPending||(!session.pickerDismissed&&session.pickerOpen&&!pickerLoading.hidden);
+      // Always pass a boolean force to DOMTokenList.toggle. An undefined
+      // initial pickerOpen otherwise toggles the mask ON while resize treats
+      // the picker as closed, repeatedly growing an invisible editor by 8px.
+      const open=!!(panel||session.pickerPending||(!session.pickerDismissed&&session.pickerOpen&&!pickerLoading.hidden));
       if(panel===session.picker&&open===session.pickerOpen)return;
       surface.querySelectorAll('.dcbpv-picker-path,.dcbpv-picker-panel').forEach(node=>node.classList.remove('dcbpv-picker-path','dcbpv-picker-panel'));
       session.picker=panel;session.pickerOpen=open;pickerHeader.hidden=!open;pickerLoading.hidden=!session.pickerPending;surface.classList.toggle('dcbpv-picking',open);doc.documentElement.classList.toggle('dcbpv-picking',open);
