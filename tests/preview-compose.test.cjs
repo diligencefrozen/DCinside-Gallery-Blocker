@@ -33,7 +33,7 @@ function nativeDocument(url, member = true, captcha = false, own = false, turnst
       document.addEventListener('click',event=>{if(event.target.matches('.repley_add'))window.nativeSubmits++});
       function secure(button){button.addEventListener('click',event=>{if(window.nativeReject)event.preventDefault();if(event.isTrusted)document.service_code='fixture-live-code';});}
       secure(document.querySelector('.repley_add'));
-      const tools=document.createElement('div');tools.className='dccon_guidebox';tools.innerHTML='<button type="button" class="tx_dccon">디시콘</button><button type="button" class="tx_txtcon">글자콘</button><div id="div_con" style="display:none"><button class="img_dccon" package_idx="12" detail_idx="34">fixture icon</button></div><div id="div_txtcon" style="display:none"><textarea id="txtcon_input"></textarea><button id="btn_txtcon_submit">등록</button></div>';
+      const tools=document.createElement('div');tools.className='dccon_guidebox';tools.innerHTML='<button type="button" class="tx_dccon">디시콘</button><button type="button" class="tx_txtcon">글자콘</button><div id="div_con" style="display:none"><button class="img_dccon" package_idx="12" detail_idx="34"><img src="//dcimg5.dcinside.com/dccon.php?no=fixture" alt="fixture icon"></button></div><div id="div_txtcon" style="display:none"><textarea id="txtcon_input"></textarea><button id="btn_txtcon_submit">등록</button></div>';
       document.querySelector('.cmt_txt_cont').append(tools);
       document.querySelector('.tx_dccon').onclick=()=>document.querySelector('#div_con').style.display='block';document.querySelector('.tx_txtcon').onclick=()=>document.querySelector('#div_txtcon').style.display='block';
       window.txtcon_sel_colors=()=>({bg:'ffffff',txt:'000000'});window.txtcon_panel_close=()=>document.querySelector('#div_txtcon').style.display='none';window.nativeMediaSubmits=0;
@@ -68,10 +68,12 @@ function nativeDocument(url, member = true, captcha = false, own = false, turnst
       if(['/dccon/insert_icon','/txtcon/insert'].includes(url.pathname)){
         const fields=Object.fromEntries(new URLSearchParams(route.request().postData()));writes.push(fields);
         if(responseMode==='captcha-v2')return route.fulfill({body:'false||captcha'});
+        if(responseMode==='captcha')return route.fulfill({body:'false||captcha||v3'});
+        if(/^\d+$/.test(responseMode))return route.fulfill({status:Number(responseMode),body:'restricted'});
         if(responseMode==='reject')return route.fulfill({body:'not_buy'});
         if(responseMode==='unknown')return route.fulfill({body:'unexpected'});
-        const memo=url.pathname==='/dccon/insert_icon'?'<img class="written_dccon" detail="'+fields.detail_idx+'" src="https://dcimg5.dcinside.com/dccon.php?no=fixture">':'<div class="coment_dccon_txt"><div class="txtcon_txt">'+fields.txtcon_text+'</div></div>';
-        records.push({no:String(102+writes.length),c_no:fields.c_no||'0',depth:fields.c_no?1:0,name:'member',memo});return route.fulfill({body:'ok'});
+        const memo=url.pathname==='/dccon/insert_icon'?'<img class="written_dccon" src="https://dcimg5.dcinside.com/dccon.php?no=fixture">':'<div class="coment_dccon_txt"><div class="txtcon_txt">'+fields.txtcon_text+'</div></div>';
+        records.push({no:String(102+writes.length),c_no:fields.c_no||'0',depth:fields.c_no?1:0,name:'member',memo:responseMode==='mismatch'?memo.replace('no=fixture','no=different').replace(fields.txtcon_text||'never-match','different'):memo});return route.fulfill({body:'ok'});
       }
       if (url.pathname === '/board/forms/comment_submit') {
         const fields = Object.fromEntries(new URLSearchParams(route.request().postData()));
@@ -87,7 +89,7 @@ function nativeDocument(url, member = true, captcha = false, own = false, turnst
         return route.fulfill({body:id});
       }
       if(url.hostname==='www.google.com')return route.fulfill({contentType:'application/javascript',body:`
-        window.grecaptcha={ready:f=>f(),execute:async()=> 'fixture-v3-token',render:(host,opts)=>{window.fixtureRecaptchaOptions=opts;const b=document.createElement('button');b.id='fixture-recaptcha';b.textContent='인증 확인';b.onclick=()=>{window.fixtureRecaptchaToken='fixture-v2-token';opts.callback();};host.append(b);return 1;},getResponse:()=>window.fixtureRecaptchaToken||'',reset:()=>{window.fixtureRecaptchaToken='';}};
+        window.grecaptcha={ready:f=>f(),execute:async(key,options)=>{window.fixtureV3={key,action:options.action};return 'fixture-v3-token';},render:(host,opts)=>{window.fixtureRecaptchaOptions=opts;const b=document.createElement('button');b.id='fixture-recaptcha';b.textContent='인증 확인';b.onclick=()=>{window.fixtureRecaptchaToken='fixture-v2-token';opts.callback();};host.append(b);return 1;},getResponse:()=>window.fixtureRecaptchaToken||'',reset:()=>{window.fixtureRecaptchaToken='';}};
       `});
       if(url.pathname==='/board/comment/comment_delete_submit'){
         const fields=Object.fromEntries(new URLSearchParams(route.request().postData()));deletes.push(fields);
@@ -208,6 +210,8 @@ function nativeDocument(url, member = true, captcha = false, own = false, turnst
       await page.setViewportSize({width,height:820});
       assert.equal(await page.locator('.dcbpv-composer').evaluate(node=>node.scrollWidth<=node.clientWidth+1),true,`${width}px composer fits`);
       await page.waitForFunction(()=>document.querySelector('.dcbpv-composer iframe').clientHeight<300);
+      // Resizing the viewport updates the editor height on the next animation frame.
+      await page.frames().find(f=>f.url().includes('no=20')).waitForFunction(()=>document.documentElement.scrollHeight<=innerHeight+1);
       assert.equal(await editor().locator('html').evaluate(el=>el.scrollHeight<=innerHeight+1),true,'no nested scroll or hidden article blank space');
       assert.equal(await page.locator('.dcbpv-comment-item').first().evaluate(node=>node.scrollWidth<=node.clientWidth+1),true,'nickname/time/actions stay inside the comment');
       assert.equal(await page.locator('.dcbpv-comment-item').first().locator('.nickname').textContent(),'송채경');
@@ -334,6 +338,12 @@ function nativeDocument(url, member = true, captcha = false, own = false, turnst
       if(kind==='dccon')await editor().locator('.img_dccon').click();
       else {await editor().locator('#txtcon_input').fill('테스트');await editor().locator('#btn_txtcon_submit').click();}
       assert.equal(writes.length,0,'selection must not send native POST');assert.equal(await editor().locator('body').evaluate(()=>window.nativeMediaSubmits),0);
+      if(!target){
+        await page.locator('[data-act=compose-reply][data-target="101"]').click();
+        assert.equal(await editor().locator('#dcbpv-selection').isVisible(),false);
+        await page.locator('[data-act=compose-reply-cancel]').click();
+        assert.equal(await editor().locator('#dcbpv-selection').isVisible(),true,'selection survives reply target changes');
+      }
       await editor().locator('.repley_add').click();await finish('등록된 댓글을 확인');assert.equal(writes.length,1);
       assert.equal(writes[0].ci_t,'fixture-csrf');assert.equal(writes[0]._GALLTYPE_,'G');assert.equal(writes[0].memo,undefined);
       assert.equal(writes[0].c_no,target?'101':undefined);assert.equal(writes[0].reply_no,target||undefined);
@@ -346,8 +356,25 @@ function nativeDocument(url, member = true, captcha = false, own = false, turnst
       await editor().locator(kind==='dccon'?'.tx_dccon':'.tx_txtcon').click();
       if(kind==='dccon')await editor().locator('.img_dccon').click();else{await editor().locator('#txtcon_input').fill('인증');await editor().locator('#btn_txtcon_submit').click();}
       responseMode='captcha-v2';await editor().locator('.repley_add').click();await editor().locator('#fixture-recaptcha').click();await finish('인증 완료');
+      assert.equal(await editor().locator('body').evaluate(()=>window.fixtureRecaptchaOptions.sitekey),'6LcJyr4UAAAAAOy9Q_e9sDWPSHJ_aXus4UnYLfgL');
       assert.equal(writes.length,1);assert.equal(await editor().locator('#dcbpv-selection').isVisible(),true);assert.equal(await editor().locator('#memo_'+String(100+checks)).inputValue(),'보존할 초안');
       responseMode='success';await editor().locator('.repley_add').click();await finish('등록된 댓글을 확인');assert.equal(writes.length,2);assert.equal(writes[1]['g-recaptcha-response'],'fixture-v2-token');await close();checks++;
+    }
+    for(const kind of ['dccon','txtcon'])for(const mode of ['reject','unknown','mismatch','403','429','503','captcha']){
+      reset();await render(article('mini/',String(400+checks)));await open();
+      await editor().locator(kind==='dccon'?'.tx_dccon':'.tx_txtcon').click();
+      if(kind==='dccon')await editor().locator('.img_dccon').click();else{await editor().locator('#txtcon_input').fill('검증');await editor().locator('#btn_txtcon_submit').click();}
+      responseMode=mode;await editor().locator('.repley_add').click();
+      await page.waitForFunction(()=>{const text=document.querySelector('.dcbpv-composer [role="status"]').textContent;return !!text&&!/전송 중|작성 폼을 확인하는 중/.test(text)});
+      assert.equal(writes.length,1);assert.equal(writes[0]._GALLTYPE_,'MI');
+      assert.equal(await editor().locator('#dcbpv-selection').isVisible(),true);
+      assert.doesNotMatch(await page.locator('.dcbpv-composer [role="status"]').textContent(),/등록된 댓글을 확인/);
+      if(mode==='captcha'){
+        await finish('추가 인증');responseMode='success';await editor().locator('.repley_add').click();await finish('등록된 댓글을 확인');
+        assert.equal(writes.length,2);assert.equal(writes[1]['g-recaptcha-token'],'fixture-v3-token');
+        assert.deepEqual(await editor().locator('body').evaluate(()=>window.fixtureV3),{key:'6Lc-Fr0UAAAAAOdqLYqPy53MxlRMIXpNXFvBliwI',action:'insert_icon'});
+      }else if(mode!=='reject')assert.equal(await editor().locator('.repley_add').isDisabled(),true,'uncertain writes stay locked');
+      await close();checks++;
     }
     for(const count of [20,50]){
       await page.setViewportSize({width:count===20?360:1100,height:850});

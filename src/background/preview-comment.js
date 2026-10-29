@@ -146,7 +146,7 @@ async function previewCommentInPage(request) {
     `;
     doc.head.appendChild(style);
     // Keep CAPTCHA refresh and nickname controls. Only unrelated post actions
-    // (DCCon, vote+submit) are hidden; native security listeners stay attached.
+    // (vote+submit) are hidden; native security listeners stay attached.
     box.querySelectorAll('.repley_add_vote,.btn_dccon_guide').forEach(node => node.style.setProperty('display', 'none', 'important'));
     button.textContent='➤ 댓글 등록';button.setAttribute('aria-label','댓글 등록');
     const tools=box.querySelector('.dccon_guidebox');
@@ -160,7 +160,7 @@ async function previewCommentInPage(request) {
     const selection=doc.createElement('div');selection.id='dcbpv-selection';selection.hidden=true;surface.append(selection);
     const selectedLabel=doc.createElement('span'),clearSelection=doc.createElement('button');clearSelection.type='button';clearSelection.textContent='선택 취소';selection.append(selectedLabel,clearSelection);
     const showSelection=()=>{const media=session.mediaDrafts.get(session.target);selection.hidden=!media;selectedLabel.textContent=media?.kind==='dccon'?`디시콘 ${media.details.length}개 선택`:media?`글자콘: ${media.text}`:'';};
-    clearSelection.onclick=event=>{if(event.isTrusted&&!session.busy){session.mediaDrafts.delete(session.target);showSelection();}};
+    clearSelection.onclick=event=>{if(event.isTrusted&&!session.busy){session.mediaDrafts.delete(session.target);session.resetAuth();showSelection();}};
     // Capture native selection before its delegated handler can submit/retry.
     doc.addEventListener('click',event=>{
       const icon=event.target.closest('.img_dccon'),textButton=event.target.closest('#btn_txtcon_submit');
@@ -170,8 +170,9 @@ async function previewCommentInPage(request) {
       if(icon){
         const packageId=icon.getAttribute('package_idx'),detail=icon.getAttribute('detail_idx');
         if(!/^[1-9]\d*$/.test(packageId||'')||!/^[1-9]\d*$/.test(detail||'')){notify('auth',{message:'이 디시콘은 원문에서 확인해 주세요.'});return;}
+        const asset=icon.querySelector('img,video')?.getAttribute('src')||'';
         const double=!!doc.getElementById('double_dcon')?.checked,old=session.mediaDrafts.get(session.target);
-        const media=double&&old?.kind==='dccon'&&old.details.length===1?{...old,packages:[...old.packages,packageId],details:[...old.details,detail]}:{kind:'dccon',packages:[packageId],details:[detail],double,big:!!doc.getElementById('big_dcon')?.checked};
+        const media=double&&old?.kind==='dccon'&&old.details.length===1?{...old,packages:[...old.packages,packageId],details:[...old.details,detail],assets:[...old.assets,asset]}:{kind:'dccon',packages:[packageId],details:[detail],assets:[asset],double,big:!!doc.getElementById('big_dcon')?.checked};
         session.mediaDrafts.set(session.target,media);
         if(!double||media.details.length===2)doc.getElementById('div_con').style.display='none';
       }else{
@@ -179,7 +180,7 @@ async function previewCommentInPage(request) {
         if(!text?.trim()||!colors){notify('auth',{message:'글자콘 내용과 색상을 확인해 주세요.'});return;}
         session.mediaDrafts.set(session.target,{kind:'txtcon',text,bg:colors.bg,color:colors.txt});win.txtcon_panel_close?.();
       }
-      showSelection();resize();button.focus({preventScroll:true});
+      session.resetAuth();showSelection();resize();button.focus({preventScroll:true});
     },true);
     const sendDraft = () => { counter.textContent=`${input.value.length} / ${maxLength}자`;session.drafts.set(session.target, input.value); notify('draft', { draft: input.value, target: session.target }); };
     input.addEventListener('input', sendDraft);
@@ -249,18 +250,22 @@ async function previewCommentInPage(request) {
       sendDraft(); resize();
       return session.metadata();
     };
-    session.showCaptcha = async (mode, scope) => {
-      if(mode==='v3' && (session.widget!=null || (win.grecaptcha && session.loadedCaptchaMode!=='v3')))mode='v2';
+    session.showCaptcha = async (mode, scope, media = false) => {
+      // Official dccon/txtcon clients use the legacy pair, unlike text comments.
+      const v3Key=media?'6Lc-Fr0UAAAAAOdqLYqPy53MxlRMIXpNXFvBliwI':win.dc_rc_new_v3;
+      const v2Key=media?'6LcJyr4UAAAAAOy9Q_e9sDWPSHJ_aXus4UnYLfgL':win.dc_rc_new_v2;
+      session.captchaV3Key=v3Key;
+      if(mode==='v3' && (session.widget!=null || (win.grecaptcha && (session.loadedCaptchaMode!=='v3'||session.loadedCaptchaKey!==v3Key))))mode='v2';
       session.captchaMode = mode; session.captchaScope = scope; authHost.hidden = false;
       if (mode === 'v3') {
-        if(!win.dc_rc_new_v3){notify('auth',{message:'사이트 인증 키를 확인하지 못했습니다. 원문에서 확인해 주세요.'});return;}
+        if(!v3Key){notify('auth',{message:'사이트 인증 키를 확인하지 못했습니다. 원문에서 확인해 주세요.'});return;}
         if(!win.grecaptcha?.execute){
-          try{await new Promise((resolve,reject)=>{const script=doc.createElement('script');script.src=`https://www.google.com/recaptcha/api.js?render=${encodeURIComponent(win.dc_rc_new_v3)}`;script.onload=resolve;script.onerror=reject;doc.head.appendChild(script);});session.loadedCaptchaMode='v3';}
+          try{await new Promise((resolve,reject)=>{const script=doc.createElement('script');script.src=`https://www.google.com/recaptcha/api.js?render=${encodeURIComponent(v3Key)}`;script.onload=resolve;script.onerror=reject;doc.head.appendChild(script);});session.loadedCaptchaMode='v3';session.loadedCaptchaKey=v3Key;}
           catch(_){notify('auth',{message:'추가 인증을 불러오지 못했습니다. 연결을 확인해 주세요.'});return;}
         }
         notify('auth', { message: '추가 인증이 필요합니다. 등록 또는 삭제 확인 버튼을 다시 누르면 사이트 인증 후 한 번 전송합니다.' }); return;
       }
-      if (!win.dc_rc_new_v2) { notify('auth', { message: '사이트 인증 키를 확인하지 못했습니다. 원문에서 확인해 주세요.' }); return; }
+      if (!v2Key) { notify('auth', { message: '사이트 인증 키를 확인하지 못했습니다. 원문에서 확인해 주세요.' }); return; }
       try {
         if (!win.grecaptcha?.render) {
           await new Promise((resolve, reject) => {
@@ -270,7 +275,9 @@ async function previewCommentInPage(request) {
           });
           for (let i=0; i<50 && !win.grecaptcha?.render; i++) await new Promise(resolve=>setTimeout(resolve,100));
         }
-        if (session.widget == null) session.widget = win.grecaptcha.render(authHost, {sitekey:win.dc_rc_new_v2, size:'compact',
+        if(session.widget!=null&&session.widgetKey!==v2Key){win.grecaptcha.reset(session.widget);session.widget=null;authHost.replaceChildren();}
+        session.widgetKey=v2Key;
+        if (session.widget == null) session.widget = win.grecaptcha.render(authHost, {sitekey:v2Key, size:'compact',
           callback:()=>notify('auth',{message:'인증 완료'}),
           'expired-callback':()=>notify('auth',{message:'인증이 만료됐습니다. 인증 영역에서 다시 확인해 주세요.'})});
         else win.grecaptcha.reset(session.widget);
@@ -283,9 +290,9 @@ async function previewCommentInPage(request) {
         const token = win.grecaptcha?.getResponse(session.widget);
         return token ? {'g-recaptcha-response':token} : null;
       }
-      if (!win.grecaptcha?.execute || !win.dc_rc_new_v3) return null;
+      if (!win.grecaptcha?.execute || !session.captchaV3Key) return null;
       if(win.grecaptcha.ready)await new Promise(resolve=>win.grecaptcha.ready(resolve));
-      const token = await win.grecaptcha.execute(win.dc_rc_new_v3,{action});
+      const token = await win.grecaptcha.execute(session.captchaV3Key,{action});
       return token ? {'g-recaptcha-token':token} : null;
     };
     session.openDelete = target => {
@@ -353,7 +360,7 @@ async function previewCommentInPage(request) {
       if(!result.ok&&session.widget!=null){try{win.grecaptcha.reset(session.widget);}catch(_){}}
       notify('result',{result:{...result,...session.metadata(),ok:result.ok}});
       sendDraft();
-      if(result.captcha)await session.showCaptcha(result.captcha,`submit:${session.target}`);
+      if(result.captcha)await session.showCaptcha(result.captcha,`submit:${session.target}`,!!media);
       resize();
     });
     if(request.target)session.select(request.target,request.draft);
@@ -508,7 +515,13 @@ async function previewCommentInPage(request) {
     };
     const added = after.comments.filter(item => /^[1-9]\d*$/.test(String(item.no)) && !previous.has(String(item.no))
       && (media ? response==='ok' && (()=>{const parsed=new DOMParser().parseFromString(String(item.memo),'text/html');
-        if(media.kind==='dccon')return JSON.stringify([...parsed.querySelectorAll('.written_dccon[detail]')].map(node=>node.getAttribute('detail')))===JSON.stringify(media.details);
+        if(media.kind==='dccon'){
+          const icons=[...parsed.querySelectorAll('.written_dccon')];
+          // Live server markup omits detail IDs. Compare the selected native asset
+          // as well, never merely the presence of an image or an HTTP 200.
+          const assetKey=src=>{try{const url=new URL(src,win.location.href);return /^dcimg\d*\.dcinside\.com$/.test(url.hostname)&&url.pathname==='/dccon.php'?url.hostname+url.pathname+url.search:'';}catch(_){return '';}};
+          return icons.length===media.details.length&&icons.every((node,i)=>node.getAttribute('detail')===media.details[i]||!!assetKey(media.assets[i])&&assetKey(node.getAttribute('src'))===assetKey(media.assets[i]));
+        }
         const text=parsed.querySelector('.coment_dccon_txt .txtcon_txt,.comment_dccon_txt .txtcon_txt');return !!text&&plain(text.innerHTML)===media.text.replace(/\r\n/g,'\n').trim();})() : plain(item.memo) === request.memo.replace(/\r\n/g, '\n').trim())
       && (target ? String(item.c_no) === target.parent : String(item.depth) === '0'));
     if (added.length !== 1 || Number(after.total_cnt) <= Number(before.total_cnt)) return fail('uncertain');
