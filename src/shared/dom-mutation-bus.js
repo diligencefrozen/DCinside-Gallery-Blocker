@@ -10,6 +10,8 @@
   const subscribers = new Map();
   const pendingRecords = [];
   let observer = null;
+  let observedRoot = null;
+  let observedOptions = '';
   let scheduled = false;
   let rootReadyHandlerInstalled = false;
 
@@ -98,16 +100,17 @@
     if (attributes) {
       result.attributes = true;
       if (needOldValue) result.attributeOldValue = true;
-      if (!allAttributes && attributeNames.size) result.attributeFilter = [...attributeNames];
+      if (!allAttributes && attributeNames.size) result.attributeFilter = [...attributeNames].sort();
     }
     return result;
   }
 
   function reconnectObserver() {
-    observer?.disconnect();
-    observer = null;
-    pendingRecords.length = 0;
-    if (!subscribers.size) return;
+    if (!subscribers.size) {
+      observer?.disconnect(); observer = null; observedRoot = null; observedOptions = '';
+      pendingRecords.length = 0;
+      return;
+    }
 
     const root = document.documentElement;
     if (!root) {
@@ -123,12 +126,22 @@
 
     const options = buildObserveOptions();
     if (!options.childList && !options.characterData && !options.attributes) return;
-    observer = new MutationObserver((records) => {
+    const signature = JSON.stringify(options);
+    if (observer && observedRoot === root && observedOptions === signature) return;
+    // Lazy feature registration must not discard mutations queued for existing
+    // filters. Reuse the observer; only update its union of requested options.
+    if (observer) {
+      pendingRecords.push(...observer.takeRecords());
+      if (observedRoot !== root) observer.disconnect();
+    }
+    observer ||= new MutationObserver((records) => {
       if (!records.length || !subscribers.size) return;
       pendingRecords.push(...records);
       scheduleFlush();
     });
     observer.observe(root, options);
+    observedRoot = root; observedOptions = signature;
+    if (pendingRecords.length) scheduleFlush();
   }
 
   function subscribe(id, handler, options = {}) {
@@ -140,9 +153,11 @@
       attributes: Array.isArray(options.attributes) ? new Set(options.attributes) : null,
       attributeOldValue: options.attributeOldValue === true
     };
-    subscribers.set(id, { id, handler, options: normalized });
+    const subscription = { id, handler, options: normalized };
+    subscribers.set(id, subscription);
     reconnectObserver();
     return () => {
+      if (subscribers.get(id) !== subscription) return;
       subscribers.delete(id);
       reconnectObserver();
     };

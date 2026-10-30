@@ -4669,6 +4669,7 @@ syncSettings(handleUrl);
     state.cancelLoading?.();
     savePreviewDraft(state);clearTimeout(state.statusTimer);
     if(state.submitting){previewDrafts.get(state.key).uncertain=true;cache.delete(state.key);state.frame.dataset.dcbpvCancelled='1';}
+    state.frame.dispatchEvent(new Event('dcbpv-compose-dispose'));
     state.form.remove();previewComposer=null;
   }
   function syncComposerToggle(){
@@ -4812,7 +4813,11 @@ syncSettings(handleUrl);
       // Give the already-rendered preview a paint before starting native scripts.
       await new Promise(resolve=>requestAnimationFrame(()=>setTimeout(resolve,0)));
       if(previewComposer!==state)return;
-      const loaded=new Promise(resolve=>{const timer=setTimeout(()=>resolve(false),12000);frame.addEventListener('load',()=>{clearTimeout(timer);resolve(true);},{once:true});});
+      const loaded=new Promise(resolve=>{
+        const settle=value=>{clearTimeout(timer);frame.removeEventListener('load',onLoad);state.cancelLoading=null;resolve(value);};
+        const onLoad=()=>settle(true),timer=setTimeout(()=>settle(false),12000);
+        state.cancelLoading=()=>settle(false);frame.addEventListener('load',onLoad,{once:true});
+      });
       frame.src=data.url.split('#')[0];form.insertBefore(frame,form.querySelector('.dcbpv-compose-actions'));
       if(!await loaded||previewComposer!==state)return;
       if(state.uncertain){showPreviewSavedDraft(state);updateComposerStatus(state,composerMessage({code:'uncertain'}));return;}

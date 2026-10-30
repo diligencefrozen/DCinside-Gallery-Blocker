@@ -23,7 +23,9 @@ function nativeDocument(url, member = true, captcha = false, own = false, turnst
     <div class="cmt_txt_cont"><div class="cmt_write"><textarea id="memo_${no}" maxlength="400"></textarea></div>${captcha?`<div><img class="kcaptcha" data-type="comment" id="kcaptcha_${no}" alt="인증 이미지"><input id="code_${no}" placeholder="자동입력 방지코드"><button type="button" class="btn_kcap_refresh" onclick="kcaptcha_init('${no}')">새 문제</button></div>`:''}<button class="repley_add btn_svc" data-no="${no}">등록</button></div></div>
     <form id="_cmt_del_form_"><input name="fixture_delete_proof" value="fixture-proof"></form><input name="v_cur_t" value="fixture-time">
     <script>
-      window.jQuery = () => ({data:key=>({comment_id:'fixture',comment_no:'${no}'})[key]});
+      const ajaxHandlers=new Map();
+      window.jQuery = () => ({data:key=>({comment_id:'fixture',comment_no:'${no}'})[key],on:(name,fn)=>ajaxHandlers.set(name,fn),off:namespace=>{for(const name of ajaxHandlers.keys())if(name.endsWith(namespace))ajaxHandlers.delete(name);}});
+      const ajaxEvent=(type,xhr)=>ajaxHandlers.get(type+'.dcbpvPicker')?.({},xhr,{url:'/dccon/lists'});
       window.dc_rc_key='fixture-rc';
       window.dc_rc_new_v2='fixture-v2';window.dc_rc_new_v3='fixture-v3';
       window.get_cookie=key=>key==='ci_c'?'fixture-csrf':'';
@@ -36,7 +38,15 @@ function nativeDocument(url, member = true, captcha = false, own = false, turnst
       const tools=document.createElement('div');tools.className='dccon_guidebox';tools.innerHTML='<button type="button" class="tx_dccon">디시콘</button><button type="button" class="tx_txtcon">글자콘</button><div id="div_con" style="display:none"><button class="img_dccon" package_idx="12" detail_idx="34"><img src="//dcimg5.dcinside.com/dccon.php?no=fixture" alt="fixture icon"></button></div><div id="div_txtcon" class="pop_wrap type3" style="display:none;width:400px"><div class="pop_content txtconlayer"><div class="txt_dccon_box"><div class="head">글자디시콘</div><div class="txtcon_box"><div class="coment_dccon_txt" style="background:#fff;color:#111;display:grid;place-items:center"><p class="txtcon_txt">미리보기</p></div></div><div class="color_section_box"><div class="color_section"><h5>배경색</h5><div class="color_options"><button type="button" class="btn_color" style="background:#fff" aria-label="흰색"></button><button type="button" class="btn_color" style="background:#3b4890" aria-label="파랑"></button><button type="button" class="btn_color" style="background:#f5e1f0" aria-label="분홍"></button></div></div><div class="color_section"><h5>글자색</h5><div class="color_options"><button type="button" class="btn_color" style="background:#111" aria-label="검정"></button></div></div></div><div class="txt_section_box"><div class="txtareabox"><textarea id="txtcon_input" placeholder="글자콘 내용 입력"></textarea></div></div><div class="latest_section_box"><ul class="latest"></ul></div><button id="btn_txtcon_submit">등록</button></div></div></div>';
       document.querySelector('.cmt_txt_cont').append(tools);document.querySelector('#txtcon_input').addEventListener('input',event=>document.querySelector('#div_txtcon .txtcon_txt').textContent=event.target.value);
       for(const panel of tools.querySelectorAll('#div_con,#div_txtcon'))document.body.append(panel);
-      document.querySelector('.tx_dccon').onclick=event=>{const panel=document.querySelector('#div_con');event.target.after(panel);panel.style.display='block';};document.querySelector('.tx_txtcon').onclick=event=>{const panel=document.querySelector('#div_txtcon');event.target.after(panel);panel.style.display='block';};
+      let listLoaded=false;
+      document.querySelector('.tx_dccon').onclick=async event=>{
+        const trigger=event.currentTarget,panel=document.querySelector('#div_con');
+        const show=()=>{trigger.after(panel);panel.style.display='';};
+        if(listLoaded){show();return;}
+        const controller=new AbortController(),xhr={status:0,responseText:'',abort:()=>controller.abort()};ajaxEvent('ajaxSend',xhr);
+        try{const response=await fetch('/dccon/lists',{method:'POST',signal:controller.signal});xhr.status=response.status;xhr.responseText=await response.text();if(response.ok&&xhr.responseText==='ok'){listLoaded=true;show();}}catch(_){}
+        ajaxEvent('ajaxComplete',xhr);
+      };document.querySelector('.tx_txtcon').onclick=event=>{const panel=document.querySelector('#div_txtcon');event.target.after(panel);panel.style.display='block';};
       window.txtcon_sel_colors=()=>({bg:'ffffff',txt:'000000'});window.txtcon_panel_close=()=>{const panel=document.querySelector('#div_txtcon');panel.style.display='none';document.body.append(panel);};window.nativeMediaSubmits=0;
       document.addEventListener('click',event=>{if(event.target.closest('.img_dccon,#btn_txtcon_submit'))window.nativeMediaSubmits++;});
       if(${turnstile}){
@@ -61,11 +71,12 @@ function nativeDocument(url, member = true, captcha = false, own = false, turnst
     const pageErrors = [];
     page.on('pageerror',error=>pageErrors.push(error.message));
     let member = true, captcha = false, own=false, turnstile=false, responseMode = 'success', delay = 0;
-    let writes = [], records = [], reads = 0, deletes=[];
-    const reset = () => { writes=[]; deletes=[];reads=0; records=[{no:'101',c_no:'0',depth:0,name:'송채경',memo:'parent',reg_date:'2026.10.26 21:12:56'}, {no:'102',c_no:'101',depth:1,name:'tester',memo:'reply'}]; responseMode='success';delay=0;member=true;captcha=false;own=false;turnstile=false; };
+    let writes = [], records = [], reads = 0, deletes=[],listMode='ok',listDelay=0,listReads=0;
+    const reset = () => { writes=[]; deletes=[];reads=0;listMode='ok';listDelay=0;listReads=0; records=[{no:'101',c_no:'0',depth:0,name:'송채경',memo:'parent',reg_date:'2026.10.26 21:12:56'}, {no:'102',c_no:'101',depth:1,name:'tester',memo:'reply'}]; responseMode='success';delay=0;member=true;captcha=false;own=false;turnstile=false; };
     reset();
     await page.route('**/*', async route => {
       const url = new URL(route.request().url());
+      if(url.pathname==='/dccon/lists'){listReads++;if(listDelay)await new Promise(resolve=>setTimeout(resolve,listDelay));return route.fulfill({status:/^\d+$/.test(listMode)?Number(listMode):200,body:listMode}).catch(()=>{});}
       if(url.hostname==='dcimg5.dcinside.com')return route.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96"><rect width="96" height="96" rx="20" fill="#dce8ff"/><circle cx="48" cy="48" r="30" fill="#ffdf86"/><path d="M36 54Q48 68 60 54" fill="none" stroke="#39496c" stroke-width="4"/><circle cx="37" cy="40" r="3"/><circle cx="59" cy="40" r="3"/></svg>'});
       if(['/dccon/insert_icon','/txtcon/insert'].includes(url.pathname)){
         const fields=Object.fromEntries(new URLSearchParams(route.request().postData()));writes.push(fields);
@@ -112,6 +123,7 @@ function nativeDocument(url, member = true, captcha = false, own = false, turnst
       }},storage:{sync:{get:(defaults,done)=>done(defaults)},local:{get:(defaults,done)=>done(defaults)},onChanged:{addListener(){}}}};
     });
     await page.addScriptTag({content:backend+'\nwindow.backendTest={previewCommentInPage,handlePreviewCommentMessage};'});
+    await page.addScriptTag({path:path.join(root,'src/shared/dom-mutation-bus.js')});
     await page.addStyleTag({path:path.join(root,'src/content/appearance/writer-layout.css')});
     await page.addScriptTag({path:path.join(root,'src/content/user/writer-layout.js')});
     await page.addScriptTag({content:preview});
@@ -119,7 +131,12 @@ function nativeDocument(url, member = true, captcha = false, own = false, turnst
       window.fixtureData={url,fetchedUrl:url,title:'fixture',writerHTML:'',articleHTML:'<p>body</p>',counts:{up:'0',down:'0'},commentTitle:'댓글 2개',commentsHTML:window.composeTest.commentRecordsToHtml(records,url)};
       window.composeTest.renderPreview(window.fixtureData);
     },{url,records});
-    const open = async () => {await page.locator('.dcbpv-composer iframe').waitFor({state:'visible'}); await page.waitForFunction(()=>document.querySelector('.dcbpv-composer iframe')?.style.visibility==='visible');};
+    const open = async () => {
+      const form=page.locator('.dcbpv-composer');
+      const nearby=await form.evaluate(n=>{const a=n.getBoundingClientRect(),b=n.closest('.dcbpv-scroll').getBoundingClientRect();return a.top<=b.bottom+200&&a.bottom>=b.top-200;});
+      if(!nearby)await form.scrollIntoViewIfNeeded();
+      await page.locator('.dcbpv-composer iframe').waitFor({state:'visible'});await page.waitForFunction(()=>document.querySelector('.dcbpv-composer iframe')?.style.visibility==='visible');
+    };
     const editor = () => page.frameLocator('iframe[data-dcbpv-compose-frame]');
     const finish = async text => page.locator('.dcbpv-composer [role="status"]').filter({hasText:text}).waitFor();
     const close = async () => page.evaluate(()=>window.composeTest.closePreview());
@@ -461,6 +478,32 @@ function nativeDocument(url, member = true, captcha = false, own = false, turnst
         await page.locator('[data-act=compose-reply-cancel]').click();assert.ok(Math.abs(await page.locator('.dcbpv-scroll').evaluate(el=>el.scrollTop)-top)<2);
       }await close();checks++;
     }
+    for(const mode of ['403','429','503','not_login','fail']){
+      reset();listMode=mode;await render(article('',String(1000+checks)));await open();
+      await editor().locator('.tx_dccon').click();
+      await editor().locator('#dcbpv-picker-loading').filter({hasText:mode==='not_login'?'로그인이 필요한':mode==='fail'?'거절':`HTTP ${mode}`}).waitFor();
+      assert.equal(listReads,1);assert.equal(writes.length,0);await close();checks++;
+    }
+    reset();listDelay=900;await render(article('','1100'));await open();
+    await editor().locator('.tx_dccon').click();await page.waitForTimeout(100);
+    await editor().locator('#dcbpv-picker-header button').click();await editor().locator('.tx_dccon').click();
+    await editor().locator('#div_con.dcbpv-picker-panel').waitFor({state:'visible'});
+    assert.equal(listReads,1,'reopen reuses the native in-flight list request');
+    await editor().locator('.img_dccon').click();await editor().locator('#dcbpv-selection').waitFor({state:'visible'});
+    assert.equal(writes.length,0);await close();checks++;
+    for(const target of ['recent','icon','missing']){
+      reset();listMode=JSON.stringify(target==='missing'?{target:'icon'}:{target,list:target==='recent'?'':[]});await render(article('',String(1120+checks)));await open();
+      await editor().locator('.tx_dccon').click();
+      await editor().locator('#dcbpv-picker-loading').filter({hasText:target==='recent'?'최근 사용한':target==='missing'?'올바른':'사용 가능한'}).waitFor();
+      assert.equal(listReads,1);assert.equal(writes.length,0);await close();checks++;
+    }
+    reset();listDelay=900;await render(article('','1150'));await open();
+    await editor().locator('.tx_dccon').click();await page.waitForTimeout(100);
+    await editor().locator('#dcbpv-picker-header button').click();await editor().locator('.tx_txtcon').click();
+    await editor().locator('#txtcon_input').fill('keep textcon draft');await page.waitForTimeout(1000);
+    assert.equal(await editor().locator('#div_con').isVisible(),false,'late DCCon response must not replace textcon');
+    assert.equal(await editor().locator('#txtcon_input').inputValue(),'keep textcon draft');
+    assert.equal(await editor().locator('#div_txtcon').isVisible(),true);assert.equal(writes.length,0);await close();checks++;
     const denied=await page.evaluate(async()=>{
       const sender={id:'fixture-extension',url:location.href,frameId:0,tab:{id:1}};
       const base={operation:'prepare',url:'https://gall.dcinside.com/board/view/?id=fixture&no=10',key:'11111111-1111-4111-8111-111111111111',draft:''};
@@ -471,6 +514,13 @@ function nativeDocument(url, member = true, captcha = false, own = false, turnst
         window.backendTest.handlePreviewCommentMessage(base,{...sender,frameId:1})]);
     });
     assert.ok(denied.every(result=>!result.ok));checks++;
+    const cdp=await page.context().newCDPSession(page);
+    await cdp.send('HeapProfiler.collectGarbage');const memoryBefore=await cdp.send('Memory.getDOMCounters');
+    for(let i=0;i<20;i++){reset();turnstile=true;await render(article('',String(1200+i)));await open();await close();}
+    await page.waitForTimeout(150);await cdp.send('HeapProfiler.collectGarbage');const memoryAfter=await cdp.send('Memory.getDOMCounters');
+    assert.ok(memoryAfter.documents<=memoryBefore.documents+2,JSON.stringify({memoryBefore,memoryAfter}));
+    assert.ok(memoryAfter.jsEventListeners<=memoryBefore.jsEventListeners+20,JSON.stringify({memoryBefore,memoryAfter}));
+    fs.writeFileSync(path.join(root,'test-results/preview-compose-lifecycle.json'),JSON.stringify({cycles:20,before:memoryBefore,after:memoryAfter},null,2));checks++;
     assert.deepEqual(pageErrors,[]);
     console.log(`Preview composer: ${checks} scenarios passed (default/toggle, continuous writes, CAPTCHA v2/v3/Turnstile/image, replies, owner deletion, responsive layout, timestamps, drafts, duplicates, stale response, sender validation).`);
   } finally {await browser.close();}

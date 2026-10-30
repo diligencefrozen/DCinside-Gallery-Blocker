@@ -342,12 +342,13 @@
     // actions. The single-line fitter must not reserve the adjacent grid column
     // a second time or truncate ordinary nicknames to two characters.
     if(parts.context === 'preview-comment'){
-      FIT_PROPERTIES.forEach(property=>writer.style.removeProperty(property));
-      writer.style.removeProperty('--dcb-writer-available');
-      writer.removeAttribute('data-dcb-writer-density');
-      writer.removeAttribute('data-dcb-writer-name-fit');
-      parts.nameText?.classList.remove('dcb-writer-name-clipped');
-      if(parts.nameText)parts.nameText.title=parts.nameText.textContent;
+      // Even removing an absent class emits a mutation in Chromium. The shared
+      // bus observes class changes and schedules this fitter again, so writes
+      // here must converge rather than keeping every preview writer active.
+      [...FIT_PROPERTIES,'--dcb-writer-available'].forEach(property=>{if(writer.style.getPropertyValue(property))writer.style.removeProperty(property);});
+      for(const attribute of ['data-dcb-writer-density','data-dcb-writer-name-fit'])if(writer.hasAttribute(attribute))writer.removeAttribute(attribute);
+      if(parts.nameText?.classList.contains('dcb-writer-name-clipped'))parts.nameText.classList.remove('dcb-writer-name-clipped');
+      if(parts.nameText)setAttribute(parts.nameText,'title',parts.nameText.textContent);
       return;
     }
     if (state.row !== parts.row || state.nameText !== parts.nameText || state.icon !== parts.icon || state.nativeIp !== parts.nativeIp) {

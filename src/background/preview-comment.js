@@ -222,7 +222,30 @@ async function previewCommentInPage(request) {
     pickerBack.type='button';pickerBack.textContent='닫기';pickerBack.setAttribute('aria-label','콘 선택 팝업 닫기');pickerCopy.append(pickerTitle,pickerHint);pickerHeader.append(pickerCopy,pickerBack);surface.prepend(pickerHeader);
     const pickerLoading=doc.createElement('div');pickerLoading.id='dcbpv-picker-loading';pickerLoading.hidden=true;pickerLoading.setAttribute('role','status');pickerLoading.textContent='디시콘 목록을 불러오는 중…';surface.append(pickerLoading);
     let lastPickerOpen=false,lastPickerHeight=0,pickerTimer;
-    const pickerNotice=message=>{session.pickerPending=false;pickerLoading.textContent=message;pickerLoading.hidden=false;pickerHint.textContent='현재 미리보기에서 닫고 다시 선택할 수 있습니다.';};
+    const listRequests=new Set();
+    const pickerNotice=message=>{clearTimeout(pickerTimer);session.pickerPending=false;pickerLoading.textContent=message;pickerLoading.hidden=false;pickerHint.textContent='현재 미리보기에서 닫고 다시 선택할 수 있습니다.';};
+    const isListRequest=settings=>{try{const u=new URL(settings.url,doc.URL);return u.origin===url.origin&&u.pathname==='/dccon/lists';}catch(_){return false;}};
+    // Observe the site's request; do not replace its endpoint, credentials,
+    // package cache or success callback. No response/token leaves this document.
+    const nativeEvents=$(doc);
+    if(typeof nativeEvents.on==='function'){
+      nativeEvents.on('ajaxSend.dcbpvPicker',(_event,xhr,settings)=>{if(isListRequest(settings))listRequests.add(xhr);});
+      nativeEvents.on('ajaxComplete.dcbpvPicker',(_event,xhr,settings)=>{
+        if(!isListRequest(settings))return;
+        listRequests.delete(xhr);
+        if(!frame.isConnected||session.pickerDismissed||session.pickerKind!=='dccon')return;
+        syncPicker();resize();
+        if(xhr.status===0||xhr.status>=400)pickerNotice(`디시콘 목록 요청에 실패했습니다${xhr.status?` (HTTP ${xhr.status})`:''}. 자동 재시도하지 않습니다.`);
+        else if(xhr.responseText==='not_login')pickerNotice('로그인이 필요한 목록입니다. 현재 작성 내용은 유지됩니다.');
+        else if(xhr.responseText==='fail'||String(xhr.responseText||'').startsWith('false||'))pickerNotice('사이트에서 디시콘 목록 요청을 거절했습니다.');
+        else {try{
+          const data=JSON.parse(xhr.responseText);
+          if(['icon','recent'].includes(data.target)&&!Object.prototype.hasOwnProperty.call(data,'list'))pickerNotice('사이트에서 올바른 디시콘 목록을 받지 못했습니다. 잠시 후 직접 다시 시도해 주세요.');
+          else if(data.target==='recent'&&data.list==='')pickerNotice('최근 사용한 디시콘이 없습니다. 패키지 탭에서 선택해 주세요.');
+          else if(data.target==='icon'&&Array.isArray(data.list)&&!data.list.length)pickerNotice('사용 가능한 디시콘 목록이 없습니다.');
+        }catch(_){/* Native code owns parsing; an unknown response is not success. */}}
+      });
+    }
     // The native list's login confirmation redirects the editor document.
     // Keep that decision local to the picker; never replace the live composer.
     const nativeConfirm=win.confirm.bind(win);
@@ -242,8 +265,15 @@ async function previewCommentInPage(request) {
       event.preventDefault(); // Native delegated selection still runs, without anchor navigation.
       if(session.busy||session.uncertain){event.preventDefault();event.stopImmediatePropagation();return;}
       session.pickerDismissed=false;
+      if(trigger.matches('.tx_txtcon')){session.pickerKind='txtcon';session.pickerPending=false;clearTimeout(pickerTimer);}
       if(trigger.matches('.tx_dccon')){
-        session.pickerKind='dccon';session.pickerPending=true;pickerLoading.textContent='디시콘 목록을 불러오는 중…';syncPicker();resize();
+        // Closing/reopening while the first request is pending must reuse it.
+        // Otherwise native responses overwrite each other's package selection.
+        if(listRequests.size)event.stopImmediatePropagation();
+        session.pickerKind='dccon';session.pickerPending=true;pickerLoading.textContent='디시콘 목록을 불러오는 중…';
+        // Let the native delegated click inspect its original visible button
+        // before applying the picker mask (still before the next paint).
+        queueMicrotask(()=>{if(frame.isConnected){syncPicker();resize();}});
         clearTimeout(pickerTimer);pickerTimer=setTimeout(()=>{if(frame.isConnected&&session.pickerPending)pickerNotice('디시콘 목록을 불러오지 못했습니다. 닫은 뒤 다시 시도해 주세요.');},15000);
       }
       // Native delegated handler performs its single normal read; no extra fetch.
@@ -252,7 +282,11 @@ async function previewCommentInPage(request) {
       // Native .show() sets inline display after inserting the list. Our picker
       // mask hides it until its ancestor path is exposed, so computed display
       // alone creates a deadlock: the loaded panel can never become visible.
-      let panel=[...box.querySelectorAll('#div_con,#div_txtcon')].find(node=>node.style.display!=='none'&&!node.hidden&&(!!node.style.display||win.getComputedStyle(node).display!=='none'))||null;
+      const panels=[...box.querySelectorAll('#div_con,#div_txtcon')];
+      // A late list response must not replace an already-open textcon editor.
+      // Keep the native package cache; only hide the non-selected popup.
+      for(const node of panels)if(session.pickerKind&&node.id!==(session.pickerKind==='txtcon'?'div_txtcon':'div_con')&&node.style.display!=='none')node.style.display='none';
+      let panel=panels.find(node=>node.style.display!=='none'&&!node.hidden&&(!!node.style.display||win.getComputedStyle(node).display!=='none'))||null;
       if(session.pickerDismissed&&panel){panel.style.display='none';panel=null;}
       if(panel){session.pickerPending=false;clearTimeout(pickerTimer);}
       // Always pass a boolean force to DOMTokenList.toggle. An undefined
@@ -298,7 +332,7 @@ async function previewCommentInPage(request) {
       if (event.key === 'Enter') event.stopPropagation();
       if (event.key === 'Escape' && !event.isComposing) { event.preventDefault(); notify('escape'); }
     });
-    let lastHeight = 0, resizing = false, lastMetadata = '', metadataDirty = true, authDiscoveryDirty = true;
+    let lastHeight = 0, resizing = false, resizeFrame = 0, authWatch = 0, disposed = false, lastMetadata = '', metadataDirty = true, authDiscoveryDirty = true;
     const expose = node => {
       if (!node.classList.contains('dcbpv-native-auth')) node.classList.add('dcbpv-native-auth');
       // comment.js v261029 places Turnstile beside the submit button. The
@@ -312,9 +346,10 @@ async function previewCommentInPage(request) {
       }
     };
     const resize = () => {
-      if (!frame.isConnected || resizing) return;
+      if (disposed || !frame.isConnected || resizing) return;
       resizing = true;
-      requestAnimationFrame(() => {
+      resizeFrame = requestAnimationFrame(() => {
+        resizeFrame = 0;
         resizing = false;
         if (!frame.isConnected) { observer.disconnect(); sizeObserver.disconnect(); return; }
         syncPicker();
@@ -373,6 +408,17 @@ async function previewCommentInPage(request) {
     const sizeObserver = new ResizeObserver(resize);
     sizeObserver.observe(surface);
     win.addEventListener('resize', resize);
+    const dispose=()=>{
+      if(disposed)return;disposed=true;
+      clearTimeout(pickerTimer);clearInterval(authWatch);cancelAnimationFrame(resizeFrame);
+      observer.disconnect();sizeObserver.disconnect();win.removeEventListener('resize',resize);
+      nativeEvents.off?.('.dcbpvPicker');
+      for(const xhr of listRequests)xhr.abort?.();listRequests.clear();
+      frame.removeEventListener('dcbpv-compose-dispose',dispose);
+      win.removeEventListener('pagehide',dispose);
+    };
+    frame.addEventListener('dcbpv-compose-dispose',dispose,{once:true});
+    win.addEventListener('pagehide',dispose,{once:true});
     const nativeOwned = () => value('member_division') === 'Y' ? [...doc.querySelectorAll('.cmt_mdf_del[data-my="Y"][re_no]')]
       .filter(node => node.querySelector('.btn_cmt_delete')).map(node => node.getAttribute('re_no')) : [];
     session.metadata = () => ({ ok: true, maxLength, inlineCounter:!!tools, member: value('member_division') === 'Y', targets: session.targets,
@@ -523,8 +569,8 @@ async function previewCommentInPage(request) {
     catch (_) { prepareAuthError='사이트 인증을 불러오지 못했습니다. 작성 내용은 유지됩니다.';notify('auth',{message:prepareAuthError}); }
     if(hasChallenge){
       let previous='';
-      const watch=setInterval(()=>{
-        if(!frame.isConnected){clearInterval(watch);observer.disconnect();sizeObserver.disconnect();return;}
+      authWatch=setInterval(()=>{
+        if(!frame.isConnected){dispose();return;}
         const status=win.ts_cmt?.st;
         if(status===previous)return;previous=status;resize();
         const message={interactive:'사람인지 확인하는 인증 영역을 직접 완료해 주세요.',expired:'인증이 만료됐습니다. 인증 영역에서 다시 확인해 주세요.',error:'사이트 인증을 불러오지 못했습니다. 연결을 확인하거나 원문에서 인증해 주세요.',ok:'인증 완료'}[status];
