@@ -24,7 +24,7 @@ function nativeDocument(url, member = true, captcha = false, own = false, turnst
     <form id="_cmt_del_form_"><input name="fixture_delete_proof" value="fixture-proof"></form><input name="v_cur_t" value="fixture-time">
     <script>
       const ajaxHandlers=new Map();
-      window.jQuery = () => ({data:key=>({comment_id:'fixture',comment_no:'${no}'})[key],on:(name,fn)=>ajaxHandlers.set(name,fn),off:namespace=>{for(const name of ajaxHandlers.keys())if(name.endsWith(namespace))ajaxHandlers.delete(name);}});
+      window.jQuery = arg => typeof arg==='function'?queueMicrotask(arg):({data:key=>({comment_id:'fixture',comment_no:'${no}'})[key],on:(name,fn)=>ajaxHandlers.set(name,fn),off:namespace=>{for(const name of ajaxHandlers.keys())if(name.endsWith(namespace))ajaxHandlers.delete(name);}});
       const ajaxEvent=(type,xhr)=>ajaxHandlers.get(type+'.dcbpvPicker')?.({},xhr,{url:'/dccon/lists'});
       window.dc_rc_key='fixture-rc';
       window.dc_rc_new_v2='fixture-v2';window.dc_rc_new_v3='fixture-v3';
@@ -74,8 +74,10 @@ function nativeDocument(url, member = true, captcha = false, own = false, turnst
     let writes = [], records = [], reads = 0, deletes=[],listMode='ok',listDelay=0,listReads=0;
     const reset = () => { writes=[]; deletes=[];reads=0;listMode='ok';listDelay=0;listReads=0; records=[{no:'101',c_no:'0',depth:0,name:'송채경',memo:'parent',reg_date:'2026.10.26 21:12:56'}, {no:'102',c_no:'101',depth:1,name:'tester',memo:'reply'}]; responseMode='success';delay=0;member=true;captcha=false;own=false;turnstile=false; };
     reset();
+    let slowArticleImage=false;
     await page.route('**/*', async route => {
       const url = new URL(route.request().url());
+      if(url.pathname==='/slow-article-image'){await new Promise(r=>setTimeout(r,4000));return route.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>'}).catch(()=>{});}
       if(url.pathname==='/dccon/lists'){listReads++;if(listDelay)await new Promise(resolve=>setTimeout(resolve,listDelay));return route.fulfill({status:/^\d+$/.test(listMode)?Number(listMode):200,body:listMode}).catch(()=>{});}
       if(url.hostname==='dcimg5.dcinside.com')return route.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96"><rect width="96" height="96" rx="20" fill="#dce8ff"/><circle cx="48" cy="48" r="30" fill="#ffdf86"/><path d="M36 54Q48 68 60 54" fill="none" stroke="#39496c" stroke-width="4"/><circle cx="37" cy="40" r="3"/><circle cx="59" cy="40" r="3"/></svg>'});
       if(['/dccon/insert_icon','/txtcon/insert'].includes(url.pathname)){
@@ -112,7 +114,7 @@ function nativeDocument(url, member = true, captcha = false, own = false, turnst
       }
       if(url.pathname.startsWith('/kcaptcha/'))return route.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="110" height="30"><text y="20">fixture</text></svg>'});
       if (url.pathname === '/board/comment/') {reads++; return route.fulfill({json:{comments:records,total_cnt:records.length}});}
-      return route.fulfill({contentType:'text/html',body:url.pathname.endsWith('/view/') ? nativeDocument(url.href,member,captcha,own,turnstile) : '<!doctype html><html><head></head><body><button id="origin">origin</button></body></html>'});
+      return route.fulfill({contentType:'text/html',body:url.pathname.endsWith('/view/') ? nativeDocument(url.href,member,captcha,own,turnstile).replace('</body>',(slowArticleImage?'<img src="/slow-article-image">':'')+'</body>') : '<!doctype html><html><head></head><body><button id="origin">origin</button></body></html>'});
     });
     await page.goto('https://gall.dcinside.com/board/lists/?id=fixture');
     await page.evaluate(()=>{
@@ -140,6 +142,12 @@ function nativeDocument(url, member = true, captcha = false, own = false, turnst
     const editor = () => page.frameLocator('iframe[data-dcbpv-compose-frame]');
     const finish = async text => page.locator('.dcbpv-composer [role="status"]').filter({hasText:text}).waitFor();
     const close = async () => page.evaluate(()=>window.composeTest.closePreview());
+
+    reset();slowArticleImage=true;await render();await open();
+    assert.equal(await editor().locator('body').evaluate(()=>document.readyState),'interactive','input is usable before unrelated article images finish');
+    await editor().locator('textarea[id^=memo_]').fill('early draft');
+    await editor().locator('.tx_dccon').click();await editor().locator('#div_con.dcbpv-picker-panel').waitFor({state:'visible'});
+    assert.equal(writes.length,0);await close();slowArticleImage=false;checks++;
 
     for (const prefix of ['', 'mgallery/', 'mini/', 'person/']) {
       reset(); await render(article(prefix)); await open();

@@ -3,9 +3,11 @@
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
 const {chromium}=require('playwright');
 const baseline=process.argv.includes('--before'),check=process.argv.includes('--check');
+const trace=process.argv.includes('--trace');
 const runs=Number(process.argv.find(a=>a.startsWith('--runs='))?.split('=')[1]||5);
 assert.ok(Number.isInteger(runs)&&runs>=1&&runs<=10);
-const read=(file)=>fs.readFileSync(baseline?path.join('test-results/perf-before',path.basename(file)):file,'utf8');
+const sources=new Map();
+const read=(file)=>{if(!sources.has(file))sources.set(file,fs.readFileSync(baseline?path.join('test-results/perf-before',path.basename(file)):file,'utf8'));return sources.get(file);};
 (async()=>{
  const browser=await chromium.launch({headless:true});const results=[];
  try{for(const count of [50,500,2000]){for(let run=1;run<=runs;run++){
@@ -28,6 +30,8 @@ const read=(file)=>fs.readFileSync(baseline?path.join('test-results/perf-before'
   for(const phase of ['cold','warm']){
   await page.evaluate(count=>profileRender(count),count);
   await page.waitForTimeout(700);
+  const tracing=trace&&count===2000&&run===1&&phase==='cold';
+  if(tracing)await cdp.send('Tracing.start',{categories:'devtools.timeline,v8,disabled-by-default-v8.cpu_profiler',transferMode:'ReturnAsStream'});
   const before=Object.fromEntries((await cdp.send('Performance.getMetrics')).metrics.map(m=>[m.name,m.value]));
   const sample=await page.evaluate(async()=>{
    let mutations=0;const longTasks=[],frames=[];const mo=new MutationObserver(r=>mutations+=r.length);mo.observe(document.querySelector('#dcb-preview-overlay'),{subtree:true,attributes:true,childList:true});
@@ -40,6 +44,11 @@ const read=(file)=>fs.readFileSync(baseline?path.join('test-results/perf-before'
   const after=Object.fromEntries((await cdp.send('Performance.getMetrics')).metrics.map(m=>[m.name,m.value]));
   const row={count,run,phase,...sample,taskMs:Math.round((after.TaskDuration-before.TaskDuration)*1000),layoutMs:Math.round((after.LayoutDuration-before.LayoutDuration)*1000),styleMs:Math.round((after.RecalcStyleDuration-before.RecalcStyleDuration)*1000)};
   results.push(row);console.log(JSON.stringify(row));
+  if(tracing){
+   const complete=new Promise(resolve=>cdp.once('Tracing.tracingComplete',resolve));await cdp.send('Tracing.end');const {stream}=await complete;
+   const chunks=[];let chunk;do{chunk=await cdp.send('IO.read',{handle:stream});chunks.push(chunk.data);}while(!chunk.eof);
+   await cdp.send('IO.close',{handle:stream});fs.writeFileSync(`test-results/preview-scroll-${baseline?'before':'after'}.trace.json`,chunks.join(''));
+  }
   if(check)assert.equal(sample.mutations,0,'settled preview must not keep rewriting writer classes');
   await page.evaluate(()=>profilePreview.closePreview());
   }await page.close();
@@ -51,6 +60,6 @@ const read=(file)=>fs.readFileSync(baseline?path.join('test-results/perf-before'
    const values=group.map(r=>r[key]).sort((a,b)=>a-b);row[key]={median:values[Math.floor(values.length/2)],p95:values[Math.ceil(values.length*.95)-1]};
   }summary.push(row);
  }
- fs.writeFileSync(`test-results/preview-scroll-${baseline?'before':'after'}.json`,JSON.stringify({engine:'Chromium',cpuThrottle:4,scrollMs:1800,runs,results,summary},null,2));
+ fs.writeFileSync(`test-results/preview-scroll-${baseline?'before':'after'}${trace?'-traced':''}.json`,JSON.stringify({engine:'Chromium',cpuThrottle:4,scrollMs:1800,runs,results,summary},null,2));
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

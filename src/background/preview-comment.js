@@ -34,6 +34,14 @@ async function previewCommentInPage(request) {
   const value = id => doc.getElementById(id)?.value;
   const id = url.searchParams.get('id'), no = url.searchParams.get('no');
   const $ = win.jQuery;
+  if(request.operation==='prepare'&&!frame.__dcbpvEditor&&$&&doc.readyState!=='complete'){
+    // Preserve the site's own ready-handler order before moving its form.
+    const ready=await new Promise(resolve=>{
+      const timer=setTimeout(()=>resolve(false),2000);
+      $(()=>{clearTimeout(timer);resolve(true);});
+    });
+    if(!ready||!frame.isConnected||frame.contentDocument!==doc)return fail('unavailable');
+  }
   const expectedType = url.pathname.startsWith('/mgallery/') ? 'M'
     : url.pathname.startsWith('/mini/') ? 'MI' : url.pathname.startsWith('/person/') ? 'PR' : 'G';
   if (!$ || value('_GALLTYPE_') !== expectedType || !['Y', 'N'].includes(value('member_division'))

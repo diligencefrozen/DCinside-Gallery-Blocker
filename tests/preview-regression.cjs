@@ -12,9 +12,10 @@ const previewSource = source.slice(source.indexOf('(function dcBlockPostPreview(
 })();`);
 const articleUrl = 'https://gall.dcinside.com/board/view/?id=fixture&no=10';
 const listUrl = 'https://gall.dcinside.com/board/lists/?id=fixture';
+let browser;
 
 (async () => {
-  const browser = await chromium.launch({ headless: true, ...(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : {}) });
+  browser = await chromium.launch({ headless: true, ...(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : {}) });
   const context = await browser.newContext();
   const page = await context.newPage();
   const errors = [];
@@ -359,7 +360,7 @@ const listUrl = 'https://gall.dcinside.com/board/lists/?id=fixture';
     summary.dataset.stabilityProbe = 'keep';
     return { text: summary.textContent, count: document.querySelectorAll('.dcbpv-filter-summary').length };
   });
-  assert.deepEqual(summaryBefore, { text: '차단 설정에 따라 댓글 1개를 숨겼습니다.', count: 1 });
+  assert.deepEqual(summaryBefore, { text: 'ⓘ 차단 설정으로 댓글 1개 숨김', count: 1 });
   await page.waitForTimeout(500);
   const summaryAfter = await page.evaluate(() => ({
     marker: document.querySelector('.dcbpv-filter-summary')?.dataset?.stabilityProbe || '',
@@ -431,6 +432,5 @@ const listUrl = 'https://gall.dcinside.com/board/lists/?id=fixture';
     }
   }
   assert.deepEqual(errors, [], 'no uncaught page errors');
-  await browser.close();
   console.log('Preview regression checks passed: sanitization, responsive layouts, movie and poll embeds, stable DCCon filtering, textcon toggle, dialog focus and close.');
-})().catch((error) => { console.error(error); process.exitCode = 1; });
+})().catch((error) => { console.error(error); process.exitCode = 1; }).finally(async()=>{await browser?.close();});

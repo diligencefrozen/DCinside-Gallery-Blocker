@@ -19,6 +19,13 @@ const rows=[],network=[],errors=[],dialogs=[],checks={};let blockedWrites=0;
   try{
    const worker=context.serviceWorkers()[0]||await context.waitForEvent('serviceworker');
    await worker.evaluate(()=>chrome.storage.sync.set({previewEnabled:true}));
+   await worker.evaluate(async()=>{
+    for(let i=0;i<100;i++){
+     const scripts=await chrome.scripting.getRegisteredContentScripts();
+     if(scripts.some(s=>s.js?.includes('src/content/core/content_script.js')))return;
+     await new Promise(resolve=>setTimeout(resolve,100));
+    }throw new Error('Content profiles did not register');
+   });
    await context.addInitScript(()=>{
     window.__dcbReadTiming={};
     document.addEventListener('DOMContentLoaded',()=>window.__dcbReadTiming.domReady=performance.now(),{once:true});
@@ -33,17 +40,28 @@ const rows=[],network=[],errors=[],dialogs=[],checks={};let blockedWrites=0;
    });
    page=await context.newPage();
    page.on('pageerror',e=>errors.push({run,name:e.name,message:e.message.slice(0,150)}));
-   page.on('console',async message=>{for(const arg of message.args()){const error=await arg.evaluate(v=>v instanceof Error?{message:v.message,stack:v.stack}:null).catch(()=>null);if(error)errors.push({run,consoleError:error});}});
    page.on('dialog',async d=>{dialogs.push(d.message().slice(0,100));await d.dismiss();});
    page.on('response',async r=>{const u=new URL(r.url());if(u.pathname.startsWith('/dccon/')){
     const item={run,path:u.pathname,status:r.status()};network.push(item);
     if(u.pathname==='/dccon/lists'){try{const d=await r.json();item.target=d.target;item.listSize=Array.isArray(d.list)?d.list.length:typeof d.list;item.fields=Object.fromEntries(Object.entries(d).map(([k,v])=>[k,typeof v==='string'?`string:${v.length}`:typeof v]));}catch(_){}}
    }});
    await page.goto('https://gall.dcinside.com/mgallery/board/lists/?id=asdf12');
-   await page.waitForTimeout(1500);
+   // Wait for normal lazy injection, not a fixed delay that can miss startup.
+   await worker.evaluate(async()=>{
+    const [tab]=await chrome.tabs.query({url:'https://gall.dcinside.com/mgallery/board/lists/*'});
+    for(let i=0;i<100;i++){
+     const [result]=await chrome.scripting.executeScript({target:{tabId:tab.id},func:()=>typeof previewEnabled==='boolean'});
+     if(result.result)return;await new Promise(resolve=>setTimeout(resolve,100));
+    }throw new Error('Preview content script did not initialize');
+   });
    for(const phase of ['cold','warm']){
     const start=Date.now();await page.locator('#article').click({button:'right'});
     await page.locator('.dcbpv-title').waitFor({timeout:30000});const articleReadyMs=Date.now()-start;
+    // Explicit user opening starts the one editor even if late comments move
+    // its slot below the viewport between scrolling and IntersectionObserver.
+    const toggle=page.locator('[data-act=compose]');
+    if(await toggle.getAttribute('aria-expanded')==='true')await toggle.click();
+    await toggle.click();
     await page.locator('.dcbpv-composer').scrollIntoViewIfNeeded();const composerReachedMs=Date.now()-start;
     const f=page.frameLocator('iframe[data-dcbpv-compose-frame]');
     await f.locator('#dcbpv-native-editor').waitFor({state:'visible',timeout:30000});const editorReadyMs=Date.now()-start;
@@ -94,7 +112,7 @@ const rows=[],network=[],errors=[],dialogs=[],checks={};let blockedWrites=0;
    if(page){
     checks.failureState=await page.evaluate(()=>{
      const frame=document.querySelector('iframe[data-dcbpv-compose-frame]'),s=frame?.__dcbpvEditor,d=frame?.contentDocument;
-     return {state:s?{open:s.pickerOpen,pending:s.pickerPending,dismissed:s.pickerDismissed,kind:s.pickerKind}:null,
+     return {frameCount:document.querySelectorAll('iframe[data-dcbpv-compose-frame]').length,composerStatus:document.querySelector('.dcbpv-composer [role=status]')?.textContent,state:s?{open:s.pickerOpen,pending:s.pickerPending,dismissed:s.pickerDismissed,kind:s.pickerKind}:null,
       notice:d?.querySelector('#dcbpv-picker-loading')?.textContent,
       panels:[...d?.querySelectorAll('#div_con,#div_txtcon')||[]].map(n=>({id:n.id,display:n.style.display,computed:getComputedStyle(n).display,classes:n.className,icons:n.querySelectorAll('.img_dccon').length,inBox:!!n.closest('#dcbpv-native-editor'),parent:n.parentElement.className}))};
     }).catch(()=>null);

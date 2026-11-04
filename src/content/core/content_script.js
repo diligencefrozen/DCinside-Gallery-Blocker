@@ -4814,8 +4814,17 @@ syncSettings(handleUrl);
       await new Promise(resolve=>requestAnimationFrame(()=>setTimeout(resolve,0)));
       if(previewComposer!==state)return;
       const loaded=new Promise(resolve=>{
-        const settle=value=>{clearTimeout(timer);frame.removeEventListener('load',onLoad);state.cancelLoading=null;resolve(value);};
+        const settle=value=>{clearTimeout(timer);clearInterval(readyPoll);frame.removeEventListener('load',onLoad);state.cancelLoading=null;resolve(value);};
         const onLoad=()=>settle(true),timer=setTimeout(()=>settle(false),12000);
+        // DOMContentLoaded includes deferred native editor scripts. Waiting for
+        // window.load additionally waits for unrelated article images/ads.
+        // readyState=interactive alone is insufficient: defer may still run.
+        const readyPoll=setInterval(()=>{
+          try{
+            const doc=frame.contentDocument,nav=frame.contentWindow.performance.getEntriesByType('navigation')[0];
+            if(doc?.URL===frame.src&&nav?.domContentLoadedEventEnd>0)settle(true);
+          }catch(_){/* Redirects/unsupported timing fall back to the load event. */}
+        },100);
         state.cancelLoading=()=>settle(false);frame.addEventListener('load',onLoad,{once:true});
       });
       frame.src=data.url.split('#')[0];form.insertBefore(frame,form.querySelector('.dcbpv-compose-actions'));
