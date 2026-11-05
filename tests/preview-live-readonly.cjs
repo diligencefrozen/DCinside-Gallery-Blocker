@@ -6,7 +6,9 @@ const {chromium}=require('playwright');
 const root=path.resolve(__dirname,'..'),extension=process.env.DCB_EXTENSION_ROOT||root;
 const runs=Number(process.argv.find(a=>a.startsWith('--runs='))?.split('=')[1]||1);
 const label=process.env.DCB_PROFILE_LABEL||'after';
-const article='https://gall.dcinside.com/mgallery/board/view/?id=asdf12&no=83075&page=1';
+const best=process.argv.includes('--dcbest');
+const article=best?'https://gall.dcinside.com/board/view/?id=dcbest&no=475940&_dcbest=4&page=1':'https://gall.dcinside.com/mgallery/board/view/?id=asdf12&no=83075&page=1';
+const listUrl=best?'https://gall.dcinside.com/board/lists/?id=dcbest':'https://gall.dcinside.com/mgallery/board/lists/?id=asdf12';
 if(process.env.DCB_LIVE_READONLY!=='1')throw new Error('Set DCB_LIVE_READONLY=1 to allow live read-only requests.');
 assert.ok(Number.isInteger(runs)&&runs>=1&&runs<=5);
 const rows=[],network=[],errors=[],dialogs=[],checks={};let blockedWrites=0;
@@ -18,7 +20,7 @@ const rows=[],network=[],errors=[],dialogs=[],checks={};let blockedWrites=0;
   let page;
   try{
    const worker=context.serviceWorkers()[0]||await context.waitForEvent('serviceworker');
-   await worker.evaluate(()=>chrome.storage.sync.set({previewEnabled:true}));
+   await worker.evaluate(best=>chrome.storage.sync.set(best?{previewEnabled:true,builtinDcbestBlockEnabled:false}:{previewEnabled:true}),best);
    await worker.evaluate(async()=>{
     for(let i=0;i<100;i++){
      const scripts=await chrome.scripting.getRegisteredContentScripts();
@@ -35,7 +37,7 @@ const rows=[],network=[],errors=[],dialogs=[],checks={};let blockedWrites=0;
     const u=new URL(route.request().url());
     if(/\/(?:comment_submit|comment_delete_submit|comment_delete|insert_icon|insert|vote)$/.test(u.pathname)){blockedWrites++;return route.abort();}
     // Only the entry list is a fixture. Article/comments/editor/list/images are live.
-    if(u.pathname==='/mgallery/board/lists/'&&u.searchParams.get('id')==='asdf12')return route.fulfill({contentType:'text/html',body:`<!doctype html><html><body><table><tr class="ub-content"><td class="gall_tit"><a id="article" href="${article}">Actual article</a></td></tr></table></body></html>`});
+    if(u.href===listUrl)return route.fulfill({contentType:'text/html',body:`<!doctype html><html><body><table><tr class="ub-content"><td class="gall_tit"><a id="article" href="${article}">Actual article</a></td></tr></table></body></html>`});
     return route.continue();
    });
    page=await context.newPage();
@@ -45,15 +47,15 @@ const rows=[],network=[],errors=[],dialogs=[],checks={};let blockedWrites=0;
     const item={run,path:u.pathname,status:r.status()};network.push(item);
     if(u.pathname==='/dccon/lists'){try{const d=await r.json();item.target=d.target;item.listSize=Array.isArray(d.list)?d.list.length:typeof d.list;item.fields=Object.fromEntries(Object.entries(d).map(([k,v])=>[k,typeof v==='string'?`string:${v.length}`:typeof v]));}catch(_){}}
    }});
-   await page.goto('https://gall.dcinside.com/mgallery/board/lists/?id=asdf12');
+   await page.goto(listUrl);
    // Wait for normal lazy injection, not a fixed delay that can miss startup.
-   await worker.evaluate(async()=>{
-    const [tab]=await chrome.tabs.query({url:'https://gall.dcinside.com/mgallery/board/lists/*'});
+   await worker.evaluate(async listUrl=>{
+    const [tab]=await chrome.tabs.query({url:listUrl});
     for(let i=0;i<100;i++){
      const [result]=await chrome.scripting.executeScript({target:{tabId:tab.id},func:()=>typeof previewEnabled==='boolean'});
      if(result.result)return;await new Promise(resolve=>setTimeout(resolve,100));
     }throw new Error('Preview content script did not initialize');
-   });
+   },listUrl);
    for(const phase of ['cold','warm']){
     const start=Date.now();await page.locator('#article').click({button:'right'});
     await page.locator('.dcbpv-title').waitFor({timeout:30000});const articleReadyMs=Date.now()-start;
@@ -70,11 +72,26 @@ const rows=[],network=[],errors=[],dialogs=[],checks={};let blockedWrites=0;
      navigation:performance.getEntriesByType('navigation').map(n=>({responseEnd:n.responseEnd,domInteractive:n.domInteractive,domComplete:n.domComplete,loadEnd:n.loadEventEnd}))[0]
     }));
     const input=f.locator('#dcbpv-native-editor textarea');const typeStart=Date.now();await input.fill('읽기 전용 입력 확인');const inputMs=Date.now()-typeStart;await input.fill('');
+    if(best){
+     await f.locator('.tx_txtcon').click();
+     const panel=f.locator('#div_txtcon.dcbpv-picker-panel');
+     await panel.locator('#txtcon_input').fill('첨부 확인');
+     await panel.getByRole('button',{name:'작성창에 첨부',exact:true}).click();
+     await f.locator('#dcbpv-selection .dcbpv-textcon').filter({hasText:'첨부 확인'}).waitFor({state:'visible'});
+     checks.textAttachment=true;
+    }
     const pickerStart=Date.now();await f.locator('.tx_dccon').click();
-    const pickerOutcome=await Promise.race([
+    const waitForPicker=()=>Promise.race([
      f.locator('#div_con.dcbpv-picker-panel').waitFor({state:'visible',timeout:16000}).then(()=>'list'),
      f.locator('#dcbpv-picker-loading').filter({hasText:/올바른|실패|필요한|거절|목록이 없습니다|불러오지 못/}).waitFor({state:'visible',timeout:16000}).then(()=>'unavailable')
     ]);
+    let pickerOutcome=await waitForPicker();
+    const retry=f.getByRole('button',{name:'패키지 다시 불러오기'});
+    if(best&&pickerOutcome==='unavailable'&&await retry.isVisible()){
+     await retry.click();
+     pickerOutcome=await waitForPicker();
+     checks.packageRetry=pickerOutcome;
+    }
     if(pickerOutcome==='unavailable'){
      rows.push({run,phase,articleReadyMs,composerReachedMs,editorReadyMs,inputMs,pickerOutcome,pickerStatusMs:Date.now()-pickerStart,frameTiming});
      checks.serverUnavailable=await f.locator('#dcbpv-picker-loading').textContent();

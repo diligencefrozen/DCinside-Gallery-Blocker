@@ -188,6 +188,8 @@ async function previewCommentInPage(request) {
       #dcbpv-editor-surface.dcbpv-picking .txt_dccon_box>#btn_txtcon_submit{grid-column:1/-1;justify-self:end;margin:0!important}
       #dcbpv-editor-surface.dcbpv-picking #txtcon_input{height:56px!important;min-height:56px!important}
       #dcbpv-picker-loading{padding:20px 8px;text-align:center;color:#64748b}#dcbpv-picker-loading[hidden]{display:none}
+      #dcbpv-picker-loading>span:not([hidden]){display:flex;justify-content:center;flex-wrap:wrap;gap:8px;margin-top:10px}
+      #dcbpv-picker-loading button{cursor:pointer;padding:6px 12px;border:1px solid #a9bee7;border-radius:8px}
       @media(prefers-color-scheme:dark){#dcbpv-selection{background:#1c2d49;border-color:#516a91}#dcbpv-selection button,#dcbpv-picker-header button{background:#24344e;color:#e2e8f0}#dcbpv-picker-header small{color:#a8b9d3}#dcbpv-editor-surface.dcbpv-picking .dcbpv-picker-panel{background:#1e293b;color:#e2e8f0}}
       @media(prefers-reduced-motion:reduce){#dcbpv-native-editor .repley_add{transition:none!important;transform:none!important}}
       #dcbpv-native-editor .cmt_cont_bottm{height:auto!important;min-height:34px!important}
@@ -231,16 +233,65 @@ async function previewCommentInPage(request) {
     const pickerLoading=doc.createElement('div');pickerLoading.id='dcbpv-picker-loading';pickerLoading.hidden=true;pickerLoading.setAttribute('role','status');pickerLoading.textContent='디시콘 목록을 불러오는 중…';surface.append(pickerLoading);
     let lastPickerOpen=false,lastPickerHeight=0,pickerTimer;
     const listRequests=new Set();
+    const pickerRequests=new Set();
+    const recovery=doc.createElement('span');
+    recovery.hidden=true;
+    let listTrigger=null;
+    function startListWait(){
+      recovery.hidden=true;
+      session.pickerPending=true;
+      pickerLoading.textContent='디시콘 목록을 불러오는 중…';
+      pickerLoading.hidden=false;
+      clearTimeout(pickerTimer);
+      pickerTimer=setTimeout(()=>{
+        if(frame.isConnected&&session.pickerPending)pickerNotice('디시콘 목록을 불러오지 못했습니다. 닫은 뒤 다시 시도해 주세요.');
+      },15000);
+    }
+    // dccon.js uses these same targets for the package and recent tabs. Offer
+    // the site's own reader only after an incomplete/empty package response.
+    for(const [target,label] of [['icon','패키지 다시 불러오기'],['recent','최근 사용 목록 열기']]){
+      const control=doc.createElement('button');
+      control.type='button';control.textContent=label;
+      control.onclick=event=>{
+        event.preventDefault();event.stopPropagation();
+        if(!event.isTrusted||recovery.hidden||session.pickerDismissed||session.pickerKind!=='dccon'
+          ||session.busy||session.uncertain||pickerRequests.size||!box.contains(listTrigger)
+          ||listTrigger.matches('.adult_fail,:disabled'))return;
+        const panel=doc.getElementById('div_con');
+        if(!panel||$(panel).data('target')!==listTrigger||typeof win.dccon_input_layer!=='function')return;
+        startListWait();
+        $(panel).data('tar',target);
+        try{win.dccon_input_layer();}catch(_){pickerNotice('목록을 열지 못했습니다. 닫은 뒤 다시 시도해 주세요.');}
+        syncPicker();resize();
+      };
+      recovery.append(control);
+    }
+    const offerNativeLists=()=>{
+      const panel=doc.getElementById('div_con');
+      recovery.hidden=!(panel&&listTrigger&&$(panel).data('target')===listTrigger
+        &&typeof win.dccon_input_layer==='function'&&!listTrigger.matches('.adult_fail,:disabled'));
+      if(!recovery.hidden)pickerLoading.append(recovery);
+    };
     const pickerNotice=message=>{clearTimeout(pickerTimer);session.pickerPending=false;pickerLoading.textContent=message;pickerLoading.hidden=false;pickerHint.textContent='현재 미리보기에서 닫고 다시 선택할 수 있습니다.';};
     const isListRequest=settings=>{try{const u=new URL(settings.url,doc.URL);return u.origin===url.origin&&u.pathname==='/dccon/lists';}catch(_){return false;}};
     // Observe the site's request; do not replace its endpoint, credentials,
     // package cache or success callback. No response/token leaves this document.
     const nativeEvents=$(doc);
     if(typeof nativeEvents.on==='function'){
-      nativeEvents.on('ajaxSend.dcbpvPicker',(_event,xhr,settings)=>{if(isListRequest(settings))listRequests.add(xhr);});
+      nativeEvents.on('ajaxSend.dcbpvPicker',(_event,xhr,settings)=>{
+        if(!isListRequest(settings))return;
+        listRequests.add(xhr);
+        // icon_list_ready prefetches the next page on this same endpoint.
+        // Its callback only fills a cache and cannot open the native picker.
+        const fields=new URLSearchParams(settings.data);
+        const page=fields.get('page');
+        if(fields.get('target')==='icon'&&page!==null&&Number.isInteger(win.page)&&Number(page)!==win.page)return;
+        pickerRequests.add(xhr);
+      });
       nativeEvents.on('ajaxComplete.dcbpvPicker',(_event,xhr,settings)=>{
         if(!isListRequest(settings))return;
         listRequests.delete(xhr);
+        if(!pickerRequests.delete(xhr))return;
         if(!frame.isConnected||session.pickerDismissed||session.pickerKind!=='dccon')return;
         syncPicker();resize();
         if(xhr.status===0||xhr.status>=400)pickerNotice(`디시콘 목록 요청에 실패했습니다${xhr.status?` (HTTP ${xhr.status})`:''}. 자동 재시도하지 않습니다.`);
@@ -248,9 +299,17 @@ async function previewCommentInPage(request) {
         else if(xhr.responseText==='fail'||String(xhr.responseText||'').startsWith('false||'))pickerNotice('사이트에서 디시콘 목록 요청을 거절했습니다.');
         else {try{
           const data=JSON.parse(xhr.responseText);
-          if(['icon','recent'].includes(data.target)&&!Object.prototype.hasOwnProperty.call(data,'list'))pickerNotice('사이트에서 올바른 디시콘 목록을 받지 못했습니다. 잠시 후 직접 다시 시도해 주세요.');
-          else if(data.target==='recent'&&data.list==='')pickerNotice('최근 사용한 디시콘이 없습니다. 패키지 탭에서 선택해 주세요.');
-          else if(data.target==='icon'&&Array.isArray(data.list)&&!data.list.length)pickerNotice('사용 가능한 디시콘 목록이 없습니다.');
+          if(['icon','recent'].includes(data.target)&&!Object.prototype.hasOwnProperty.call(data,'list')){
+            pickerNotice('사이트에서 올바른 디시콘 목록을 받지 못했습니다.');
+            offerNativeLists();
+          }
+          else if(data.target==='recent'&&data.list===''){
+            pickerNotice('최근 사용한 디시콘이 없습니다.');
+            offerNativeLists();
+          }else if(data.target==='icon'&&(data.list==null||data.list===''||Array.isArray(data.list)&&!data.list.length)){
+            pickerNotice('사용 가능한 디시콘 목록이 없습니다.');
+            offerNativeLists();
+          }
         }catch(_){/* Native code owns parsing; an unknown response is not success. */}}
       });
     }
@@ -273,16 +332,15 @@ async function previewCommentInPage(request) {
       event.preventDefault(); // Native delegated selection still runs, without anchor navigation.
       if(session.busy||session.uncertain){event.preventDefault();event.stopImmediatePropagation();return;}
       session.pickerDismissed=false;
-      if(trigger.matches('.tx_txtcon')){session.pickerKind='txtcon';session.pickerPending=false;clearTimeout(pickerTimer);}
+      if(trigger.matches('.tx_txtcon')){recovery.hidden=true;session.pickerKind='txtcon';session.pickerPending=false;clearTimeout(pickerTimer);}
       if(trigger.matches('.tx_dccon')){
         // Closing/reopening while the first request is pending must reuse it.
         // Otherwise native responses overwrite each other's package selection.
-        if(listRequests.size)event.stopImmediatePropagation();
-        session.pickerKind='dccon';session.pickerPending=true;pickerLoading.textContent='디시콘 목록을 불러오는 중…';
+        if(pickerRequests.size)event.stopImmediatePropagation();
+        session.pickerKind='dccon';listTrigger=trigger;startListWait();
         // Let the native delegated click inspect its original visible button
         // before applying the picker mask (still before the next paint).
         queueMicrotask(()=>{if(frame.isConnected){syncPicker();resize();}});
-        clearTimeout(pickerTimer);pickerTimer=setTimeout(()=>{if(frame.isConnected&&session.pickerPending)pickerNotice('디시콘 목록을 불러오지 못했습니다. 닫은 뒤 다시 시도해 주세요.');},15000);
       }
       // Native delegated handler performs its single normal read; no extra fetch.
     },true);
@@ -328,9 +386,18 @@ async function previewCommentInPage(request) {
         session.mediaDrafts.set(session.target,media);
         if(!double||media.details.length===2)doc.getElementById('div_con').style.display='none';
       }else{
-        const text=doc.getElementById('txtcon_input')?.value,colors=win.txtcon_sel_colors?.();
-        if(!text?.trim()||!colors){notify('auth',{message:'글자콘 내용과 색상을 확인해 주세요.'});return;}
-        session.mediaDrafts.set(session.target,{kind:'txtcon',text,bg:colors.bg,color:colors.txt});win.txtcon_panel_close?.();
+        const panel=textButton.closest('#div_txtcon');
+        const field=panel?.querySelector('#txtcon_input');
+        if(!field?.value.trim()){pickerHint.textContent='첨부할 글자콘 내용을 입력해 주세요.';field?.focus();return;}
+        // Read the active panel, using the same selected swatches and defaults
+        // as the native txtcon client. No globals or hidden duplicate IDs.
+        const sections=panel.querySelectorAll('.txt_dccon_box .color_section');
+        const selectedColor=(section,fallback)=>section?.querySelector('.btn_color[aria-pressed="true"]')?.dataset.color||fallback;
+        const bg=selectedColor(sections[0],'3b4890'),color=selectedColor(sections[1],'ffffff');
+        if(!/^[0-9a-f]{6}$/i.test(bg)||!/^[0-9a-f]{6}$/i.test(color)){pickerHint.textContent='글자콘 색상을 다시 선택해 주세요.';return;}
+        session.mediaDrafts.set(session.target,{kind:'txtcon',text:field.value,bg,color});
+        panel.style.display='none';doc.body.append(panel);
+        closePicker();
       }
       session.resetAuth();showSelection();syncPicker();resize();if(!session.picker)button.focus({preventScroll:true});else pickerHint.textContent='더블콘에 사용할 디시콘을 하나 더 선택하세요.';
     },true);
@@ -362,7 +429,8 @@ async function previewCommentInPage(request) {
         if (!frame.isConnected) { observer.disconnect(); sizeObserver.disconnect(); return; }
         syncPicker();
         if (win.ts_cmt?.box) expose(win.ts_cmt.box);
-        const selectText=doc.getElementById('btn_txtcon_submit');if(selectText&&selectText.textContent!=='작성창에 첨부')selectText.textContent='작성창에 첨부';
+        const selectText=session.picker?.id==='div_txtcon'&&session.picker.querySelector('#btn_txtcon_submit');
+        if(selectText&&selectText.textContent!=='작성창에 첨부')selectText.textContent='작성창에 첨부';
         if (authDiscoveryDirty) {
           authDiscoveryDirty = false;
           doc.querySelectorAll('body > div').forEach(node => {
@@ -423,6 +491,7 @@ async function previewCommentInPage(request) {
       observer.disconnect();sizeObserver.disconnect();win.removeEventListener('resize',resize);
       nativeEvents.off?.('.dcbpvPicker');
       for(const xhr of listRequests)xhr.abort?.();listRequests.clear();
+      pickerRequests.clear();
       frame.removeEventListener('dcbpv-compose-dispose',dispose);
       win.removeEventListener('pagehide',dispose);
     };

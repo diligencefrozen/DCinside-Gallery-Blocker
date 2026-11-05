@@ -24,8 +24,16 @@ function nativeDocument(url, member = true, captcha = false, own = false, turnst
     <form id="_cmt_del_form_"><input name="fixture_delete_proof" value="fixture-proof"></form><input name="v_cur_t" value="fixture-time">
     <script>
       const ajaxHandlers=new Map();
-      window.jQuery = arg => typeof arg==='function'?queueMicrotask(arg):({data:key=>({comment_id:'fixture',comment_no:'${no}'})[key],on:(name,fn)=>ajaxHandlers.set(name,fn),off:namespace=>{for(const name of ajaxHandlers.keys())if(name.endsWith(namespace))ajaxHandlers.delete(name);}});
-      const ajaxEvent=(type,xhr)=>ajaxHandlers.get(type+'.dcbpvPicker')?.({},xhr,{url:'/dccon/lists'});
+      const nativePanelData={};
+      window.jQuery = arg => typeof arg==='function'?queueMicrotask(arg):({data:(key,value)=>{
+        if(arg===document)return {comment_id:'fixture',comment_no:'${no}'}[key];
+        if(value!==undefined)nativePanelData[key]=value;
+        return nativePanelData[key];
+      },on:(name,fn)=>ajaxHandlers.set(name,fn),off:namespace=>{for(const name of ajaxHandlers.keys())if(name.endsWith(namespace))ajaxHandlers.delete(name);}});
+      const ajaxEvent=(type,xhr,data)=>ajaxHandlers.get(type+'.dcbpvPicker')?.({},xhr,{url:'/dccon/lists',data});
+      window.page=0;
+      const preload={status:503};
+      window.fixturePreload=event=>ajaxEvent(event,preload,'target=icon&page=1');
       window.dc_rc_key='fixture-rc';
       window.dc_rc_new_v2='fixture-v2';window.dc_rc_new_v3='fixture-v3';
       window.get_cookie=key=>key==='ci_c'?'fixture-csrf':'';
@@ -39,15 +47,21 @@ function nativeDocument(url, member = true, captcha = false, own = false, turnst
       document.querySelector('.cmt_txt_cont').append(tools);document.querySelector('#txtcon_input').addEventListener('input',event=>document.querySelector('#div_txtcon .txtcon_txt').textContent=event.target.value);
       for(const panel of tools.querySelectorAll('#div_con,#div_txtcon'))document.body.append(panel);
       let listLoaded=false;
-      document.querySelector('.tx_dccon').onclick=async event=>{
-        const trigger=event.currentTarget,panel=document.querySelector('#div_con');
+      document.querySelector('.tx_dccon').onclick=event=>{
+        nativePanelData.target=event.currentTarget;nativePanelData.tar='icon';
+        window.dccon_input_layer();
+      };
+      window.dccon_input_layer=async()=>{
+        const trigger=nativePanelData.target,panel=document.querySelector('#div_con');
         const show=()=>{trigger.after(panel);panel.style.display='';};
         if(listLoaded){show();return;}
         const controller=new AbortController(),xhr={status:0,responseText:'',abort:()=>controller.abort()};ajaxEvent('ajaxSend',xhr);
         try{const response=await fetch('/dccon/lists',{method:'POST',signal:controller.signal});xhr.status=response.status;xhr.responseText=await response.text();if(response.ok&&xhr.responseText==='ok'){listLoaded=true;show();}}catch(_){}
         ajaxEvent('ajaxComplete',xhr);
       };document.querySelector('.tx_txtcon').onclick=event=>{const panel=document.querySelector('#div_txtcon');event.target.after(panel);panel.style.display='block';};
-      window.txtcon_sel_colors=()=>({bg:'ffffff',txt:'000000'});window.txtcon_panel_close=()=>{const panel=document.querySelector('#div_txtcon');panel.style.display='none';document.body.append(panel);};window.nativeMediaSubmits=0;
+      const swatches=document.querySelectorAll('#div_txtcon .color_section .btn_color:first-of-type');
+      swatches.forEach((btn,i)=>{btn.dataset.color=i?'000000':'ffffff';btn.setAttribute('aria-pressed','true');});
+      window.nativeMediaSubmits=0;
       document.addEventListener('click',event=>{if(event.target.closest('.img_dccon,#btn_txtcon_submit'))window.nativeMediaSubmits++;});
       if(${turnstile}){
         window._TS_CMT_={mode:2};window.ts_cmt={st:'pending',id:1,box:null};let token='';
@@ -541,8 +555,37 @@ function nativeDocument(url, member = true, captcha = false, own = false, turnst
       reset();listMode=JSON.stringify(target==='missing'?{target:'icon'}:{target,list:target==='recent'?'':[]});await render(article('',String(1120+checks)));await open();
       await editor().locator('.tx_dccon').click();
       await editor().locator('#dcbpv-picker-loading').filter({hasText:target==='recent'?'최근 사용한':target==='missing'?'올바른':'사용 가능한'}).waitFor();
+      if(target==='missing'){
+        assert.equal(listReads,1);
+        listMode='ok';
+        await editor().getByRole('button',{name:'패키지 다시 불러오기'}).click();
+        await editor().locator('#div_con .img_dccon').click();
+        await editor().locator('#dcbpv-selection').waitFor({state:'visible'});
+        assert.equal(listReads,2);assert.equal(writes.length,0);await close();checks++;continue;
+      }
       assert.equal(listReads,1);assert.equal(writes.length,0);await close();checks++;
     }
+    reset();await render(article('','4900'));await open();
+    await editor().locator('body').evaluate(()=>window.fixturePreload('ajaxSend'));
+    await editor().locator('.tx_dccon').click();
+    await editor().locator('#div_con.dcbpv-picker-panel').waitFor({state:'visible'});
+    await editor().locator('body').evaluate(()=>window.fixturePreload('ajaxComplete'));
+    assert.equal(await editor().locator('#dcbpv-picker-loading').isVisible(),false);
+    await editor().locator('.img_dccon').click();await editor().locator('#dcbpv-selection').waitFor({state:'visible'});
+    assert.equal(listReads,1);assert.equal(writes.length,0);await close();checks++;
+
+    reset();await render(article('','4901'));await open();await editor().locator('.tx_txtcon').click();
+    const panel=editor().locator('#div_txtcon.dcbpv-picker-panel');
+    await panel.locator('#txtcon_input').fill('선택한 글자콘');
+    await panel.evaluate(node=>{
+      const stale=document.createElement('textarea');stale.id='txtcon_input';stale.hidden=true;
+      document.body.prepend(stale);
+      node.querySelector('.btn_color[aria-pressed="true"]').dataset.color='f5e1f0';
+    });
+    await panel.locator('#btn_txtcon_submit').click();
+    assert.equal(await editor().locator('#dcbpv-selection .dcbpv-textcon').innerText(),'선택한 글자콘');
+    assert.equal(await editor().locator('#dcbpv-selection .dcbpv-textcon').evaluate(n=>n.style.backgroundColor),'rgb(245, 225, 240)');
+    assert.equal(writes.length,0);await close();checks++;
     reset();listDelay=900;await render(article('','1150'));await open();
     await editor().locator('.tx_dccon').click();await page.waitForTimeout(100);
     await editor().locator('#dcbpv-picker-header button').click();await editor().locator('.tx_txtcon').click();
