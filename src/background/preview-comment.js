@@ -418,6 +418,7 @@ async function previewCommentInPage(request) {
     win.addEventListener('resize', resize);
     const dispose=()=>{
       if(disposed)return;disposed=true;
+      session.cancelReceiptCheck?.();
       clearTimeout(pickerTimer);clearInterval(authWatch);cancelAnimationFrame(resizeFrame);
       observer.disconnect();sizeObserver.disconnect();win.removeEventListener('resize',resize);
       nativeEvents.off?.('.dcbpvPicker');
@@ -546,6 +547,24 @@ async function previewCommentInPage(request) {
       let result;
       try {result=await previewCommentInPage({...request,operation:'submit',target:session.target,activation:event,memo:input.value,media,name:value(`name_${no}`)||'',password:submittedPassword});}
       catch(_){result=fail('uncertain');}
+      // Keep this submission's target, draft and guest password together until
+      // the acknowledged comment is visible. This control can only read.
+      while(result.code==='receipt-pending' && session.verifyReceipt && !disposed){
+        const check=doc.createElement('button');
+        check.type='button';check.textContent='등록 결과 확인';
+        toolbar.append(check);
+        notify('auth',{message:result.readFailed?'목록 조회에 실패했습니다. 등록 결과를 다시 확인해 주세요.':'등록 응답을 받았습니다. 목록에 반영되면 등록 결과를 확인해 주세요.'});
+        const requested=await new Promise(resolve=>{
+          session.cancelReceiptCheck=()=>resolve(false);
+          check.onclick=click=>{if(click.isTrusted)resolve(true);};
+        });
+        session.cancelReceiptCheck=null;check.remove();
+        if(!requested||disposed)return;
+        notify('auth',{message:'등록된 댓글을 확인하는 중…'});
+        result=await session.verifyReceipt(AbortSignal.timeout(6000));
+      }
+      session.verifyReceipt=null;
+      if(disposed||!frame.isConnected)return;
       session.busy=false; input.readOnly=false;
       session.uncertain=result.code==='uncertain'; button.disabled=session.uncertain;
       if(result.ok){
@@ -613,19 +632,19 @@ async function previewCommentInPage(request) {
   const timer = setTimeout(() => controller.abort(), 20000);
   let wrote = false;
   let checking = false;
-  const ajax = async (path, body) => {
+  const ajax = async (path, body, signal=controller.signal) => {
     const response = await win.fetch(path, { method: 'POST', credentials: 'include',
-      cache: 'no-store', redirect: 'error', signal: controller.signal,
+      cache: 'no-store', redirect: 'error', signal,
       headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8', 'X-Requested-With': 'XMLHttpRequest' }, body });
     if (!response.ok) throw { status: response.status };
     return response.text();
   };
-  const read = async () => {
+  const read = async (signal, focusId=target?.id || '') => {
     const body = new URLSearchParams({ id, no, cmt_id: id, cmt_no: no,
-      focus_cno: target?.id || '', focus_pno: target?.parent || '', e_s_n_o: value('e_s_n_o'),
+      focus_cno: focusId, focus_pno: target?.parent || '', e_s_n_o: value('e_s_n_o'),
       comment_page: '1', sort: 'D', prevCnt: '0', _GALLTYPE_: expectedType,
       secret_article_key: value('secret_article_key') || '', clean: '', nptest: '' });
-    const data = JSON.parse(await ajax('/board/comment/', body.toString()));
+    const data = JSON.parse(await ajax('/board/comment/', body.toString(), signal));
     if (!Array.isArray(data.comments) || !Number.isFinite(Number(data.total_cnt))) throw new Error();
     return data;
   };
@@ -702,7 +721,16 @@ async function previewCommentInPage(request) {
       }else{endpoint='/txtcon/insert';for(const [key,val] of Object.entries({txtcon_text:media.text,txtcon_bg:media.bg,txtcon_color:media.color}))sendBody.set(key,val);}
     }
     wrote = true;
-    const response = (await ajax(endpoint, sendBody.toString())).trim();
+    let response;
+    try {
+      response=(await ajax(endpoint,sendBody.toString())).trim();
+    } catch(error) {
+      // A lost reply can follow a committed write. Only the server's own
+      // member flags can corroborate a text comment without its receipt.
+      if(media||error?.status||controller.signal.aborted||!frame.isConnected
+        ||value('member_division')!=='Y')throw error;
+      response='';
+    }
     if(media&&response==='code_fail'){win.kcaptcha_init?.(no);return fail('image-captcha');}
     if(media&&['not_buy','expired','unuseable','not_exists','fail','form_error','fail1'].includes(response))return fail('rejected');
     if (response.split('||')[0].trim() === 'false') {
@@ -713,13 +741,37 @@ async function previewCommentInPage(request) {
     }
     // HTTP 200 / non-false text alone is not evidence of registration.
     checking = true;
-    const after = await read();
     const previous = new Set(before.comments.map(item => String(item.no)));
     const plain = raw => {
       const parsed = new DOMParser().parseFromString(String(raw).replace(/<br\s*\/?\s*>/gi, '\n'), 'text/html');
       parsed.querySelectorAll('a[class*="mention"][class*="deco"]').forEach(node => node.remove());
       return parsed.body.textContent.replace(/\r\n/g, '\n').trim();
     };
+    const matchesThread=item=>target ? String(item.c_no)===target.parent : String(item.depth)==='0';
+    if(!media && /^[1-9]\d*$/.test(response)){
+      if(previous.has(response))return fail('uncertain');
+      const verifyReceipt=async signal=>{
+        if(!frame.isConnected||frame.dataset.dcbpvCancelled==='1')return fail('cancelled');
+        try{
+          const after=await read(signal,response);
+          const rows=after.comments.filter(item=>String(item.no)===response);
+          if(!rows.length)return fail('receipt-pending');
+          if(rows.length!==1||!matchesThread(rows[0])||rows[0].del_yn==='Y'
+            ||plain(rows[0].memo)!==request.memo.replace(/\r\n/g,'\n').trim())return fail('uncertain');
+          return {ok:true,comments:after.comments,total:Number(after.total_cnt),addedId:response};
+        }catch(error){return fail('receipt-pending',{status:Number(error?.status)||0,readFailed:true});}
+      };
+      session.verifyReceipt=verifyReceipt;
+      let result=await verifyReceipt(controller.signal);
+      for(const delay of [300,900]){
+        if(result.code!=='receipt-pending'||result.readFailed||controller.signal.aborted)break;
+        notify('auth',{message:'등록 응답을 받았습니다. 댓글 목록을 확인하는 중…'});
+        await new Promise(resolve=>setTimeout(resolve,delay));
+        result=await verifyReceipt(controller.signal);
+      }
+      return result;
+    }
+    const after = await read();
     const added = after.comments.filter(item => /^[1-9]\d*$/.test(String(item.no)) && !previous.has(String(item.no))
       && (media ? response==='ok' && (()=>{const parsed=new DOMParser().parseFromString(String(item.memo),'text/html');
         if(media.kind==='dccon'){
@@ -730,8 +782,13 @@ async function previewCommentInPage(request) {
           return icons.length===media.details.length&&icons.every((node,i)=>node.getAttribute('detail')===media.details[i]||!!assetKey(media.assets[i])&&assetKey(node.getAttribute('src'))===assetKey(media.assets[i]));
         }
         const text=parsed.querySelector('.coment_dccon_txt .txtcon_txt,.comment_dccon_txt .txtcon_txt');return !!text&&plain(text.innerHTML)===media.text.replace(/\r\n/g,'\n').trim();})() : plain(item.memo) === request.memo.replace(/\r\n/g, '\n').trim())
-      && (target ? String(item.c_no) === target.parent : String(item.depth) === '0'));
-    if (added.length !== 1 || Number(after.total_cnt) <= Number(before.total_cnt)) return fail('uncertain');
+      && matchesThread(item));
+    if (added.length !== 1) return fail('uncertain');
+    if(media){
+      if(Number(after.total_cnt)<=Number(before.total_cnt))return fail('uncertain');
+    }else if(value('member_division')!=='Y'||added[0].my_cmt!=='Y'||added[0].del_btn!=='Y'){
+      return fail('uncertain');
+    }
     return { ok: true, comments: after.comments, total: Number(after.total_cnt), addedId: String(added[0].no) };
   } catch (error) {
     return fail(wrote ? 'uncertain' : 'network', { status: Number(error?.status || 0), refreshFailed:checking });

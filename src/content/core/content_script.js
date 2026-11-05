@@ -4881,19 +4881,21 @@ syncSettings(handleUrl);
     if(payload.kind!=='result')return;
     const result=payload.result;state.submitting=false;
     if(result?.ok||result?.code==='uncertain')cache.delete(state.key);
-    applyComposerMetadata(state,result||{});
+    const data=currentPreviewData;
+    const replacesList=result?.ok&&data&&previewCacheKey(data.url)===state.key
+      &&Array.isArray(result.comments)&&Number.isFinite(result.total);
+    if(!replacesList)applyComposerMetadata(state,result||{});
     if(!result?.ok){if(result.operation!=='delete')state.uncertain=result?.code==='uncertain';savePreviewDraft(state);updateComposerStatus(state,composerMessage(result));return;}
     if(result.operation!=='delete'){state.drafts[state.target]='';state.draft='';state.target='';previewDrafts.delete(state.key);}
-    const data=currentPreviewData;
-    if(data&&previewCacheKey(data.url)===state.key&&Array.isArray(result.comments)&&Number.isFinite(result.total)){
-      previewRequestVersion+=1;activeAbort?.abort();data.commentsHTML=commentRecordsToHtml(result.comments,data.url);data.commentTitle=`댓글 ${result.total}개`;data.commentError='';updatePreviewComments(data);
+    if(replacesList){
+      previewRequestVersion+=1;activeAbort?.abort();data.commentsHTML=commentRecordsToHtml(result.comments,data.url);data.commentTitle=`댓글 ${result.total}개`;data.commentError='';updatePreviewComments(data,result);
     }
     updateComposerStatus(state,result.refreshFailed?composerMessage(result):result.operation==='delete'?'댓글을 삭제했습니다.':'등록된 댓글을 확인했습니다.');
     if(!result.refreshFailed)state.statusTimer=setTimeout(()=>{if(previewComposer===state)updateComposerStatus(state,'');},3500);
   });
 
 
-  function updatePreviewComments(data){
+  function updatePreviewComments(data,composerResult){
     const overlay = document.getElementById(OVERLAY_ID);
     if (!overlay || overlay.dataset.dcbpvUrl !== data.url) return false;
 
@@ -4906,7 +4908,9 @@ syncSettings(handleUrl);
 
     if (commentTitle) commentTitle.textContent = data.commentTitle || "댓글";
     commentRoot.innerHTML = previewCommentHtml(data, false);
-    decoratePreviewReplyActions(overlay);
+    // Apply ownership and timestamps to the new rows, once.
+    if(composerResult&&previewComposer)applyComposerMetadata(previewComposer,composerResult);
+    else decoratePreviewReplyActions(overlay);
     preparePreviewPresentation(overlay);
     const trace = activePreviewTrace;
     settlePreviewMedia(commentRoot, data.fetchedUrl || data.url, data.url, trace);

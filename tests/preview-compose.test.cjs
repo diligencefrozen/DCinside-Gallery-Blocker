@@ -101,6 +101,16 @@ function nativeDocument(url, member = true, captcha = false, own = false, turnst
         if (responseMode === 'unknown') return route.fulfill({body:'<html>login</html>'});
         const id=String(102+writes.length);
         records.push({no:id,c_no:fields.c_no||'0',depth:fields.c_no?1:0,name:fields.name||'member',memo:fields.memo.replace(/&/g,'&amp;').replace(/</g,'&lt;'),reg_date:'2026.10.26 21:13:56'});
+        if(['lagged-receipt','manual-receipt','throttled-read'].includes(responseMode)){
+          const mine=records.at(-1);
+          // Two deletions offset two insertions; the other author posts the
+          // same text under the same guest name before our row becomes visible.
+          records=[{...mine,no:'104'},mine];
+        }
+        if(responseMode==='lost-reply'){
+          Object.assign(records.at(-1),{my_cmt:'Y',del_btn:'Y'});
+          return route.abort('connectionreset');
+        }
         return route.fulfill({body:id});
       }
       if(url.hostname==='www.google.com')return route.fulfill({contentType:'application/javascript',body:`
@@ -113,7 +123,12 @@ function nativeDocument(url, member = true, captcha = false, own = false, turnst
         records=records.filter(row=>row.no!==fields.re_no);return route.fulfill({body:'true||deleted'});
       }
       if(url.pathname.startsWith('/kcaptcha/'))return route.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="110" height="30"><text y="20">fixture</text></svg>'});
-      if (url.pathname === '/board/comment/') {reads++; return route.fulfill({json:{comments:records,total_cnt:records.length}});}
+      if (url.pathname === '/board/comment/') {
+        reads++;
+        if(responseMode==='throttled-read'&&reads===2)return route.fulfill({status:429,body:'restricted'});
+        const stale=writes.length>0&&((responseMode==='lagged-receipt'&&reads===2)||(responseMode==='manual-receipt'&&reads<=4));
+        return route.fulfill({json:{comments:stale?records.filter(row=>row.no!=='103'):records,total_cnt:records.length}});
+      }
       return route.fulfill({contentType:'text/html',body:url.pathname.endsWith('/view/') ? nativeDocument(url.href,member,captcha,own,turnstile).replace('</body>',(slowArticleImage?'<img src="/slow-article-image">':'')+'</body>') : '<!doctype html><html><head></head><body><button id="origin">origin</button></body></html>'});
     });
     await page.goto('https://gall.dcinside.com/board/lists/?id=fixture');
@@ -211,6 +226,29 @@ function nativeDocument(url, member = true, captcha = false, own = false, turnst
     assert.equal(await editor().locator('#password_10').inputValue(),'','closing ends the credential session');
     assert.equal(await page.locator('[data-act=compose-delete]').count(),0,'guest ownership is never inferred in a new preview session');
     await close();checks++;
+
+    for(const [index,mode] of ['lagged-receipt','manual-receipt','throttled-read','lost-reply'].entries()){
+      reset();responseMode=mode;member=mode==='lost-reply';
+      const no=String(1800+index);await render(article('',no));await open();
+      if(!member){
+        await editor().locator('#name_'+no).fill('guest');
+        await editor().locator('#password_'+no).fill('fixture-password');
+      }
+      await editor().locator('textarea[id^=memo_]').fill('same comment');
+      await editor().locator('.repley_add').click();
+      if(mode==='manual-receipt'||mode==='throttled-read'){
+        const check=editor().getByRole('button',{name:'등록 결과 확인',exact:true});
+        await check.waitFor();assert.equal(reads,mode==='manual-receipt'?4:2);
+        assert.equal(await editor().locator('.repley_add').isDisabled(),true);
+        await check.click();
+      }
+      await finish('등록된 댓글을 확인');
+      assert.equal(writes.length,1,'confirming a delayed post must never repeat the write');
+      assert.equal(await page.locator('[data-act=compose-delete][data-target="103"]').count(),1);
+      assert.equal(await page.locator('[data-act=compose-delete][data-target="104"]').count(),0);
+      assert.equal(await editor().locator('.repley_add').isEnabled(),true);
+      await close();checks++;
+    }
 
     for (const [index,mode] of ['reject','captcha','403','429','503','unknown'].entries()) {
       reset(); responseMode=mode; await render(article('', String(50+index))); await open();
