@@ -8,11 +8,12 @@
   if (globalThis.DCBDomMutationBus) return;
 
   const subscribers = new Map();
-  const pendingRecords = [];
+  let pendingRecords = [];
   let observer = null;
   let observedRoot = null;
   let observedOptions = '';
-  let scheduled = false;
+  let frame = null;
+  let timer = null;
   let rootReadyHandlerInstalled = false;
 
   function getElement(node) {
@@ -25,8 +26,15 @@
     const target = getElement(record.target);
     if (target?.closest?.("[data-dcb-owned]")) return true;
     if (record.type !== "childList") return false;
-    const nodes = [...record.addedNodes, ...record.removedNodes].filter((node) => node?.nodeType === Node.ELEMENT_NODE);
-    return nodes.length > 0 && nodes.every((node) => node.closest?.("[data-dcb-owned]"));
+    let hasElements = false;
+    for (const nodes of [record.addedNodes, record.removedNodes]) {
+      for (const node of nodes) {
+        if (node.nodeType !== Node.ELEMENT_NODE) continue;
+        hasElements = true;
+        if (!node.closest("[data-dcb-owned]")) return false;
+      }
+    }
+    return hasElements;
   }
 
   function matchesOptions(record, options, ownedCache) {
@@ -44,13 +52,14 @@
   }
 
   function flush() {
-    scheduled = false;
+    frame = timer = null;
     if (!pendingRecords.length || !subscribers.size) {
       pendingRecords.length = 0;
       return;
     }
 
-    const records = pendingRecords.splice(0, pendingRecords.length);
+    const records = pendingRecords;
+    pendingRecords = [];
     const ownedCache = new WeakMap();
     for (const subscriber of subscribers.values()) {
       const filtered = subscriber.options.raw
@@ -66,10 +75,32 @@
   }
 
   function scheduleFlush() {
-    if (scheduled) return;
-    scheduled = true;
-    if (typeof requestAnimationFrame === "function") requestAnimationFrame(flush);
-    else setTimeout(flush, 16);
+    if (frame !== null || timer !== null || !pendingRecords.length) return;
+    if (!document.hidden && typeof requestAnimationFrame === "function") {
+      frame = requestAnimationFrame(flush);
+    } else {
+      // Hidden tabs may suspend animation frames while the site continues to
+      // mutate. Drain batches on a timer so returning to the tab costs less.
+      timer = setTimeout(flush, document.hidden ? 250 : 16);
+    }
+  }
+
+  function cancelFlush() {
+    if (frame !== null) cancelAnimationFrame(frame);
+    if (timer !== null) clearTimeout(timer);
+    frame = timer = null;
+  }
+
+  function visibilityChanged() {
+    cancelFlush();
+    scheduleFlush();
+  }
+
+  function enqueue(records) {
+    if (!records.length) return;
+    if (pendingRecords.length === 0) pendingRecords = records;
+    else for (const record of records) pendingRecords.push(record);
+    scheduleFlush();
   }
 
   function buildObserveOptions() {
@@ -108,6 +139,8 @@
   function reconnectObserver() {
     if (!subscribers.size) {
       observer?.disconnect(); observer = null; observedRoot = null; observedOptions = '';
+      document.removeEventListener("visibilitychange", visibilityChanged);
+      cancelFlush();
       pendingRecords.length = 0;
       return;
     }
@@ -131,14 +164,12 @@
     // Lazy feature registration must not discard mutations queued for existing
     // filters. Reuse the observer; only update its union of requested options.
     if (observer) {
-      pendingRecords.push(...observer.takeRecords());
+      enqueue(observer.takeRecords());
       if (observedRoot !== root) observer.disconnect();
+    } else {
+      document.addEventListener("visibilitychange", visibilityChanged);
+      observer = new MutationObserver(enqueue);
     }
-    observer ||= new MutationObserver((records) => {
-      if (!records.length || !subscribers.size) return;
-      pendingRecords.push(...records);
-      scheduleFlush();
-    });
     observer.observe(root, options);
     observedRoot = root; observedOptions = signature;
     if (pendingRecords.length) scheduleFlush();

@@ -72,7 +72,7 @@
       const enclosing = root.closest(ROW_SELECTOR);
       if (enclosing) rows.add(enclosing);
     }
-    root.querySelectorAll(ROW_SELECTOR).forEach((row) => rows.add(row));
+    if (root.childElementCount) root.querySelectorAll(ROW_SELECTOR).forEach((row) => rows.add(row));
   }
 
   function reconcile(root = document) {
@@ -113,10 +113,8 @@
     hydration = api.storage.local.get({ [STORAGE_KEY]: null }).then((stored) => {
       // A newer storage event can arrive while get() is in flight.
       if (revision === storageRevision) replaceSnapshot(stored?.[STORAGE_KEY]);
-      reconcile();
     }).catch(() => {
-      // Native content remains visible even when extension storage is unavailable.
-      reconcile();
+      // Keep the last available snapshot.
     }).finally(() => { hydration = null; });
     return hydration;
   }
@@ -132,19 +130,16 @@
     if (highlightHydration) return highlightHydration;
     if (!api.storage.sync) {
       highlightEnabled = true;
-      reconcile();
       return Promise.resolve();
     }
     const revision = highlightRevision;
     highlightHydration = api.storage.sync.get({ [HIGHLIGHT_KEY]: true }).then((stored) => {
       // A setting changed in another UI must win over an older get() response.
       if (revision === highlightRevision) highlightEnabled = stored?.[HIGHLIGHT_KEY] !== false;
-      reconcile();
     }).catch(() => {
       // Missing or unavailable settings use the documented ON default.
       if (revision !== highlightRevision) return;
       highlightEnabled = true;
-      reconcile();
     }).finally(() => { highlightHydration = null; });
     return highlightHydration;
   }
@@ -171,7 +166,7 @@
       for (const node of record.removedNodes) {
         if (node.nodeType !== Node.ELEMENT_NODE || node.isConnected) continue;
         forgetRow(node);
-        node.querySelectorAll("tr[data-no]").forEach(forgetRow);
+        if (node.childElementCount) node.querySelectorAll("tr[data-no]").forEach(forgetRow);
       }
       for (const node of record.addedNodes) {
         if (node.nodeType === Node.ELEMENT_NODE) collectRows(node, rows);
@@ -185,16 +180,22 @@
     });
   }, { types: ["childList", "attributes"], attributes: ["data-no"] });
 
+  const domReady = document.readyState === "loading"
+    ? new Promise(resolve => document.addEventListener("DOMContentLoaded", resolve, { once: true }))
+    : Promise.resolve();
+  let refreshing = null;
+  function refreshDisplay() {
+    if (!refreshing) {
+      refreshing = Promise.all([refreshSnapshot(), refreshHighlightSetting(), domReady])
+        .then(() => reconcile()).finally(() => { refreshing = null; });
+    }
+  }
+
   window.addEventListener("pageshow", (event) => {
     if (!event.persisted) return;
-    refreshSnapshot();
-    refreshHighlightSetting();
+    refreshDisplay();
     recordVisit();
   });
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", () => reconcile(), { once: true });
-  }
-  refreshSnapshot();
-  refreshHighlightSetting();
+  refreshDisplay();
   recordVisit();
 })();

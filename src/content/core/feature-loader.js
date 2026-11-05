@@ -18,6 +18,18 @@
   const loaded = new Set();
   let running = false;
   let rerun = false;
+  // These switches decide which scripts to load. Changes to the contents
+  // of block lists, memos and other data are handled by the loaded scripts.
+  const configKeys = new Set(["dcbImageBlockConfig", "dcbImageAccountRules", "dcbTextDetection"]);
+  const planKeys = [
+    "enabled", "galleryBlockEnabled", "keywordBlockEnabled", "keywordHideEnabled",
+    "showMemberIpInfo", "hideForeignIpEnabled", "hideAnonymousEnabled", "showUidBadge",
+    "userMemoEnabled", "noticeBlockEnabled", "userBlockEnabled", "gamemecaBlockEnabled",
+    "doryBlockEnabled", "hideDccon", "hideTextCon", "hideComment", "hideImgComment",
+    "autoRefreshEnabled", "previewEnabled", "builtinDcbestBlockEnabled",
+    "dcbApplyFontToDc", "linkWarnEnabled", "compactListEnabled", ...configKeys
+  ];
+  const planKeySet = new Set(planKeys);
 
   const isGall = location.hostname === "gall.dcinside.com";
   const isWww = location.hostname === "www.dcinside.com";
@@ -162,7 +174,7 @@
     try {
       do {
         rerun = false;
-        const settings = await cache.get(null);
+        const settings = await cache.get(planKeys);
         const batches = createBatches(desired(settings));
         await injectBatch(batches.critical, "critical");
         await injectBatch(batches.visual, "visual");
@@ -183,7 +195,13 @@
       if (area !== "sync") return;
       // Enabling a previously disabled feature injects it on the current page.
       // Loaded scripts already listen to settings changes and disable themselves.
-      if (Object.keys(changes || {}).length) {
+      const needsPlan = Object.keys(changes || {}).some(key => {
+        if (!planKeySet.has(key)) return false;
+        const { oldValue, newValue } = changes[key];
+        if (configKeys.has(key)) return (oldValue?.enabled === true) !== (newValue?.enabled === true);
+        return oldValue !== newValue;
+      });
+      if (needsPlan) {
         rerun = true;
         if (!running) globalThis.DCBStartupScheduler.schedule("feature-loader-plan", run, "normal");
       }

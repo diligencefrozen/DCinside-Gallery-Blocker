@@ -29,10 +29,22 @@
   const syncOverrides = new Map();
   const latestLocalChanges = new Map();
   let changeRevision = 0;
+  let activeLocalReads = 0;
   const hydratingCommits = new Set();
 
+  // Only an in-flight restore can race a newer local storage event. Release
+  // old/new values (including large rule sets) when the last read settles.
+  async function trackLocalRead(read) {
+    activeLocalReads++;
+    try {
+      return await read(changeRevision);
+    } finally {
+      if (--activeLocalReads === 0) latestLocalChanges.clear();
+    }
+  }
+
   function clone(value) {
-    if (value == null) return value;
+    if (value === null || typeof value !== "object") return value;
     try { return structuredClone(value); } catch (_) {
       try { return JSON.parse(JSON.stringify(value)); } catch (_) { return value; }
     }
@@ -73,6 +85,7 @@
   function settingsDiff(previous, next) {
     const diff = {};
     for (const key of new Set([...Object.keys(previous || {}), ...Object.keys(next)])) {
+      if (Object.is(previous?.[key], next[key])) continue;
       if (JSON.stringify(previous?.[key]) !== JSON.stringify(next[key]))
         diff[key] = { oldValue: previous?.[key], newValue: next[key] };
     }
@@ -161,8 +174,8 @@
         hydratingCommits.add(marker.epoch);
         applyingEpoch = marker.epoch;
         mergeChanges(changes, area);
-        const revision = changeRevision;
-        api.storage.local.get(missing).then((values) => {
+        trackLocalRead(async (revision) => {
+          const values = await api.storage.local.get(missing);
           const completed = { ...changes };
           for (const key of missing) {
             const recent = latestLocalChanges.get(key);
@@ -249,8 +262,8 @@
 
   // Install the listener before hydration so an import cannot race the snapshot.
   api.storage.onChanged.addListener((changes, area) => {
-    changeRevision += 1;
-    if (area === "local") {
+    if (activeLocalReads && area === "local") {
+      changeRevision += 1;
       for (const [key, change] of Object.entries(changes)) latestLocalChanges.set(key, { change, revision: changeRevision });
     }
     if (!initialized) startupEvents.push([changes, area]);
@@ -281,8 +294,8 @@
     // A suspended tab may miss storage events. The single commit notice recovers
     // the final record; the epoch makes this idempotent with storage.onChanged.
     const epochAtRequest = applyingEpoch;
-    const revision = changeRevision;
-    api.storage.local.get([HOT_KEY, BATCH_KEY]).then(async (stored) => {
+    trackLocalRead(async (revision) => {
+      const stored = await api.storage.local.get([HOT_KEY, BATCH_KEY]);
       if (stored[BATCH_KEY]?.phase !== "committed" || stored[BATCH_KEY].epoch !== message.epoch) return;
       if (applyingEpoch !== epochAtRequest && applyingEpoch !== message.epoch) return;
       const keys = Array.isArray(stored[BATCH_KEY].localKeys) ? stored[BATCH_KEY].localKeys : [];
