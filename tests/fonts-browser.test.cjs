@@ -160,6 +160,9 @@ test('writers and native user menus inside reading content retain their appearan
     const original = await typography();
     await page.addScriptTag({ path: path.join(root, 'src/content/appearance/font-manager.js') });
     await page.evaluate(() => setSettings({ dcbApplyFontToDc: true, dcbFontScale: 140, dcbFontFamily: 'Nanum Gothic' }));
+    await page.waitForFunction(() =>
+      getComputedStyle(document.getElementById('memo')).fontSize === '18.2px'
+      && getComputedStyle(document.getElementById('previewParagraph')).fontSize === '19.6px');
     assert.deepEqual(await typography(), original, 'author identity, badges and menus retain native typography');
     const scaled = await readAppearance(page, ['memo', 'previewParagraph']);
     assert.equal(scaled.memo.size, 18.2, 'the surrounding comment still scales');

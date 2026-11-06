@@ -8,9 +8,10 @@ const runs=Number(process.argv.find(a=>a.startsWith('--runs='))?.split('=')[1]||
 assert.ok(Number.isInteger(runs)&&runs>=1&&runs<=10);
 const sources=new Map();
 const read=(file)=>{if(!sources.has(file))sources.set(file,fs.readFileSync(baseline?path.join('test-results/perf-before',path.basename(file)):file,'utf8'));return sources.get(file);};
+const counts=[20,50,500,2000];
 (async()=>{
  const browser=await chromium.launch({headless:true});const results=[];
- try{for(const count of [50,500,2000]){for(let run=1;run<=runs;run++){
+ try{for(const count of counts){for(let run=1;run<=runs;run++){
   const page=await browser.newPage({viewport:{width:1100,height:850}}),cdp=await page.context().newCDPSession(page);
   await cdp.send('Performance.enable');await cdp.send('Emulation.setCPUThrottlingRate',{rate:4});
   await page.route('**/*',r=>r.fulfill({contentType:'text/html',body:'<!doctype html><html><body></body></html>'}));
@@ -54,7 +55,7 @@ const read=(file)=>{if(!sources.has(file))sources.set(file,fs.readFileSync(basel
   }await page.close();
  }}
  const summary=[];
- for(const count of [50,500,2000])for(const phase of ['cold','warm']){
+ for(const count of counts)for(const phase of ['cold','warm']){
   const group=results.filter(r=>r.count===count&&r.phase===phase),row={count,phase};
   for(const key of ['mutations','taskMs','p95FrameMs','slowFrames','longTasks','maxLongTaskMs','layoutMs','styleMs']){
    const values=group.map(r=>r[key]).sort((a,b)=>a-b);row[key]={median:values[Math.floor(values.length/2)],p95:values[Math.ceil(values.length*.95)-1]};

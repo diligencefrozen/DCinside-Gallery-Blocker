@@ -171,6 +171,8 @@ test('140 percent body text and independently larger author text preserve layout
     const native = await sizes();
     await page.evaluate(() => changeSettings({ dcbApplyFontToDc:true, dcbFontScale:140 }));
     await page.waitForFunction(()=>getComputedStyle(document.querySelector('#nested .usertxt')).fontSize==='18.2px');
+    // The stylesheet mutation reaches the writer fitter through the DOM bus.
+    await settle(page);
     assert.equal(parseFloat((await sizes()).body), 18.2);
     await assertAuthorBounds(page);
     const largeAuthors = await page.addStyleTag({ content:'.comment_box .nickname{font-size:16.8px!important}.comment_box .ip{font-size:15.4px!important}' });
@@ -180,6 +182,7 @@ test('140 percent body text and independently larger author text preserve layout
     await settle(page);
     await page.evaluate(() => changeSettings({ dcbApplyFontToDc:false }));
     await page.waitForFunction(()=>getComputedStyle(document.querySelector('#nested .usertxt')).fontSize==='13px');
+    await settle(page);
     assert.deepEqual(await sizes(), native);
     await assertAuthorBounds(page);
   } finally { await page.close(); }

@@ -3790,29 +3790,27 @@ syncSettings(handleUrl);
       }
     }
 
-    if (data && !isWeakPreviewData(data) && typeof onArticleReady === "function") {
-      const existingCommentCount = actualCommentItemCountFromHtml(data.commentsHTML || "");
+    // Embedded comments are already final. Only paint a partial preview when
+    // a separate comments read could delay the article.
+    const needsComments = actualCommentItemCountFromHtml(data?.commentsHTML) === 0;
+    if (needsComments && data && !isWeakPreviewData(data) && typeof onArticleReady === "function") {
       try {
-        onArticleReady(data, { commentsPending: !data.commentsHTML || existingCommentCount === 0 });
+        onArticleReady(data, { commentsPending: true });
       } catch (_) {}
     }
 
     try {
       const galleryType = previewGalleryTypeFromUrl(url);
       const expectedComments = expectedCommentCountFromData(data);
-      const needsRenderedFrame = (galleryType === "mini" || galleryType === "person")
-        && expectedComments > 0
-        && actualCommentItemCountFromHtml(data?.commentsHTML || "") === 0;
-
-      let endpointResult = null;
+      const needsRenderedFrame = needsComments && (galleryType === "mini" || galleryType === "person") && expectedComments > 0;
 
       // 미리보기 자체의 AJAX를 먼저 사용한다. 숨겨진 실제 디시 페이지를 띄우면
       // 그 페이지의 스크립트가 본문/댓글 요청을 추가로 발생시켜 같은 세션의
       // 원래 디시 사용 경험까지 서버 제한의 영향을 받을 수 있다.
-      if (!data?.commentsHTML || actualCommentItemCountFromHtml(data.commentsHTML) === 0) {
+      if (needsComments) {
         const commentSourceHtml = data?.desktopRawHtml || data?.rawHtml || "";
         const articleDoc = new DOMParser().parseFromString(commentSourceHtml, "text/html");
-        endpointResult = await fetchCommentsFromEndpoint(url, articleDoc, signal, cacheMode);
+        const endpointResult = await fetchCommentsFromEndpoint(url, articleDoc, signal, cacheMode);
         if (endpointResult?.debug) data.commentDebug = [...(data.commentDebug || []), ...endpointResult.debug];
         if (endpointResult?.html) {
           data.commentsHTML = endpointResult.html;
@@ -4651,6 +4649,12 @@ syncSettings(handleUrl);
 
   function composerMessage(result){
     if ([403,429,503].includes(result?.status)) return `서버에서 요청을 제한했습니다 (${result.status}). 잠시 후 원문을 확인해 주세요.`;
+    if (result?.code === 'comment-read-failed') {
+      const action = result.operation === 'delete' ? '삭제' : '등록';
+      return result.readIssue === 'invalid-response'
+        ? `${action} 전 댓글 목록의 응답 형식을 확인하지 못했습니다. 첨부·입력 내용은 유지됩니다. 원문에서 댓글을 확인한 뒤 다시 눌러 주세요.`
+        : `${action} 전 댓글 조회에 실패해 중단했습니다. 첨부·입력 내용은 유지됩니다. 연결을 확인한 뒤 다시 눌러 주세요.`;
+    }
     if(result?.refreshFailed) return result.ok ? '삭제됐지만 목록을 갱신하지 못했습니다. 댓글을 새로고침해 주세요.' : '서버 응답 후 목록을 갱신하지 못해 등록 여부를 확인할 수 없습니다. 중복 등록 전에 원문을 확인해 주세요.';
     return ({authentication:'인증 영역에서 확인한 뒤 다시 눌러 주세요.', 'image-captcha':'자동입력 방지 코드를 확인해 주세요. 새 문제는 인증 이미지의 새로고침을 눌러 주세요.',
       input:'내용과 닉네임·비밀번호를 확인해 주세요.',target:'답글 대상의 원문 ID를 확인할 수 없습니다.',ownership:'본인 댓글의 삭제 권한을 확인할 수 없습니다.',

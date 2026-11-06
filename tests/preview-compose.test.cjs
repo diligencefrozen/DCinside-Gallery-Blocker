@@ -53,7 +53,7 @@ function nativeDocument(url, member = true, captcha = false, own = false, turnst
       };
       window.dccon_input_layer=async()=>{
         const trigger=nativePanelData.target,panel=document.querySelector('#div_con');
-        const show=()=>{trigger.after(panel);panel.style.display='';};
+        const show=()=>{if(window.fixtureParkedDccon)document.body.append(panel);else trigger.after(panel);panel.style.display='';window.fixtureListReady=true;};
         if(listLoaded){show();return;}
         const controller=new AbortController(),xhr={status:0,responseText:'',abort:()=>controller.abort()};ajaxEvent('ajaxSend',xhr);
         try{const response=await fetch('/dccon/lists',{method:'POST',signal:controller.signal});xhr.status=response.status;xhr.responseText=await response.text();if(response.ok&&xhr.responseText==='ok'){listLoaded=true;show();}}catch(_){}
@@ -85,8 +85,8 @@ function nativeDocument(url, member = true, captcha = false, own = false, turnst
     const pageErrors = [];
     page.on('pageerror',error=>pageErrors.push(error.message));
     let member = true, captcha = false, own=false, turnstile=false, responseMode = 'success', delay = 0;
-    let writes = [], records = [], reads = 0, deletes=[],listMode='ok',listDelay=0,listReads=0;
-    const reset = () => { writes=[]; deletes=[];reads=0;listMode='ok';listDelay=0;listReads=0; records=[{no:'101',c_no:'0',depth:0,name:'송채경',memo:'parent',reg_date:'2026.10.26 21:12:56'}, {no:'102',c_no:'101',depth:1,name:'tester',memo:'reply'}]; responseMode='success';delay=0;member=true;captcha=false;own=false;turnstile=false; };
+    let writes = [], records = [], reads = 0, deletes=[],listMode='ok',listDelay=0,listReads=0,commentReadMode='array';
+    const reset = () => { writes=[]; deletes=[];reads=0;listMode='ok';listDelay=0;listReads=0;commentReadMode='array'; records=[{no:'101',c_no:'0',depth:0,name:'송채경',memo:'parent',reg_date:'2026.10.26 21:12:56'}, {no:'102',c_no:'101',depth:1,name:'tester',memo:'reply'}]; responseMode='success';delay=0;member=true;captcha=false;own=false;turnstile=false; };
     reset();
     let slowArticleImage=false;
     await page.route('**/*', async route => {
@@ -96,6 +96,7 @@ function nativeDocument(url, member = true, captcha = false, own = false, turnst
       if(url.hostname==='dcimg5.dcinside.com')return route.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96"><rect width="96" height="96" rx="20" fill="#dce8ff"/><circle cx="48" cy="48" r="30" fill="#ffdf86"/><path d="M36 54Q48 68 60 54" fill="none" stroke="#39496c" stroke-width="4"/><circle cx="37" cy="40" r="3"/><circle cx="59" cy="40" r="3"/></svg>'});
       if(['/dccon/insert_icon','/txtcon/insert'].includes(url.pathname)){
         const fields=Object.fromEntries(new URLSearchParams(route.request().postData()));writes.push(fields);
+        if(responseMode==='image-needed')return route.fulfill({body:'code_fail'});
         if(responseMode==='captcha-v2')return route.fulfill({body:'false||captcha'});
         if(responseMode==='captcha')return route.fulfill({body:'false||captcha||v3'});
         if(/^\d+$/.test(responseMode))return route.fulfill({status:Number(responseMode),body:'restricted'});
@@ -139,6 +140,8 @@ function nativeDocument(url, member = true, captcha = false, own = false, turnst
       if(url.pathname.startsWith('/kcaptcha/'))return route.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="110" height="30"><text y="20">fixture</text></svg>'});
       if (url.pathname === '/board/comment/') {
         reads++;
+        if(commentReadMode==='invalid')return route.fulfill({json:{comments:null,total_cnt:5}});
+        if(commentReadMode==='empty-null'&&!records.length)return route.fulfill({json:{comments:null,total_cnt:0}});
         if(responseMode==='throttled-read'&&reads===2)return route.fulfill({status:429,body:'restricted'});
         const stale=writes.length>0&&((responseMode==='lagged-receipt'&&reads===2)||(responseMode==='manual-receipt'&&reads<=4));
         return route.fulfill({json:{comments:stale?records.filter(row=>row.no!=='103'):records,total_cnt:records.length}});
@@ -171,6 +174,64 @@ function nativeDocument(url, member = true, captcha = false, own = false, turnst
     const editor = () => page.frameLocator('iframe[data-dcbpv-compose-frame]');
     const finish = async text => page.locator('.dcbpv-composer [role="status"]').filter({hasText:text}).waitFor();
     const close = async () => page.evaluate(()=>window.composeTest.closePreview());
+
+    reset();await render();await open();
+    await editor().locator('body').evaluate(body=>{
+      // A native handler can show the original body-level panel in place.
+      window.fixtureParkedDccon=true;
+      const text=body.querySelector('.tx_txtcon');
+      text.onclick=()=>{body.querySelector('#div_txtcon').style.display='block';};
+    });
+    for(let cycle=0;cycle<3;cycle++){
+      await editor().locator('.tx_txtcon').click();
+      const panel=editor().locator('#div_txtcon.dcbpv-picker-panel');
+      await panel.waitFor({state:'visible',timeout:2500});
+      await panel.locator('#txtcon_input').fill('재열기'+cycle);
+      await panel.locator('#btn_txtcon_submit').click();
+      assert.equal(await editor().locator('.dcbpv-textcon').textContent(),'재열기'+cycle);
+      await editor().getByRole('button',{name:'첨부 취소'}).click();
+      await editor().locator('.tx_dccon').click();
+      await editor().locator('#div_con .img_dccon').click();
+      await editor().getByRole('button',{name:'첨부 취소'}).click();
+    }
+    assert.equal(await editor().locator('body').evaluate(()=>window.nativeMediaSubmits),0);
+    assert.equal(writes.length,0);await close();checks++;
+
+    reset();listDelay=700;await render();await open();
+    await editor().locator('body').evaluate(()=>{window.fixtureParkedDccon=true;});
+    await editor().locator('.tx_dccon').click();
+    await editor().locator('#dcbpv-picker-loading').waitFor({state:'visible'});
+    await editor().locator('#dcbpv-picker-header button').click();
+    await editor().locator('.tx_txtcon').click();
+    await editor().locator('#txtcon_input').fill('늦은 응답 중 초안');
+    await page.waitForFunction(()=>document.querySelector('iframe[data-dcbpv-compose-frame]')?.contentWindow.fixtureListReady);
+    assert.equal(await editor().locator('#txtcon_input').inputValue(),'늦은 응답 중 초안');
+    await editor().locator('#dcbpv-picker-header button').click();
+    await editor().locator('.tx_dccon').click();
+    await editor().locator('#div_con.dcbpv-picker-panel').waitFor({state:'visible',timeout:2500});
+    await editor().locator('#div_con .img_dccon').click();
+    assert.equal(listReads,1,'a late body-level response is reused when reopening');
+    assert.equal(writes.length,0);await close();checks++;
+
+    reset();await render();await open();
+    await editor().locator('body').evaluate(body=>{
+      const trigger=body.querySelector('.tx_txtcon'),nativeClick=trigger.onclick;
+      trigger.onclick=null;
+      setTimeout(()=>{trigger.onclick=nativeClick;window.fixtureHandlerReady=true;},700);
+    });
+    await editor().locator('.tx_txtcon').click();
+    await editor().locator('#dcbpv-picker-loading').filter({hasText:'글자콘 입력창'}).waitFor();
+    await editor().locator('body').evaluate(()=>new Promise(resolve=>{
+      const timer=setInterval(()=>{if(window.fixtureHandlerReady){clearInterval(timer);resolve();}},25);
+    }));
+    await editor().locator('#dcbpv-picker-loading').filter({hasText:'원문 보기'}).waitFor({timeout:17000});
+    assert.equal(writes.length,0);
+    await editor().locator('#dcbpv-picker-header button').click();
+    await editor().locator('.tx_txtcon').click();
+    await editor().locator('#txtcon_input').fill('준비 후 첨부');
+    await editor().locator('#btn_txtcon_submit').click();
+    assert.equal(await editor().locator('.dcbpv-textcon').textContent(),'준비 후 첨부');
+    assert.equal(writes.length,0);await close();checks++;
 
     reset();slowArticleImage=true;await render();await open();
     assert.equal(await editor().locator('body').evaluate(()=>document.readyState),'interactive','input is usable before unrelated article images finish');
@@ -415,6 +476,71 @@ function nativeDocument(url, member = true, captcha = false, own = false, turnst
     await page.locator('[data-act=compose-reply][data-target="101"]').press('Enter');
     await page.waitForFunction(()=>document.querySelector('[data-composer-target]').textContent.includes('송채경'));
     assert.equal(writes.length,0);await close();checks++;
+
+    reset();member=false;records=[];commentReadMode='empty-null';
+    await render(article('mgallery/','9901'));await open();
+    await editor().locator('#name_9901').fill('비회원');
+    await editor().locator('#password_9901').fill('fixture-only');
+    await editor().locator('.tx_txtcon').click();
+    await editor().locator('#txtcon_input').fill('첫 글자콘');
+    await editor().locator('#btn_txtcon_submit').click();
+    assert.equal(writes.length,0);
+    await editor().locator('.repley_add').click();
+    await finish('등록된 댓글을 확인');
+    assert.equal(writes.length,1);assert.equal(writes[0]._GALLTYPE_,'M');
+    await close();checks++;
+
+    reset();commentReadMode='invalid';await render(article('mgallery/','9902'));await open();
+    await editor().locator('.tx_txtcon').click();
+    await editor().locator('#txtcon_input').fill('응답 오류 중 보존');
+    await editor().locator('#btn_txtcon_submit').click();
+    await editor().locator('.repley_add').click();
+    await finish('등록 전 댓글');
+    assert.equal(writes.length,0);
+    assert.equal(await editor().locator('.dcbpv-textcon').textContent(),'응답 오류 중 보존');
+    assert.equal(await editor().locator('.repley_add').isEnabled(),true);
+    commentReadMode='array';await editor().locator('.repley_add').click();await finish('등록된 댓글을 확인');
+    assert.equal(writes.length,1);await close();checks++;
+
+    for(const kind of ['dccon','txtcon']){
+      reset();member=false;await render(article('mgallery/','9903'));await open();
+      await editor().locator('#name_9903').fill('비회원');
+      await editor().locator('#password_9903').fill('fixture-only');
+      await editor().locator('body').evaluate(body=>{
+        const holder=document.createElement('div');holder.dataset.kcapHide='';holder.hidden=true;
+        holder.innerHTML='<input id="code_9903" aria-label="자동입력 방지코드">';
+        body.querySelector('.cmt_txt_cont').append(holder);
+        window.kcap_open=()=>{holder.removeAttribute('data-kcap-hide');holder.hidden=false;return true;};
+      });
+      await editor().locator(kind==='dccon'?'.tx_dccon':'.tx_txtcon').click();
+      if(kind==='dccon')await editor().locator('.img_dccon').click();
+      else{await editor().locator('#txtcon_input').fill('숨김 인증 자리');await editor().locator('#btn_txtcon_submit').click();}
+      responseMode='image-needed';await editor().locator('.repley_add').click();await finish('자동입력');
+      assert.equal(writes.length,1,'a hidden placeholder is not an active image challenge');
+      assert.equal(await editor().locator('#code_9903').isVisible(),true,'a server challenge opens the native input');
+      assert.equal(await editor().locator('#dcbpv-selection').isVisible(),true);
+      assert.equal(writes[0].code,undefined);
+      responseMode='success';await editor().locator('#code_9903').fill('fixture-code');
+      await editor().locator('.repley_add').click();await finish('등록된 댓글을 확인');
+      assert.equal(writes.length,2);assert.equal(writes[1].code,'fixture-code');
+      await close();checks++;
+    }
+
+    reset();turnstile=true;await render(article('mgallery/','9904'));await open();
+    await editor().locator('#fixture-turnstile').click();
+    await editor().locator('.tx_txtcon').click();
+    await editor().locator('#txtcon_input').fill('인증 오류 중 보존');
+    await editor().locator('#btn_txtcon_submit').click();
+    await editor().locator('body').evaluate(()=>{
+      window.fixtureOriginalAuthFields=window.ts_cmt_fields;
+      window.ts_cmt_fields=()=>{throw new Error('fixture authentication unavailable');};
+    });
+    await editor().locator('.repley_add').click();await finish('인증 영역');
+    assert.equal(writes.length,0);
+    assert.equal(await editor().locator('.dcbpv-textcon').textContent(),'인증 오류 중 보존');
+    await editor().locator('body').evaluate(()=>{window.ts_cmt_fields=window.fixtureOriginalAuthFields;});
+    await editor().locator('.repley_add').click();await finish('등록된 댓글을 확인');
+    assert.equal(writes.length,1);await close();checks++;
 
     for(const kind of ['dccon','txtcon'])for(const target of ['', '101','102']){
       reset();await render(article('',String(100+checks)));await open();

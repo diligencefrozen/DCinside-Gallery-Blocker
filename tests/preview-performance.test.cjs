@@ -3,7 +3,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 
-const source = fs.readFileSync(path.join(__dirname, '../src/content/core/content_script.js'), 'utf8');
+const sourceRoot=process.env.DCB_EXTENSION_ROOT||path.join(__dirname,'..');
+const source = fs.readFileSync(path.join(sourceRoot, 'src/content/core/content_script.js'), 'utf8');
 const previewSource = source.slice(source.indexOf('(function dcBlockPostPreview(){')).replace(/\}\)\(\);\s*$/, `
   window.previewPerfTest = { openPreview, closePreview, previewPerformanceSnapshot, previewCacheKey,
     writePreviewCache, schedulePreviewOpen, cancelScheduledPreview };
@@ -45,7 +46,7 @@ function articleUrl(id, no, suffix = '') {
         return `<!doctype html><html><head><meta property="og:title" content="preview-${id}-${no}"></head><body>
           <article class="gallview"><header class="gallview_head"><span class="title_subject">preview-${id}-${no}</span><span class="gall_writer" data-nick="tester" data-uid="tester"></span></header>
           <div class="write_div"><p>preview body ${id}-${no} ${'content '.repeat(30)}</p><img src="https://dcimg.dcinside.com/${no}.jpg"></div>
-          <div id="comment_wrap"><div class="cmt_info"><div class="gall_writer" data-nick="commenter" data-uid="commenter"></div><div class="cmt_txtbox"><p class="usertxt">comment ${no}</p></div></div></div></article>
+          <div id="comment_wrap">${Array.from({length:window.__embeddedRows||1},(_,i)=>`<div class="cmt_info" data-no="${i+1}"><div class="gall_writer" data-nick="commenter" data-uid="commenter"></div><div class="cmt_txtbox"><p class="usertxt">comment ${no}-${i}</p></div></div>`).join('')}</div></article>
         </body></html>`;
       };
       window.chrome = {
@@ -66,6 +67,42 @@ function articleUrl(id, no, suffix = '') {
       };
     });
     await page.addScriptTag({ content: previewSource });
+
+    if(process.argv.includes('--profile-embedded')){
+      const cdp=await page.context().newCDPSession(page);
+      await cdp.send('Performance.enable');
+      const rows=[],traced=process.argv.includes('--trace');
+      if(traced)await cdp.send('Tracing.start',{categories:'devtools.timeline,v8',transferMode:'ReturnAsStream'});
+      for(let run=0;run<5;run++)for(const phase of ['cold','warm']){
+        const metric=async()=>(await cdp.send('Performance.getMetrics')).metrics.find(m=>m.name==='TaskDuration').value;
+        const before=await metric();
+        const stats=await page.evaluate(async url=>{
+          window.__embeddedRows=500;
+          const events=window.__previewContentEvents,started=performance.now();
+          await window.previewPerfTest.openPreview(url);
+          const rows=document.querySelectorAll('.dcbpv-comment-item').length;
+          return {rows,events:window.__previewContentEvents-events,ms:Math.round(performance.now()-started)};
+        },articleUrl('embedded',900+run));
+        const row={run,phase,...stats,taskMs:Math.round(((await metric())-before)*1000)};
+        rows.push(row);console.log(JSON.stringify(row));
+        assert.equal(stats.rows,500);
+        await page.evaluate(()=>window.previewPerfTest.closePreview());
+      }
+      const label=process.env.DCB_EXTENSION_ROOT?'before':'after';
+      const stem=path.join(__dirname,`../test-results/preview-embedded-${label}${traced?'-traced':''}`);
+      fs.mkdirSync(path.dirname(stem),{recursive:true});
+      fs.writeFileSync(stem+'.json',JSON.stringify(rows,null,2));
+      if(traced){
+        const finished=new Promise(resolve=>cdp.once('Tracing.tracingComplete',resolve));
+        await cdp.send('Tracing.end');
+        const {stream}=await finished,chunks=[];
+        let chunk;
+        do{chunk=await cdp.send('IO.read',{handle:stream});chunks.push(chunk.data);}while(!chunk.eof);
+        await cdp.send('IO.close',{handle:stream});
+        fs.writeFileSync(stem+'.trace.json',chunks.join(''));
+      }
+      return;
+    }
 
     const first = await page.evaluate(async (url) => {
       window.__previewDelays['201'] = 190;
@@ -103,7 +140,7 @@ function articleUrl(id, no, suffix = '') {
     assert.equal(first.shellReused, true);
     assert.equal(first.overlayOwned, 'preview');
     assert.equal(first.genericObserverPasses, 0, 'the general page observer skips extension-owned preview DOM');
-    assert.ok(first.previewContentEvents >= 1, 'the preview-specific pipeline receives preview content');
+    assert.equal(first.previewContentEvents,1,'embedded comments go through the preview pipeline once');
     assert.equal(first.title, 'preview-fixture-201');
     assert.equal(first.imageLoading, 'lazy');
     assert.equal(first.trace.cacheHit, false);

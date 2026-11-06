@@ -236,15 +236,15 @@ async function previewCommentInPage(request) {
     const pickerRequests=new Set();
     const recovery=doc.createElement('span');
     recovery.hidden=true;
-    let listTrigger=null;
-    function startListWait(){
+    let listTrigger=null, pickerTrigger=null, parkedPanel=null;
+    function startPickerWait(){
       recovery.hidden=true;
       session.pickerPending=true;
-      pickerLoading.textContent='디시콘 목록을 불러오는 중…';
+      pickerLoading.textContent=session.pickerKind==='txtcon'?'글자콘 입력창을 여는 중…':'디시콘 목록을 불러오는 중…';
       pickerLoading.hidden=false;
       clearTimeout(pickerTimer);
       pickerTimer=setTimeout(()=>{
-        if(frame.isConnected&&session.pickerPending)pickerNotice('디시콘 목록을 불러오지 못했습니다. 닫은 뒤 다시 시도해 주세요.');
+        if(frame.isConnected&&session.pickerPending)pickerNotice('선택창을 열지 못했습니다. 닫고 다시 누르거나 미리보기의 원문 보기를 이용해 주세요.');
       },15000);
     }
     // dccon.js uses these same targets for the package and recent tabs. Offer
@@ -259,7 +259,7 @@ async function previewCommentInPage(request) {
           ||listTrigger.matches('.adult_fail,:disabled'))return;
         const panel=doc.getElementById('div_con');
         if(!panel||$(panel).data('target')!==listTrigger||typeof win.dccon_input_layer!=='function')return;
-        startListWait();
+        startPickerWait();
         $(panel).data('tar',target);
         try{win.dccon_input_layer();}catch(_){pickerNotice('목록을 열지 못했습니다. 닫은 뒤 다시 시도해 주세요.');}
         syncPicker();resize();
@@ -332,22 +332,31 @@ async function previewCommentInPage(request) {
       event.preventDefault(); // Native delegated selection still runs, without anchor navigation.
       if(session.busy||session.uncertain){event.preventDefault();event.stopImmediatePropagation();return;}
       session.pickerDismissed=false;
-      if(trigger.matches('.tx_txtcon')){recovery.hidden=true;session.pickerKind='txtcon';session.pickerPending=false;clearTimeout(pickerTimer);}
-      if(trigger.matches('.tx_dccon')){
+      session.pickerKind=trigger.matches('.tx_txtcon')?'txtcon':'dccon';
+      pickerTrigger=trigger;
+      // The native client parks its singleton in body while closed. Remember
+      // only this document's unambiguous, hidden panel for this trusted click.
+      const matches=doc.querySelectorAll(session.pickerKind==='txtcon'?'#div_txtcon':'#div_con');
+      parkedPanel=matches.length===1&&matches[0].style.display==='none'
+        &&(matches[0].parentElement===doc.body||box.contains(matches[0]))?matches[0]:null;
+      startPickerWait();
+      if(session.pickerKind==='dccon'){
         // Closing/reopening while the first request is pending must reuse it.
         // Otherwise native responses overwrite each other's package selection.
         if(pickerRequests.size)event.stopImmediatePropagation();
-        session.pickerKind='dccon';listTrigger=trigger;startListWait();
-        // Let the native delegated click inspect its original visible button
-        // before applying the picker mask (still before the next paint).
-        queueMicrotask(()=>{if(frame.isConnected){syncPicker();resize();}});
+        listTrigger=trigger;
       }
+      resize(); // Apply the mask after the native click handler has run.
       // Native delegated handler performs its single normal read; no extra fetch.
     },true);
     const syncPicker=()=>{
       // Native .show() sets inline display after inserting the list. Our picker
       // mask hides it until its ancestor path is exposed, so computed display
       // alone creates a deadlock: the loaded panel can never become visible.
+      if(parkedPanel?.parentElement===doc.body&&parkedPanel.style.display!=='none'&&!parkedPanel.hidden){
+        if(!session.pickerDismissed&&box.contains(pickerTrigger))pickerTrigger.after(parkedPanel);
+        else parkedPanel.style.display='none';
+      }
       const panels=[...box.querySelectorAll('#div_con,#div_txtcon')];
       // A late list response must not replace an already-open textcon editor.
       // Keep the native package cache; only hide the non-selected popup.
@@ -362,7 +371,7 @@ async function previewCommentInPage(request) {
       if(panel===session.picker&&open===session.pickerOpen)return;
       surface.querySelectorAll('.dcbpv-picker-path,.dcbpv-picker-panel').forEach(node=>node.classList.remove('dcbpv-picker-path','dcbpv-picker-panel'));
       session.picker=panel;session.pickerOpen=open;pickerHeader.hidden=!open;pickerLoading.hidden=!session.pickerPending;surface.classList.toggle('dcbpv-picking',open);doc.documentElement.classList.toggle('dcbpv-picking',open);
-      if(session.pickerPending){pickerTitle.textContent='디시콘 선택';pickerHint.textContent='원문에서 사용 가능한 목록을 확인하고 있습니다.';pickerBack.focus({preventScroll:true});}
+      if(session.pickerPending){pickerTitle.textContent=session.pickerKind==='txtcon'?'글자콘 만들기':'디시콘 선택';pickerHint.textContent='원문 선택창을 기다리고 있습니다.';pickerBack.focus({preventScroll:true});}
       if(panel){session.pickerKind=panel.id==='div_txtcon'?'txtcon':'dccon';panel.classList.add('dcbpv-picker-panel');for(let node=panel.parentElement;node&&node!==surface;node=node.parentElement)node.classList.add('dcbpv-picker-path');pickerTitle.textContent=session.pickerKind==='txtcon'?'글자콘 만들기':'디시콘 선택';pickerHint.textContent='선택한 콘을 작성창에서 확인한 후 등록하세요.';(session.pickerKind==='txtcon'?doc.getElementById('txtcon_input'):pickerBack)?.focus({preventScroll:true});}
       publishPicker(open,session.pickerPending?180:420);
     };
@@ -467,7 +476,7 @@ async function previewCommentInPage(request) {
       for (const mutation of mutations) {
         const target=mutation.target.nodeType===1?mutation.target:mutation.target.parentElement;
         if (!target) continue;
-        if (surface.contains(target)) { needsResize=true; continue; }
+        if (surface.contains(target)||target===parkedPanel) { needsResize=true; continue; }
         if (target.closest(commentScope)) metadataDirty=true;
         if (target.closest('.dcbpv-native-auth,.dcbpv-auth-path')) needsResize=true;
         if (mutation.type==='childList') {
@@ -691,7 +700,8 @@ async function previewCommentInPage(request) {
   const hasPassword = !!doc.getElementById(`password_${suffix}`);
   const useGallNickname = value(request.target ? 'use_gall_nick_reply' : 'use_gall_nick') === 'Y';
   if (!deleting && ((hasName && !useGallNickname && !request.name?.trim()) || (hasPassword && request.password?.length < 2))) return fail('input');
-  const requiresImage=!deleting&&(media ? !!doc.getElementById(`code_${no}`) : value('kcaptcha_use')==='Y');
+  const imageField=doc.getElementById(`code_${no}`);
+  const requiresImage=!deleting&&(media ? !!imageField&&!imageField.closest('[data-kcap-hide]') : value('kcaptcha_use')==='Y');
   const imageCode = requiresImage ? value(`code_${no}`) : '';
   if (requiresImage && !imageCode?.trim()) return fail('image-captcha');
   // A per-document guard also survives background worker suspension/restart.
@@ -701,6 +711,7 @@ async function previewCommentInPage(request) {
   const timer = setTimeout(() => controller.abort(), 20000);
   let wrote = false;
   let checking = false;
+  let stage = 'preflight-read';
   const ajax = async (path, body, signal=controller.signal) => {
     const response = await win.fetch(path, { method: 'POST', credentials: 'include',
       cache: 'no-store', redirect: 'error', signal,
@@ -713,8 +724,13 @@ async function previewCommentInPage(request) {
       focus_cno: focusId, focus_pno: target?.parent || '', e_s_n_o: value('e_s_n_o'),
       comment_page: '1', sort: 'D', prevCnt: '0', _GALLTYPE_: expectedType,
       secret_article_key: value('secret_article_key') || '', clean: '', nptest: '' });
-    const data = JSON.parse(await ajax('/board/comment/', body.toString(), signal));
-    if (!Array.isArray(data.comments) || !Number.isFinite(Number(data.total_cnt))) throw new Error();
+    const response = await ajax('/board/comment/', body.toString(), signal);
+    let data;
+    try { data = JSON.parse(response); }
+    catch (_) { throw { readCode: 'invalid-response' }; }
+    // The native comment client also accepts null for an empty comment list.
+    if (data?.comments === null && (data.total_cnt === 0 || data.total_cnt === '0')) data.comments = [];
+    if (!Array.isArray(data?.comments) || !Number.isFinite(Number(data.total_cnt))) throw { readCode: 'invalid-response' };
     return data;
   };
   try {
@@ -723,8 +739,10 @@ async function previewCommentInPage(request) {
     if (!deleting && target && !before.comments.some(item => String(item.no) === target.id
       && String(Number(item.depth) > 0 ? item.c_no : item.no) === target.parent
       && item.del_yn !== 'Y')) return fail('target');
+    stage = 'authentication';
     const auth = await session.authFields(`${deleting ? 'delete' : 'submit'}:${request.target || ''}`, deleting ? 'comment_delete_submit' : media ? 'insert_icon' : 'comment_submit');
     if (!auth) return fail('authentication');
+    stage = 'prepare-write';
     if (!frame.isConnected || frame.dataset.dcbpvCancelled === '1') return fail('cancelled');
     if (deleting) {
       const row = before.comments.find(item => String(item.no) === request.target && item.del_yn !== 'Y');
@@ -768,12 +786,16 @@ async function previewCommentInPage(request) {
       body.set('gall_nick_name', value(`gall_nick_name_${suffix}`) || '');
     }
     if (hasChallenge) {
+      stage = 'authentication';
       if (typeof win.ts_cmt_fields !== 'function') return fail('authentication');
-      const fields = new URLSearchParams(win.ts_cmt_fields().replace(/^&/, ''));
+      const nativeFields = win.ts_cmt_fields();
+      if (typeof nativeFields !== 'string') return fail('authentication');
+      const fields = new URLSearchParams(nativeFields.replace(/^&/, ''));
       for (const [key, val] of fields) {
         if (!['cf-turnstile-response', 'ts_state', 'ts_focus_ms', 'ts_token_ms', 'ts_test'].includes(key)) return fail('authentication');
         body.set(key, val);
       }
+      stage = 'prepare-write';
     }
     let endpoint='/board/forms/comment_submit',sendBody=body;
     if(media){
@@ -800,7 +822,7 @@ async function previewCommentInPage(request) {
         ||value('member_division')!=='Y')throw error;
       response='';
     }
-    if(media&&response==='code_fail'){win.kcaptcha_init?.(no);return fail('image-captcha');}
+    if(media&&response==='code_fail'){win.kcap_open?.(no);win.kcaptcha_init?.(no);return fail('image-captcha');}
     if(media&&['not_buy','expired','unuseable','not_exists','fail','form_error','fail1'].includes(response))return fail('rejected');
     if (response.split('||')[0].trim() === 'false') {
       const parts=response.split('||');
@@ -860,7 +882,10 @@ async function previewCommentInPage(request) {
     }
     return { ok: true, comments: after.comments, total: Number(after.total_cnt), addedId: String(added[0].no) };
   } catch (error) {
-    return fail(wrote ? 'uncertain' : 'network', { status: Number(error?.status || 0), refreshFailed:checking });
+    const code = wrote ? 'uncertain' : stage === 'preflight-read' ? 'comment-read-failed'
+      : stage === 'authentication' ? 'authentication' : 'network';
+    return fail(code, { status: Number(error?.status || 0), refreshFailed:checking, stage,
+      ...(stage === 'preflight-read' ? { readIssue: error?.readCode === 'invalid-response' ? 'invalid-response' : 'connection' } : {}) });
   } finally {
     clearTimeout(timer);
     delete frame.dataset.dcbpvWriting;
