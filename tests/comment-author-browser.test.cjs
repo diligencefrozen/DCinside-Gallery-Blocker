@@ -163,6 +163,66 @@ test('long authors, nested and sibling IPs, account IDs and saved memos stay ins
   } finally { await page.close(); }
 });
 
+test('combined author controls settle without repeating layout mutations', async () => {
+  const page = await fixture({ dcbApplyFontToDc: true, dcbFontScale: 105 });
+  try {
+    await page.locator('#member .dcb-user-memo-trigger.has-memo').waitFor();
+    await page.waitForTimeout(300);
+    const mutations = await page.evaluate(() => new Promise(resolve => {
+      let count = 0;
+      const observer = new MutationObserver(records => { count += records.length; });
+      observer.observe(document.documentElement, { subtree: true, attributes: true, childList: true });
+      setTimeout(() => { observer.disconnect(); resolve(count); }, 500);
+    }));
+    assert.equal(mutations, 0, 'unchanged author tools must stop modifying DOM');
+    await assertAuthorBounds(page);
+  } finally { await page.close(); }
+});
+
+test('distant authors are fitted when scrolling near them', async () => {
+  const page = await fixture();
+  try {
+    await page.evaluate(html => {
+      const spacer = document.createElement('li');
+      spacer.style.height = '3000px';
+      document.querySelector('.cmt_list').append(spacer);
+      document.querySelector('.cmt_list').insertAdjacentHTML('beforeend', html);
+      const nativeRect = Element.prototype.getBoundingClientRect;
+      window.distantGeometryReads = 0;
+      Element.prototype.getBoundingClientRect = function() {
+        if (this.closest?.('#distant-author')) window.distantGeometryReads++;
+        return nativeRect.call(this);
+      };
+    }, authorRow('distant-author', { member: true }));
+    await page.locator('#distant-author .dcb-user-memo-trigger').waitFor({ state: 'attached' });
+    await page.waitForTimeout(300);
+    assert.equal(await page.evaluate(() => window.distantGeometryReads), 0, 'offscreen tools do not force layout');
+    await page.locator('#distant-author').scrollIntoViewIfNeeded();
+    await page.waitForFunction(() => document.querySelector('#distant-author .gall_writer').style.getPropertyValue('--dcb-writer-available'));
+    await assertAuthorBounds(page, ['distant-author']);
+  } finally { await page.close(); }
+});
+
+test('refreshing author metadata reuses the UID stylesheet', async () => {
+  const page = await fixture();
+  try {
+    await page.locator('#member .dcb-user-memo-trigger.has-memo').waitFor();
+    await page.waitForTimeout(300);
+    const changes = await page.evaluate(() => new Promise(resolve => {
+      let count = 0;
+      const observer = new MutationObserver(records => {
+        count += records.filter(record => record.target.id === 'dcb-uid-style'
+          || [...record.addedNodes, ...record.removedNodes].some(node => node.id === 'dcb-uid-style')).length;
+      });
+      observer.observe(document.head, { childList: true, subtree: true });
+      document.querySelector('#member .gall_writer').title = 'Native author menu';
+      setTimeout(() => { observer.disconnect(); resolve(count); }, 300);
+    }));
+    assert.equal(changes, 0, 'identical UID styles must not invalidate every author');
+    await assertAuthorBounds(page);
+  } finally { await page.close(); }
+});
+
 test('140 percent body text and independently larger author text preserve layout; OFF restores native text', async () => {
   const page = await fixture();
   try {

@@ -10,15 +10,18 @@ const profileLive=process.argv.includes('--profile-live');
 const traceLive=profileLive&&process.argv.includes('--trace-live');
 const realList=process.argv.includes('--real-list');
 const withoutBackdrop=process.argv.includes('--without-backdrop');
+const backupPath=process.env.DCB_BACKUP_PATH;
 if(profileLive)assert.match(label,/^[a-zA-Z0-9_-]{1,80}$/);
 const best=process.argv.includes('--dcbest');
+const listPage=Number(process.env.DCB_LIST_PAGE||1);
+assert.ok(Number.isInteger(listPage)&&listPage>=1&&listPage<=100);
 const article=process.env.DCB_ARTICLE_URL||(best?'https://gall.dcinside.com/board/view/?id=dcbest&no=475940&_dcbest=4&page=1':'https://gall.dcinside.com/mgallery/board/view/?id=asdf12&no=83075&page=1');
 const articleUrl=new URL(article);
 assert.equal(articleUrl.origin,'https://gall.dcinside.com');
 assert.match(articleUrl.pathname,/^\/(?:mgallery\/|mini\/|person\/)?board\/view\/$/);
 assert.match(articleUrl.searchParams.get('id'),/^[a-zA-Z0-9_]+$/);
 assert.match(articleUrl.searchParams.get('no'),/^[1-9]\d*$/);
-const listUrl=articleUrl.origin+articleUrl.pathname.replace('/view/','/lists/')+'?id='+articleUrl.searchParams.get('id');
+const listUrl=articleUrl.origin+articleUrl.pathname.replace('/view/','/lists/')+'?id='+articleUrl.searchParams.get('id')+(listPage>1?'&page='+listPage:'');
 if(process.env.DCB_LIVE_READONLY!=='1')throw new Error('Set DCB_LIVE_READONLY=1 to allow live read-only requests.');
 assert.ok(Number.isInteger(runs)&&runs>=1&&runs<=5);
 const rows=[],network=[],errors=[],dialogs=[],checks={};let blockedWrites=0;
@@ -230,10 +233,34 @@ async function compareOriginal(context,run){
     if(!realList&&u.href===listUrl)return route.fulfill({contentType:'text/html',body:`<!doctype html><html><body><table><tr class="ub-content"><td class="gall_tit"><a id="article" href="${article}">Actual article</a></td></tr></table></body></html>`});
     return route.continue();
    });
+   if(backupPath){
+    const backup=JSON.parse(fs.readFileSync(backupPath,'utf8'));
+    for(const key of Object.keys(backup.storage.sync))if(key.startsWith('extensionpay_'))delete backup.storage.sync[key];
+    const origin='chrome-extension://'+new URL(worker.url()).hostname;
+    const options=await context.newPage();
+    try{
+     await options.goto(origin+'/src/ui/options/options.html');
+     const imported=options.waitForEvent('dialog',{timeout:20000}).then(async dialog=>{
+      const success=dialog.message()==='백업을 불러왔습니다.';
+      await dialog.accept();return success;
+     });
+     await options.locator('#importFile').setInputFiles({name:'performance-backup.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(backup))});
+     assert.equal(await imported,true,'Restore through the normal options UI');
+     const expected=Object.entries(backup.storage.sync).filter(([,value])=>typeof value==='boolean');
+     for(const key of ['dcbImageAccountRules','dcbTextDetection'])for(const [field,value] of Object.entries(backup.storage.sync[key]||{})){
+      if(typeof value==='boolean')expected.push([key+'.'+field,value]);
+     }
+     const mismatch=await worker.evaluate(async expected=>{
+      const stored=await chrome.storage.sync.get([...new Set(expected.map(([key])=>key.split('.')[0]))]);
+      return expected.filter(([key,value])=>key.split('.').reduce((data,part)=>data?.[part],stored)!==value).map(([key])=>key);
+     },expected);
+     assert.deepEqual(mismatch,[],'Preserve the backup switches');
+    }finally{await options.close();}
+   }
    page=await context.newPage();
    if(profileLive&&run===1)diagnostics=await startLiveDiagnostics(context,page,run);
-   page.on('pageerror',e=>errors.push({run,name:e.name,message:e.message.slice(0,150)}));
-   page.on('dialog',async d=>{dialogs.push(d.message().slice(0,100));await d.dismiss();});
+   page.on('pageerror',e=>errors.push({run,name:e.name,message:backupPath?'Details omitted for backup privacy':e.message.slice(0,150)}));
+   page.on('dialog',async d=>{dialogs.push(backupPath?'Site dialog':d.message().slice(0,100));await d.dismiss();});
    page.on('response',async r=>{const u=new URL(r.url());if(u.pathname.startsWith('/dccon/')){
     const item={run,path:u.pathname,status:r.status()};network.push(item);
     if(u.pathname==='/dccon/lists'){try{const d=await r.json();item.target=d.target;item.listSize=Array.isArray(d.list)?d.list.length:typeof d.list;item.fields=Object.fromEntries(Object.entries(d).map(([k,v])=>[k,typeof v==='string'?`string:${v.length}`:typeof v]));}catch(_){}}
@@ -420,7 +447,7 @@ async function compareOriginal(context,run){
   }
  }
  const version=JSON.parse(fs.readFileSync(path.join(extension,'manifest.json'),'utf8')).version;
- const output={version,article:{id:articleUrl.searchParams.get('id'),no:articleUrl.searchParams.get('no'),path:articleUrl.pathname},runs,guest:true,hostListFixture:!realList,backdropDisabled:withoutBackdrop,rows,native,summary,checks,blockedWrites,network,errors,dialogs,...(profileLive?{liveProfile}: {})};
+ const output={version,article:{id:articleUrl.searchParams.get('id'),no:articleUrl.searchParams.get('no'),path:articleUrl.pathname},runs,guest:true,hostListFixture:!realList,backdropDisabled:withoutBackdrop,backupRestored:!!backupPath,rows,native,summary,checks,blockedWrites,network,errors,dialogs,...(profileLive?{liveProfile}: {})};
  fs.writeFileSync(path.join(root,`test-results/live-readonly-${label}.json`),JSON.stringify(output,null,2));
  console.log(JSON.stringify({summary,checks,blockedWrites,errors}));
 });

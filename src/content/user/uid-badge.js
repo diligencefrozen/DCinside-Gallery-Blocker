@@ -53,7 +53,7 @@
       (document.head || document.documentElement).appendChild(st);
     }
 
-    st.textContent = `
+    const css = `
       .${BADGE}{
         color:#98a2b3 !important;
         background:rgba(152,162,179,.15) !important;
@@ -64,7 +64,9 @@
 
       .${BADGE}.is-list{border-radius:8px !important;}
     `;
-    (document.head || document.documentElement).appendChild(st);
+    if (st.textContent !== css) st.textContent = css;
+    const parent = document.head || document.documentElement;
+    if (st.parentElement !== parent) parent.appendChild(st);
     return st;
   }
 
@@ -136,9 +138,9 @@
     }
 
     const listMode = isListWriter(writer);
-    span.dataset.fullUid = uid;
-    span.title = uid;
-    span.classList.toggle("is-list", listMode);
+    if (span.dataset.fullUid !== uid) span.dataset.fullUid = uid;
+    if (span.title !== uid) span.title = uid;
+    if (span.classList.contains("is-list") !== listMode) span.classList.toggle("is-list", listMode);
 
     let value = span.querySelector(":scope > .dcb-uid-value");
     if (!value) {

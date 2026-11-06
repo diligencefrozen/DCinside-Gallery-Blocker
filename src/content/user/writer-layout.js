@@ -15,8 +15,10 @@
   const activeWriters = new Set();
   const pendingFit = new Set();
   const boundaries = new Map();
+  const visibleBoundaries = new WeakMap();
   let fitFrame = 0;
   let resizeObserver = null;
+  let visibilityObserver = null;
 
   function getWriter(value) {
     if (!(value instanceof Element)) return null;
@@ -148,6 +150,8 @@
     owners?.delete(writer);
     if (owners && !owners.size) {
       resizeObserver?.unobserve(state.boundary);
+      visibilityObserver?.unobserve(state.boundary);
+      visibleBoundaries.delete(state.boundary);
       boundaries.delete(state.boundary);
     }
     activeWriters.delete(writer);
@@ -161,6 +165,20 @@
     state.boundary = boundary;
     if (!boundaries.has(boundary)) {
       boundaries.set(boundary, new Set());
+      if (typeof IntersectionObserver === "function") {
+        visibilityObserver ||= new IntersectionObserver((entries) => {
+          for (const entry of entries) {
+            visibleBoundaries.set(entry.target, entry.isIntersecting);
+            boundaries.get(entry.target)?.forEach((writer) => {
+              const current = states.get(writer);
+              if (!current) return;
+              current.inView = entry.isIntersecting;
+              if (entry.isIntersecting) scheduleFit(writer);
+            });
+          }
+        }, { rootMargin: "400px" });
+        visibilityObserver.observe(boundary);
+      }
       if (typeof ResizeObserver === "function") {
         resizeObserver ||= new ResizeObserver((entries) => {
           entries.forEach(({ target, contentRect }) => {
@@ -177,6 +195,7 @@
       }
     }
     boundaries.get(boundary).add(parts.writer);
+    state.inView = visibilityObserver ? visibleBoundaries.get(boundary) === true : true;
     activeWriters.add(parts.writer);
   }
 
@@ -301,6 +320,7 @@
   function scheduleFit(value) {
     const writer = getWriter(value);
     if (!writer || !activeWriters.has(writer)) return;
+    if (states.get(writer)?.inView === false && detectContext(writer) !== "preview-comment") return;
     pendingFit.add(writer);
     if (fitFrame) return;
     fitFrame = requestAnimationFrame(() => {
@@ -449,7 +469,7 @@
         name.classList.add("dcb-writer-name-clipped");
         const fullName = name.textContent?.trim();
         if (fullName && (!name.title || (state.titleAdded?.node === name && name.title === state.titleAdded.value))) {
-          name.title = fullName;
+          setAttribute(name, "title", fullName);
           state.titleAdded = { node: name, value: fullName };
         }
       }
