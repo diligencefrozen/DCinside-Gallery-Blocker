@@ -442,7 +442,8 @@ const QUICK_BLOCK_POSITION_VALUES = new Set([
   "right-bottom",
   "left-top",
   "left-middle",
-  "left-bottom"
+  "left-bottom",
+  "hidden"
 ]);
 
 const QUICK_BLOCK_POSITION_KEY = "quickBlockButtonPosition";
@@ -959,7 +960,8 @@ function parseBackupPayload(raw) {
 
     if (Object.prototype.hasOwnProperty.call(local, QUICK_BLOCK_POSITION_KEY)) {
       local[QUICK_BLOCK_POSITION_KEY] = normalizeQuickBlockPosition(local[QUICK_BLOCK_POSITION_KEY]);
-      local[QUICK_BLOCK_POSITION_SAVED_AT_KEY] = quickBlockPositionTimestamp(local[QUICK_BLOCK_POSITION_SAVED_AT_KEY]) || Date.now();
+      local[QUICK_BLOCK_POSITION_SAVED_AT_KEY] = quickBlockPositionTimestamp(local[QUICK_BLOCK_POSITION_SAVED_AT_KEY])
+        || (QUICK_BLOCK_POSITION_KEY in sync ? 0 : Date.now());
     } else if (Object.prototype.hasOwnProperty.call(sync, QUICK_BLOCK_POSITION_KEY)) {
       local[QUICK_BLOCK_POSITION_KEY] = normalizeQuickBlockPosition(sync[QUICK_BLOCK_POSITION_KEY]);
       local[QUICK_BLOCK_POSITION_SAVED_AT_KEY] = quickBlockPositionTimestamp(sync[QUICK_BLOCK_POSITION_SAVED_AT_KEY]);
@@ -1107,7 +1109,7 @@ function importSettingsFromFile(file) {
         await commitBackupImportCaches(sync, local, blockedUids);
 
         if (local[QUICK_BLOCK_POSITION_KEY]) {
-          broadcastQuickBlockPosition(local[QUICK_BLOCK_POSITION_KEY]);
+          broadcastQuickBlockPosition(pickQuickBlockPosition(sync, local));
         }
 
         alert("백업을 불러왔습니다.");

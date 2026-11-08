@@ -18,11 +18,13 @@
     "right-bottom",
     "left-top",
     "left-middle",
-    "left-bottom"
+    "left-bottom",
+    "hidden"
   ]);
   const NATIVE_TOP_POSITIONS = new Set(["right-top", "left-top"]);
   let autoRefreshEnabledForOffset = false;
   let autoRefreshOffsetRaf = 0;
+  let placementRevision = 0;
 
   function norm(v) {
     return String(v || "").trim().toLowerCase();
@@ -155,11 +157,9 @@
       #${NATIVE_ID}{
         display:inline-flex;
         align-items:center;
-        vertical-align:middle;
         box-sizing:border-box;
         max-width:100%;
-        font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans KR",sans-serif;
-        line-height:1;
+        vertical-align:baseline;
       }
       #${NATIVE_ID}.dcb-gqb-native-right{
         margin-right:8px;
@@ -167,38 +167,29 @@
       #${NATIVE_ID}.dcb-gqb-native-left{
         margin-left:10px;
       }
-      #${NATIVE_ID} .dcb-gqb-action{
-        display:inline-flex;
-        align-items:center;
-        justify-content:center;
-        height:24px;
-        min-width:0;
-        box-sizing:border-box;
-        padding:0 10px;
-        border:1px solid #29367c;
-        border-radius:999px;
-        background:#fff;
-        color:#29367c;
-        font:700 12px/1 -apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans KR",sans-serif;
-        letter-spacing:-.01em;
+      :where(#${NATIVE_ID}, #${FLOAT_ID}) .dcb-gqb-action{
+        padding:2px 0;
+        border:0;
+        background:transparent;
+        font-size:12px;
+        font-weight:400;
         white-space:nowrap;
         cursor:pointer;
-        box-shadow:0 2px 8px rgba(15,23,42,.08);
       }
-      #${NATIVE_ID} .dcb-gqb-action:hover{
-        background:#29367c;
-        color:#fff;
+      :where(#${NATIVE_ID}, #${FLOAT_ID}) :where(.dcb-gqb-action){
+        color:inherit;
+        font-family:inherit;
       }
-      #${NATIVE_ID} .dcb-gqb-action:disabled{
-        border-color:#cbd5e1;
-        background:#f1f5f9;
-        color:#64748b;
+      :is(#${NATIVE_ID}, #${FLOAT_ID}) button:enabled:hover{
+        text-decoration:underline;
+      }
+      :is(#${NATIVE_ID}, #${FLOAT_ID}) button:focus-visible{
+        outline:1px solid currentColor;
+        outline-offset:2px;
+      }
+      :is(#${NATIVE_ID}, #${FLOAT_ID}) button:disabled{
+        opacity:.6;
         cursor:not-allowed;
-        box-shadow:none;
-      }
-      .page_head #${NATIVE_ID}{
-        position:relative;
-        top:-1px;
       }
       .page_head .fl #${NATIVE_ID}{
         float:none;
@@ -211,16 +202,13 @@
         gap:6px;
         box-sizing:border-box;
         max-width:min(320px, calc(100vw - 24px));
-        padding:7px 8px;
-        border:1px solid rgba(41,54,124,.35);
-        border-radius:999px;
-        background:rgba(255,255,255,.96);
-        color:#111827;
-        font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans KR",sans-serif;
+        padding:4px 8px;
+        border:1px solid #ddd;
+        border-radius:4px;
+        background:#fff;
+        color:#333;
         font-size:12px;
         line-height:1.25;
-        box-shadow:0 8px 24px rgba(15,23,42,.14);
-        backdrop-filter:blur(8px);
         transition:top .18s ease,right .18s ease,bottom .18s ease,left .18s ease,transform .18s ease;
       }
       #${FLOAT_ID}.dcb-gqb-pos-right-top{top:12px;right:12px;bottom:auto;left:auto;transform:none;}
@@ -232,34 +220,14 @@
       #${FLOAT_ID} .dcb-gqb-floating-id{
         overflow:hidden;
         max-width:108px;
-        padding:2px 6px;
-        border-radius:999px;
-        background:#eef2ff;
-        color:#29367c;
-        font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+        opacity:.75;
+        font-family:inherit;
         font-size:11px;
         text-overflow:ellipsis;
         white-space:nowrap;
       }
       #${FLOAT_ID} .dcb-gqb-action{
-        flex:0 0 auto;
-        height:24px;
-        padding:0 9px;
-        border:1px solid #29367c;
-        border-radius:999px;
-        background:#29367c;
-        color:#fff;
-        font:800 12px/1 -apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans KR",sans-serif;
-        cursor:pointer;
-      }
-      #${FLOAT_ID} .dcb-gqb-action:hover{
-        filter:brightness(.96);
-      }
-      #${FLOAT_ID} .dcb-gqb-action:disabled{
-        border-color:#cbd5e1;
-        background:#e2e8f0;
-        color:#64748b;
-        cursor:not-allowed;
+        color:inherit;
       }
       @media (max-width: 640px){
         #${FLOAT_ID}{
@@ -274,37 +242,22 @@
         #${FLOAT_ID}.dcb-gqb-pos-left-bottom{left:8px;bottom:8px;}
         #${FLOAT_ID} .dcb-gqb-floating-id{display:none;}
       }
-      html[data-theme="dark"] #${NATIVE_ID} .dcb-gqb-action,
-      body.dark #${NATIVE_ID} .dcb-gqb-action{
-        background:#151a22;
-        color:#e5edf7;
-        border-color:rgba(96,165,250,.55);
-      }
-      html[data-theme="dark"] #${NATIVE_ID} .dcb-gqb-action:hover,
-      body.dark #${NATIVE_ID} .dcb-gqb-action:hover{
-        background:#2563eb;
-        color:#fff;
-      }
+      html:has(#css-darkmode) #${FLOAT_ID},
       html[data-theme="dark"] #${FLOAT_ID},
       body.dark #${FLOAT_ID}{
-        background:rgba(21,26,34,.96);
-        color:#e5edf7;
-        border-color:rgba(96,165,250,.35);
-      }
-      html[data-theme="dark"] #${FLOAT_ID} .dcb-gqb-floating-id,
-      body.dark #${FLOAT_ID} .dcb-gqb-floating-id{
-        background:#1e2a44;
-        color:#bfdbfe;
+        background:#252525;
+        color:#ccc;
+        border-color:#484848;
       }
     `;
     document.documentElement.appendChild(style);
   }
 
-  function createActionButton(gid, label) {
+  function createActionButton(gid) {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "dcb-gqb-action";
-    btn.textContent = label;
+    btn.textContent = "현재 갤러리 차단";
     btn.title = `현재 갤러리를 차단합니다: ${gid}`;
     btn.addEventListener("click", () => toggleGalleryBlocked(gid));
     return btn;
@@ -350,7 +303,7 @@
     native.id = NATIVE_ID;
     native.className = position === "right-top" ? "dcb-gqb-native-right" : "dcb-gqb-native-left";
     native.dataset.position = position;
-    native.appendChild(createActionButton(gid, "🚫 현재 갤러리 차단"));
+    native.appendChild(createActionButton(gid));
 
     if (position === "right-top") {
       mount.insertBefore(native, mount.firstChild);
@@ -435,7 +388,7 @@
     idEl.title = gid;
 
     floating.appendChild(idEl);
-    floating.appendChild(createActionButton(gid, "🚫 현재 갤러리 차단"));
+    floating.appendChild(createActionButton(gid));
 
     (document.body || document.documentElement).appendChild(floating);
     applyFloatingPosition(position);
@@ -445,15 +398,32 @@
   function syncQuickBlockPlacement(gid, position) {
     const normalized = normalizeQuickBlockPosition(position);
 
+    if (normalized === "hidden") {
+      removeNativeButton();
+      removeFloatingButton();
+      return;
+    }
+
+    ensureStyle();
     if (NATIVE_TOP_POSITIONS.has(normalized)) {
       removeFloatingButton();
       const mounted = renderNativeButton(gid, normalized);
       if (!mounted) renderFloatingButton(gid, normalized);
-      return;
+    } else {
+      removeNativeButton();
+      renderFloatingButton(gid, normalized);
     }
 
-    removeNativeButton();
-    renderFloatingButton(gid, normalized);
+    refreshBlockState(gid);
+  }
+
+  function refreshBlockState(gid) {
+    globalThis.DCBRuntimeSettingsCache.get(
+      { blockedIds: [], builtinDcbestBlockEnabled: true },
+      ({ blockedIds, builtinDcbestBlockEnabled }) => {
+        setAllQuickBlockButtonsState(getGalleryBlockState(gid, blockedIds, builtinDcbestBlockEnabled));
+      }
+    );
   }
 
   function setAllQuickBlockButtonsState({ userBlocked = false, builtinBlocked = false, busy = false } = {}) {
@@ -469,7 +439,7 @@
 
       if (userBlocked) {
         btn.disabled = false;
-        btn.textContent = "✅ 차단 해제";
+        btn.textContent = "차단 해제";
         btn.title = gid ? `현재 갤러리 차단을 해제합니다: ${gid}` : "현재 갤러리 차단을 해제합니다.";
         return;
       }
@@ -482,7 +452,7 @@
       }
 
       btn.disabled = false;
-      btn.textContent = "🚫 현재 갤러리 차단";
+      btn.textContent = "현재 갤러리 차단";
       btn.title = gid ? `현재 갤러리를 차단합니다: ${gid}` : "현재 갤러리를 차단합니다.";
     });
   }
@@ -534,13 +504,9 @@
     const gid = getCurrentGalleryId();
     if (!gid) return;
 
-    ensureStyle();
-
+    const revision = ++placementRevision;
     getStoredQuickBlockPosition((position) => {
-      syncQuickBlockPlacement(gid, position);
-      globalThis.DCBRuntimeSettingsCache.get({ blockedIds: [], builtinDcbestBlockEnabled: true }, ({ blockedIds, builtinDcbestBlockEnabled }) => {
-        setAllQuickBlockButtonsState(getGalleryBlockState(gid, blockedIds, builtinDcbestBlockEnabled));
-      });
+      if (revision === placementRevision) syncQuickBlockPlacement(gid, position);
     });
   }
 
@@ -565,7 +531,8 @@
     }
 
     const position = normalizeQuickBlockPosition(message.position);
-    syncQuickBlockPlacement(gid, position);
+    // Another tab may have saved a newer position while this message was in flight.
+    render();
     sendResponse?.({ ok: true, position });
     return true;
   });
@@ -582,16 +549,11 @@
     if (!gid) return;
 
     if (changes[QUICK_BLOCK_POSITION_KEY] || changes[QUICK_BLOCK_POSITION_SAVED_AT_KEY]) {
-      getStoredQuickBlockPosition((position) => syncQuickBlockPlacement(gid, position));
+      render();
     }
 
     if (area === "sync" && (changes.blockedIds || changes.builtinDcbestBlockEnabled)) {
-      globalThis.DCBRuntimeSettingsCache.get(
-        { blockedIds: [], builtinDcbestBlockEnabled: true },
-        ({ blockedIds, builtinDcbestBlockEnabled }) => {
-          setAllQuickBlockButtonsState(getGalleryBlockState(gid, blockedIds, builtinDcbestBlockEnabled));
-        }
-      );
+      refreshBlockState(gid);
     }
   });
 })();

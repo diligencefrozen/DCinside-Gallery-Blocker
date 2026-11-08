@@ -563,7 +563,8 @@ const QUICK_BLOCK_POSITION_VALUES = new Set([
   "right-bottom",
   "left-top",
   "left-middle",
-  "left-bottom"
+  "left-bottom",
+  "hidden"
 ]);
 const QUICK_BLOCK_POSITION_KEY = "quickBlockButtonPosition";
 const QUICK_BLOCK_POSITION_SAVED_AT_KEY = "quickBlockButtonPositionSavedAt";
