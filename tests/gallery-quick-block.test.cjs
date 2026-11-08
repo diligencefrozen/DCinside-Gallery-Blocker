@@ -92,17 +92,37 @@ test('page button follows both settings UIs, themes, backup restore and browser 
         style.textContent = 'body{background:#222}.gall_issuebox button{color:#ccc}';
         document.head.append(style);
       });
-      const readStyle = el => {
+      await gallery.mouse.move(0, 0);
+      const buttonStyle = el => {
         const s = getComputedStyle(el);
-        return [s.color, s.fontFamily, s.fontSize, s.fontWeight, s.backgroundColor, s.borderTopWidth, s.boxShadow];
+        return [s.height, s.paddingLeft, s.borderRadius, s.fontWeight, s.backgroundColor, s.borderTopColor];
       };
-      assert.deepEqual(await pageButton.evaluate(readStyle), await gallery.locator('.issue_setting').evaluate(readStyle));
+      assert.deepEqual(await pageButton.evaluate(buttonStyle), [
+        '24px', '10px', '6px', '600', dark ? 'rgb(41, 45, 52)' : 'rgb(255, 255, 255)',
+        dark ? 'rgb(75, 82, 94)' : 'rgb(171, 180, 207)'
+      ]);
       await pageButton.hover();
-      assert.equal(await pageButton.evaluate(el => getComputedStyle(el).textDecorationLine), 'underline');
+      assert.equal(await pageButton.evaluate(el => getComputedStyle(el).backgroundColor),
+        dark ? 'rgb(56, 62, 72)' : 'rgb(238, 241, 250)');
       await choose(options, 'left-bottom');
       await checkPlacement(pages, 'left-bottom');
-      assert.equal(await gallery.locator(floating).evaluate(el => getComputedStyle(el).backgroundColor),
-        dark ? 'rgb(37, 37, 37)' : 'rgb(255, 255, 255)');
+      const frameStyle = await gallery.locator(floating).evaluate(el => {
+        const frame = getComputedStyle(el);
+        const badge = getComputedStyle(el.querySelector('.dcb-gqb-floating-id'));
+        return [frame.backgroundColor, frame.padding, frame.gap, frame.borderRadius,
+          frame.boxShadow, badge.padding, badge.borderRadius];
+      });
+      assert.deepEqual(frameStyle, [
+        dark ? 'rgba(38, 41, 47, 0.96)' : 'rgba(255, 255, 255, 0.96)', '7px 8px', '6px', '10px',
+        dark ? 'rgba(0, 0, 0, 0.12) 0px 3px 10px 0px' : 'rgba(15, 23, 42, 0.09) 0px 3px 10px 0px',
+        '2px 6px', '4px'
+      ]);
+      assert.deepEqual(await pageButton.evaluate(buttonStyle), [
+        '24px', '9px', '6px', '600', dark ? 'rgb(57, 65, 78)' : 'rgb(41, 54, 124)',
+        dark ? 'rgb(80, 88, 102)' : 'rgb(41, 54, 124)'
+      ]);
+      await pageButton.hover();
+      assert.equal(await pageButton.evaluate(el => getComputedStyle(el).filter), 'brightness(0.96)');
       await choose(popup, 'hidden');
       await checkPlacement(pages, 'hidden');
       await choose(popup, 'right-top');
@@ -163,7 +183,11 @@ test('page button follows both settings UIs, themes, backup restore and browser 
     await checkPlacement(pages, 'right-top');
     const builtinButton = pages.gallery.locator('.dcb-gqb-action:disabled').filter({ hasText: '실시간베스트 차단됨' });
     await builtinButton.waitFor({ state: 'attached' });
-    assert.equal(await builtinButton.evaluate(el => getComputedStyle(el).opacity), '0.6');
+    for (const dark of [false, true]) {
+      if (dark) await pages.gallery.evaluate(() => { document.documentElement.dataset.theme = 'dark'; });
+      assert.equal(await builtinButton.evaluate(el => getComputedStyle(el).backgroundColor),
+        dark ? 'rgb(43, 46, 51)' : 'rgb(241, 245, 249)');
+    }
   } finally {
     await pages?.context.close();
     await fs.rm(profile, { recursive: true, force: true, maxRetries: 4 });

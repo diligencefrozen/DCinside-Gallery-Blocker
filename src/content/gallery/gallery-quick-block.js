@@ -157,9 +157,11 @@
       #${NATIVE_ID}{
         display:inline-flex;
         align-items:center;
+        vertical-align:middle;
         box-sizing:border-box;
         max-width:100%;
-        vertical-align:baseline;
+        font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans KR",sans-serif;
+        line-height:1;
       }
       #${NATIVE_ID}.dcb-gqb-native-right{
         margin-right:8px;
@@ -167,29 +169,37 @@
       #${NATIVE_ID}.dcb-gqb-native-left{
         margin-left:10px;
       }
-      :where(#${NATIVE_ID}, #${FLOAT_ID}) .dcb-gqb-action{
-        padding:2px 0;
-        border:0;
-        background:transparent;
-        font-size:12px;
-        font-weight:400;
+      #${NATIVE_ID} .dcb-gqb-action{
+        display:inline-flex;
+        align-items:center;
+        justify-content:center;
+        height:24px;
+        min-width:0;
+        box-sizing:border-box;
+        padding:0 10px;
+        border:1px solid #abb4cf;
+        border-radius:6px;
+        background:#fff;
+        color:#29367c;
+        font:600 12px/1 -apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans KR",sans-serif;
         white-space:nowrap;
         cursor:pointer;
+        box-shadow:0 1px 2px rgba(15,23,42,.07);
       }
-      :where(#${NATIVE_ID}, #${FLOAT_ID}) :where(.dcb-gqb-action){
-        color:inherit;
-        font-family:inherit;
+      #${NATIVE_ID} .dcb-gqb-action:enabled:hover{
+        background:#eef1fa;
+        border-color:#8692b8;
       }
-      :is(#${NATIVE_ID}, #${FLOAT_ID}) button:enabled:hover{
-        text-decoration:underline;
-      }
-      :is(#${NATIVE_ID}, #${FLOAT_ID}) button:focus-visible{
-        outline:1px solid currentColor;
-        outline-offset:2px;
-      }
-      :is(#${NATIVE_ID}, #${FLOAT_ID}) button:disabled{
-        opacity:.6;
+      #${NATIVE_ID} .dcb-gqb-action:disabled{
+        border-color:#cbd5e1;
+        background:#f1f5f9;
+        color:#64748b;
         cursor:not-allowed;
+        box-shadow:none;
+      }
+      .page_head #${NATIVE_ID}{
+        position:relative;
+        top:-1px;
       }
       .page_head .fl #${NATIVE_ID}{
         float:none;
@@ -202,13 +212,16 @@
         gap:6px;
         box-sizing:border-box;
         max-width:min(320px, calc(100vw - 24px));
-        padding:4px 8px;
-        border:1px solid #ddd;
-        border-radius:4px;
-        background:#fff;
-        color:#333;
+        padding:7px 8px;
+        border:1px solid rgba(41,54,124,.23);
+        border-radius:10px;
+        background:rgba(255,255,255,.96);
+        color:#111827;
+        font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans KR",sans-serif;
         font-size:12px;
         line-height:1.25;
+        box-shadow:0 3px 10px rgba(15,23,42,.09);
+        backdrop-filter:blur(8px);
         transition:top .18s ease,right .18s ease,bottom .18s ease,left .18s ease,transform .18s ease;
       }
       #${FLOAT_ID}.dcb-gqb-pos-right-top{top:12px;right:12px;bottom:auto;left:auto;transform:none;}
@@ -220,14 +233,34 @@
       #${FLOAT_ID} .dcb-gqb-floating-id{
         overflow:hidden;
         max-width:108px;
-        opacity:.75;
-        font-family:inherit;
+        padding:2px 6px;
+        border-radius:4px;
+        background:#eef2ff;
+        color:#29367c;
+        font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
         font-size:11px;
         text-overflow:ellipsis;
         white-space:nowrap;
       }
       #${FLOAT_ID} .dcb-gqb-action{
-        color:inherit;
+        flex:0 0 auto;
+        height:24px;
+        padding:0 9px;
+        border:1px solid #29367c;
+        border-radius:6px;
+        background:#29367c;
+        color:#fff;
+        font:600 12px/1 -apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans KR",sans-serif;
+        cursor:pointer;
+      }
+      #${FLOAT_ID} .dcb-gqb-action:enabled:hover{
+        filter:brightness(.96);
+      }
+      #${FLOAT_ID} .dcb-gqb-action:disabled{
+        border-color:#cbd5e1;
+        background:#e2e8f0;
+        color:#64748b;
+        cursor:not-allowed;
       }
       @media (max-width: 640px){
         #${FLOAT_ID}{
@@ -242,12 +275,40 @@
         #${FLOAT_ID}.dcb-gqb-pos-left-bottom{left:8px;bottom:8px;}
         #${FLOAT_ID} .dcb-gqb-floating-id{display:none;}
       }
-      html:has(#css-darkmode) #${FLOAT_ID},
-      html[data-theme="dark"] #${FLOAT_ID},
-      body.dark #${FLOAT_ID}{
-        background:#252525;
-        color:#ccc;
-        border-color:#484848;
+      :is(#${NATIVE_ID}, #${FLOAT_ID}) button:focus-visible{
+        outline:1px solid currentColor;
+        outline-offset:2px;
+      }
+      :is(html:has(#css-darkmode), html[data-theme="dark"], body.dark) #${NATIVE_ID} .dcb-gqb-action{
+        background:#292d34;
+        color:#c8ced8;
+        border-color:#4b525e;
+        box-shadow:0 1px 3px rgba(0,0,0,.12);
+      }
+      :is(html:has(#css-darkmode), html[data-theme="dark"], body.dark) #${NATIVE_ID} .dcb-gqb-action:enabled:hover{
+        background:#383e48;
+        color:#e0e4ea;
+      }
+      :is(html:has(#css-darkmode), html[data-theme="dark"], body.dark) #${FLOAT_ID}{
+        background:rgba(38,41,47,.96);
+        color:#c8ced8;
+        border-color:#444a54;
+        box-shadow:0 3px 10px rgba(0,0,0,.12);
+      }
+      :is(html:has(#css-darkmode), html[data-theme="dark"], body.dark) #${FLOAT_ID} .dcb-gqb-floating-id{
+        background:#323741;
+        color:#b9c2d0;
+      }
+      :is(html:has(#css-darkmode), html[data-theme="dark"], body.dark) #${FLOAT_ID} .dcb-gqb-action{
+        background:#39414e;
+        color:#d4dbe4;
+        border-color:#505866;
+      }
+      :is(html:has(#css-darkmode), html[data-theme="dark"], body.dark) :is(#${NATIVE_ID}, #${FLOAT_ID}) .dcb-gqb-action:disabled{
+        background:#2b2e33;
+        color:#969ca6;
+        border-color:#3e434b;
+        box-shadow:none;
       }
     `;
     document.documentElement.appendChild(style);

@@ -7,7 +7,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const source = fs.readFileSync(path.join(__dirname, '../src/content/core/content_script.js'), 'utf8');
 const previewSource = source.slice(source.indexOf('(function dcBlockPostPreview(){')).replace(/\}\)\(\);\s*$/, `
   window.previewTest = { renderPreview, normalizeDcMedia, stripUnsafe, dcMoviePlayerUrl, dcMovieMediaUrl,
-    loadPreviewMovie, dcPollFrameUrl, normalizePreviewPollFrame, loadPreviewPoll, renderLoading, closePreview, openPreview,
+    loadPreviewMovie, dcPollFrameUrl, normalizePreviewPollFrame, loadPreviewPoll, renderLoading, renderError, closePreview, openPreview,
     previewUrlFromTarget, isWeakPreviewData, mergePreviewData, buildCommentsHTML, commentRecordsToHtml, summarizeHiddenComments };
 })();`);
 const articleUrl = 'https://gall.dcinside.com/board/view/?id=fixture&no=10';
@@ -34,7 +34,7 @@ let browser;
     } };
   });
   await page.addScriptTag({ content: previewSource });
-  await page.addStyleTag({ content: '.usertxt { width:1500px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; } .comment_wrap p { height:20px; }' });
+  await page.addStyleTag({ content: '.usertxt { width:1500px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; } .comment_wrap { color:#333 } .comment_wrap p { height:20px; }' });
   const previewContextTargets = await page.evaluate(() => {
     const row = document.createElement('table');
     row.innerHTML = `<tbody><tr class="ub-content">
@@ -168,6 +168,36 @@ let browser;
     });
     assert.deepEqual(layout, { overflow: false, commentsOverflow: false, footerVisible: true, wrapped: true, withinViewport: true }, `${width}px layout`);
   }
+
+  const previewColor = (selector, property = 'backgroundColor') =>
+    page.locator('#dcb-preview-overlay ' + selector).first().evaluate((el, prop) => getComputedStyle(el)[prop], property);
+  await page.emulateMedia({ colorScheme: 'dark' });
+  assert.equal(await previewColor('.dcbpv-panel'), 'rgb(251, 252, 254)', 'a light gallery wins over the OS theme');
+  await page.emulateMedia({ colorScheme: 'light' });
+  const marker = await page.addStyleTag({ content: 'body { background: #222; color: #ccc }' });
+  await marker.evaluate(el => { el.id = 'css-darkmode'; });
+  for (const region of ['.dcbpv-panel', '.dcbpv-header', '.dcbpv-scroll', '.dcbpv-actions']) {
+    assert.equal(await previewColor(region), 'rgb(32, 35, 40)', region + ' follows the open gallery');
+  }
+  assert.equal(await previewColor('.dcbpv-article p', 'color'), 'rgb(229, 232, 237)');
+  assert.equal(await previewColor('.dcbpv-comment-body p', 'color'), 'rgb(229, 232, 237)');
+  await page.waitForFunction(() =>
+    getComputedStyle(document.querySelector('[data-act=vote-up]')).backgroundColor === 'rgb(40, 54, 77)');
+  await page.locator('[data-act=share]').click();
+  assert.equal(await previewColor('.dcbpv-copy input'), 'rgb(41, 45, 52)');
+  await marker.evaluate(el => el.remove());
+  assert.equal(await previewColor('.dcbpv-share-popup'), 'rgb(255, 255, 255)', 'an open share dialog returns to light');
+  await page.evaluate(() => {
+    document.documentElement.dataset.theme = 'dark';
+    window.previewTest.renderLoading();
+  });
+  assert.equal(await previewColor('.dcbpv-loading-panel'), 'rgb(32, 35, 40)');
+  await page.evaluate(url => window.previewTest.renderError('연결 오류', url), articleUrl);
+  assert.equal(await previewColor('.dcbpv-panel'), 'rgb(32, 35, 40)');
+  await page.evaluate(() => { delete document.documentElement.dataset.theme; });
+  await page.evaluate(() => document.body.classList.add('dark'));
+  assert.equal(await previewColor('.dcbpv-panel'), 'rgb(32, 35, 40)', 'the overlay also follows a body theme marker');
+  await page.evaluate(() => document.body.classList.remove('dark'));
 
   const normalized = await page.evaluate((base) => {
     const root = document.createElement('div');
@@ -422,6 +452,7 @@ let browser;
   await page.keyboard.press('Tab');
   assert.equal(await page.evaluate(() => document.querySelector('#dcb-preview-overlay').contains(document.activeElement)), true);
   if (process.env.PREVIEW_SCREENSHOT_DIR) {
+    await page.addStyleTag({content: 'body.dark{background:#222;color:#ccc}'});
     fs.mkdirSync(process.env.PREVIEW_SCREENSHOT_DIR, { recursive: true });
     const screenshotData = { ...data, title: '미리보기에서 긴 댓글도 편하게 읽기', articleHTML: '<p>본문, 댓글, 동영상을 한 곳에서 확인할 수 있습니다.</p>', commentsHTML: `<div class="dcbpv-comment-list">${[false, true].map((reply) => `<div class="dcbpv-comment-item${reply ? ' reply' : ''}"><div class="dcbpv-comment-meta"><strong>${reply ? '글쓴이' : 'ㅇㅇ'}</strong><span>09.11 15:15:03</span></div><div class="dcbpv-comment-body"><p class="usertxt">${'긴 댓글도 화면 너비에 맞춰 자연스럽게 줄바꿈됩니다. 원문 보기와 공유 버튼은 스크롤 위치에 관계없이 사용할 수 있습니다. '.repeat(4)}</p></div></div>`).join('')}</div>` };
     for (const width of [1100, 360]) {
@@ -429,6 +460,9 @@ let browser;
       await page.evaluate((fixture) => window.previewTest.renderPreview(fixture), screenshotData);
       await page.waitForTimeout(220);
       await page.screenshot({ path: path.join(process.env.PREVIEW_SCREENSHOT_DIR, `preview-${width}.png`) });
+      await page.evaluate(() => { document.body.classList.add('dark'); });
+      await page.screenshot({ path: path.join(process.env.PREVIEW_SCREENSHOT_DIR, `preview-dark-${width}.png`), animations: 'disabled' });
+      await page.evaluate(() => { document.body.classList.remove('dark'); });
     }
   }
   assert.deepEqual(errors, [], 'no uncaught page errors');

@@ -602,12 +602,22 @@ function nativeDocument(url, member = true, captcha = false, own = false, turnst
       else{await editor().locator('.dcbpv-picker-panel').waitFor({state:'visible'});await editor().locator('#dcbpv-picker-header button').click();}
       assert.equal(await editor().locator('body').evaluate(()=>window.fixtureListRequests),1);assert.equal(writes.length,0);await close();checks++;
     }
+    // Media emulation forces the same preference in every frame. Let the editor
+    // iframe receive its real preferred scheme from the embedding preview.
+    await page.emulateMedia({colorScheme:null});
     for(const width of [360,540,1100])for(const kind of ['dccon','txtcon']){
-      await page.setViewportSize({width,height:width===360?640:820});await page.emulateMedia({colorScheme:width===540?'dark':'light'});
+      await page.setViewportSize({width,height:width===360?640:820});
+      await page.evaluate(dark => document.body.classList.toggle('dark', dark), width === 540);
       reset();await render(article('',String(600+checks)));await open();
       if(kind==='txtcon')await page.locator('[data-act=compose-reply][data-target="101"]').click();
       const originalFrame=page.frames().find(f=>f.url().includes('no='+String(600+checks)));
       await editor().locator('textarea[id^=memo_]').fill('첨부 전 초안');
+      await page.evaluate(dark => document.body.classList.toggle('dark', dark), width !== 540);
+      await originalFrame.waitForFunction(dark => {
+        const field = document.querySelector('textarea[id^=memo_]');
+        return getComputedStyle(field).backgroundColor === (dark ? 'rgb(30, 41, 59)' : 'rgb(255, 255, 255)');
+      }, width !== 540);
+      assert.equal(await editor().locator('textarea[id^=memo_]').inputValue(), '첨부 전 초안');
       await editor().locator('body').evaluate(body=>{
         // Relevant fixed-size rules from the official popup.css (261023).
         const style=document.createElement('style');style.textContent='.pop_content.dcconlayer{width:638px}.dccon_tab_btnbox{overflow:hidden;height:50px}.tab_btnlist{width:432px;padding:0 50px}.tab_btnlist li{float:left;width:70px;height:50px}.dccon_btn{width:69px;height:50px}.btn_dccon_next,.btn_dccon_prev{position:absolute;top:0;width:50px;height:50px}.txtcon_box{width:600px;height:132px}.latest_section_box{overflow:hidden;width:346px}.txt_dccon_box{padding:17px 19px 23px}';body.append(style);
@@ -646,6 +656,7 @@ function nativeDocument(url, member = true, captcha = false, own = false, turnst
       assert.equal(await page.locator('.dcbpv-composer').count(),1,'Escape closes only the picker');assert.equal(writes.length,0);
       await close();checks++;
     }
+    await page.evaluate(() => document.body.classList.remove('dark'));
     await page.emulateMedia({colorScheme:'light'});
     for(const count of [20,50]){
       await page.setViewportSize({width:count===20?360:1100,height:850});
