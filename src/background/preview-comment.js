@@ -416,7 +416,7 @@ async function previewCommentInPage(request) {
       if (event.key === 'Enter') event.stopPropagation();
       if (event.key === 'Escape' && !event.isComposing) { event.preventDefault(); notify('escape'); }
     });
-    let lastHeight = 0, resizing = false, resizeFrame = 0, authWatch = 0, disposed = false, lastMetadata = '', metadataDirty = true, authDiscoveryDirty = true;
+    let lastHeight = 0, resizing = false, resizeFrame = 0, authWatch = 0, disposed = false, lastMetadata = '', metadataDirty = false, authDiscoveryDirty = true;
     const expose = node => {
       if (!node.classList.contains('dcbpv-native-auth')) node.classList.add('dcbpv-native-auth');
       // comment.js v261029 places Turnstile beside the submit button. The
@@ -682,7 +682,9 @@ async function previewCommentInPage(request) {
         if(message)notify('auth',{message});
       },500);
     }
-    return {...session.metadata(),authMessage:prepareAuthError};
+    const initialMetadata=session.metadata();
+    lastMetadata=JSON.stringify(initialMetadata);
+    return {...initialMetadata,authMessage:prepareAuthError};
   }
 
   const deleting = request.operation === 'delete-submit';

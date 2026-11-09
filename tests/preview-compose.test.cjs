@@ -91,6 +91,10 @@ function nativeDocument(url, member = true, captcha = false, own = false, turnst
     let slowArticleImage=false;
     await page.route('**/*', async route => {
       const url = new URL(route.request().url());
+      if(url.pathname==='/deferred-editor.js'){
+        await new Promise(resolve=>setTimeout(resolve,120));
+        return route.fulfill({contentType:'application/javascript',body:"window.fixtureDeferredBeforePrepare = !document.getElementById('dcbpv-native-editor');"});
+      }
       if(url.pathname==='/slow-article-image'){await new Promise(r=>setTimeout(r,4000));return route.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>'}).catch(()=>{});}
       if(url.pathname==='/dccon/lists'){listReads++;if(listDelay)await new Promise(resolve=>setTimeout(resolve,listDelay));return route.fulfill({status:/^\d+$/.test(listMode)?Number(listMode):200,body:listMode}).catch(()=>{});}
       if(url.hostname==='dcimg5.dcinside.com')return route.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96"><rect width="96" height="96" rx="20" fill="#dce8ff"/><circle cx="48" cy="48" r="30" fill="#ffdf86"/><path d="M36 54Q48 68 60 54" fill="none" stroke="#39496c" stroke-width="4"/><circle cx="37" cy="40" r="3"/><circle cx="59" cy="40" r="3"/></svg>'});
@@ -146,7 +150,7 @@ function nativeDocument(url, member = true, captcha = false, own = false, turnst
         const stale=writes.length>0&&((responseMode==='lagged-receipt'&&reads===2)||(responseMode==='manual-receipt'&&reads<=4));
         return route.fulfill({json:{comments:stale?records.filter(row=>row.no!=='103'):records,total_cnt:records.length}});
       }
-      return route.fulfill({contentType:'text/html',body:url.pathname.endsWith('/view/') ? nativeDocument(url.href,member,captcha,own,turnstile).replace('</body>',(slowArticleImage?'<img src="/slow-article-image">':'')+'</body>') : '<!doctype html><html><head></head><body><button id="origin">origin</button></body></html>'});
+      return route.fulfill({contentType:'text/html',body:url.pathname.endsWith('/view/') ? nativeDocument(url.href,member,captcha,own,turnstile).replace('</body>',(slowArticleImage?'<script defer src="/deferred-editor.js"></script><img src="/slow-article-image">':'')+'</body>') : '<!doctype html><html><head></head><body><button id="origin">origin</button></body></html>'});
     });
     await page.goto('https://gall.dcinside.com/board/lists/?id=fixture');
     await page.evaluate(()=>{
@@ -233,8 +237,19 @@ function nativeDocument(url, member = true, captcha = false, own = false, turnst
     assert.equal(await editor().locator('.dcbpv-textcon').textContent(),'준비 후 첨부');
     assert.equal(writes.length,0);await close();checks++;
 
-    reset();slowArticleImage=true;await render();await open();
+    reset();slowArticleImage=true;await render();
+    const replyBeforePrepare=await page.locator('[data-act=compose-reply][data-target="101"]').elementHandle();
+    await open();
     assert.equal(await editor().locator('body').evaluate(()=>document.readyState),'interactive','input is usable before unrelated article images finish');
+    assert.equal(await editor().locator('body').evaluate(()=>window.fixtureDeferredBeforePrepare),true,'deferred native handlers run before preparation');
+    await editor().locator('.cmt_info[data-no="101"]').evaluate(row=>{
+      row.insertAdjacentHTML('beforeend','<div class="cmt_mdf_del" data-my="Y" re_no="101"><button class="btn_cmt_delete">삭제</button></div>');
+    });
+    await page.locator('[data-act=compose-delete][data-target="101"]').waitFor();
+    await editor().locator('.cmt_mdf_del[re_no="101"]').evaluate(el=>el.remove());
+    await page.locator('[data-act=compose-delete][data-target="101"]').waitFor({state:'detached'});
+    assert.equal(await replyBeforePrepare.evaluate(el=>el.isConnected),true,'preparing the editor and refreshing ownership keep the reply button');
+    await replyBeforePrepare.dispose();
     await editor().locator('textarea[id^=memo_]').fill('early draft');
     await editor().locator('.tx_dccon').click();await editor().locator('#div_con.dcbpv-picker-panel').waitFor({state:'visible'});
     assert.equal(writes.length,0);await close();slowArticleImage=false;checks++;
