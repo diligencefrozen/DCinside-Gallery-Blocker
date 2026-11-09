@@ -146,7 +146,7 @@
     const buttons = [];
 
     if (settings.userBlockedSet.has(id)) {
-      buttons.push('<button type="button" class="dcb-access-btn" data-act="unblock">차단 해제</button>');
+      buttons.push('<button type="button" class="dcb-access-btn" data-act="unblock">내 목록에서 차단 해제</button>');
     }
 
     if (isBuiltinDcbestBlocked(id)) {
@@ -247,299 +247,160 @@
     const st = document.createElement("style");
     st.id = STYLE_ID;
     st.textContent = `
-      html.${BLOCKED_CLASS},
-      html.${BLOCKED_CLASS} body {
-        overflow: hidden !important;
-      }
+      html.${BLOCKED_CLASS}, html.${BLOCKED_CLASS} body { overflow: hidden !important; }
 
       #${OVERLAY_ID} {
-        position: fixed !important;
-        inset: 0 !important;
-        z-index: 2147483647 !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        padding: 24px !important;
-        box-sizing: border-box !important;
-        background:
-          radial-gradient(circle at top, rgba(59,130,246,.18), transparent 34%),
-          rgba(15,23,42,.96) !important;
-        color: #f8fafc !important;
-        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+        --guard-surface: #fff;
+        --guard-text: #202124;
+        --guard-muted: #535963;
+        --guard-line: #dce1e8;
+        --guard-accent: #0b57d0;
+        --guard-on-accent: #fff;
+        --guard-accent-hover: #0849b4;
+        --guard-tonal: #e9f0ff;
+        color-scheme: light;
+        position: fixed;
+        inset: 0;
+        width: min(440px, calc(100% - 32px));
+        max-width: none;
+        max-height: calc(100dvh - 32px);
+        box-sizing: border-box;
+        overflow: auto;
+        overscroll-behavior: contain;
+        margin: auto;
+        padding: 28px;
+        border: 1px solid var(--guard-line);
+        border-radius: 24px;
+        background: var(--guard-surface);
+        color: var(--guard-text);
+        box-shadow: 0 8px 32px rgba(31, 41, 55, .12), 0 1px 4px rgba(31, 41, 55, .06);
+        font: 14px/1.6 Roboto, "Segoe UI", "Malgun Gothic", sans-serif;
+        text-align: start;
       }
-
-      #${OVERLAY_ID} .dcb-access-card {
-        width: min(460px, calc(100vw - 32px)) !important;
-        padding: 28px !important;
-        border: 1px solid rgba(148,163,184,.28) !important;
-        border-radius: 22px !important;
-        background: rgba(15,23,42,.88) !important;
-        box-shadow: 0 28px 80px rgba(0,0,0,.4) !important;
-        text-align: center !important;
-        box-sizing: border-box !important;
+      #${OVERLAY_ID}::backdrop { background: #edf0f5; }
+      html:is(:has(#css-darkmode), [data-theme="dark"], :has(> body.dark)) #${OVERLAY_ID} {
+        --guard-surface: #25282d;
+        --guard-text: #e8eaed;
+        --guard-muted: #bdc1c6;
+        --guard-line: #454950;
+        --guard-accent: #a8c7fa;
+        --guard-on-accent: #062e6f;
+        --guard-accent-hover: #c2d8fc;
+        --guard-tonal: #303e54;
+        color-scheme: dark;
       }
-
+      html:is(:has(#css-darkmode), [data-theme="dark"], :has(> body.dark)) #${OVERLAY_ID}::backdrop { background: #191b1f; }
+      #${OVERLAY_ID} .dcb-access-context { display: flex; align-items: center; gap: 12px; }
       #${OVERLAY_ID} .dcb-access-icon {
-        width: 44px !important;
-        height: 44px !important;
-        margin: 0 auto 14px !important;
-        border-radius: 999px !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        background: rgba(239,68,68,.14) !important;
-        border: 1px solid rgba(248,113,113,.35) !important;
-        color: #fecaca !important;
-        font-size: 22px !important;
-        font-weight: 800 !important;
+        width: 44px; height: 44px; flex: none; border-radius: 14px;
+        display: grid; place-items: center; background: var(--guard-tonal); color: var(--guard-accent);
       }
-
-      #${OVERLAY_ID} .dcb-access-title {
-        margin: 0 0 8px !important;
-        font-size: 20px !important;
-        font-weight: 800 !important;
-        letter-spacing: -0.02em !important;
-        line-height: 1.3 !important;
+      #${OVERLAY_ID} .dcb-access-icon::before, #${OVERLAY_ID} .dcb-access-icon::after {
+        content: ""; grid-area: 1 / 1; box-sizing: border-box; border: 2px solid currentColor;
       }
-
-      #${OVERLAY_ID} .dcb-access-desc {
-        margin: 0 0 18px !important;
-        color: #cbd5e1 !important;
-        font-size: 14px !important;
-        line-height: 1.6 !important;
-      }
-
-      #${OVERLAY_ID} .dcb-access-id {
-        display: inline-flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        max-width: 100% !important;
-        margin-bottom: 18px !important;
-        padding: 5px 10px !important;
-        border-radius: 999px !important;
-        background: rgba(148,163,184,.12) !important;
-        border: 1px solid rgba(148,163,184,.2) !important;
-        color: #e2e8f0 !important;
-        font-size: 12px !important;
-        white-space: nowrap !important;
-        overflow: hidden !important;
-        text-overflow: ellipsis !important;
-      }
-
-      #${OVERLAY_ID} .dcb-access-actions {
-        display: flex !important;
-        justify-content: center !important;
-        gap: 8px !important;
-        flex-wrap: wrap !important;
-      }
-
+      #${OVERLAY_ID} .dcb-access-icon::before { width: 12px; height: 11px; border-radius: 7px 7px 0 0; transform: translateY(-5px); }
+      #${OVERLAY_ID} .dcb-access-icon::after { width: 20px; height: 14px; border-radius: 4px; background: var(--guard-tonal); transform: translateY(4px); }
+      #${OVERLAY_ID} .dcb-access-id { min-width: 0; font-size: 12px; color: var(--guard-muted); }
+      #${OVERLAY_ID} .dcb-access-id bdi { display: block; font: 600 14px/1.4 ui-monospace, Consolas, monospace; color: var(--guard-text); overflow-wrap: anywhere; }
+      #${OVERLAY_ID} h1 { margin: 22px 0 8px; font-family: inherit; font-size: 24px; font-weight: 600; line-height: 1.4; letter-spacing: -.03em; color: var(--guard-text); }
+      #${OVERLAY_ID} p { margin: 0; font: inherit; color: var(--guard-muted); word-break: keep-all; overflow-wrap: anywhere; }
+      #${OVERLAY_ID} .dcb-access-actions, #${OVERLAY_ID} .dcb-access-manage { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+      #${OVERLAY_ID} .dcb-access-actions { justify-content: flex-end; margin-top: 26px; }
+      #${OVERLAY_ID} .dcb-access-manage { margin-top: 18px; padding-top: 10px; border-top: 1px solid var(--guard-line); }
       #${OVERLAY_ID} .dcb-access-btn {
-        appearance: none !important;
-        border: 1px solid rgba(148,163,184,.26) !important;
-        border-radius: 12px !important;
-        padding: 9px 13px !important;
-        background: rgba(255,255,255,.06) !important;
-        color: #f8fafc !important;
-        font-size: 13px !important;
-        font-weight: 700 !important;
-        cursor: pointer !important;
+        appearance: none; min-height: 40px; padding: 0 16px; border: 1px solid var(--guard-line); border-radius: 20px;
+        font: inherit; font-weight: 600; background: transparent; color: var(--guard-accent); cursor: pointer;
       }
-
-      #${OVERLAY_ID} .dcb-access-btn.primary {
-        background: #3b82f6 !important;
-        border-color: #3b82f6 !important;
-        color: #fff !important;
+      #${OVERLAY_ID} .dcb-access-btn:hover { background: var(--guard-tonal); }
+      #${OVERLAY_ID} .dcb-access-btn.primary { background: var(--guard-accent); border-color: transparent; color: var(--guard-on-accent); }
+      #${OVERLAY_ID} .dcb-access-btn.primary:hover { background: var(--guard-accent-hover); }
+      #${OVERLAY_ID} .dcb-access-manage button { min-height: 36px; padding: 0 8px; border-color: transparent; font-size: 13px; color: var(--guard-muted); }
+      #${OVERLAY_ID} button:focus-visible { outline: 2px solid var(--guard-accent); outline-offset: 2px; }
+      @media (max-width: 400px) {
+        #${OVERLAY_ID} { padding: 22px; border-radius: 20px; }
+        #${OVERLAY_ID} .dcb-access-actions button { flex: 1 1 auto; }
       }
     `;
 
     (document.head || document.documentElement).appendChild(st);
   }
 
-  function mountOverlay(ov) {
-    const mount = () => {
-      if (document.body) {
-        document.body.appendChild(ov);
-      } else {
-        document.documentElement.appendChild(ov);
-      }
-    };
-
-    mount();
-  }
-
-  function getOrCreateOverlay() {
+  function showAccessDialog(gid, mode, seconds = 0) {
     ensureStyle();
     cleanupLegacyInlineStyles();
-
     document.documentElement.classList.add(BLOCKED_CLASS);
 
-    let ov = document.getElementById(OVERLAY_ID);
-    if (!ov) {
-      ov = document.createElement("div");
-      ov.id = OVERLAY_ID;
-      mountOverlay(ov);
+    let dialog = document.getElementById(OVERLAY_ID);
+    if (!dialog) {
+      dialog = document.createElement("dialog");
+      dialog.id = OVERLAY_ID;
+      dialog.dataset.dcbOwned = "access-guard";
+      dialog.setAttribute("aria-labelledby", "dcb-access-title");
+      dialog.setAttribute("aria-describedby", "dcb-access-id dcb-access-desc");
+      dialog.addEventListener("cancel", (event) => event.preventDefault());
+      (document.body || document.documentElement).appendChild(dialog);
     }
 
-    return ov;
-  }
+    const previousAction = dialog.contains(document.activeElement) && document.activeElement.dataset.act;
+    const builtin = isBuiltinDcbestBlocked(gid);
+    let reason = "내 차단 목록에 등록되어 있습니다.";
+    if (builtin) {
+      reason = settings.userBlockedSet.has(norm(gid))
+        ? "내 차단 목록과 실시간베스트 차단 설정이 모두 적용됐습니다."
+        : "실시간베스트 차단 설정이 켜져 있습니다.";
+    }
 
-  function showBlockedOverlay(gid) {
-    const ov = getOrCreateOverlay();
+    let nextStep = "";
+    if (mode === "smart") nextStep = "<br>‘이번만 보기’는 이 탭에만 적용됩니다.";
+    if (mode === "redirect") nextStep = `<br><span role="timer"><span data-seconds>${seconds}</span>초 후 디시 메인으로 이동합니다.</span>`;
 
-    ov.innerHTML = `
-      <div class="dcb-access-card" role="dialog" aria-modal="true" aria-labelledby="dcb-access-title">
-        <div class="dcb-access-icon">!</div>
-        <h1 id="dcb-access-title" class="dcb-access-title">차단된 갤러리입니다</h1>
-        <p class="dcb-access-desc">
-          하드 모드가 적용되어 이 갤러리 접근이 차단되었습니다.
-          검색, 외부 링크, 주소창 입력, 북마크로 접근해도 차단됩니다.
-        </p>
-        <div class="dcb-access-id" title="${escapeHtml(gid)}">ID: ${escapeHtml(gid)}</div>
-        <div class="dcb-access-actions">
-          <button type="button" class="dcb-access-btn primary" data-act="home">디시 메인으로 이동</button>
-          ${getUnblockButtonHtml(gid)}
-        </div>
+    dialog.innerHTML = `
+      <div class="dcb-access-context">
+        <span class="dcb-access-icon" aria-hidden="true"></span>
+        <div id="dcb-access-id" class="dcb-access-id">갤러리 ID<bdi>${escapeHtml(gid)}</bdi></div>
       </div>
+      <h1 id="dcb-access-title">차단된 갤러리입니다</h1>
+      <p id="dcb-access-desc">${reason}${nextStep}</p>
+      <div class="dcb-access-actions">
+        ${mode === "smart" ? '<button type="button" class="dcb-access-btn" data-act="allow-once">이번만 보기</button>' : ""}
+        <button type="button" class="dcb-access-btn primary" data-act="home" autofocus>${mode === "redirect" ? "지금 메인으로 이동" : "디시 메인으로 이동"}</button>
+      </div>
+      <div class="dcb-access-manage">${getUnblockButtonHtml(gid)}</div>
     `;
 
-    ov.onclick = (e) => {
-      const btn = e.target.closest("[data-act]");
-      if (!btn) return;
-
-      const act = btn.getAttribute("data-act");
-
-      if (act === "home") {
-        goSafePage();
-        return;
-      }
-
-      if (act === "unblock") {
-        unblockGallery(gid);
-        return;
-      }
-
-      if (act === "disable-dcbest") {
-        disableBuiltinDcbestBlock();
+    dialog.onclick = (event) => {
+      const action = event.target.closest("button[data-act]")?.dataset.act;
+      if (action === "home") goSafePage();
+      if (action === "unblock") unblockGallery(gid);
+      if (action === "disable-dcbest") disableBuiltinDcbestBlock();
+      if (action === "allow-once") {
+        addTempAllow(gid);
+        clearBlockedOverlay();
+        window.dispatchEvent(new CustomEvent("dcb-access-allow-once", { detail: { gid } }));
       }
     };
+
+    if (!dialog.open) dialog.showModal();
+    else {
+      const target = Array.from(dialog.querySelectorAll("button")).find((btn) => btn.dataset.act === previousAction);
+      (target || dialog.querySelector("[data-act=home]")).focus({ preventScroll: true });
+    }
+    return dialog;
   }
 
   function showRedirectOverlay(gid, seconds) {
-    const ov = getOrCreateOverlay();
-    const safeGid = escapeHtml(gid);
-
-    const render = (left) => {
-      ov.innerHTML = `
-        <div class="dcb-access-card" role="dialog" aria-modal="true" aria-labelledby="dcb-access-title">
-          <div class="dcb-access-icon">!</div>
-          <h1 id="dcb-access-title" class="dcb-access-title">차단된 갤러리입니다</h1>
-          <p class="dcb-access-desc">
-            초보 모드가 적용되어 ${Math.max(0, left)}초 후 디시 메인으로 이동합니다.
-          </p>
-          <div class="dcb-access-id" title="${safeGid}">ID: ${safeGid}</div>
-          <div class="dcb-access-actions">
-            <button type="button" class="dcb-access-btn primary" data-act="home">지금 이동</button>
-            ${getUnblockButtonHtml(gid)}
-          </div>
-        </div>
-      `;
-    };
-
     let left = Math.max(1, Math.ceil(Number(seconds) || 1));
-    render(left);
-
-    ov.onclick = (e) => {
-      const btn = e.target.closest("[data-act]");
-      if (!btn) return;
-
-      const act = btn.getAttribute("data-act");
-
-      if (act === "home") {
-        goSafePage();
-        return;
-      }
-
-      if (act === "unblock") {
-        unblockGallery(gid);
-        return;
-      }
-
-      if (act === "disable-dcbest") {
-        disableBuiltinDcbestBlock();
-      }
-    };
-
+    const counter = showAccessDialog(gid, "redirect", left).querySelector("[data-seconds]");
     clearRedirectTimer();
     redirectTimer = setInterval(() => {
       left -= 1;
       if (left <= 0) {
         clearRedirectTimer();
         goSafePage();
-        return;
+      } else {
+        counter.textContent = String(left);
       }
-      render(left);
     }, 1000);
-  }
-
-  function showSmartOverlay(gid) {
-    const ov = getOrCreateOverlay();
-
-    ov.innerHTML = `
-      <div class="dcb-access-card" role="dialog" aria-modal="true" aria-labelledby="dcb-access-title">
-        <div class="dcb-access-icon">!</div>
-        <h1 id="dcb-access-title" class="dcb-access-title">차단된 갤러리입니다</h1>
-        <p class="dcb-access-desc">
-          스마트 모드가 적용되어 접근 전에 한 번 더 확인합니다.
-          이번 세션에서만 허용하거나 디시 메인으로 이동할 수 있습니다.
-        </p>
-        <div class="dcb-access-id" title="${escapeHtml(gid)}">ID: ${escapeHtml(gid)}</div>
-        <div class="dcb-access-actions">
-          <button type="button" class="dcb-access-btn primary" data-act="home">디시 메인으로 이동</button>
-          <button type="button" class="dcb-access-btn" data-act="allow-once">이번만 보기</button>
-          ${getUnblockButtonHtml(gid)}
-        </div>
-      </div>
-    `;
-
-    ov.onclick = (e) => {
-      const btn = e.target.closest("[data-act]");
-      if (!btn) return;
-
-      const act = btn.getAttribute("data-act");
-
-      if (act === "home") {
-        goSafePage();
-        return;
-      }
-
-      if (act === "unblock") {
-        unblockGallery(gid);
-        return;
-      }
-
-      if (act === "disable-dcbest") {
-        disableBuiltinDcbestBlock();
-        return;
-      }
-
-      if (act === "allow-once") {
-        addTempAllow(gid);
-        clearBlockedOverlay();
-
-        /*
-          이번만 보기는 현재 차단 갤러리 페이지 접근만 허용한다.
-          페이지 안의 차단 갤러리 링크/최근방문/사이드바 요소는
-          link-blocker.js가 계속 숨겨야 하므로 즉시 재스캔 이벤트를 보낸다.
-        */
-        try {
-          window.dispatchEvent(
-            new CustomEvent("dcb-access-allow-once", {
-              detail: { gid }
-            })
-          );
-        } catch {}
-      }
-    };
   }
 
   function clearBlockedOverlay() {
@@ -548,7 +409,10 @@
     document.documentElement.classList.remove(BLOCKED_CLASS);
 
     const ov = document.getElementById(OVERLAY_ID);
-    if (ov) ov.remove();
+    if (ov) {
+      ov.close();
+      ov.remove();
+    }
 
     cleanupLegacyInlineStyles();
   }
@@ -571,7 +435,7 @@
       }
 
       clearRedirectTimer();
-      showSmartOverlay(gid);
+      showAccessDialog(gid, "smart");
       return;
     }
 
@@ -586,7 +450,7 @@
     }
 
     clearRedirectTimer();
-    showBlockedOverlay(gid);
+    showAccessDialog(gid, "block");
   }
 
   function enforceAccess() {
