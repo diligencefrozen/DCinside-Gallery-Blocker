@@ -173,6 +173,7 @@ function nativeDocument(url, member = true, captcha = false, own = false, turnst
       const form=page.locator('.dcbpv-composer');
       const nearby=await form.evaluate(n=>{const a=n.getBoundingClientRect(),b=n.closest('.dcbpv-scroll').getBoundingClientRect();return a.top<=b.bottom+200&&a.bottom>=b.top-200;});
       if(!nearby)await form.scrollIntoViewIfNeeded();
+      await form.evaluate(node=>node.querySelector('.dcbpv-editor-placeholder button')?.click());
       await page.locator('.dcbpv-composer iframe').waitFor({state:'visible'});await page.waitForFunction(()=>document.querySelector('.dcbpv-composer iframe')?.style.visibility==='visible');
     };
     const editor = () => page.frameLocator('iframe[data-dcbpv-compose-frame]');
@@ -195,6 +196,22 @@ function nativeDocument(url, member = true, captcha = false, own = false, turnst
       assert.equal(await editor().locator('.dcbpv-textcon').textContent(),'재열기'+cycle);
       await editor().getByRole('button',{name:'첨부 취소'}).click();
       await editor().locator('.tx_dccon').click();
+      if(cycle===0){
+        await page.waitForFunction(()=>{
+          const icon=document.querySelector('.dcbpv-composer iframe')?.contentDocument?.querySelector('#div_con.dcbpv-picker-panel .img_dccon img');
+          return icon?.naturalWidth && icon.fetchPriority==='high';
+        });
+        await editor().locator('.img_dccon img').evaluate(img=>{
+          window.firstPickerThumbnail=img;
+          const button=img.parentNode;
+          button.replaceWith(button.cloneNode(true));
+        });
+        await page.waitForFunction(()=>{
+          const win=document.querySelector('.dcbpv-composer iframe').contentWindow;
+          return win.document.querySelector('#div_con .img_dccon img')===win.firstPickerThumbnail;
+        });
+        assert.equal(listReads,1,'restoring a thumbnail does not request a package or submit a sticker');
+      }
       await editor().locator('#div_con .img_dccon').click();
       await editor().getByRole('button',{name:'첨부 취소'}).click();
     }
@@ -254,8 +271,70 @@ function nativeDocument(url, member = true, captcha = false, own = false, turnst
     await editor().locator('.tx_dccon').click();await editor().locator('#div_con.dcbpv-picker-panel').waitFor({state:'visible'});
     assert.equal(writes.length,0);await close();slowArticleImage=false;checks++;
 
+    // A warm post accepts text as part of render. Hold the native document until
+    // explicitly released so these checks do not depend on machine/network speed.
+    reset();
+    const warmUrl=article('','8910');
+    await render(warmUrl);await open();
+    await editor().getByRole('textbox',{name:'댓글 내용'}).click();
+    await editor().getByRole('textbox',{name:'댓글 내용'}).fill('기존 초안');
+    await close();
+    let releaseDocument,navigations=0;
+    const documentGate=new Promise(resolve=>{releaseDocument=resolve;});
+    const delayEditor=async route=>{navigations++;await documentGate;await route.fallback();};
+    await page.route(warmUrl,delayEditor);
+    await render(warmUrl);
+    const restored=page.locator('.dcbpv-resume-input');
+    assert.equal(await restored.inputValue(),'기존 초안');
+    await page.evaluate(()=>new Promise(done=>requestAnimationFrame(()=>requestAnimationFrame(done))));
+    assert.equal(await page.locator('iframe[data-dcbpv-compose-frame]').count(),0,'reading a warm preview does not start the native document');
+    assert.equal(navigations,0);
+    await restored.fill('로딩 중 작성');
+    await restored.dispatchEvent('compositionstart');
+    assert.equal(await restored.inputValue(),'로딩 중 작성');
+    releaseDocument();
+    await editor().locator('#dcbpv-native-editor').waitFor({state:'attached'});
+    await restored.evaluate(input=>{
+      input.value='로딩 중 작성한 댓글';
+      input.dispatchEvent(new InputEvent('input',{bubbles:true,isComposing:true}));
+      input.setSelectionRange(2,5);
+    });
+    await restored.dispatchEvent('compositionend');
+    await restored.waitFor({state:'detached'});
+    const nativeMemo=editor().getByRole('textbox',{name:'댓글 내용'});
+    assert.deepEqual(await nativeMemo.evaluate(input=>[input.value,input.selectionStart,input.selectionEnd,document.activeElement===input]),['로딩 중 작성한 댓글',2,5,true]);
+    assert.equal(navigations,1);assert.equal(writes.length,0);
+    await nativeMemo.press('End');await editor().locator('.repley_add').click();await finish('등록된 댓글을 확인');
+    assert.equal(writes.length,1);assert.equal(writes[0].memo,'로딩 중 작성한 댓글');
+    await close();await page.unroute(warmUrl,delayEditor);checks++;
+
+    await render(article('mini/','8910'));
+    assert.equal(await restored.count(),0,'gallery type is part of the snapshot key');await close();
+    await render(warmUrl);await close();
+    await page.evaluate(()=>{
+      const now=Date.now;
+      Date.now=()=>now()+121000;
+      try{window.composeTest.renderPreview(window.fixtureData);}finally{Date.now=now;}
+    });
+    assert.equal(await restored.count(),0,'an expired snapshot uses the normal native path');
+    await open();await close();checks++;
+
+    reset();await render(warmUrl);await open();
+    await nativeMemo.click();
+    await nativeMemo.fill('일반 댓글 초안');
+    await page.locator('[data-act=compose-reply][data-target="101"]').click();
+    await page.locator('[data-composer-target]').filter({hasText:'답글'}).waitFor();
+    await nativeMemo.fill('답글 초안');await close();
+    const withoutTarget=route=>route.fulfill({contentType:'text/html',body:nativeDocument(warmUrl).replace('class="btn_reply_write_all"','')});
+    await page.route(warmUrl,withoutTarget);await render(warmUrl);
+    await finish('답글 대상');
+    assert.equal(await restored.inputValue(),'답글 초안','a removed reply target cannot turn a draft into a top-level comment');
+    await page.locator('[data-act=compose-reply-cancel]').click();
+    await open();assert.equal(await nativeMemo.inputValue(),'일반 댓글 초안');
+    assert.equal(writes.length,0);await close();await page.unroute(warmUrl,withoutTarget);checks++;
+
     for (const prefix of ['', 'mgallery/', 'mini/', 'person/']) {
-      reset(); await render(article(prefix)); await open();
+      reset(); await render(article(prefix,'910')); await open();
       assert.equal(await page.locator('[data-act=compose]').getAttribute('aria-expanded'),'true');
       assert.equal(await page.evaluate(()=>document.activeElement.tagName),'BUTTON','default opening does not steal focus into the iframe');
       assert.equal(await page.locator('.dcbpv-scroll').evaluate(el=>el.scrollTop),0,'default opening does not jump to comments');

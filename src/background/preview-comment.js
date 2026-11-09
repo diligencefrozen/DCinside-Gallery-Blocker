@@ -86,6 +86,7 @@ async function previewCommentInPage(request) {
   }
   if (request.operation === 'prepare') {
     if (frame.__dcbpvEditor) return frame.__dcbpvEditor.metadata();
+    if (request.target && !uniqueTargets.some(row => row.id === request.target)) return fail('target');
     const input = memo;
     const button = doc.querySelector(`.repley_add[data-no="${no}"]`);
     const box = input.closest('.cmt_write_box');
@@ -237,6 +238,31 @@ async function previewCommentInPage(request) {
     const recovery=doc.createElement('span');
     recovery.hidden=true;
     let listTrigger=null, pickerTrigger=null, parkedPanel=null;
+    const thumbnails = new Map();
+    let thumbnailGridChanged = true;
+    const rememberThumbnail = img => {
+      if (!img.complete || !img.naturalWidth || !img.src) return;
+      thumbnails.delete(img.src);
+      thumbnails.set(img.src, new WeakRef(img));
+      if (thumbnails.size > 48) thumbnails.delete(thumbnails.keys().next().value);
+    };
+    doc.addEventListener('load', event => {
+      const img=event.target;
+      if (!img.matches?.('#div_con .img_dccon img')) return;
+      const previous=thumbnails.get(img.src)?.deref();
+      if (!previous || previous.isConnected) rememberThumbnail(img);
+    }, true);
+    function restorePickerThumbnails(panel) {
+      let index = 0;
+      for (const img of panel.querySelectorAll('.img_dccon img')) {
+        if (index++ < 4 && img.fetchPriority !== 'high') img.fetchPriority = 'high';
+        const previous = thumbnails.get(img.src)?.deref();
+        // The site's package buttons own selection. Only reuse a discarded
+        // image, so paging keeps the new button and its native click handler.
+        if (previous && !previous.isConnected && previous.isEqualNode(img)) img.replaceWith(previous);
+        else rememberThumbnail(img);
+      }
+    }
     function startPickerWait(){
       recovery.hidden=true;
       session.pickerPending=true;
@@ -368,6 +394,10 @@ async function previewCommentInPage(request) {
       // initial pickerOpen otherwise toggles the mask ON while resize treats
       // the picker as closed, repeatedly growing an invisible editor by 8px.
       const open=!!(panel||session.pickerPending||(!session.pickerDismissed&&session.pickerOpen&&!pickerLoading.hidden));
+      if(panel?.id==='div_con' && (thumbnailGridChanged || session.picker!==panel)){
+        thumbnailGridChanged=false;
+        restorePickerThumbnails(panel);
+      }
       if(panel===session.picker&&open===session.pickerOpen)return;
       surface.querySelectorAll('.dcbpv-picker-path,.dcbpv-picker-panel').forEach(node=>node.classList.remove('dcbpv-picker-path','dcbpv-picker-panel'));
       session.picker=panel;session.pickerOpen=open;pickerHeader.hidden=!open;pickerLoading.hidden=!session.pickerPending;surface.classList.toggle('dcbpv-picking',open);doc.documentElement.classList.toggle('dcbpv-picking',open);
@@ -410,7 +440,12 @@ async function previewCommentInPage(request) {
       }
       session.resetAuth();showSelection();syncPicker();resize();if(!session.picker)button.focus({preventScroll:true});else pickerHint.textContent='더블콘에 사용할 디시콘을 하나 더 선택하세요.';
     },true);
-    const sendDraft = () => { counter.textContent=`${input.value.length} / ${maxLength}자`;session.drafts.set(session.target, input.value); notify('draft', { draft: input.value, target: session.target }); };
+    const sendDraft = () => {
+      counter.textContent=`${input.value.length} / ${maxLength}자`;
+      session.drafts.set(session.target, input.value);
+      if(input.dataset.dcbpvTarget!==session.target)input.dataset.dcbpvTarget=session.target;
+      notify('draft', { draft: input.value, target: session.target });
+    };
     input.addEventListener('input', sendDraft);
     box.addEventListener('keydown', event => {
       if (event.key === 'Enter') event.stopPropagation();
@@ -476,6 +511,7 @@ async function previewCommentInPage(request) {
       for (const mutation of mutations) {
         const target=mutation.target.nodeType===1?mutation.target:mutation.target.parentElement;
         if (!target) continue;
+        if(mutation.type==='childList' && target.closest('#div_con'))thumbnailGridChanged=true;
         if (surface.contains(target)||target===parkedPanel) { needsResize=true; continue; }
         if (target.closest(commentScope)) metadataDirty=true;
         if (target.closest('.dcbpv-native-auth,.dcbpv-auth-path')) needsResize=true;

@@ -19,13 +19,14 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
   const SHARE_ID = "dcbpv-share-popup";
   const CACHE_TTL = 2 * 60 * 1000;
   const CACHE_MAX_ENTRIES = 32;
+  const NATIVE_COMMENT_INPUT = '#dcbpv-native-editor textarea[data-dcbpv-target]';
   const PREVIEW_ACTIVATION_DELAY = 90;
   const PREVIEW_COMMENT_MAX_POST_ATTEMPTS = 6;
   const PREVIEW_COMMENT_MAX_GET_ATTEMPTS = 2;
   const PREVIEW_THROTTLE_STATUSES = new Set([403, 429, 503]);
 
   const cache = new Map();
-  // Text drafts live only in this tab's memory. Passwords stay in the input DOM.
+  // Drafts and lightweight editor settings live only in this tab. Credentials stay in the native form.
   const previewDrafts = new Map();
   let previewComposer = null;
   let previewVote = null;
@@ -43,6 +44,10 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
   let previewFilterRerenderTimer = 0;
   const previewMediaSettleTimers = new WeakMap();
   const previewMovieRequests = new Set();
+  const previewMovieSources = new WeakMap();
+  const previewImageFallbacks = new WeakMap();
+  let parkedImages = null;
+  let parkedImageTimer = 0;
   const previewPollRequests = new Set();
   let previewRequestVersion = 0;
   let previewReturnFocus = null;
@@ -313,6 +318,9 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
       #${OVERLAY_ID} .dcbpv-composer{margin:14px 0;padding:14px;border:1px solid #94a3b8;border-radius:10px;color:#253047;background:#f8fafc;box-sizing:border-box}
       #${OVERLAY_ID} .dcbpv-composer iframe{display:block;width:100%;height:140px;min-width:0;border:0;margin:8px 0;background:transparent}
       #${OVERLAY_ID} .dcbpv-editor-placeholder{height:140px;margin:8px 0}
+      #${OVERLAY_ID} .dcbpv-editor-placeholder:has(.dcbpv-resume-input){height:auto;min-height:140px}
+      #${OVERLAY_ID} .dcbpv-resume-input{display:block;box-sizing:border-box;width:100%;min-height:90px;margin:0 0 8px;padding:10px;border:1px solid #94a3b8;border-radius:6px;font:inherit;resize:vertical;color:#172033;background:#fff}
+      #${OVERLAY_ID} .dcbpv-editor-placeholder + iframe{position:absolute;pointer-events:none}
       #${OVERLAY_ID} .dcbpv-composer[data-preparing] > iframe{height:140px!important;min-height:0!important;max-height:140px!important}
       #${OVERLAY_ID} .dcbpv-composer[hidden],#${OVERLAY_ID} .dcbpv-compose-heading [hidden]{display:none}
       #${OVERLAY_ID} .dcbpv-compose-heading{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
@@ -467,7 +475,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
         .dcbpv-comments-actions :is(button,a){color:var(--dcbpv-muted)!important}
         .dcbpv-scroll::-webkit-scrollbar-thumb{background:var(--dcbpv-line)}
         .dcbpv-icon,.dcbpv-btn:not(.primary),.dcbpv-share-popup,.dcbpv-share-row button,.dcbpv-copy input,
-        .dcbpv-composer,.dcbpv-compose-actions button,.dcbpv-saved-draft,.dcbpv-recommend-auth :is(input,button),.dcbpv-filter-reveal,
+        .dcbpv-composer,.dcbpv-compose-actions button,.dcbpv-saved-draft,.dcbpv-resume-input,.dcbpv-recommend-auth :is(input,button),.dcbpv-filter-reveal,
         .dcbpv-filter-note,.dcbpv-pum-card,.dcbpv-html iframe.dcbpv-poll-frame{
           background:var(--dcbpv-surface);color:var(--dcbpv-text);border-color:var(--dcbpv-line)
         }
@@ -524,6 +532,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
       previewFilterRerenderTimer = 0;
     }
     const overlay = document.getElementById(OVERLAY_ID);
+    if (overlay && currentPreviewData) parkPreviewImages(overlay, currentPreviewData);
     (previewMediaSettleTimers.get(overlay) || []).forEach(clearTimeout);
     if (overlay) {
       previewMediaSettleTimers.delete(overlay);
@@ -613,6 +622,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     overlay.id = OVERLAY_ID;
     overlay.dataset.dcbOwned = "preview";
     overlay.addEventListener("click", handlePreviewOverlayClick);
+    overlay.addEventListener("error", handlePreviewImageError, true);
     return overlay;
   }
 
@@ -1126,34 +1136,20 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     return urls.find(eligible) || "";
   }
 
-  function bindImageFallbacks(img, baseUrl){
-    const allCandidates = collectImageCandidates(img, baseUrl).filter((url) => !isPlaceholderImageUrl(url));
-    const hasImageSource = allCandidates.some((url) => !/\.(?:mp4|webm)(?:[?#]|$)/i.test(url));
-    // Never fall back from an animated image to a video URL. The latter would
-    // turn a GIF/WebP failure into an unrelated player and lose image semantics.
-    const candidates = hasImageSource
-      ? allCandidates.filter((url) => !/\.(?:mp4|webm)(?:[?#]|$)/i.test(url))
-      : allCandidates;
-    if (!candidates.length) return;
-
-    img.dataset.dcbpvFallbackQueue = candidates.join("\n");
-    if (img.dataset.dcbpvFallbackBound === "true") return;
-    img.dataset.dcbpvFallbackBound = "true";
-    img.addEventListener("error", () => {
-      const current = img.currentSrc || img.src || "";
-      const queue = String(img.dataset.dcbpvFallbackQueue || "")
-        .split("\n")
-        .map((url) => url.trim())
-        .filter(Boolean)
-        .filter((url) => url !== current);
-      const next = queue.shift();
-      img.dataset.dcbpvFallbackQueue = queue.join("\n");
-      if (next) {
-        img.src = next;
-      } else {
-        img.classList.add("dcbpv-img-broken");
-      }
-    });
+  function handlePreviewImageError(event){
+    const img = event.target;
+    if (img.tagName !== "IMG" || !currentPreviewData) return;
+    let queue = previewImageFallbacks.get(img);
+    if (!queue) {
+      const base = currentPreviewData.fetchedUrl || currentPreviewData.url;
+      const candidates = collectImageCandidates(img, base).filter(url => /^https?:\/\//i.test(url) && !isPlaceholderImageUrl(url));
+      const images = candidates.filter(url => !/\.(?:mp4|webm)(?:[?#]|$)/i.test(url));
+      queue = (images.length ? images : candidates).filter(url => url !== (img.currentSrc || img.src));
+      previewImageFallbacks.set(img, queue);
+    }
+    const next = queue.shift();
+    if (next) img.src = next;
+    else img.classList.add("dcbpv-img-broken");
   }
 
   function dcMoviePlayerUrl(iframe, baseUrl){
@@ -1187,8 +1183,19 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     if (wrapper.dataset.dcbpvMovieRequested === "1") return;
     const frame = wrapper.querySelector("iframe");
     const playerUrl = frame && dcMoviePlayerUrl(frame, articleUrl);
-    if (!playerUrl || playerUrl.origin !== location.origin) return;
+    if (!playerUrl) return;
     wrapper.dataset.dcbpvMovieRequested = "1";
+    const useNativePlayer = () => {
+      if (frame.src !== playerUrl.href) frame.src = playerUrl.href;
+    };
+    if (playerUrl.origin !== location.origin) { useNativePlayer(); return; }
+    const data = currentPreviewData?.url === articleUrl ? currentPreviewData : null;
+    let movies = data && previewMovieSources.get(data);
+    if (data && !movies) {
+      movies = new Map();
+      previewMovieSources.set(data, movies);
+    }
+    const cached = movies?.get(playerUrl.href);
     const controller = new AbortController();
     previewMovieRequests.add(controller);
     const timer = setTimeout(() => controller.abort(), 10000);
@@ -1196,24 +1203,32 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
       const referrer = new URL(articleUrl, location.href);
       if (referrer.origin !== location.origin) return;
       // The native player validates the article referrer. Keep the complete player query.
-      const response = await fetch(playerUrl.href, {
-        credentials: "include", referrer: referrer.href, referrerPolicy: "unsafe-url",
-        signal: controller.signal, cache: "no-store"
-      });
-      if (!response.ok) return;
-      const playerDoc = new DOMParser().parseFromString(await response.text(), "text/html");
-      const original = playerDoc.querySelector("video#dc_mv,video.dc_mv,video");
-      if (!original || !wrapper.isConnected || controller.signal.aborted) return;
-      const sources = [original.getAttribute("src"), ...Array.from(original.querySelectorAll("source[src]"), (source) => source.getAttribute("src"))]
-        .filter(Boolean).map((source) => dcMovieMediaUrl(source, playerUrl.href)).filter(Boolean);
-      if (!sources.length) return;
+      let media = cached?.expiresAt > Date.now() ? cached : null;
+      if (!media) {
+        const response = await fetch(playerUrl.href, {
+          credentials: "include", referrer: referrer.href, referrerPolicy: "unsafe-url",
+          signal: controller.signal, cache: "no-store"
+        });
+        if (!response.ok) return;
+        const playerDoc = new DOMParser().parseFromString(await response.text(), "text/html");
+        const original = playerDoc.querySelector("video#dc_mv,video.dc_mv,video");
+        if (!original || !wrapper.isConnected || controller.signal.aborted) return;
+        const sources = [original.getAttribute("src"), ...Array.from(original.querySelectorAll("source[src]"), source => source.getAttribute("src"))]
+          .filter(Boolean).map(source => dcMovieMediaUrl(source, playerUrl.href)).filter(Boolean);
+        if (!sources.length) return;
+        media = { sources, poster: dcMovieMediaUrl(original.getAttribute("poster"), playerUrl.href), expiresAt: Date.now() + CACHE_TTL };
+        if (movies) {
+          movies.set(playerUrl.href, media);
+          if (movies.size > CACHE_MAX_ENTRIES) movies.delete(movies.keys().next().value);
+        }
+      }
+      const {sources, poster} = media;
       const video = document.createElement("video");
       video.controls = true;
       video.playsInline = true;
       video.preload = "metadata";
       video.setAttribute("aria-label", "게시글 동영상");
       video.dataset.dcbpvMediaSettled = "1";
-      const poster = dcMovieMediaUrl(original.getAttribute("poster") || "", playerUrl.href);
       if (poster) video.poster = poster;
       let sourceIndex = 0;
       video.src = sources[sourceIndex];
@@ -1223,14 +1238,17 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
           video.src = sources[sourceIndex];
           return;
         }
+        if (movies?.get(playerUrl.href) === media) movies.delete(playerUrl.href);
+        useNativePlayer();
         video.replaceWith(frame);
         const note = wrapper.querySelector(".dcbpv-movie-note");
         if (note) note.firstChild.textContent = "동영상 재생을 다시 시도하려면 ";
       });
       frame.replaceWith(video);
     } catch (_) {
-      // The site's own player remains available when its media response cannot be read.
+      // The original player is the fallback for an unreadable media response.
     } finally {
+      if (wrapper.isConnected && wrapper.contains(frame)) useNativePlayer();
       clearTimeout(timer);
       previewMovieRequests.delete(controller);
     }
@@ -1409,7 +1427,10 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
       const factory = root.ownerDocument || (root.createElement ? root : document);
       const wrapper = factory.createElement("div");
       wrapper.className = "dcbpv-movie-wrap";
-      iframe.src = playerUrl.href;
+      // Keep the native player dormant while resolving the direct video. Starting
+      // both would download the same player document and execute its scripts.
+      iframe.dataset.src = playerUrl.href;
+      iframe.removeAttribute("src");
       iframe.id = `movieIcon${playerUrl.searchParams.get("no")}`;
       iframe.title = "디시인사이드 동영상 플레이어";
       iframe.setAttribute("allow", "fullscreen; picture-in-picture");
@@ -1465,14 +1486,14 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
       }
 
       if (gifUrl && (explicitImageUrl || isLoadingImage || !currentSrc || isPlaceholderImageUrl(currentSrc))) {
-        img.src = gifUrl;
+        if (currentSrc !== gifUrl) img.src = gifUrl;
       } else if (currentSrc) {
-        img.src = makeAbsolute(currentSrc, baseUrl);
+        const absolute = makeAbsolute(currentSrc, baseUrl);
+        if (currentSrc !== absolute) img.src = absolute;
       } else if (gifUrl) {
         img.src = gifUrl;
       }
 
-      bindImageFallbacks(img, baseUrl);
       img.classList.remove("lazy", "img_loading", "gif-mp4", "webp-mp4", "written_dccon");
       if (wasDccon || (isInComment && /dccon\.php/i.test(gifUrl))) {
         img.classList.add("dcbpv-dccon");
@@ -1491,7 +1512,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
       video.dataset.dcbpvMediaSettled = "1";
       const src = video.getAttribute("src");
       const attrBlob = Array.from(video.attributes || []).map((attr) => `${attr.name}=${attr.value}`).join(" ");
-      if (src) video.src = makeAbsolute(src, baseUrl);
+      if (src && src !== makeAbsolute(src, baseUrl)) video.src = makeAbsolute(src, baseUrl);
       if (/(?:written_dccon|comment_dccon|dccon_img|coment_dccon_img|\bdccon\b|dccon\.php|reqpath=['\"]?\/dccon)/i.test(`${video.className || ""} ${src || ""} ${attrBlob}`)) {
         video.classList.add("dcbpv-dccon");
       }
@@ -1511,7 +1532,8 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
         video.removeAttribute("muted");
       }
       video.querySelectorAll("source[src]").forEach((source) => {
-        source.src = makeAbsolute(source.getAttribute("src"), baseUrl);
+        const src = source.getAttribute("src"), absolute = makeAbsolute(src, baseUrl);
+        if (src !== absolute) source.src = absolute;
       });
       video.removeAttribute("width");
       video.removeAttribute("height");
@@ -3192,7 +3214,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
         const pumCard = doc.querySelector("#pum_container.cloned_card,#pum_container");
         const pumHasPayload = !!pumCard && Boolean(
           pumCard.textContent?.replace(/\s+/g, " ").trim()
-          || pumCard.querySelector("img[src],video[src],iframe[src]")
+          || pumCard.querySelector("img[src],video[src],iframe[src],.dcbpv-movie-wrap iframe[data-src]")
         );
 
         // 일반 동적 본문도 살리되, 펌 카드가 생성될 시간을 먼저 보장한다.
@@ -3592,6 +3614,78 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     return data;
   }
 
+  const previewImageSelector = '.dcbpv-article img, .dcbpv-comment-body img';
+
+  function parkPreviewImages(overlay, data) {
+    const images = new Map();
+    let pixels = 0;
+    const candidates = overlay.querySelectorAll(previewImageSelector);
+    const park = (img, pixelLimit) => {
+      const area = img.naturalWidth * img.naturalHeight;
+      if (!img.complete || !area || pixels + area > pixelLimit || images.has(img.src)
+        || img.closest('picture') || !/^https?:/.test(img.src) || img.currentSrc !== img.src) return;
+      // Detach just the decoded image. Retaining its parent would keep the whole
+      // article, including its scripts, players and editor, reachable.
+      img.remove();
+      images.set(img.src, img);
+      pixels += area;
+    };
+    // Comments follow every article photo in DOM order. Give loaded stickers
+    // a share of the same budget before filling the remaining slots with photos.
+    for (const img of candidates) {
+      if (img.classList.contains('dcbpv-dccon')) park(img, 1_000_000);
+      if (images.size === 8) break;
+    }
+    for (const img of candidates) {
+      park(img, 4_000_000);
+      if (images.size === 24) break;
+    }
+    if (!images.size) return;
+    clearTimeout(parkedImageTimer);
+    parkedImages = {data, images, expiresAt: Date.now() + CACHE_TTL};
+    parkedImageTimer = setTimeout(() => { parkedImages = null; }, CACHE_TTL);
+  }
+
+  function restorePreviewImages(root) {
+    const scroll = root.closest('.dcbpv-scroll') || root.querySelector('.dcbpv-scroll');
+    if (!scroll) return;
+    const bounds = scroll.getBoundingClientRect();
+    const snapshot = parkedImages?.expiresAt > Date.now() ? parkedImages : null;
+    const samePost = snapshot?.data === currentPreviewData;
+    const differentPost = snapshot && currentPreviewData &&
+      previewCacheKey(snapshot.data.url) !== previewCacheKey(currentPreviewData.url);
+    let checked = 0, eager = 0;
+    for (const img of root.querySelectorAll(previewImageSelector)) {
+      if (checked++ < 8 && eager < 3) {
+        const box = img.getBoundingClientRect();
+        if (img.getClientRects().length && box.top < bounds.bottom && box.bottom >= bounds.top) {
+          if (img.loading !== 'eager') img.loading = 'eager';
+          if (!eager && img.fetchPriority !== 'high') img.fetchPriority = 'high';
+          eager++;
+        }
+      }
+      // An identical DCCon CDN image can appear in many posts. Private article
+      // photos and refreshed versions of the same post require their own snapshot.
+      const reusable = samePost || (differentPost && img.classList.contains('dcbpv-dccon')
+        && /^https:\/\/dcimg\d*\.dcinside\.com\/dccon\.php\?/.test(img.src));
+      const loaded = reusable && snapshot?.images.get(img.src);
+      // Request hints describe the new position, not the decoded image. A
+      // sticker from the bottom of one thread can be first in the next.
+      if (loaded && img.classList.contains('dcbpv-dccon')) {
+        for (const hint of ['loading', 'fetchpriority']) {
+          const value = img.getAttribute(hint);
+          if (value === null) loaded.removeAttribute(hint);
+          else if (loaded.getAttribute(hint) !== value) loaded.setAttribute(hint, value);
+        }
+      }
+      if (loaded && loaded.isEqualNode(img)) {
+        img.replaceWith(loaded);
+        snapshot.images.delete(loaded.src);
+      }
+      if (checked >= 8 && !snapshot?.images.size) break;
+    }
+  }
+
   function settlePreviewMedia(root, baseUrl, articleUrl = currentPreviewData?.url || baseUrl, trace = activePreviewTrace){
     if (!root) return;
 
@@ -3605,6 +3699,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
       if (!document.documentElement.contains(root)) return;
       const imageStartedAt = previewNow();
       normalizeDcMedia(root, baseUrl);
+      restorePreviewImages(root);
       root.querySelectorAll(".dcbpv-movie-wrap").forEach((wrapper) => {
         const link = wrapper.querySelector(".dcbpv-movie-note a");
         if (link) link.href = articleUrl;
@@ -4407,12 +4502,20 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     if(!state)return;
     state.drafts[state.target]=state.draft||'';
     previewDrafts.delete(state.key);
-    previewDrafts.set(state.key,{draft:state.draft||'',drafts:{...state.drafts},target:state.target||'',uncertain:!!state.uncertain});
-    while(previewDrafts.size>32)previewDrafts.delete(previewDrafts.keys().next().value);
+    previewDrafts.set(state.key,{drafts:{...state.drafts},target:state.target||'',uncertain:!!state.uncertain,
+      editor:state.uncertain||state.submitting ? null : state.editorSnapshot});
+    while(previewDrafts.size>CACHE_MAX_ENTRIES)previewDrafts.delete(previewDrafts.keys().next().value);
   }
   function suspendPreviewComposer(){
     const state=previewComposer;if(!state)return;
     state.cancelLoading?.();
+    // A last native input event can still be queued when the user closes the preview.
+    const input=state.resumeInput || (state.ready && state.frame.contentDocument?.querySelector(NATIVE_COMMENT_INPUT));
+    if(input && !state.submitting){
+      state.draft=input.value.slice(0,10000);
+      state.target=input.dataset.dcbpvTarget ?? state.target;
+    }
+    if(state.ready && state.editorSnapshot)state.editorSnapshot.hadOwnedComments=state.owned.length>0;
     savePreviewDraft(state);clearTimeout(state.statusTimer);
     if(state.submitting){previewDrafts.get(state.key).uncertain=true;cache.delete(state.key);state.frame.dataset.dcbpvCancelled='1';}
     state.frame.dispatchEvent(new Event('dcbpv-compose-dispose'));
@@ -4435,7 +4538,10 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
   function togglePreviewComposer(data){
     if(!previewComposer)return openPreviewComposer(data,undefined,{focus:true});
     previewComposer.collapsed=!previewComposer.collapsed;syncComposerToggle();
-    if(!previewComposer.collapsed){previewComposer.startLoading?.();previewComposer.frame.contentDocument?.querySelector('#dcbpv-native-editor textarea')?.focus({preventScroll:true});}
+    if(!previewComposer.collapsed){
+      previewComposer.startLoading?.();
+      (previewComposer.resumeInput || previewComposer.frame.contentDocument?.querySelector(NATIVE_COMMENT_INPUT))?.focus({preventScroll:true});
+    }
   }
   function updateComposerStatus(state,text){
     if(previewComposer!==state)return;
@@ -4460,7 +4566,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     scroll.scrollTop=top;
   }
   function showPreviewSavedDraft(state){
-    if(!state.draft||state.form.querySelector('.dcbpv-saved-draft'))return;
+    if(!state.draft||state.resumeInput||state.form.querySelector('.dcbpv-saved-draft'))return;
     const input=document.createElement('textarea');input.className='dcbpv-saved-draft';input.readOnly=true;input.rows=4;
     input.setAttribute('aria-label','보존된 댓글 초안');input.value=state.draft;state.frame.hidden=true;state.form.insertBefore(input,state.frame.parentNode===state.form?state.frame:state.form.querySelector('.dcbpv-compose-actions'));
   }
@@ -4556,9 +4662,62 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
       state.cancelLoading = () => settle(false);
       frame.addEventListener('load', onReady, {once: true});
       frame.src = state.url.split('#')[0];
-      form.querySelector('.dcbpv-editor-placeholder').replaceWith(frame);
+      const placeholder = form.querySelector('.dcbpv-editor-placeholder');
+      if (state.resumeInput) placeholder.after(frame);
+      else placeholder.replaceWith(frame);
       watchDocument();
     });
+  }
+
+  function restoreComposerInput(state) {
+    const placeholder = state.form.querySelector('.dcbpv-editor-placeholder');
+    const input = document.createElement('textarea');
+    input.className = 'dcbpv-resume-input';
+    input.placeholder = '댓글을 입력하세요';
+    input.setAttribute('aria-label', '댓글 내용');
+    input.maxLength = state.editorSnapshot.maxLength;
+    input.value = state.draft;
+    const toolsButton = document.createElement('button');
+    toolsButton.className = 'dcbpv-btn';
+    toolsButton.type = 'button';
+    toolsButton.textContent = '디시콘 · 등록 도구 열기';
+    placeholder.append(input, toolsButton);
+    state.resumeInput = input;
+    const wake = () => state.startLoading?.();
+    toolsButton.addEventListener('click', () => { input.focus({preventScroll:true}); wake(); });
+    input.addEventListener('focus', wake);
+    input.addEventListener('input', () => { state.draft = input.value; wake(); });
+    input.addEventListener('compositionstart', () => { state.composing = true; });
+    input.addEventListener('compositionend', () => { state.composing = false; });
+  }
+
+  async function handoffComposerInput(state) {
+    const input = state.resumeInput;
+    if (state.composing) {
+      // Replacing a focused textarea mid-composition loses the final Korean syllable.
+      await new Promise(resolve => {
+        let timer;
+        const afterCommit = () => { timer = setTimeout(finish, 0); };
+        const finish = () => {
+          clearTimeout(timer);
+          input.removeEventListener('compositionend', afterCommit);
+          state.cancelLoading = null;
+          resolve();
+        };
+        state.cancelLoading = finish;
+        input.addEventListener('compositionend', afterCommit, {once:true});
+      });
+    }
+    if (previewComposer !== state) return;
+    const native = state.frame.contentDocument.querySelector(NATIVE_COMMENT_INPUT);
+    const focused = document.activeElement === input;
+    native.value = state.draft = input.value;
+    native.dispatchEvent(new Event('input', {bubbles:true}));
+    native.setSelectionRange(input.selectionStart, input.selectionEnd, input.selectionDirection);
+    state.frame.style.visibility = 'visible';
+    input.parentElement.remove();
+    state.resumeInput = null;
+    if (focused) native.focus({preventScroll:true});
   }
 
   async function openPreviewComposer(data,target,{focus=false}={}){
@@ -4571,7 +4730,14 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
       // its one preparation before selecting the native reply target.
       if(!state.ready&&state.loading){
         state.startLoading?.();await state.loading;
-        if(previewComposer!==state||!state.ready)return;
+        if(previewComposer!==state)return;
+        if(!state.ready){
+          if(target==='' && state.target && !state.uncertain){
+            suspendPreviewComposer();
+            return openPreviewComposer(data,'',{focus});
+          }
+          return;
+        }
       }
       const readingScroll=state.form.closest('.dcbpv-scroll'),readingTop=readingScroll?.scrollTop;
       if(target!==undefined&&target!==state.target){
@@ -4582,7 +4748,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
         state.target=target;state.draft=state.drafts[target]||'';applyComposerMetadata(state,result);
       }
       state.collapsed=false;syncComposerToggle();updateComposerStatus(state,'');
-      if(focus)state.frame.contentDocument?.querySelector('#dcbpv-native-editor textarea')?.focus({preventScroll:true});
+      if(focus)state.frame.contentDocument?.querySelector(NATIVE_COMMENT_INPUT)?.focus({preventScroll:true});
       if(target!==undefined&&readingScroll){
         readingScroll.scrollTop=readingTop;
       }
@@ -4590,7 +4756,9 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     }
     suspendPreviewComposer();
     const saved=previewDrafts.get(key)||{};
-    const state=previewComposer={key,url:data.url,target:target??saved.target??'',draft:saved.draft||'',drafts:{...(saved.drafts||{})},uncertain:saved.uncertain,
+    const initialTarget=target??saved.target??'';
+    const state=previewComposer={key,url:data.url,target:initialTarget,draft:saved.drafts?.[initialTarget]||'',drafts:{...(saved.drafts||{})},uncertain:saved.uncertain,
+      editorSnapshot:!saved.uncertain && saved.editor?.expiresAt>Date.now() ? saved.editor : null,
       ready:false,submitting:false,targets:[],owned:[],collapsed:false,token:crypto.randomUUID()};
     const form=state.form=document.createElement('div');form.className='dcbpv-composer';form.id='dcbpv-composer';form.dataset.preparing='';
     form.innerHTML=`<div class="dcbpv-compose-heading"><strong data-composer-target>댓글 작성</strong><button class="dcbpv-btn" type="button" data-act="compose-reply-cancel" hidden>답글 취소</button></div>
@@ -4598,7 +4766,8 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
       <div class="dcbpv-compose-actions"><span data-composer-count></span><button class="dcbpv-btn" type="button" data-act="compose-cancel">접기</button><a target="_blank" rel="noopener noreferrer">원문에서 댓글 작성</a></div><p role="status" aria-live="polite"></p>`;
     form.querySelector('a').href=`${data.url.split('#')[0]}#focus_cmt`;
     document.querySelector(`#${OVERLAY_ID} .dcbpv-composer-slot`)?.replaceChildren(form);
-    syncComposerToggle();updateComposerStatus(state,'작성 폼을 확인하는 중…');
+    if(state.editorSnapshot)restoreComposerInput(state);
+    syncComposerToggle();updateComposerStatus(state,state.resumeInput?'':'작성 폼을 확인하는 중…');
     const frame=state.frame=document.createElement('iframe');frame.dataset.dcbpvComposeFrame=state.token;frame.title='DCinside 댓글 작성 및 인증';
     frame.setAttribute('sandbox','allow-scripts allow-same-origin');frame.setAttribute('scrolling','no');frame.style.visibility='hidden';
     let finishLoading;
@@ -4610,13 +4779,17 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
         let settled=false,observer;
         const settle=value=>{if(settled)return;settled=true;observer?.disconnect();state.startLoading=null;state.cancelLoading=null;resolve(value);};
         state.startLoading=()=>settle(true);state.cancelLoading=()=>settle(false);
-        if(focus||typeof IntersectionObserver!=='function'){settle(true);return;}
+        if(focus||state.target){settle(true);return;} // A restored reply is already docked outside the scroll area.
+        // Restore native reply and deletion controls automatically when needed.
+        if(state.resumeInput&&!state.editorSnapshot.hadOwnedComments)return;
+        if(typeof IntersectionObserver!=='function'){settle(true);return;}
         observer=new IntersectionObserver(entries=>{
           if(entries.some(entry=>entry.isIntersecting))settle(true);
         },{root:form.closest('.dcbpv-scroll'),rootMargin:'200px 0px'});
         observer.observe(form);
       });
       if(!shouldLoad||previewComposer!==state)return;
+      if(state.resumeInput)updateComposerStatus(state,'등록 도구를 불러오는 중…');
       // Give the already-rendered preview a paint before starting native scripts.
       await new Promise(resolve=>requestAnimationFrame(()=>setTimeout(resolve,0)));
       if(previewComposer!==state)return;
@@ -4625,18 +4798,23 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
       const result=await sendRuntimeFetchMessage({type:'dcb.previewComment',operation:'prepare',url:state.url,key:state.token,target:state.target,draft:state.draft});
       if(previewComposer!==state)return;
       if(!result?.ok){showPreviewSavedDraft(state);updateComposerStatus(state,composerMessage(result));return;}
+      if(state.resumeInput)await handoffComposerInput(state);
+      if(previewComposer!==state)return;
+      state.editorSnapshot={maxLength:result.maxLength,expiresAt:Date.now()+CACHE_TTL};
       // A presentation/metadata error must not leave a prepared native editor
       // invisible. Only apply its measured height after preparation succeeds.
       state.ready=true;delete form.dataset.preparing;frame.style.visibility='visible';frame.style.height=`${state.editorHeight||140}px`;
       updateComposerStatus(state,result.authMessage||'');applyComposerMetadata(state,result);
-      if(focus)frame.contentDocument?.querySelector('#dcbpv-native-editor textarea')?.focus({preventScroll:true});
+      if(focus)frame.contentDocument?.querySelector(NATIVE_COMMENT_INPUT)?.focus({preventScroll:true});
     }catch(_){updateComposerStatus(state,composerMessage(null));}
     finally{
       finishLoading();
       if(previewComposer===state&&!state.ready){
+        state.editorSnapshot=null;
         delete form.dataset.preparing;frame.hidden=true;frame.style.height='140px';
-        showPreviewSavedDraft(state);
-        if(form.querySelector('[role=status]').textContent==='작성 폼을 확인하는 중…')updateComposerStatus(state,composerMessage(null));
+        if(state.resumeInput)state.resumeInput.parentElement.querySelector('button')?.remove();
+        else showPreviewSavedDraft(state);
+        if(['작성 폼을 확인하는 중…','등록 도구를 불러오는 중…'].includes(form.querySelector('[role=status]').textContent))updateComposerStatus(state,composerMessage(null));
       }
     }
   }
@@ -4666,6 +4844,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     if(payload.kind==='auth'){updateComposerStatus(state,String(payload.message||''));return;}
     if(payload.kind==='metadata'){if(payload.metadata?.ok)applyComposerMetadata(state,payload.metadata);return;}
     if(payload.kind==='draft'){
+      if(state.resumeInput)return; // Native prepare may echo the draft captured before the user finished typing.
       state.target=String(payload.target||'');state.draft=String(payload.draft||'').slice(0,10000);savePreviewDraft(state);
       state.form.querySelector('[data-composer-count]').textContent=`${state.draft.length}${state.maxLength?` / ${state.maxLength}`:''}자`;return;
     }
@@ -5103,7 +5282,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     const overlay = document.getElementById(OVERLAY_ID);
     if (event.key === "Tab" && overlay) {
       const scope = document.getElementById(SHARE_ID) || overlay;
-      const focusable = [...scope.querySelectorAll("a[href],button,input,video[controls],iframe,[tabindex='0']")]
+      const focusable = [...scope.querySelectorAll("a[href],button,input,textarea,video[controls],iframe,[tabindex='0']")]
         .filter((node) => !node.disabled && node.getClientRects().length && getComputedStyle(node).visibility !== "hidden");
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
@@ -5125,7 +5304,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
       if (overlay && currentPreviewData) openPreviewUserMenu(event.target.closest(".dcbpv-writer-ref .nickname"), currentPreviewData);
       return;
     }
-    if (event.key === "Escape" && document.getElementById(OVERLAY_ID)) {
+    if (event.key === "Escape" && !event.isComposing && document.getElementById(OVERLAY_ID)) {
       event.preventDefault();
       const share = document.getElementById(SHARE_ID);
       if (share) {

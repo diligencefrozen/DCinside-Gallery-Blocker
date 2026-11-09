@@ -45,7 +45,8 @@ function articleUrl(id, no, suffix = '') {
         const id = url.searchParams.get('id') || parts.at(-2) || 'fixture';
         return `<!doctype html><html><head><meta property="og:title" content="preview-${id}-${no}"></head><body>
           <article class="gallview"><header class="gallview_head"><span class="title_subject">preview-${id}-${no}</span><span class="gall_writer" data-nick="tester" data-uid="tester"></span></header>
-          <div class="write_div"><p>preview body ${id}-${no} ${'content '.repeat(30)}</p><img src="https://dcimg.dcinside.com/${no}.jpg"></div>
+          <div class="write_div"><p>preview body ${id}-${no} ${'content '.repeat(30)}</p><img src="https://dcimg.dcinside.com/${no}.jpg">
+          ${no==='201'?'<p>본문</p>'.repeat(40)+'<img src="https://dcimg.dcinside.com/lower.jpg">':''}</div>
           <div id="comment_wrap">${Array.from({length:window.__embeddedRows||1},(_,i)=>`<div class="cmt_info" data-no="${i+1}"><div class="gall_writer" data-nick="commenter" data-uid="commenter"></div><div class="cmt_txtbox"><p class="usertxt">comment ${no}-${i}</p></div></div>`).join('')}</div></article>
         </body></html>`;
       };
@@ -132,6 +133,7 @@ function articleUrl(id, no, suffix = '') {
         previewContentEvents: window.__previewContentEvents,
         title: contentShell?.querySelector('.dcbpv-title')?.textContent || '',
         imageLoading: contentShell?.querySelector('.dcbpv-article img')?.loading || '',
+        lowerImageLoading: contentShell?.querySelector('.dcbpv-article img:last-child')?.loading,
         trace: window.previewPerfTest.previewPerformanceSnapshot().lastTrace
       };
     }, articleUrl('fixture', 201));
@@ -142,7 +144,8 @@ function articleUrl(id, no, suffix = '') {
     assert.equal(first.genericObserverPasses, 0, 'the general page observer skips extension-owned preview DOM');
     assert.equal(first.previewContentEvents,1,'embedded comments go through the preview pipeline once');
     assert.equal(first.title, 'preview-fixture-201');
-    assert.equal(first.imageLoading, 'lazy');
+    assert.equal(first.imageLoading, 'eager','the first visible article photo starts immediately');
+    assert.equal(first.lowerImageLoading, 'lazy','offscreen photos retain native lazy loading');
     assert.equal(first.trace.cacheHit, false);
     for (const phase of ['activationMs', 'fetchMs', 'parseMs', 'processMs', 'renderMs', 'imageMs', 'completedMs']) {
       assert.equal(typeof first.trace[phase], 'number', `${phase} is measured`);

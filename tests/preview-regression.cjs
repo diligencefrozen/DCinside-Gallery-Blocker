@@ -199,6 +199,51 @@ let browser;
   assert.equal(await previewColor('.dcbpv-panel'), 'rgb(32, 35, 40)', 'the overlay also follows a body theme marker');
   await page.evaluate(() => document.body.classList.remove('dark'));
 
+  await page.route(/(?:\/warm-image\/photo\d*|\/dccon\.php\?no=warm-image-sticker)$/, route=>route.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="80" height="40"><rect width="80" height="40"/></svg>'}));
+  await page.evaluate(data=>{
+    window.mediaPost={...data,articleHTML:'<img alt="사진" src="/warm-image/photo">', commentsHTML:'<div class="dcbpv-comment-item"><div class="dcbpv-comment-body"><img class="dccon" alt="디시콘" src="https://dcimg5.dcinside.com/dccon.php?no=warm-image-sticker"></div></div>'};
+    window.previewTest.renderPreview(window.mediaPost);
+  },data);
+  await page.waitForFunction(()=>Array.from(document.querySelectorAll('img[src*="warm-image"]')).filter(img=>img.naturalWidth===80).length===2);
+  const warmImages=await page.evaluate(()=>{
+    const images=()=>Array.from(document.querySelectorAll('img[src*="warm-image"]'));
+    const first=images();
+    window.previewTest.closePreview();
+    const detached=first.every(img=>!img.parentNode);
+    window.previewTest.renderPreview(window.mediaPost);
+    const second=images();
+    const restored=second.map((img,i)=>img===first[i]&&img.complete&&img.naturalWidth===80);
+    const priority=second[0].loading;
+    window.previewTest.closePreview();
+    window.previewTest.renderPreview({...window.mediaPost,url:window.mediaPost.url.replace('no=10','no=11')});
+    const sharedSticker=images()[1]===first[1] && images()[0]!==first[0];
+    window.previewTest.closePreview();
+    window.previewTest.renderPreview(window.mediaPost);
+    const previous=images();
+    window.previewTest.closePreview();
+    window.previewTest.renderPreview({...window.mediaPost});
+    const refreshed=images().every((img,i)=>img!==previous[i]);
+    return {detached,restored,priority,refreshed,sharedSticker};
+  });
+  assert.deepEqual(warmImages,{detached:true,restored:[true,true],priority:'eager',refreshed:true,sharedSticker:true},'reuse decoded photos within their snapshot and identical CDN stickers across posts');
+
+  const photoCount=25;
+  await page.evaluate(count=>{
+    window.previewTest.closePreview();
+    window.previewTest.renderPreview({...window.mediaPost,articleHTML:Array.from({length:count},(_,i)=>`<img src="/warm-image/photo${i}">`).join('')});
+    document.querySelector('.dcbpv-comment-body img.dccon').scrollIntoView();
+  },photoCount);
+  await page.waitForFunction(count=>Array.from(document.querySelectorAll('img[src*="warm-image"]')).filter(img=>img.naturalWidth===80).length===count+1,photoCount);
+  const inlineSticker=await page.evaluate(()=>{
+    const sticker=document.querySelector('.dcbpv-comment-body img.dccon');
+    window.previewTest.closePreview();
+    window.previewTest.renderPreview({...window.mediaPost,url:window.mediaPost.url.replace('no=10','no=12'),articleHTML:'<p>본문</p>'});
+    const next=document.querySelector('.dcbpv-comment-body img.dccon');
+    return {reused:sticker===next,loaded:next.complete&&next.naturalWidth===80,priority:next.loading};
+  });
+  assert.deepEqual(inlineSticker,{reused:true,loaded:true,priority:'eager'},'a comment sticker survives a photo-heavy post and moves from below the fold to the first screen');
+  await page.evaluate(()=>{window.previewTest.closePreview();window.previewTest.renderPreview(window.mediaPost);});
+
   const normalized = await page.evaluate((base) => {
     const root = document.createElement('div');
     root.innerHTML = '<iframe id="movie_iframe_0" src="https://gall.dcinside.com/board/movie/movie_view?no=5345087&token=keep"></iframe><video src="/clip.mp4" autoplay loop muted></video><video class="dccon" src="/dccon.mp4"></video>';
@@ -207,12 +252,13 @@ let browser;
     window.previewTest.normalizeDcMedia(root, base);
     const frame = root.querySelector('iframe');
     const videos = [...root.querySelectorAll('video')];
-    return { src: frame.src, id: frame.id, wrappers: root.querySelectorAll('.dcbpv-movie-wrap').length,
+    return { src: frame.dataset.src, dormant: !frame.hasAttribute('src'), id: frame.id, wrappers: root.querySelectorAll('.dcbpv-movie-wrap').length,
       video: videos.map((video) => ({ controls: video.controls, autoplay: video.autoplay, loop: video.loop, muted: video.muted })),
       invalid: window.previewTest.dcMovieMediaUrl('javascript:alert(1)', base),
       unrelated: window.previewTest.dcMovieMediaUrl('https://evil.example/video.mp4', base) };
   }, articleUrl);
   assert.equal(normalized.src, 'https://gall.dcinside.com/board/movie/movie_view?no=5345087&token=keep');
+  assert.equal(normalized.dormant,true,'the fallback iframe does not navigate alongside the direct player request');
   assert.equal(normalized.id, 'movieIcon5345087');
   assert.equal(normalized.wrappers, 1, 'media normalization is idempotent');
   assert.deepEqual(normalized.video, [
@@ -224,20 +270,27 @@ let browser;
 
   const nativeMovie = await page.evaluate(async (base) => {
     const realFetch = window.fetch;
-    let request;
+    let request,reads=0;
     window.fetch = async (url, options) => {
+      reads++;
       request = { url, referrer: options.referrer };
       return new Response('<video id="dc_mv" poster="https://dcm1.dcinside.co.kr/preview.jpg"><source src="https://dcm1.dcinside.co.kr/viewmovie.php?key=preserve&amp;type=mp4" type="video/mp4"></video>');
     };
     const wrapper = document.createElement('div');
     wrapper.className = 'dcbpv-movie-wrap';
-    wrapper.innerHTML = '<iframe src="https://gall.dcinside.com/board/movie/movie_view?no=5345087&token=keep"></iframe>';
+    wrapper.innerHTML = '<iframe data-src="https://gall.dcinside.com/board/movie/movie_view?no=5345087&token=keep"></iframe>';
     document.body.append(wrapper);
     await window.previewTest.loadPreviewMovie(wrapper, base);
     const video = wrapper.querySelector('video');
     const result = { request, src: video?.src, controls: video?.controls, autoplay: video?.autoplay, iframeRemoved: !wrapper.querySelector('iframe') };
+    const reopen=document.createElement('div');
+    reopen.innerHTML='<iframe data-src="https://gall.dcinside.com/board/movie/movie_view?no=5345087&token=keep"></iframe>';
+    document.body.append(reopen);
+    await window.previewTest.loadPreviewMovie(reopen,base);
+    result.warmReads=reads;result.warmSource=reopen.querySelector('video')?.src;
+    reopen.remove();
     video.dispatchEvent(new Event('error'));
-    result.errorRestoresPlayer = !!wrapper.querySelector('iframe');
+    result.errorRestoresPlayer = wrapper.querySelector('iframe')?.src === request.url;
     wrapper.remove();
     window.fetch = realFetch;
     return result;
@@ -248,6 +301,8 @@ let browser;
   assert.equal(nativeMovie.controls, true);
   assert.equal(nativeMovie.autoplay, false);
   assert.equal(nativeMovie.iframeRemoved, true);
+  assert.equal(nativeMovie.warmReads,1,'reopening the movie reuses the validated player sources');
+  assert.equal(nativeMovie.warmSource,nativeMovie.src);
   assert.equal(nativeMovie.errorRestoresPlayer, true);
   let nativePlayerRequest;
   await page.route('**/board/movie/movie_view?no=2468', async (route) => {
@@ -257,10 +312,10 @@ let browser;
   const missingMediaFallback = await page.evaluate(async (base) => {
     const wrapper = document.createElement('div');
     wrapper.className = 'dcbpv-movie-wrap';
-    wrapper.innerHTML = '<iframe src="https://gall.dcinside.com/board/movie/movie_view?no=2468"></iframe>';
+    wrapper.innerHTML = '<iframe data-src="https://gall.dcinside.com/board/movie/movie_view?no=2468"></iframe>';
     document.body.append(wrapper);
     await window.previewTest.loadPreviewMovie(wrapper, base);
-    const result = { originalPlayer: !!wrapper.querySelector('iframe'), fabricatedVideo: !!wrapper.querySelector('video') };
+    const result = { originalPlayer: wrapper.querySelector('iframe')?.src.endsWith('movie_view?no=2468'), fabricatedVideo: !!wrapper.querySelector('video') };
     wrapper.remove();
     return result;
   }, articleUrl);

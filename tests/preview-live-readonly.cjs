@@ -311,12 +311,21 @@ async function compareOriginal(context,run){
     await page.locator('.dcbpv-title').waitFor({timeout:30000});const articleReadyMs=Date.now()-start;
     // Explicit user opening starts the one editor even if late comments move
     // its slot below the viewport between scrolling and IntersectionObserver.
-    const toggle=page.locator('[data-act=compose]');
-    if(await toggle.getAttribute('aria-expanded')==='true')await toggle.click();
-    await toggle.click();
+    const restoredInput=page.locator('.dcbpv-resume-input');
+    const usingCachedInput=phase==='warm'&&await restoredInput.count()>0;
+    if(usingCachedInput){
+     checks.warmFramesBeforeTyping=await page.locator('iframe[data-dcbpv-compose-frame]').count();
+     await restoredInput.fill('복원된 입력창 확인');
+     checks.warmFirstTextMs=Date.now()-start;
+    }else{
+     const toggle=page.locator('[data-act=compose]');
+     if(await toggle.getAttribute('aria-expanded')==='true')await toggle.click();
+     await toggle.click();
+    }
     await page.locator('.dcbpv-composer').scrollIntoViewIfNeeded();const composerReachedMs=Date.now()-start;
     const f=page.frameLocator('iframe[data-dcbpv-compose-frame]');
     await f.locator('#dcbpv-native-editor').waitFor({state:'visible',timeout:30000});const editorReadyMs=Date.now()-start;
+    if(usingCachedInput)assert.equal(await f.locator('#dcbpv-native-editor textarea').inputValue(),'복원된 입력창 확인');
     if(process.argv.includes('--probe-comment-read')){
      checks[phase+'Read']=await f.locator('body').evaluate(async()=>{
       const value=id=>document.getElementById(id)?.value;
