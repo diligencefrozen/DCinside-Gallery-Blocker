@@ -3732,6 +3732,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     doryBlockEnabled: true,
     keywordBlockEnabled: false,
     blockedKeywords: [],
+    keywordBlockCategories: {},
     keywordBlockTargets: { listTitle: true, viewTitle: true, viewBody: true, comments: true },
     keywordHideEnabled: false,
     hiddenKeywords: [],
@@ -4283,6 +4284,9 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     }
 
     const blockKeywords = previewKeywords(conf.blockedKeywords);
+    const keywordMatcher = globalThis.DCBKeywordMatcher;
+    const findBlockKeyword = keywordMatcher?.findKeyword || findPreviewKeyword;
+    if (conf.keywordBlockEnabled && keywordMatcher) blockKeywords.unshift(...keywordMatcher.prepareCategories(conf.keywordBlockCategories));
     const hideKeywords = previewKeywords(conf.hiddenKeywords);
     const blockTargets = conf.keywordBlockTargets || PREVIEW_FILTER_DEFAULTS.keywordBlockTargets;
     const hideTargets = conf.keywordHideTargets || PREVIEW_FILTER_DEFAULTS.keywordHideTargets;
@@ -4290,8 +4294,8 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     const articleText = overlay.querySelector(".dcbpv-article")?.innerText || "";
 
     if (conf.keywordBlockEnabled) {
-      const titleKw = blockTargets.viewTitle ? findPreviewKeyword(titleText, blockKeywords) : null;
-      const bodyKw = blockTargets.viewBody ? findPreviewKeyword(articleText, blockKeywords) : null;
+      const titleKw = blockTargets.viewTitle ? findBlockKeyword(titleText, blockKeywords) : null;
+      const bodyKw = blockTargets.viewBody ? findBlockKeyword(articleText, blockKeywords) : null;
       if (titleKw || bodyKw) replaceSectionWithNote(articleSection, filterNote("keyword-block", (titleKw || bodyKw).label));
     }
 
@@ -4317,13 +4321,13 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
       }
       const text = commentText(row);
       if (conf.keywordBlockEnabled && blockTargets.comments) {
-        const kw = findPreviewKeyword(text, blockKeywords);
+        const kw = findBlockKeyword(text, blockKeywords);
         if (kw) {
           markPreviewCommentBlocked(row, "keyword");
           row.dataset.dcbpvBlockedLabel = kw.label;
         }
       }
-      if (conf.keywordHideEnabled && hideTargets.comments) {
+      if (conf.keywordHideEnabled && hideTargets.comments && !row.classList.contains("dcbpv-filter-hidden")) {
         const kw = findPreviewKeyword(text, hideKeywords);
         if (kw) {
           row.dataset.dcbpvSoftKey = `comment-${index}`;
@@ -4879,6 +4883,8 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
 
     if (commentTitle) commentTitle.textContent = data.commentTitle || "댓글";
     commentRoot.innerHTML = previewCommentHtml(data, false);
+    delete commentRoot.dataset.dcbpvFiltered;
+    delete commentRoot.dataset.dcbpvOriginalHtml;
     // Apply ownership and timestamps to the new rows, once.
     if(composerResult&&previewComposer)applyComposerMetadata(previewComposer,composerResult,{newRows:true});
     else decoratePreviewReplyActions(overlay);
@@ -5117,7 +5123,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     const keys = new Set([
       "userBlockEnabled", "includeGray", "hideDCGray", "blockedUids", "hideComment", "hideImgComment", "hideDccon", "hideTextCon",
       "showUidBadge", "hideAnonymousEnabled", "hideForeignIpEnabled", "doryBlockEnabled", "keywordBlockEnabled", "blockedKeywords", "keywordBlockTargets",
-      "keywordHideEnabled", "hiddenKeywords", "keywordHideTargets"
+      "keywordBlockCategories", "keywordHideEnabled", "hiddenKeywords", "keywordHideTargets"
     ]);
     const knownSettingChanged = Object.keys(changes || {}).some((key) => keys.has(key));
     const userBlockStoreChanged = area === "local"

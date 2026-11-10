@@ -16,6 +16,7 @@ const KEYWORD_HOT_CACHE_VERSION = 1;
 const KEYWORD_SYNC_DEFAULTS = Object.freeze({
   keywordBlockEnabled: false,
   blockedKeywords: [],
+  keywordBlockCategories: { profanity: false, politics: false, poll: false, promotion: false, hate: false },
   keywordBlockTargets: { listTitle: true, viewTitle: true, viewBody: true, comments: true },
   keywordHideEnabled: false,
   hiddenKeywords: [],
@@ -261,10 +262,10 @@ const DCB_LAZY_FEATURE_FILES = Object.freeze({
   "auto-refresh": ["src/content/tools/auto-refresh.js"],
   "image-tools": ["src/content/image/image-account-filter.js", "src/content/user/account-activity-blocker.js", "src/content/image/image-blocker.js"],
   "text-detector": ["src/shared/detection-config.js", "src/content/detection/text-detector.js"],
-  "preview": ["src/content/core/content_script.js"],
+  "preview": ["src/shared/keyword-matcher.js", "src/content/core/content_script.js"],
   "quick-block": ["src/content/gallery/gallery-quick-block.js"],
   "ctx-probe": ["src/content/user/ctx-probe.js"],
-  "dcbest-source": ["src/shared/keyword-settings-hot-cache.js", "src/content/gallery/dcbest-source-filter.js"],
+  "dcbest-source": ["src/shared/keyword-settings-hot-cache.js", "src/shared/keyword-matcher.js", "src/content/gallery/dcbest-source-filter.js"],
   "font": ["src/content/appearance/font-manager.js"],
   "link-blocker": ["src/content/gallery/link-blocker.js"],
   "area-picker": ["src/content/tools/area-picker.js"],
@@ -471,6 +472,10 @@ function normalizeKeywordSettingsPatch(patch = {}) {
   const out = {};
   for (const [key, value] of Object.entries(patch && typeof patch === "object" ? patch : {})) {
     if (!KEYWORD_SYNC_KEYS.has(key)) continue;
+    if (key === "keywordBlockCategories") {
+      out[key] = Object.fromEntries(Object.keys(KEYWORD_SYNC_DEFAULTS[key]).map(id => [id, value?.[id] === true]));
+      continue;
+    }
     if (key === "blockedKeywords" || key === "hiddenKeywords") {
       out[key] = Array.isArray(value) ? value.map((item) => String(item || "").normalize("NFKC").trim()).filter(Boolean) : [];
       continue;
@@ -614,6 +619,16 @@ function queueKeywordSettingsPatch(patch = {}) {
   const safePatch = normalizeKeywordSettingsPatch(patch);
   const job = keywordSettingsWriteQueue.then(async () => {
     if (!Object.keys(safePatch).length) return { ok: true };
+    if (safePatch.keywordBlockCategories) {
+      // Each UI sends only the clicked flag. Merge with sync inside the shared
+      // write queue so interleaved popup/options edits preserve sibling flags.
+      const { keywordBlockCategories } = await chrome.storage.sync.get("keywordBlockCategories");
+      const merged = { ...keywordBlockCategories, ...patch.keywordBlockCategories };
+      safePatch.keywordBlockCategories = normalizeKeywordSettingsPatch({ keywordBlockCategories: merged }).keywordBlockCategories;
+      await chrome.storage.sync.set(safePatch);
+      await writeKeywordHotCache(safePatch);
+      return { ok: true };
+    }
     // local hot cache를 먼저 갱신해 다음 navigation의 초기 필터가 sync wake-up을 기다리지 않는다.
     await writeKeywordHotCache(safePatch);
     await chrome.storage.sync.set(safePatch);

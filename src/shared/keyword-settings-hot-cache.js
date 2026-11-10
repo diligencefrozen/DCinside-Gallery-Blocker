@@ -15,6 +15,7 @@
   const DEFAULTS = Object.freeze({
     keywordBlockEnabled: false,
     blockedKeywords: [],
+    keywordBlockCategories: { profanity: false, politics: false, poll: false, promotion: false, hate: false },
     keywordBlockTargets: {
       listTitle: true,
       viewTitle: true,
@@ -48,6 +49,7 @@
     return {
       keywordBlockEnabled: !!src.keywordBlockEnabled,
       blockedKeywords: Array.isArray(src.blockedKeywords) ? src.blockedKeywords.slice() : [],
+      keywordBlockCategories: Object.fromEntries(Object.keys(DEFAULTS.keywordBlockCategories).map(id => [id, src.keywordBlockCategories?.[id] === true])),
       keywordBlockTargets: {
         ...DEFAULTS.keywordBlockTargets,
         ...(src.keywordBlockTargets && typeof src.keywordBlockTargets === "object" ? src.keywordBlockTargets : {})

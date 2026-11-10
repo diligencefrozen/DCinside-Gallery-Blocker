@@ -56,6 +56,7 @@
     blockedIds: [],
     keywordBlockEnabled: false,
     blockedKeywords: [],
+    keywordBlockCategories: {},
     keywordBlockTargets: {
       listTitle: true,
       viewTitle: true,
@@ -183,6 +184,9 @@
     }
 
     keywordList = prepareKeywords(active);
+    if (keywordBlockEnabled && blockTargets.listTitle) {
+      keywordList.unshift(...globalThis.DCBKeywordMatcher.prepareCategories(conf.keywordBlockCategories));
+    }
   }
 
   function keywordFilteringEnabled() {
@@ -190,9 +194,7 @@
   }
 
   function findKeyword(text) {
-    const haystack = normalizeText(text);
-    if (!haystack) return null;
-    return keywordList.find((entry) => haystack.includes(entry.needle)) || null;
+    return globalThis.DCBKeywordMatcher.findKeyword(text, keywordList);
   }
 
   function isSupportedPage() {
@@ -1432,6 +1434,7 @@
       currentConfig = {
         ...currentConfig,
         keywordBlockEnabled: !!conf.keywordBlockEnabled,
+        keywordBlockCategories: conf.keywordBlockCategories,
         blockedKeywords: Array.isArray(conf.blockedKeywords) ? conf.blockedKeywords : [],
         keywordBlockTargets: conf.keywordBlockTargets || DEFAULTS.keywordBlockTargets,
         keywordHideEnabled: !!conf.keywordHideEnabled,
@@ -1466,6 +1469,7 @@
       && !changes.keywordBlockEnabled
       && !changes.blockedKeywords
       && !changes.keywordBlockTargets
+      && !changes.keywordBlockCategories
       && !changes.keywordHideEnabled
       && !changes.hiddenKeywords
       && !changes.keywordHideTargets
@@ -1476,6 +1480,7 @@
     Object.entries(changes).forEach(([key, change]) => {
       if (change && Object.prototype.hasOwnProperty.call(change, "newValue")) patch[key] = change.newValue;
     });
+    if (changes.keywordBlockCategories && !("keywordBlockCategories" in patch)) patch.keywordBlockCategories = {};
     currentConfig = { ...currentConfig, ...patch };
     applyGallerySettings(currentConfig);
     rebuildActiveKeywordList(currentConfig);

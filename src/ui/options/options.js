@@ -203,7 +203,7 @@ const BACKUP_KEYS = [
   "userMemoEnabled", "userMemos",
   IMAGE_BLOCK_CONFIG_KEY, IMAGE_BLOCK_RECORD_KEY, IMAGE_BLOCK_AUTHOR_TARGET_KEY, IMAGE_ACCOUNT_RULE_KEY,
   DCCON_BLOCK_STATE_KEY,
-  "keywordBlockEnabled", "blockedKeywords", "keywordBlockTargets",
+  "keywordBlockEnabled", "blockedKeywords", "keywordBlockTargets", "keywordBlockCategories",
   "keywordHideEnabled", "hiddenKeywords", "keywordHideTargets",
   "dcbFontFamily", "dcbFontCustomFamily", "dcbFontScale", "dcbApplyFontToDc", "dcbTextDetection"
 ];
@@ -255,6 +255,7 @@ const BACKUP_DEFAULTS = {
   keywordBlockEnabled: false,
   blockedKeywords: [],
   keywordBlockTargets: KEYWORD_DEFAULT_TARGETS,
+  keywordBlockCategories: globalThis.DCBKeywordCategoryUI.normalize(),
   keywordHideEnabled: false,
   hiddenKeywords: [],
   keywordHideTargets: KEYWORD_DEFAULT_TARGETS,
@@ -990,6 +991,7 @@ function parseBackupPayload(raw) {
     }
 
     if (!Object.keys(sync).length && !Object.keys(local).length && !blockedUids?.length) throw new Error("empty");
+    sync.keywordBlockCategories = globalThis.DCBKeywordCategoryUI.normalize(sync.keywordBlockCategories);
     sync.readPostsHighlightEnabled = Object.prototype.hasOwnProperty.call(sync, "readPostsHighlightEnabled")
       ? normalizeReadPostsHighlightValue(sync.readPostsHighlightEnabled)
       : true;
@@ -1000,6 +1002,7 @@ function parseBackupPayload(raw) {
   const legacy = sanitizeImport(raw);
   const local = {};
   const sync = { ...legacy };
+  sync.keywordBlockCategories = globalThis.DCBKeywordCategoryUI.normalize(sync.keywordBlockCategories);
   const blockedUids = Object.prototype.hasOwnProperty.call(sync, "blockedUids") ? sync.blockedUids : null;
 
   if (blockedUids !== null && (!Array.isArray(blockedUids) || !blockedUids.every((value) => typeof value === "string"))) {
@@ -1282,6 +1285,7 @@ function saveKeywordTargets() {
 }
 
 function lockKeywordOptionUI(disabled) {
+  document.getElementById("keywordBlockCategories").disabled = disabled;
   const nodes = [
     optionKeywordInput,
     optionAddKeywordBtn,

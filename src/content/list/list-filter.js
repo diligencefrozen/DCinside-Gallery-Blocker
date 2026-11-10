@@ -13,6 +13,7 @@
   const DEFAULTS = {
     keywordBlockEnabled: false,
     blockedKeywords: [],
+    keywordBlockCategories: {},
     keywordBlockTargets: { listTitle: true },
     galleryBlockEnabled: undefined,
     enabled: true,
@@ -258,19 +259,20 @@
       ...settings,
       keywordBlockEnabled: !!config.keywordBlockEnabled,
       blockedKeywords: Array.isArray(config.blockedKeywords) ? config.blockedKeywords : [],
+      keywordBlockCategories: config.keywordBlockCategories,
       keywordBlockTargets: {
         ...(settings.keywordBlockTargets || DEFAULTS.keywordBlockTargets),
         ...(config.keywordBlockTargets || {})
       }
     };
-    keywords = matcher.prepareKeywords(settings.blockedKeywords);
+    prepareRules();
     syncObserver();
   }
 
   function loadSettings() {
     globalThis.DCBRuntimeSettingsCache.get(DEFAULTS, (config) => {
       settings = config;
-      keywords = matcher.prepareKeywords(config.blockedKeywords);
+      prepareRules();
       blockedIds = new Set((Array.isArray(config.blockedIds) ? config.blockedIds : []).map(blockedGalleryId).filter(Boolean));
       syncObserver();
     });
@@ -290,6 +292,12 @@
     loadSettings();
   }
 
+  function prepareRules() {
+    const categories = settings.keywordBlockEnabled && settings.keywordBlockTargets?.listTitle !== false
+      ? matcher.prepareCategories(settings.keywordBlockCategories) : [];
+    keywords = categories.concat(matcher.prepareKeywords(settings.blockedKeywords));
+  }
+
   globalThis.DCBListFilter = Object.freeze({ collect, read, evaluate, selector: CANDIDATE_SELECTOR });
   (globalThis.DCBRuntimeSettingsCache?.onChanged || chrome.storage.onChanged).addListener((changes, area) => {
     if (area === "sync" && Object.keys(DEFAULTS).some((key) => key in changes)) loadSettings();
@@ -307,7 +315,7 @@
         ...(message.targets || {})
       }
     };
-    keywords = matcher.prepareKeywords(settings.blockedKeywords);
+    prepareRules();
     syncObserver();
   });
 

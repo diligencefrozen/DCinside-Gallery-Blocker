@@ -670,6 +670,7 @@ function lockUserBlockUI(disabled) {
 }
 
 function lockKeywordBlockUI(disabled) {
+  document.getElementById("keywordBlockCategories").disabled = disabled;
   const nodes = [
     keywordInput,
     addKeywordBtn,

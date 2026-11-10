@@ -553,6 +553,8 @@
     ul#keywordList li.keyword-just-added,
     ul#hideKeywordList li.keyword-just-added{animation:none}
   }
+  #keywordBlockCategories{border:0;padding:0;margin:12px 0;min-width:0}
+  #keywordBlockCategories legend{padding:0;font-weight:600}
   .keyword-targets{
     display:grid;
     grid-template-columns:1fr 1fr;
@@ -1570,6 +1572,12 @@
     </label>
   </div>
 
+  <fieldset id="keywordBlockCategories">
+    <legend>자동 차단 카테고리</legend>
+    <div class="keyword-targets"></div>
+    <small role="status"></small>
+  </fieldset>
+
   <div class="row-input">
     <input id="keywordInput" type="text" placeholder="예: 완전히 차단할 단어">
     <button id="addKeywordBtn" type="button">추가</button>
@@ -1863,6 +1871,7 @@
   <script src="../../shared/block-stats-history.js"></script>
   <script src="user-block-list.js"></script>
   <script src="release-link.js"></script>
+  <script src="../shared/keyword-category-ui.js"></script>
   <script src="popup.js"></script>
   <script src="../shared/dccon-block-options.js"></script>
   <script src="../shared/keyword-hide-ui.js"></script>

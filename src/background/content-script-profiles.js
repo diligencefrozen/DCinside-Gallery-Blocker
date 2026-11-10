@@ -13,7 +13,7 @@
   if (globalThis.DCBContentScriptProfiles) return;
 
   globalThis.DCBContentScriptProfiles = Object.freeze({
-    version: 10,
+    version: 11,
     chrome: Object.freeze([
     {
         "id": "dcb-profile-chrome-00",
@@ -175,6 +175,7 @@
         ],
         "persistAcrossSessions": true,
         "js": [
+            "src/shared/keyword-matcher.js",
             "src/content/core/content_script.js"
         ],
         "runAt": "document_end"
@@ -223,6 +224,7 @@
         "persistAcrossSessions": true,
         "js": [
             "src/shared/keyword-settings-hot-cache.js",
+            "src/shared/keyword-matcher.js",
             "src/content/gallery/dcbest-source-filter.js"
         ],
         "runAt": "document_start",

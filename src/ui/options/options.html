@@ -232,6 +232,8 @@
   gap:14px;
 }
 
+#keywordBlockCategories{border:0;padding:0;margin:0;min-width:0}
+#keywordBlockCategories legend{padding:0;margin-bottom:8px;font-weight:600}
 .keyword-targets{
   display:grid;
   grid-template-columns:repeat(2, minmax(0, 1fr));
@@ -1441,6 +1443,14 @@
     </div>
 
     <div>
+      <fieldset id="keywordBlockCategories">
+        <legend>자동 차단 카테고리</legend>
+        <div class="keyword-targets"></div>
+        <small role="status"></small>
+      </fieldset>
+    </div>
+
+    <div>
       <h3 style="font-size:15px;margin-bottom:10px;">차단 키워드 추가</h3>
 
       <div class="keyword-input-row">
@@ -1851,6 +1861,7 @@
 <script src="../shared/font-ui.js"></script>
 <script src="../../shared/storage/user-block-store.js"></script>
 <script src="../../shared/storage/dccon-block-store.js"></script>
+<script src="../shared/keyword-category-ui.js"></script>
 <script src="options.js"></script>
 <script src="../shared/dccon-block-options.js"></script>
 <script src="../shared/keyword-hide-ui.js"></script>

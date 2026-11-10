@@ -8,6 +8,7 @@
   const DEFAULTS = {
     keywordBlockEnabled: false,
     blockedKeywords: [],
+    keywordBlockCategories: {},
     keywordBlockTargets: {
       listTitle: true,
       viewTitle: true,
@@ -18,6 +19,7 @@
 
   let enabled = false;
   let keywords = [];
+  let config = { ...DEFAULTS };
   let targets = { ...DEFAULTS.keywordBlockTargets };
   let observer = null;
   let scheduled = false;
@@ -519,9 +521,11 @@
     observer = null;
   }
 
-  function applySettings(conf = {}) {
+  function applySettings(patch = {}) {
+    const conf = config = { ...config, ...patch };
     enabled = !!conf.keywordBlockEnabled;
-    keywords = prepareKeywords(conf.blockedKeywords);
+    const categories = enabled ? globalThis.DCBKeywordMatcher.prepareCategories(conf.keywordBlockCategories) : [];
+    keywords = categories.concat(prepareKeywords(conf.blockedKeywords));
     targets = {
       ...DEFAULTS.keywordBlockTargets,
       ...(conf.keywordBlockTargets || {})
@@ -544,20 +548,11 @@
 
   (globalThis.DCBRuntimeSettingsCache?.onChanged || chrome.storage.onChanged).addListener((changes, area) => {
     if (area !== "sync") return;
-    if (!changes.keywordBlockEnabled && !changes.blockedKeywords && !changes.keywordBlockTargets) return;
-
-    if (changes.keywordBlockEnabled) enabled = !!changes.keywordBlockEnabled.newValue;
-    if (changes.blockedKeywords) keywords = prepareKeywords(changes.blockedKeywords.newValue);
-    if (changes.keywordBlockTargets) {
-      targets = {
-        ...DEFAULTS.keywordBlockTargets,
-        ...(changes.keywordBlockTargets.newValue || {})
-      };
+    const patch = {};
+    for (const key of Object.keys(DEFAULTS)) {
+      if (changes[key]) patch[key] = changes[key].newValue ?? DEFAULTS[key];
     }
-
-    if (enabled && keywords.length) startObserver();
-    else stopObserver();
-    applyKeywordBlock();
+    if (Object.keys(patch).length) applySettings(patch);
   });
 
   chrome.runtime?.onMessage?.addListener((message) => {
