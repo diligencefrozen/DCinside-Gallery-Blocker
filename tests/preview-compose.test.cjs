@@ -171,8 +171,9 @@ function nativeDocument(url, member = true, captcha = false, own = false, turnst
     },{url,records});
     const open = async () => {
       const form=page.locator('.dcbpv-composer');
-      const nearby=await form.evaluate(n=>{const a=n.getBoundingClientRect(),b=n.closest('.dcbpv-scroll').getBoundingClientRect();return a.top<=b.bottom+200&&a.bottom>=b.top-200;});
-      if(!nearby)await form.scrollIntoViewIfNeeded();
+      const slot=page.locator('.dcbpv-composer-slot');
+      const nearby=await slot.evaluate(n=>{const a=n.getBoundingClientRect(),b=n.closest('.dcbpv-scroll').getBoundingClientRect();return a.top<=b.bottom+200&&a.bottom>=b.top-200;});
+      if(!nearby)await slot.evaluate(node=>node.scrollIntoView({block:'center'}));
       await form.evaluate(node=>node.querySelector('.dcbpv-editor-placeholder button')?.click());
       await page.locator('.dcbpv-composer iframe').waitFor({state:'visible'});await page.waitForFunction(()=>document.querySelector('.dcbpv-composer iframe')?.style.visibility==='visible');
     };

@@ -38,6 +38,19 @@ const assert=require('node:assert/strict');const fs=require('node:fs');const {ch
   const root=document.createElement('div');root.innerHTML=['1','1','2','bad','3'].map((id,i)=>`<div class="dcbpv-comment-item ${i===4?'deleted':''}" data-dcbpv-native-id="${id}"><div class="dcbpv-comment-meta"></div></div>`).join('');
   lifecycle.decoratePreviewReplyActions(root);return [...root.querySelectorAll('[data-act=compose-reply]')].map(n=>n.dataset.target);
  }),['2']);
+ await page.evaluate(()=>{
+   lifecycle.closePreview();
+   const rows=Array.from({length:500},(_,i)=>`<div class="dcbpv-comment-item" data-dcbpv-native-id="${i+1}"><div class="dcbpv-comment-meta"></div><div class="dcbpv-comment-body">Fixture comment ${i}</div></div>`).join('');
+   lifecycle.renderPreview({url:location.origin+'/board/view/?id=test&no=8',title:'large',articleHTML:'<p>일반 본문</p>'.repeat(140),counts:{},commentsHTML:'<div class="dcbpv-comment-list">'+rows+'</div>'});
+ });
+ assert.equal(await page.locator('.dcbpv-comment-item').count(),0);
+ assert.equal(await page.locator('.dcbpv-composer iframe').count(),0);
+ await page.locator('.dcbpv-comments').evaluate(el=>el.scrollIntoView());
+ await page.waitForFunction(()=>document.querySelectorAll('.dcbpv-comment-item').length===80);
+ await page.evaluate(()=>{window.firstRow=document.querySelector('.dcbpv-comment-item');});
+ for(let i=0;i<6;i++)await page.locator('.dcbpv-comment-html > button').evaluate(btn=>btn.click());
+ assert.equal(await page.locator('.dcbpv-comment-item').count(),500);
+ assert.equal(await page.evaluate(()=>firstRow===document.querySelector('.dcbpv-comment-item')),true);
  await page.evaluate(()=>lifecycle.closePreview());assert.deepEqual(errors,[]);
  console.log('Preview lifecycle passed: share Esc/focus, direct/background abort, no restricted retries, compact cache/YouTube marker, duplicate/deleted IDs.');
 }finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1;});

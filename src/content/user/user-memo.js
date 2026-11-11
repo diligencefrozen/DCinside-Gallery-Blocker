@@ -368,7 +368,10 @@
     else if (!isStrictIdentityPage() && nickname) key = `nick:${nickname}`;
 
     if (!key) return null;
-
+    const url = writer.closest("#dcb-preview-overlay")?.dataset.dcbpvUrl || location.href;
+    const gallery = new URL(url, location.href).searchParams.get("id");
+    const scoped = `gallery:${gallery}:${key}`;
+    if (gallery && Object.hasOwn(memoMap, scoped)) key = scoped;
     return { key, uid, ip, nickname };
   }
 
@@ -521,6 +524,7 @@
         delete next[currentMeta.key];
       } else {
         next[currentMeta.key] = {
+          ...next[currentMeta.key],
           memo,
           color,
           nickname: currentMeta.nickname || '',

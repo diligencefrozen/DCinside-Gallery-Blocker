@@ -251,6 +251,7 @@
 
       return {
         checkedAt: Number(result.checkedAt) || Date.now(),
+        statsKnown: Number.isInteger(result.posts) && Number.isInteger(result.comments),
         posts: Math.max(0, Number(result.posts) || 0),
         comments: Math.max(0, Number(result.comments) || 0),
         unavailable: false
@@ -284,7 +285,7 @@
         shouldHide: hit,
         reasons,
         summary: reasons.length ? reasons.join(" · ") : `작성 글 ${posts}개 · 댓글 ${comments}개`,
-        stats: { posts, comments },
+        stats: entry.statsKnown !== false && Number.isInteger(entry.posts) && Number.isInteger(entry.comments) ? { posts, comments } : undefined,
         checkedAt: Number(entry.checkedAt) || Date.now()
       };
     }

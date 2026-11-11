@@ -42,10 +42,6 @@
     return typeof value === "boolean" ? value : fallback;
   }
 
-  function imageFeatureEnabled(settings) {
-    return settings?.dcbImageBlockConfig?.enabled === true || settings?.dcbImageAccountRules?.enabled === true;
-  }
-
   function desired(settings) {
     const out = [];
     const add = (id, when = true, phase = "normal") => { if (when) out.push({ id, phase }); };
@@ -74,7 +70,8 @@
       add("comment-cleaner", isView && settings.hideComment === true, "normal");
       add("img-comment-cleaner", isView && settings.hideImgComment === true, "normal");
       add("auto-refresh", isList && settings.autoRefreshEnabled === true, "idle");
-      add("image-tools", imageFeatureEnabled(settings), "idle");
+      add("image-blocker", settings.dcbImageBlockConfig?.enabled === true, "critical");
+      add("image-tools", settings.dcbImageAccountRules?.enabled === true, "idle");
       add("text-detector", settings?.dcbTextDetection?.enabled === true && isView, "idle");
       add("preview", settings.previewEnabled !== false, "background");
     }
@@ -177,8 +174,9 @@
         const settings = await cache.get(planKeys);
         const batches = createBatches(desired(settings));
         await injectBatch(batches.critical, "critical");
-        await injectBatch(batches.visual, "visual");
-        await injectBatch(batches.normal, "normal");
+        // Both groups wait for paint. Keep their file order in one Firefox
+        // executeScript call, without a second frame and background round trip.
+        await injectBatch([...batches.visual, ...batches.normal], "visual");
         await injectBatch(batches.idle, "idle");
         await injectBatch(batches.background, "background");
         await injectBatch(batches.preview, "preview");

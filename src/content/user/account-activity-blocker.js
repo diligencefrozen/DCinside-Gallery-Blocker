@@ -83,11 +83,9 @@
 
   function hasGallogMarker(scope) {
     if (!scope) return false;
-    if (uidFromGallog(scope)) return true;
     if (scope.matches?.(".writer_nikcon,.dcb-uid-badge")) return true;
-    return !!scope.querySelector?.(
-      ".writer_nikcon,.dcb-uid-badge,[href*='gallog'],[onclick*='gallog']"
-    );
+    if (scope.querySelector?.(".writer_nikcon,.dcb-uid-badge,[href*='gallog'],[onclick*='gallog']")) return true;
+    return (scope.hasAttribute("href") || scope.hasAttribute("onclick")) && !!uidFromGallog(scope);
   }
 
   function extractUid(writer) {
@@ -212,6 +210,10 @@
     const info = targetForWriter(writer);
     if (!info) return;
     const uid = extractUid(writer);
+    if (writer.dataset.dcbActivityUid && writer.dataset.dcbActivityUid !== uid) {
+      delete writer.dataset.dcbActivityUid;
+      delete writer.dataset.dcbWriterActivity;
+    }
     const { target } = info;
     if (!uid || !settingAllows(settings, info.kind)) {
       clearTarget(target);
@@ -255,7 +257,13 @@
   }
 
   function applyVerdict(entry, verdict, settings) {
-    for (const { info, uid } of liveTargets(entry, settings)) {
+    for (const { info, uid, writer } of liveTargets(entry, settings)) {
+      const counts = verdict.stats;
+      if (Number.isInteger(counts?.posts) && Number.isInteger(counts?.comments)) {
+        const label = `글 ${counts.posts} · 댓 ${counts.comments}`;
+        if (writer.dataset.dcbActivityUid !== uid) writer.dataset.dcbActivityUid = uid;
+        if (writer.dataset.dcbWriterActivity !== label) writer.dataset.dcbWriterActivity = label;
+      }
       if (verdict.shouldHide) setState(info, uid, "hidden", verdict);
       else clearTarget(info.target, uid);
     }
@@ -309,29 +317,31 @@
     queueActive = true;
     const epoch = rulesEpoch;
     try {
-      while (enabled && epoch === rulesEpoch && document.visibilityState !== "hidden") {
+      // A Map iterator also sees UIDs appended while evaluate() is pending.
+      // Restarting from the first UID after every negative response used to
+      // re-read every preceding writer's DOM on each iteration.
+      let deadline = performance.now() + 8;
+      for (const [key, next] of uidQueue) {
+        if (performance.now() >= deadline) {
+          await new Promise(resolve => setTimeout(resolve, 0));
+          deadline = performance.now() + 8;
+        }
+        if (!enabled || epoch !== rulesEpoch || document.hidden) break;
         const settings = filter.getSettings();
         if (!settings.enabled) break;
-        let next = null;
-        const now = Date.now();
-        for (const [key, entry] of uidQueue) {
-          liveTargets(entry, settings);
-          if (!entry.targets.size) {
-            uidQueue.delete(key);
-            continue;
-          }
-          const cached = filter.peek?.(entry.uid);
-          if (cached?.available) {
-            applyVerdict(entry, cached, settings);
-            uidQueue.delete(key);
-            continue;
-          }
-          if (entry.state === "unavailable" || entry.retryAt > now || guardRetryAt > now) continue;
-          // Page DOM order prioritizes top rows; each UID has only one entry.
-          next = entry;
-          break;
+        liveTargets(next, settings);
+        if (!next.targets.size) {
+          uidQueue.delete(key);
+          continue;
         }
-        if (!next) break;
+        const cached = filter.peek?.(next.uid);
+        if (cached?.available) {
+          applyVerdict(next, cached, settings);
+          uidQueue.delete(key);
+          continue;
+        }
+        const now = Date.now();
+        if (next.state === "unavailable" || next.retryAt > now || guardRetryAt > now) continue;
         next.state = "checking";
         applyQueueState(next, settings);
         let verdict;
@@ -356,6 +366,10 @@
   }
 
   function clearAll(resetPeek = false) {
+    document.querySelectorAll("[data-dcb-activity-uid]").forEach(writer => {
+      delete writer.dataset.dcbActivityUid;
+      delete writer.dataset.dcbWriterActivity;
+    });
     document.querySelectorAll(`[data-dcb-account-activity-uid],[data-dcb-account-activity-peek],.${HIDDEN_CLASS},.${PENDING_CLASS}`).forEach((target) => {
       clearTarget(target);
       if (resetPeek) delete target.dataset.dcbAccountActivityPeek;
@@ -421,13 +435,14 @@
   }
 
   function minimalPendingRoots() {
-    const roots = Array.from(pendingRoots).filter((root) => root?.isConnected !== false);
+    const roots = new Set(pendingRoots);
     pendingRoots.clear();
-    return roots.filter((root, index) => {
-      if (!(root instanceof Element)) return true;
-      return !roots.some((other, otherIndex) => (
-        index !== otherIndex && other instanceof Element && other.contains?.(root)
-      ));
+    return [...roots].filter(root => {
+      if (!root.isConnected) return false;
+      for (let parent = root.parentElement; parent; parent = parent.parentElement) {
+        if (roots.has(parent)) return false;
+      }
+      return true;
     });
   }
 

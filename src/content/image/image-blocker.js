@@ -27,13 +27,14 @@
 
   let config = { ...BASE_CONFIG };
   let records = {};
+  const blockedUrls = new Map();
+  let legacyQuickKeys = false;
   let authorIdentity = { uid: "", ip: "", nick: "", member: false };
   let authorSignature = "";
   let ready = false;
   let observer = null;
   let unsubscribeDomBus = null;
   let pulse = null;
-  let lastScan = 0;
   let settingsRefreshQueued = false;
   let resetAuthorPeekQueued = false;
   let storeLoadRevision = 0;
@@ -119,6 +120,7 @@
       if (revision !== storeLoadRevision) return storeLoadPromise;
       config = oneClickConfig(syncData[CONFIG_KEY] || localData[CONFIG_KEY] || BASE_CONFIG);
       records = asRecordMap(localData[RECORD_KEY]);
+      indexBlockedUrls();
       renderRevision += 1;
       ready = true;
     });
@@ -350,7 +352,7 @@
       clearDccon(el);
       return false;
     }
-    if (dccon(el)) {
+    if (dccon(el) || el.closest("#spoiler_warning,.spoiler_inner,#spoiler .spoiler-inner,.dcbpv-article .spoiler-inner")) {
       clearDccon(el);
       return false;
     }
@@ -360,7 +362,10 @@
   }
 
   function mediaUrl(el) {
-    const src = el.currentSrc || el.src || el.getAttribute("data-src") || el.querySelector?.("source")?.src || "";
+    const src = el.currentSrc || el.getAttribute("src") || el.getAttribute("data-src") || el.querySelector?.("source")?.src || "";
+    if (!src) return "";
+    const lazy = el.getAttribute("data-src");
+    if (lazy && blockedUrls.has(lazy) && /^data:image\//.test(src)) return lazy;
     try {
       return new URL(src, location.href).href;
     } catch (_) {
@@ -523,11 +528,14 @@
 
   function revealAuthorNotice(frame, el, identity) {
     frame.style.display = "none";
+    const previous = frame.previousElementSibling;
+    if (previous?.classList.contains(`${UI}-author-notice`) && previous.dataset.author === authorLabel(identity)) return;
     dropNotice(frame);
     if (frame.dataset.ibxAuthorPeek === "1") return;
 
     const box = document.createElement("div");
     box.className = `${UI}-notice ${UI}-author-notice`;
+    box.dataset.author = authorLabel(identity);
     const authorType = identity.member ? "회원" : identity.ip ? "비회원" : "익명";
     box.innerHTML = `<span><strong>${authorType} 작성자의 이미지를 숨겼어요</strong><span>${escapeHtml(authorLabel(identity))} · 계정 활동량과 무관하게 적용됩니다</span></span><button type="button" data-act="peek">이미지 보기</button>`;
 
@@ -571,8 +579,42 @@
     return Object.entries(records).filter(([entryKey, entry]) => entryKey === key || familyKey(entryKey, entry) === group).map(([entryKey]) => entryKey);
   }
 
+  function indexBlockedUrls() {
+    blockedUrls.clear();
+    legacyQuickKeys = false;
+    for (const [key, item] of Object.entries(records)) {
+      if (item?.originalSrc) blockedUrls.set(item.originalSrc, records[item.quickKey] ? item.quickKey : key);
+      else if (key.startsWith("quick:")) legacyQuickKeys = true;
+    }
+    // Exact URL selectors cover parsed and newly inserted images while the
+    // shared DOM bus is waiting for its next frame. Native warning icons and
+    // an explicitly revealed image keep the site's normal display.
+    const styleId = UI + "-saved-urls";
+    let style = document.getElementById(styleId);
+    if (!config.enabled || !blockedUrls.size) { style?.remove(); return; }
+    const urls = new Set();
+    for (const source of blockedUrls.keys()) {
+      try {
+        const url = new URL(source);
+        if (!/^https?:$/.test(url.protocol)) continue;
+        urls.add(url.href);
+        if (url.origin === location.origin) urls.add(url.pathname + url.search + url.hash);
+      } catch {}
+    }
+    const selectors = [...urls].flatMap(url => {
+      const value = CSS.escape(url);
+      return [`[src="${value}"]:not([srcset])`, `[data-src="${value}"]:is(:not([src]),[src=""],[src^="data:image/"])`];
+    });
+    if (!selectors.length) { style?.remove(); return; }
+    style ||= document.createElement("style");
+    style.id = styleId;
+    style.textContent = `:is(.write_div,.writing_view_box,.dcbpv-article) img:is(${selectors.join(",")}):not(.written_dccon,.dccon,.dccon_img):not(:is(#spoiler_warning,.spoiler_inner,.spoiler-inner,.comment_dccon,.coment_dccon_img,.dccon_over_box,.dccon_area,.dccon_layer,[reqpath='/dccon'],button,.blocked-image-placeholder,.recommend_box,.btn_recommend_box,.vote_area,[data-ibx-peek="1"]) img):not([src*="/dccon.php"]){visibility:hidden!important}`;
+    if (!style.isConnected) (document.head || document.documentElement)?.append(style);
+  }
+
   function deleteFamily(key) {
     relatedKeys(key).forEach((entryKey) => delete records[entryKey]);
+    indexBlockedUrls();
   }
 
   function writeAliases(quickKey, info, item) {
@@ -589,11 +631,13 @@
     };
     records[quickKey] = next;
     if (info.key && info.key !== quickKey) records[info.key] = next;
+    indexBlockedUrls();
     return next;
   }
 
   function revealNotice(frame, key) {
     frame.style.display = "none";
+    if (frame.dataset.ibxKey === key && frame.previousElementSibling?.classList.contains(`${UI}-notice`)) return;
     dropNotice(frame);
     if (frame.dataset.ibxPeek === "1") return;
     const box = document.createElement("div");
@@ -657,7 +701,7 @@
       const button = document.createElement("button");
       button.type = "button";
       button.textContent = "차단";
-      button.addEventListener("click", (event) => {
+      button.addEventListener("click", async (event) => {
         event.preventDefault();
         event.stopPropagation();
 
@@ -665,7 +709,8 @@
         if (!state?.el || !state?.info) return;
 
         const { el: currentEl, info: currentInfo, frame: currentFrame } = state;
-        const quickKey = currentInfo.key;
+        const quickKey = currentInfo.key || `quick:${await digestText(currentInfo.src)}`;
+        if (!config.enabled || !currentFrame.isConnected || mediaUrl(currentEl) !== currentInfo.src) return;
         const item = writeAliases(quickKey, currentInfo, makeRecord(currentEl, currentInfo, quickKey));
         delete currentFrame.dataset.ibxPeek;
         revealNotice(currentFrame, quickKey);
@@ -705,22 +750,25 @@
       return;
     }
 
-    dropNotice(frame);
-    frame.style.display = "";
-    frame.classList.remove(`${UI}-blur`);
-
-    const quickKey = `quick:${await digestText(src)}`;
+    if (frame.dataset.ibxSource !== src) {
+      delete frame.dataset.ibxPeek;
+      frame.dataset.ibxSource = src;
+    }
+    // Most saved records have the exact URL. Only older hash-only records
+    // require an async digest when inspecting a page.
+    const quickKey = blockedUrls.get(src) || (legacyQuickKeys ? `quick:${await digestText(src)}` : "");
     if (!config.enabled || revision !== renderRevision || !frame.isConnected || mediaUrl(el) !== src) return;
     const quickInfo = { key: quickKey, src, mime: "", ext: "bin", dataUrl: "", thumb: el.tagName === "IMG" ? src : "" };
-    frame.dataset.ibxKey = quickKey;
-
     if (records[quickKey] && frame.dataset.ibxPeek !== "1") {
       revealNotice(frame, quickKey);
+      frame.dataset.ibxKey = quickKey;
       return;
     }
 
     dropNotice(frame);
     frame.style.display = "";
+    frame.classList.remove(`${UI}-blur`);
+    frame.dataset.ibxKey = quickKey;
     drawActions(frame, el, quickInfo);
 
     // 페이지를 훑는 동안 원본 파일을 다시 내려받지 않는다.
@@ -745,10 +793,6 @@
     if (!config.enabled || observer || unsubscribeDomBus) return;
     const handleChanges = (changes) => {
       if (!config.enabled) return;
-      const now = Date.now();
-      if (now - lastScan < 50) return;
-      lastScan = now;
-
       for (const item of changes) {
         if (item.type === "childList") {
           item.addedNodes.forEach((node) => {
@@ -769,7 +813,7 @@
     if (globalThis.DCBDomMutationBus) {
       unsubscribeDomBus = globalThis.DCBDomMutationBus.subscribe("image-blocker", handleChanges, {
         types: ["childList", "attributes"],
-        attributes: ["src", "data-src", "data-uid", "data-full-uid", "data-ip", "data-nick", "title", "href"]
+        attributes: ["src", "srcset", "data-src", "data-uid", "data-full-uid", "data-ip", "data-nick", "title", "href"]
       });
       return;
     }
@@ -779,7 +823,7 @@
       childList: true,
       subtree: true,
       attributes: true,
-      attributeFilter: ["src", "data-src", "data-uid", "data-full-uid", "data-ip", "data-nick", "title", "href"]
+      attributeFilter: ["src", "srcset", "data-src", "data-uid", "data-full-uid", "data-ip", "data-nick", "title", "href"]
     });
   }
 
@@ -910,8 +954,9 @@
 
   async function boot() {
     await loadStore();
-    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", reconcileFeature, { once: true });
-    else reconcileFeature();
+    // Start observing while the parser is adding images. Waiting for
+    // DOMContentLoaded lets a cached image paint before the filter starts.
+    reconcileFeature();
   }
 
   void boot();

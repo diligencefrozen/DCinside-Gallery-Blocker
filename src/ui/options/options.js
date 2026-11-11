@@ -205,6 +205,7 @@ const BACKUP_KEYS = [
   DCCON_BLOCK_STATE_KEY,
   "keywordBlockEnabled", "blockedKeywords", "keywordBlockTargets", "keywordBlockCategories",
   "keywordHideEnabled", "hiddenKeywords", "keywordHideTargets", "keywordHideCategories",
+  "dcbMaskWriterNames", "dcbShowWriterActivity",
   "dcbFontFamily", "dcbFontCustomFamily", "dcbFontScale", "dcbApplyFontToDc", "dcbTextDetection"
 ];
 
@@ -260,6 +261,8 @@ const BACKUP_DEFAULTS = {
   hiddenKeywords: [],
   keywordHideTargets: KEYWORD_DEFAULT_TARGETS,
   keywordHideCategories: globalThis.DCBKeywordCategoryUI.normalize(),
+  dcbMaskWriterNames: "off",
+  dcbShowWriterActivity: false,
   dcbFontFamily: "Noto Sans KR",
   dcbFontCustomFamily: "",
   dcbFontScale: 100,
@@ -1572,6 +1575,23 @@ function refreshUidList(delay = 0) {
 }
 
 /* ───── 이용자 메모 관리 ───── */
+{
+  const mask = document.getElementById("dcbMaskWriterNames");
+  const activity = document.getElementById("dcbShowWriterActivity");
+  function render() {
+    const settings = UI_SETTINGS_CACHE.read(BACKUP_DEFAULTS);
+    mask.value = ["all", "members"].includes(settings.dcbMaskWriterNames) ? settings.dcbMaskWriterNames : "off";
+    activity.checked = settings.dcbShowWriterActivity === true;
+  }
+  mask.addEventListener("change", () => chrome.storage.sync.set({dcbMaskWriterNames: mask.value}));
+  activity.addEventListener("change", () => chrome.storage.sync.set({dcbShowWriterActivity: activity.checked}));
+  render();
+  UI_SETTINGS_CACHE.ready.then(render);
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === "sync" && (changes.dcbMaskWriterNames || changes.dcbShowWriterActivity)) render();
+  });
+}
+
 function setMemoStatus(text, isError = false) {
   if (!userMemoStatus) return;
 
@@ -1594,6 +1614,7 @@ function normalizeImportedMemoObject(raw) {
     if (!memo) return;
 
     next[String(key)] = {
+      ...(["web","manual"].includes(value.source) ? { source: value.source, type: value.type, scope: value.scope, value: value.value, importedAt: value.importedAt } : {}),
       memo,
       color: isValidColor(value.color) ? value.color : "#999999",
       nickname: sanitizeText(value.nickname, 60),
@@ -1617,6 +1638,83 @@ function getUserMemos() {
 function setUserMemos(next) {
   return new Promise((resolve) => {
     chrome.storage.local.set({ userMemos: next }, resolve);
+  });
+}
+
+{
+  const fileInput = document.getElementById("officialMemoFile");
+  const status = document.getElementById("officialMemoPreview");
+  const rows = document.getElementById("officialMemoRows");
+  const apply = document.getElementById("officialMemoApply");
+  const replace = document.getElementById("officialMemoReplace");
+  const format = document.getElementById("memoImportFormat");
+  const scope = document.getElementById("memoTextScope");
+  let pending;
+  let revision = 0;
+  async function previewImport() {
+    const version = ++revision;
+    document.getElementById("memoScopeLabel").hidden = format.value !== "text";
+    const file = fileInput.files[0];
+    pending = null;
+    apply.disabled = true;
+    replace.checked = false;
+    rows.replaceChildren();
+    status.textContent = "";
+    if (!file) return;
+    try {
+      if (file.size > 4 * 1024 * 1024) throw Error("4MB 이하의 파일을 선택하세요.");
+      const text = await file.text();
+      const parsed = format.value === "text" ? DCBOfficialMemos.parseText(text, scope.value.trim()) : DCBOfficialMemos.parse(text);
+      const current = await getUserMemos();
+      if (version !== revision) return;
+      let conflicts = 0;
+      const items = document.createDocumentFragment();
+      for (const [key, item] of parsed.entries) {
+        const li = document.createElement("li");
+        const conflict = Object.hasOwn(current, key);
+        if (conflict) conflicts++;
+        li.textContent = `${item.scope === "global" ? "전체 갤러리" : item.scope} · ${item.value} · ${item.memo}${conflict ? " (기존 메모 있음)" : ""}`;
+        items.append(li);
+      }
+      rows.replaceChildren(items);
+      status.textContent = `가져올 수 있는 메모 ${parsed.entries.size}건 · 충돌 ${conflicts}건 · 중복 ${parsed.duplicates}건 · 잘못된 항목 ${parsed.invalid}건`;
+      if (parsed.badLines?.length) status.textContent += " · 파일에서 확인할 줄 " + parsed.badLines.slice(0,20).join(", ");
+      pending = parsed.entries;
+      apply.disabled = !pending.size;
+    } catch (error) {
+      if (version === revision) status.textContent = "가져오기 실패 · " + error.message;
+    }
+  }
+  fileInput.addEventListener("change", previewImport);
+  format.addEventListener("change", previewImport);
+  scope.addEventListener("input", previewImport);
+  apply.addEventListener("click", async () => {
+    if (!pending || apply.disabled) return;
+    apply.disabled = fileInput.disabled = replace.disabled = format.disabled = scope.disabled = true;
+    try {
+      const current = await getUserMemos();
+      const next = { ...current };
+      let count = 0;
+      const now = Date.now();
+      for (const [key, item] of pending) {
+        if (Object.hasOwn(current, key) && !replace.checked) continue;
+        next[key] = { ...item, importedAt: now, updatedAt: now };
+        count++;
+      }
+      if (count) {
+        downloadJson("dcb-memos-before-import-" + now + ".json", { userMemos: current });
+        await chrome.storage.local.set({ userMemos: next });
+      }
+      status.textContent = `메모 ${count}건을 가져왔습니다.`;
+      pending = null;
+      rows.replaceChildren();
+      fileInput.value = "";
+      await renderMemoList();
+    } catch (error) { status.textContent = "저장 실패 · " + error.message; }
+    finally {
+      fileInput.disabled = replace.disabled = format.disabled = scope.disabled = false;
+      apply.disabled = !pending;
+    }
   });
 }
 

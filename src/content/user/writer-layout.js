@@ -4,6 +4,21 @@
   "use strict";
   if (globalThis.DCBWriterLayout) return;
 
+  const preferences = { dcbMaskWriterNames: "off", dcbShowWriterActivity: false };
+  const settingsCache = globalThis.DCBRuntimeSettingsCache;
+  function renderPreferences(values) {
+    const root = document.documentElement;
+    if (!root) return;
+    const mask = ["all", "members"].includes(values.dcbMaskWriterNames) ? values.dcbMaskWriterNames : "";
+    if (mask) root.dataset.dcbMaskWriters = mask;
+    else delete root.dataset.dcbMaskWriters;
+    root.classList.toggle("dcb-show-writer-activity", values.dcbShowWriterActivity === true);
+  }
+  settingsCache?.get(preferences, renderPreferences);
+  settingsCache?.onChanged?.addListener((changes, area) => {
+    if (area === "sync" && Object.keys(preferences).some(key => key in changes)) settingsCache.get(preferences, renderPreferences);
+  });
+
   const WRITER_SELECTOR = ".gall_writer,.ub-writer";
   const COMMENT_ROOT_SELECTOR = "#focus_cmt,.comment_wrap,.comment_box,.cmt_list,.reply_list,.reply_box,.cmt_nickbox,.cmt_info,.reply_info,.dccon_comment_box";
   const LIST_ROOT_SELECTOR = ".gall_list,.list_array,.ub-list,.dccon_list,.issuebox";
@@ -323,11 +338,16 @@
     if (states.get(writer)?.inView === false && detectContext(writer) !== "preview-comment") return;
     pendingFit.add(writer);
     if (fitFrame) return;
-    fitFrame = requestAnimationFrame(() => {
+    fitFrame = requestAnimationFrame(function fitVisibleWriters() {
       fitFrame = 0;
-      const writers = [...pendingFit];
-      pendingFit.clear();
-      writers.forEach(fitWriter);
+      const deadline = performance.now() + 5;
+      let processed = 0;
+      for (const item of [...pendingFit]) {
+        pendingFit.delete(item);
+        fitWriter(item);
+        if (++processed >= 8 && performance.now() >= deadline) break;
+      }
+      if (pendingFit.size && !fitFrame) fitFrame = requestAnimationFrame(fitVisibleWriters);
     });
   }
 
@@ -398,10 +418,10 @@
     if (state.key === key) return;
     state.key = key;
     state.nameText = name;
-    FIT_PROPERTIES.forEach((property) => writer.style.removeProperty(property));
+    FIT_PROPERTIES.forEach((property) => { if (writer.style.getPropertyValue(property)) writer.style.removeProperty(property); });
     writer.removeAttribute("data-dcb-writer-density");
     writer.removeAttribute("data-dcb-writer-name-fit");
-    name?.classList.remove("dcb-writer-name-clipped");
+    if (name?.classList.contains("dcb-writer-name-clipped")) name.classList.remove("dcb-writer-name-clipped");
     writer.removeAttribute('data-dcb-writer-wrap');
     setProperty(writer, "--dcb-writer-available", `${Math.floor(available)}px`);
 
@@ -425,13 +445,16 @@
     // provider labels or native icons. Only individual text receives a limit.
     setAttribute(writer, "data-dcb-writer-density", "compact");
     measure();
+    if (excess() <= 1) return;
     const baseNameSize = name ? px(getComputedStyle(name).fontSize) : 0;
     const fitStep = px(style.getPropertyValue("--dcb-writer-name-step"));
     const minimumName = Math.min(baseNameSize, Math.max(px(style.getPropertyValue("--dcb-writer-name-min")), baseNameSize - fitStep * 3));
     let nameLevel = 0;
     const reduceName = () => {
       while (name && nameLevel < 3 && excess() > 1) {
-        nameLevel++;
+        const estimatedStepWidth = baseNameSize ? nameWidth * fitStep / baseNameSize : 0;
+        const steps = estimatedStepWidth > 0 ? Math.max(1, Math.floor(excess() / estimatedStepWidth)) : 1;
+        nameLevel = Math.min(3, nameLevel + steps);
         setAttribute(writer, "data-dcb-writer-name-fit", String(nameLevel));
         setProperty(writer, "--dcb-writer-name-size", `${Math.max(minimumName, baseNameSize - fitStep * nameLevel)}px`);
         nameWidth = outerWidth(name);

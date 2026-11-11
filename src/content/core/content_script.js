@@ -29,9 +29,14 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
   // Drafts and lightweight editor settings live only in this tab. Credentials stay in the native form.
   const previewDrafts = new Map();
   let previewComposer = null;
+  let commentsObserver = null;
+  let commentPageObserver = null;
+  let mediaObserver = null;
+  let resumeCommentsUrl = "";
   let previewVote = null;
   let activeAbort = null;
   let activeRequestKey = "";
+  let activeRequestUrl = "";
   let activeOpenPromise = null;
   let previewLoadingTimer = 0;
   let previewActivationTimer = 0;
@@ -152,8 +157,17 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     delete data.desktopRawHtml;
     const key = previewCacheKey(url);
     cache.delete(key);
-    cache.set(key, { time: Date.now(), data });
+    const bytes = 2 * ((data.articleHTML?.length || 0) + (data.commentsHTML?.length || 0) + (data.writerHTML?.length || 0));
+    if (bytes > 16 * 1024 * 1024) return;
+    cache.set(key, { time: Date.now(), data, bytes });
     while (cache.size > CACHE_MAX_ENTRIES) cache.delete(cache.keys().next().value);
+    let size = 0;
+    for (const entry of cache.values()) size += entry.bytes || 0;
+    while (size > 16 * 1024 * 1024) {
+      const oldest = cache.keys().next().value;
+      size -= cache.get(oldest).bytes || 0;
+      cache.delete(oldest);
+    }
   }
 
   function clearPreviewLoadingTimer(){
@@ -521,6 +535,14 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
   }
 
   function resetPreviewSurface(){
+    commentPageObserver?.disconnect();
+    commentPageObserver = null;
+    mediaObserver?.disconnect();
+    mediaObserver = null;
+    commentsObserver?.disconnect();
+    commentsObserver = null;
+    previewComposerObserver?.disconnect();
+    previewComposerObserver = null;
     disposePreviewVote();
     stopPreviewDcconObserver();
     previewMovieRequests.forEach((controller) => controller.abort());
@@ -534,6 +556,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     const overlay = document.getElementById(OVERLAY_ID);
     if (overlay && currentPreviewData) parkPreviewImages(overlay, currentPreviewData);
     (previewMediaSettleTimers.get(overlay) || []).forEach(clearTimeout);
+    (previewMediaSettleTimers.get(overlay?.querySelector(".dcbpv-comment-html")) || []).forEach(clearTimeout);
     if (overlay) {
       previewMediaSettleTimers.delete(overlay);
       overlay.classList.remove("dcbpv-enter");
@@ -643,6 +666,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
   }
 
   function closePreview({ preserveSession = false } = {}){
+    resumeCommentsUrl = "";
     suspendPreviewComposer();
     const overlay = resetPreviewSurface();
     if (overlay) overlay.remove();
@@ -1599,6 +1623,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
   }
 
   function htmlToPlain(html){
+    if (typeof html === "string" && !/[<&]/.test(html)) return html.replace(/\s+/g, " ").trim();
     const box = document.createElement("div");
     box.innerHTML = String(html || "");
     return box.textContent.replace(/\s+/g, " ").trim();
@@ -2417,6 +2442,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
 
   function commentBodyHTML(item, baseUrl){
     const body = item.querySelector(".usertxt.ub-word,.usertxt,.cmt_txtbox,.comment_txt,.reply_txt,.comment_dccon,.txt") || item;
+    if (!body.childElementCount) return escapeText(body.textContent.trim());
     const clone = body.cloneNode(true);
     clone.querySelectorAll([
       ".dcb-writer-tools", ".cmt_mdf_del", ".btn_cmt_delete", ".btn_cmt_modify", ".btn_reply", ".reply", ".comment_write",
@@ -2470,8 +2496,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     return `<div class="dcbpv-comment-item${depthClass}${deletedClass}${doryClass}" data-dcbpv-comment="1" data-nick="${escapeText(nick)}" data-uid="${escapeText(meta.uid)}" data-ip="${escapeText(meta.ip)}"${packageAttr}${threadAttr}><div class="dcbpv-comment-meta">${previewWriterBadge({ nick, uid: meta.uid, ip: meta.ip, loc: "preview-comment" })}${date ? `<span>${escapeText(date)}</span>` : ""}</div><div class="dcbpv-comment-body">${body}</div></div>`;
   }
 
-  function buildCommentsHTML(doc, root, baseUrl){
-    const items = collectCommentItems(doc, root);
+  function buildCommentsHTML(doc, root, baseUrl, items = collectCommentItems(doc, root)){
     if (items.length) {
       const rows = items.map((item) => previewCommentRowHTML(item, baseUrl)).filter(Boolean);
       if (rows.length) return `<div class="dcbpv-comment-list">${rows.join("")}</div>`;
@@ -2588,7 +2613,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
       : "";
   }
 
-  function parsePreviewDocument(html, originalUrl, fetchedUrl, mode){
+  function parsePreviewDocument(html, originalUrl, fetchedUrl, mode, deferComments = false){
     const parseStartedAt = previewNow();
     const doc = new DOMParser().parseFromString(html, "text/html");
     const baseUrl = fetchedUrl || originalUrl;
@@ -2600,13 +2625,28 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     const writerHTML = buildWriterHTML(doc, root, baseUrl);
     const articleNo = articleNumberFrom(originalUrl, doc);
     const gallId = galleryIdFrom(originalUrl);
-    let commentsHTML = buildCommentsHTML(doc, root, baseUrl);
-    const commentCount = collectCommentItems(doc, root).length;
+    const items = collectCommentItems(doc, root);
+    const commentCount = items.length;
+    const prepareComments = deferComments && commentCount > 48
+      ? async signal => {
+        const rows = [];
+        let deadline = performance.now() + 8;
+        for (const item of items) {
+          if (performance.now() >= deadline) {
+            await waitMs(0, signal);
+            deadline = performance.now() + 8;
+          }
+          const html = previewCommentRowHTML(item, baseUrl);
+          if (html) rows.push(html);
+        }
+        return rows.length ? `<div class="dcbpv-comment-list">${rows.join("")}</div>` : buildCommentsHTML(doc, root, baseUrl, []);
+      } : null;
+    let commentsHTML = prepareComments ? "" : buildCommentsHTML(doc, root, baseUrl, items);
     const expectedComments = commentCountFromText(doc, root);
 
     // 디시 PC 문서는 댓글 수만 서버 HTML에 표시하고 실제 댓글 목록은 AJAX로 채우는 경우가 많다.
     // 특히 미니/인물 갤러리의 "전체 댓글 0개" UI 텍스트를 실제 댓글로 오인하지 않는다.
-    if (!commentsHTML && expectedComments <= 0) {
+    if (!prepareComments && !commentsHTML && expectedComments <= 0) {
       const plainComments = textBetweenMarkers(doc, /댓글\s*영역|전체\s*댓글/, /하단\s*갤러리\s*리스트\s*영역|전체글\s*개념글|글쓰기\s*\n|갤러리\s*리스트\s*번호/);
       if (plainComments && !/전체\s*댓글\s*0\s*개/.test(plainComments)) {
         commentsHTML = plainBlockToHtml(plainComments);
@@ -2620,7 +2660,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
       writerHTML,
       articleHTML: content ? articleHTMLFromElement(content, baseUrl) : "",
       commentsHTML,
-      commentTitle: commentsHTML ? `댓글${commentCount ? ` ${commentCount}개` : expectedComments ? ` ${expectedComments}개` : ""}` : (expectedComments ? `댓글 ${expectedComments}개` : "댓글 없음"),
+      commentTitle: commentCount || expectedComments ? `댓글 ${commentCount || expectedComments}개` : (commentsHTML ? "댓글" : "댓글 없음"),
       counts: extractCounts(doc, root, title),
       gallId,
       articleNo,
@@ -2628,6 +2668,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
       desktopRawHtml: mode === "desktop" ? html : "",
       reportUrl: buildReportUrl(originalUrl, gallId, articleNo, title)
     };
+    if (prepareComments) result.prepareComments = prepareComments;
     addPreviewPhase("parseMs", parseStartedAt);
     return result;
   }
@@ -2721,8 +2762,9 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
       || backupHasYoutube && !primaryHasYoutube) && backup.articleHTML) {
       result.articleHTML = backup.articleHTML;
     }
-    if (!result.commentsHTML && backup.commentsHTML) {
+    if (!result.commentsHTML && !result.prepareComments && (backup.commentsHTML || backup.prepareComments)) {
       result.commentsHTML = backup.commentsHTML;
+      result.prepareComments = backup.prepareComments;
       result.commentTitle = backup.commentTitle;
     }
 
@@ -3147,13 +3189,12 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
         reject(new DOMException("Aborted", "AbortError"));
         return;
       }
-      const timer = setTimeout(resolve, ms);
-      if (signal) {
-        signal.addEventListener("abort", () => {
-          clearTimeout(timer);
-          reject(new DOMException("Aborted", "AbortError"));
-        }, { once: true });
-      }
+      const cancel = () => {
+        clearTimeout(timer);
+        reject(new DOMException("Aborted", "AbortError"));
+      };
+      const timer = setTimeout(() => { signal?.removeEventListener("abort", cancel); resolve(); }, ms);
+      signal?.addEventListener("abort", cancel, { once: true });
     });
   }
 
@@ -3479,13 +3520,36 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     return { html: "", debug };
   }
 
+  function waitForCommentViewport(signal) {
+    const section = document.querySelector(`#${OVERLAY_ID} .dcbpv-comments`);
+    return new Promise((resolve, reject) => {
+      if (signal.aborted) return reject(new DOMException("Aborted", "AbortError"));
+      if (!section || typeof IntersectionObserver !== "function") return resolve();
+      const cancel = () => { observer.disconnect(); reject(new DOMException("Aborted", "AbortError")); };
+      const observer = new IntersectionObserver(entries => {
+        if (!entries.some(entry => entry.isIntersecting)) return;
+        observer.disconnect();
+        signal.removeEventListener("abort", cancel);
+        resolve();
+      }, { root: section.closest(".dcbpv-scroll"), rootMargin: "200px 0px" });
+      signal.addEventListener("abort", cancel, { once: true });
+      observer.observe(section);
+    });
+  }
+
   async function loadPreview(url, { force = false, onArticleReady = null } = {}){
     const cached = !force ? readPreviewCache(url) : null;
-    if (cached) return cached;
+    if (cached && !cached.commentsPending) return cached;
 
     if (activeAbort) activeAbort.abort();
     activeAbort = new AbortController();
     const signal = activeAbort.signal;
+    // Reopening an article that was closed before its comments were requested
+    // restores the compact article immediately. Read sources only on demand.
+    if (cached?.commentsPending && onArticleReady) {
+      onArticleReady(cached, { commentsPending: true });
+      await waitForCommentViewport(signal);
+    }
 
     const mobileUrl = toMobileUrl(url);
     const cacheMode = force ? "reload" : "default";
@@ -3503,10 +3567,10 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
         })();
 
         if (finalHost && finalHost !== "m.dcinside.com") {
-          desktopCandidate = parseDesktopFallback(mobileResponse.text, url, finalMobileUrl);
+          desktopCandidate = parsePreviewDocument(mobileResponse.text, url, finalMobileUrl, "desktop", !!onArticleReady);
           data = desktopCandidate;
         } else {
-          data = parseMobilePreview(mobileResponse.text, url, finalMobileUrl);
+          data = parsePreviewDocument(mobileResponse.text, url, finalMobileUrl, "mobile", !!onArticleReady);
         }
       } catch (error) {
         if (signal.aborted) throw new DOMException("Aborted", "AbortError");
@@ -3524,7 +3588,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     if (!data || isWeakPreviewData(data) || !data.writerHTML) {
       try {
         const desktopResponse = await fetchText(url, signal, cacheMode);
-        const desktopData = parseDesktopFallback(desktopResponse.text, url, desktopResponse.finalUrl || url);
+        const desktopData = parsePreviewDocument(desktopResponse.text, url, desktopResponse.finalUrl || url, "desktop", !!onArticleReady);
         data = data ? mergePreviewData(data, desktopData) : desktopData;
       } catch (desktopError) {
         if (signal.aborted) throw new DOMException("Aborted", "AbortError");
@@ -3556,12 +3620,20 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
 
     // Embedded comments are already final. Only paint a partial preview when
     // a separate comments read could delay the article.
-    const needsComments = actualCommentItemCountFromHtml(data?.commentsHTML) === 0;
-    if (needsComments && data && !isWeakPreviewData(data) && typeof onArticleReady === "function") {
-      try {
-        onArticleReady(data, { commentsPending: true });
-      } catch (_) {}
+    if ((data?.prepareComments || !data?.commentsHTML) && data && !isWeakPreviewData(data) && onArticleReady) {
+      if (!cached?.commentsPending) {
+        const snapshot = { ...data, commentsPending: true };
+        delete snapshot.prepareComments;
+        writePreviewCache(url, snapshot);
+        onArticleReady(snapshot, { commentsPending: true });
+        await waitForCommentViewport(signal);
+      }
     }
+    if (data?.prepareComments) {
+      data.commentsHTML = await data.prepareComments(signal);
+      delete data.prepareComments;
+    }
+    const needsComments = actualCommentItemCountFromHtml(data?.commentsHTML) === 0;
 
     try {
       const galleryType = previewGalleryTypeFromUrl(url);
@@ -3700,13 +3772,23 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
       const imageStartedAt = previewNow();
       normalizeDcMedia(root, baseUrl);
       restorePreviewImages(root);
-      root.querySelectorAll(".dcbpv-movie-wrap").forEach((wrapper) => {
-        const link = wrapper.querySelector(".dcbpv-movie-note a");
+      const overlay = root.closest("#" + OVERLAY_ID);
+      const load = node => {
+        if (node.matches(".dcbpv-movie-wrap")) loadPreviewMovie(node, articleUrl);
+        else loadPreviewPoll(node, articleUrl);
+      };
+      root.querySelectorAll(".dcbpv-movie-wrap,iframe.dcbpv-poll-frame").forEach(node => {
+        const link = node.querySelector(".dcbpv-movie-note a");
         if (link) link.href = articleUrl;
-        loadPreviewMovie(wrapper, articleUrl);
-      });
-      root.querySelectorAll("iframe.dcbpv-poll-frame").forEach((iframe) => {
-        loadPreviewPoll(iframe, articleUrl);
+        if (!overlay || typeof IntersectionObserver !== "function") return load(node);
+        mediaObserver ||= new IntersectionObserver(entries => {
+          for (const entry of entries) {
+            if (!entry.isIntersecting || document.hidden) continue;
+            mediaObserver?.unobserve(entry.target);
+            if (entry.target.isConnected) load(entry.target);
+          }
+        }, {root: overlay.querySelector(".dcbpv-scroll"), rootMargin: "200px 0px"});
+        mediaObserver.observe(node);
       });
       addPreviewPhase("imageMs", imageStartedAt, trace);
       if (lastPreviewTrace?.key === trace?.key) lastPreviewTrace = { ...trace };
@@ -4237,14 +4319,17 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
 
   function refreshPreviewUserMemos(root){
     try {
-      globalThis.DCBUserMemo?.refresh?.(root || document);
+      if (globalThis.DCBUserMemo?.refresh) {
+        globalThis.DCBUserMemo.refresh(root || document);
+        return;
+      }
     } catch (_) {}
     try {
       document.dispatchEvent(new CustomEvent("dcb-user-memo:refresh", { detail: { root: root || document } }));
     } catch (_) {}
   }
 
-  async function applyPreviewFeatureBridge(overlay, data, trace = activePreviewTrace){
+  async function applyPreviewFeatureBridge(overlay, data, trace = activePreviewTrace, addedRows = null){
     if (!overlay || !data) return;
     const requestVersion = previewRequestVersion;
     const processStartedAt = previewNow();
@@ -4307,7 +4392,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
       if (titleKw || bodyKw) replaceSectionWithNote(articleSection, filterNote("keyword-hide", (titleKw || bodyKw).label, "article"));
     }
 
-    overlay.querySelectorAll(".dcbpv-comment-item").forEach((row, index) => {
+    (addedRows || overlay.querySelectorAll(".dcbpv-comment-item")).forEach((row, index) => {
       const meta = previewWriterFromNode(row);
       if (conf.doryBlockEnabled !== false && commentLooksAutomated(row, { ...meta, nick: meta.nick || row.dataset.nick })) {
         markPreviewCommentBlocked(row, "dory");
@@ -4332,7 +4417,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
       if (conf.keywordHideEnabled && hideTargets.comments && !row.classList.contains("dcbpv-filter-hidden")) {
         const kw = matchKeyword(text, hideKeywords);
         if (kw) {
-          row.dataset.dcbpvSoftKey = `comment-${index}`;
+          row.dataset.dcbpvSoftKey = `comment-${row.dataset.dcbpvIndex || index}`;
           markPreviewCommentBlocked(row, "keyword-hide");
           row.insertAdjacentHTML("afterend", filterNote("keyword-hide", kw.label, row.dataset.dcbpvSoftKey));
         }
@@ -4582,6 +4667,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     const previousOwned=state.owned;
     if(result.owned)state.owned=result.owned;
     if(result.maxLength)state.maxLength=result.maxLength;
+    if(result.dates)state.dates=result.dates;
     const overlay=document.getElementById(OVERLAY_ID);
     const times=new Map();
     if(result.dates?.length)overlay?.querySelectorAll('[data-dcbpv-native-id]').forEach(row=>{
@@ -4726,7 +4812,27 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     if (focused) native.focus({preventScroll:true});
   }
 
+  let previewComposerObserver = null;
+  function armPreviewComposer(data, overlay) {
+    previewComposerObserver?.disconnect();
+    const slot = overlay.querySelector(".dcbpv-composer-slot");
+    syncComposerToggle();
+    const saved = previewDrafts.get(previewCacheKey(data.url));
+    // Drafts can paint immediately. The native editor has its own loading gate.
+    if (saved?.target || saved?.editor || typeof IntersectionObserver !== "function") {
+      void openPreviewComposer(data);
+      return;
+    }
+    previewComposerObserver = new IntersectionObserver(entries => {
+      if (entries.some(entry => entry.isIntersecting) && overlay.isConnected && !document.hidden) {
+        void openPreviewComposer(data);
+      }
+    }, { root: slot.closest(".dcbpv-scroll"), rootMargin: "200px 0px" });
+    previewComposerObserver.observe(slot);
+  }
   async function openPreviewComposer(data,target,{focus=false}={}){
+    previewComposerObserver?.disconnect();
+    previewComposerObserver = null;
     const key=previewCacheKey(data.url);
     const stateBefore=previewComposer;
     if(stateBefore?.key===key){
@@ -4872,6 +4978,71 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
   });
 
 
+  function mountCommentPage(root, html, overlay, data, previousCount) {
+    commentPageObserver?.disconnect();
+    commentPageObserver = null;
+    if (html.length < 64000) { root.innerHTML = html; return; }
+    const template = document.createElement("template");
+    template.innerHTML = html;
+    const list = template.content.firstElementChild;
+    if (!list?.matches(".dcbpv-comment-list") || template.content.childElementCount !== 1 || list.children.length <= 80) {
+      root.replaceChildren(template.content);
+      return;
+    }
+    const visible = list.cloneNode(false);
+    const more = document.createElement("button");
+    more.type = "button";
+    more.className = "dcbpv-btn";
+    more.textContent = "댓글 더 보기";
+    root.replaceChildren(visible, more);
+    let index = 0;
+    function append(limit) {
+      const fragment = document.createDocumentFragment(), added = [];
+      while (list.firstElementChild && added.length < limit) {
+        const row = list.firstElementChild;
+        row.dataset.dcbpvIndex = String(index++);
+        added.push(row);
+        fragment.append(row);
+      }
+      visible.append(fragment);
+      if (!list.firstElementChild) {
+        commentPageObserver?.disconnect();
+        commentPageObserver = null;
+        more.remove();
+      }
+      return added;
+    }
+    append(Math.max(80, previousCount));
+    if (!more.isConnected) return;
+    const next = () => {
+      if (!more.isConnected || currentPreviewData !== data) return;
+      const added = append(80);
+      if (previewComposer?.ready) applyComposerMetadata(previewComposer, {dates:previewComposer.dates}, {newRows:true});
+      else decoratePreviewReplyActions(overlay);
+      for (const row of added) {
+        row.style.visibility = "hidden";
+        const time = row.querySelector(".dcbpv-time");
+        if (time && !time.dataset.dcbpvFullTime) {
+          time.dataset.dcbpvFullTime = time.title = time.textContent.trim();
+          time.textContent = formatPreviewCommentTime(time.title);
+        }
+        row.querySelectorAll(".gall_writer,.ub-writer").forEach(writer => globalThis.DCBWriterLayout?.normalize(writer));
+      }
+      settlePreviewMedia(root, data.fetchedUrl || data.url, data.url);
+      void applyPreviewFeatureBridge(overlay, data, activePreviewTrace, added).then(() => {
+        added.forEach(row => row.style.removeProperty("visibility"));
+      });
+      emitPreviewContent(root);
+    };
+    more.onclick = next;
+    if (typeof IntersectionObserver === "function") {
+      commentPageObserver = new IntersectionObserver(entries => {
+        if (!document.hidden && entries.some(entry => entry.isIntersecting)) next();
+      }, { root: overlay.querySelector(".dcbpv-scroll"), rootMargin: "300px 0px" });
+      commentPageObserver.observe(more);
+    }
+  }
+
   function updatePreviewComments(data,composerResult){
     const overlay = document.getElementById(OVERLAY_ID);
     if (!overlay || overlay.dataset.dcbpvUrl !== data.url) return false;
@@ -4884,7 +5055,8 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     if (!commentsSection || !commentRoot) return false;
 
     if (commentTitle) commentTitle.textContent = data.commentTitle || "댓글";
-    commentRoot.innerHTML = previewCommentHtml(data, false);
+    const previousCount = commentRoot.querySelectorAll(".dcbpv-comment-item[data-dcbpv-index]").length;
+    mountCommentPage(commentRoot, previewCommentHtml(data, false), overlay, data, previousCount);
     delete commentRoot.dataset.dcbpvFiltered;
     delete commentRoot.dataset.dcbpvOriginalHtml;
     // Apply ownership and timestamps to the new rows, once.
@@ -4969,11 +5141,11 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     const composer = previewComposer?.key === previewCacheKey(data.url) ? previewComposer : null;
     const composerFocus = composer?.form?.contains(document.activeElement) ? document.activeElement : null;
     const existingOverlay = document.getElementById(OVERLAY_ID);
-    if (composer && existingOverlay?.dataset.dcbpvUrl === data.url) {
+    if ((composer || currentPreviewData === data) && existingOverlay?.dataset.dcbpvUrl === data.url) {
       // Replacing/moving an iframe reloads it and discards native input/security
       // state. Refresh only presentation areas while the editor is open.
       const article = existingOverlay.querySelector(".dcbpv-article");
-      article.innerHTML = data.articleHTML;
+      if (article.dataset.dcbpvFiltered === "1" || currentPreviewData !== data) article.innerHTML = data.articleHTML;
       delete article.dataset.dcbpvFiltered;
       delete article.dataset.dcbpvOriginalHtml;
       existingOverlay.querySelector(".dcbpv-title a").textContent = data.title;
@@ -4990,7 +5162,8 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     const overlay = resetPreviewSurface() || previewOverlay();
     currentPreviewData = data;
 
-    const commentEmptyHtml = previewCommentHtml(data, commentsPending);
+    const deferRows = !commentsPending && data.commentsHTML?.length > 64000 && typeof IntersectionObserver === "function";
+    const commentEmptyHtml = deferRows ? "" : previewCommentHtml(data, commentsPending);
 
     overlay.dataset.dcbpvUrl = data.url;
     overlay.innerHTML = `
@@ -5019,7 +5192,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
               <h3 class="dcbpv-section-title dcbpv-comments-title">${escapeText(data.commentTitle || "댓글")}</h3>
               <span class="dcbpv-thread-count"></span>
               <div class="dcbpv-comments-actions">
-                <button type="button" data-act="compose" aria-expanded="true" aria-controls="dcbpv-composer">댓글 입력창 닫기</button>
+                <button type="button" data-act="compose" aria-expanded="false" aria-controls="dcbpv-composer">댓글 입력창 열기</button>
                 <button type="button" data-act="reload">새로고침</button>
               </div>
             </div>
@@ -5035,6 +5208,15 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
       </section>`;
 
     mountPreview(overlay);
+    if (deferRows) {
+      commentsObserver = new IntersectionObserver(entries => {
+        if (!entries.some(entry => entry.isIntersecting) || currentPreviewData !== data) return;
+        commentsObserver?.disconnect();
+        commentsObserver = null;
+        updatePreviewComments(data);
+      }, { root: overlay.querySelector(".dcbpv-scroll"), rootMargin: "200px 0px" });
+      commentsObserver.observe(overlay.querySelector(".dcbpv-comments"));
+    }
     if (composer) {
       overlay.querySelector(".dcbpv-composer-slot").appendChild(composer.form);
       composerFocus?.focus({ preventScroll: true });
@@ -5048,7 +5230,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     addPreviewPhase("renderMs", renderStartedAt, trace);
     markRenderedPreviewRead(data, overlay);
     void preparePreviewRecommendation(data);
-    if(!composer)void openPreviewComposer(data);
+    if(!composer)armPreviewComposer(data, overlay);
     else syncComposerToggle();
   }
 
@@ -5162,7 +5344,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     const cachedNeedsYoutubeRefresh = !!cached
       && previewMayContainDynamicYouTube(cached)
       && !previewYouTubeIframePresent(cached.articleHTML, cached.fetchedUrl || cached.url);
-    if (cached && !cachedNeedsYoutubeRefresh) {
+    if (cached && !cached.commentsPending && !cachedNeedsYoutubeRefresh) {
       const trace = beginPreviewTrace(url, requestKey, true);
       activeAbort?.abort();
       const requestVersion = ++previewRequestVersion;
@@ -5180,6 +5362,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     activeAbort?.abort();
     const requestVersion = ++previewRequestVersion;
     activeRequestKey = requestKey;
+    activeRequestUrl = url;
     let articleRendered = false;
     clearPreviewLoadingTimer();
     previewLoadingTimer = setTimeout(() => {
@@ -5244,6 +5427,43 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     "[data-memo-uid]",
     "[data-memo-ip]"
   ].join(",");
+
+  document.addEventListener("visibilitychange", () => {
+    const data = currentPreviewData;
+    const overlay = document.getElementById(OVERLAY_ID);
+    if (document.hidden) {
+      cancelScheduledPreview();
+      previewComposerObserver?.disconnect();
+      mediaObserver?.disconnect();
+      mediaObserver = null;
+      if (activeOpenPromise) {
+        resumeCommentsUrl = activeRequestUrl;
+        previewRequestVersion++;
+        activeAbort?.abort();
+        activeRequestKey = "";
+        activeOpenPromise = null;
+        clearPreviewLoadingTimer();
+      }
+      const editor = previewComposer;
+      // Keep an active native edit/confirmation in place, including composition
+      // and password fields. Dispose only a reader's unused editor.
+      if (editor && !editor.submitting && !editor.draft && !editor.target && !editor.pickerOpen &&
+          !editor.form.contains(document.activeElement) && !editor.frame.contentDocument?.querySelector('input[type=password]')?.value) {
+        suspendPreviewComposer();
+        syncComposerToggle();
+      }
+      return;
+    }
+    if (resumeCommentsUrl) {
+      const url = resumeCommentsUrl;
+      resumeCommentsUrl = "";
+      void openPreview(url);
+    } else if (overlay && data) {
+      if (!previewComposer) armPreviewComposer(data, overlay);
+      settlePreviewMedia(overlay, data.fetchedUrl || data.url, data.url);
+    }
+  });
+  window.addEventListener("pagehide", () => { if (currentPreviewData || activeOpenPromise) closePreview(); });
 
   function previewUrlFromTarget(target){
     if (!(target instanceof Element)) return "";
