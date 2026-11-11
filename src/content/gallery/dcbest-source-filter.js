@@ -65,6 +65,7 @@
     },
     keywordHideEnabled: false,
     hiddenKeywords: [],
+    keywordHideCategories: {},
     keywordHideTargets: {
       listTitle: true,
       viewTitle: true,
@@ -184,6 +185,9 @@
     }
 
     keywordList = prepareKeywords(active);
+    if (keywordHideEnabled && hideTargets.listTitle) {
+      keywordList.unshift(...globalThis.DCBKeywordMatcher.prepareCategories(conf.keywordHideCategories));
+    }
     if (keywordBlockEnabled && blockTargets.listTitle) {
       keywordList.unshift(...globalThis.DCBKeywordMatcher.prepareCategories(conf.keywordBlockCategories));
     }
@@ -1438,6 +1442,7 @@
         blockedKeywords: Array.isArray(conf.blockedKeywords) ? conf.blockedKeywords : [],
         keywordBlockTargets: conf.keywordBlockTargets || DEFAULTS.keywordBlockTargets,
         keywordHideEnabled: !!conf.keywordHideEnabled,
+        keywordHideCategories: conf.keywordHideCategories,
         hiddenKeywords: Array.isArray(conf.hiddenKeywords) ? conf.hiddenKeywords : [],
         keywordHideTargets: conf.keywordHideTargets || DEFAULTS.keywordHideTargets
       };
@@ -1471,6 +1476,7 @@
       && !changes.keywordBlockTargets
       && !changes.keywordBlockCategories
       && !changes.keywordHideEnabled
+      && !changes.keywordHideCategories
       && !changes.hiddenKeywords
       && !changes.keywordHideTargets
     ) return;
@@ -1481,6 +1487,7 @@
       if (change && Object.prototype.hasOwnProperty.call(change, "newValue")) patch[key] = change.newValue;
     });
     if (changes.keywordBlockCategories && !("keywordBlockCategories" in patch)) patch.keywordBlockCategories = {};
+    if (changes.keywordHideCategories && !("keywordHideCategories" in patch)) patch.keywordHideCategories = {};
     currentConfig = { ...currentConfig, ...patch };
     applyGallerySettings(currentConfig);
     rebuildActiveKeywordList(currentConfig);

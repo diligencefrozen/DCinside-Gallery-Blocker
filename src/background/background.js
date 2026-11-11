@@ -20,6 +20,7 @@ const KEYWORD_SYNC_DEFAULTS = Object.freeze({
   keywordBlockTargets: { listTitle: true, viewTitle: true, viewBody: true, comments: true },
   keywordHideEnabled: false,
   hiddenKeywords: [],
+  keywordHideCategories: { profanity: false, politics: false, poll: false, promotion: false, hate: false },
   keywordHideTargets: { listTitle: true, viewTitle: true, viewBody: true, comments: true }
 });
 const KEYWORD_SYNC_KEYS = new Set(Object.keys(KEYWORD_SYNC_DEFAULTS));
@@ -472,7 +473,7 @@ function normalizeKeywordSettingsPatch(patch = {}) {
   const out = {};
   for (const [key, value] of Object.entries(patch && typeof patch === "object" ? patch : {})) {
     if (!KEYWORD_SYNC_KEYS.has(key)) continue;
-    if (key === "keywordBlockCategories") {
+    if (key === "keywordBlockCategories" || key === "keywordHideCategories") {
       out[key] = Object.fromEntries(Object.keys(KEYWORD_SYNC_DEFAULTS[key]).map(id => [id, value?.[id] === true]));
       continue;
     }
@@ -619,12 +620,15 @@ function queueKeywordSettingsPatch(patch = {}) {
   const safePatch = normalizeKeywordSettingsPatch(patch);
   const job = keywordSettingsWriteQueue.then(async () => {
     if (!Object.keys(safePatch).length) return { ok: true };
-    if (safePatch.keywordBlockCategories) {
+    const categoryKeys = ["keywordBlockCategories", "keywordHideCategories"].filter(key => key in safePatch);
+    if (categoryKeys.length) {
       // Each UI sends only the clicked flag. Merge with sync inside the shared
       // write queue so interleaved popup/options edits preserve sibling flags.
-      const { keywordBlockCategories } = await chrome.storage.sync.get("keywordBlockCategories");
-      const merged = { ...keywordBlockCategories, ...patch.keywordBlockCategories };
-      safePatch.keywordBlockCategories = normalizeKeywordSettingsPatch({ keywordBlockCategories: merged }).keywordBlockCategories;
+      const stored = await chrome.storage.sync.get(categoryKeys);
+      for (const key of categoryKeys) {
+        const merged = { ...stored[key], ...patch[key] };
+        safePatch[key] = normalizeKeywordSettingsPatch({ [key]: merged })[key];
+      }
       await chrome.storage.sync.set(safePatch);
       await writeKeywordHotCache(safePatch);
       return { ok: true };

@@ -202,7 +202,7 @@
     if (cached) applyIfCurrent(cached);
 
     if (uiCache?.ready) {
-      uiCache.ready.then(applyIfCurrent).catch(() => {});
+      uiCache.ready.then(() => applyIfCurrent(uiCache.read(DEFAULTS))).catch(() => {});
     } else {
       chrome.storage.sync.get(DEFAULTS, applyIfCurrent);
     }
@@ -301,6 +301,7 @@
     if (enabled) {
       enabled.checked = Boolean(state.keywordHideEnabled);
     }
+    $("keywordHideCategories").disabled = !state.keywordHideEnabled;
 
     Object.keys(DEFAULTS.keywordHideTargets).forEach((key) => {
       const input = getTargetElement(key);

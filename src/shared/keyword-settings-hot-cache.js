@@ -24,6 +24,7 @@
     },
     keywordHideEnabled: false,
     hiddenKeywords: [],
+    keywordHideCategories: { profanity: false, politics: false, poll: false, promotion: false, hate: false },
     keywordHideTargets: {
       listTitle: true,
       viewTitle: true,
@@ -56,6 +57,7 @@
       },
       keywordHideEnabled: !!src.keywordHideEnabled,
       hiddenKeywords: Array.isArray(src.hiddenKeywords) ? src.hiddenKeywords.slice() : [],
+      keywordHideCategories: Object.fromEntries(Object.keys(DEFAULTS.keywordHideCategories).map(id => [id, src.keywordHideCategories?.[id] === true])),
       keywordHideTargets: {
         ...DEFAULTS.keywordHideTargets,
         ...(src.keywordHideTargets && typeof src.keywordHideTargets === "object" ? src.keywordHideTargets : {})

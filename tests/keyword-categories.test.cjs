@@ -68,25 +68,35 @@ test('an unpacked extension synchronizes categories, re-filters open pages and r
   });
   await options.evaluate(targets => chrome.storage.sync.set({
     keywordBlockEnabled: true, blockedKeywords: ['수동등록'], keywordBlockTargets: targets,
+    keywordHideEnabled: true, hiddenKeywords: ['직접숨김'], keywordHideTargets: targets,
     userBlockEnabled: false, galleryBlockEnabled: false, doryBlockEnabled: false, hideComment: false,
     showMemberIpInfo: false, hideAnonymousEnabled: false, hideForeignIpEnabled: false
   }), targets);
   const popup = await context.newPage();
   await popup.goto(origin + '/src/ui/popup/popup.html');
-  const clickFlag = (page, id) => page.evaluate(key => document.querySelector(`#keywordBlockCategories input[value="${key}"]`).click(), id);
+  const clickFlag = (page, id, field = 'keywordBlockCategories') => page.evaluate(([key, field]) =>
+    document.querySelector(`#${field} input[value="${key}"]`).click(), [id, field]);
+  const hideField = 'keywordHideCategories';
   for (const page of [options, popup]) await page.waitForFunction(() =>
-    document.querySelectorAll('#keywordBlockCategories input:enabled').length === 5);
-  await Promise.all([clickFlag(options, 'poll'), clickFlag(popup, 'politics')]);
-  for (const page of [options, popup]) await page.waitForFunction(() => document.querySelectorAll('#keywordBlockCategories input:checked').length === 2);
+    document.querySelectorAll('.keyword-categories input:enabled').length === 10);
+  await Promise.all([clickFlag(options, 'poll'), clickFlag(popup, 'politics'),
+    clickFlag(popup, 'promotion', hideField), clickFlag(options, 'poll', hideField)]);
+  for (const page of [options, popup]) await page.waitForFunction(() =>
+    document.querySelectorAll('#keywordBlockCategories input:checked').length === 2 &&
+    document.querySelectorAll('#keywordHideCategories input:checked').length === 2);
   const enabled = { ...off, politics: true, poll: true };
+  const hideFlags = { ...off, promotion: true, poll: true };
   await options.waitForFunction(async () => {
     const { dcbKeywordSettingsHotCacheV1: hot } = await chrome.storage.local.get('dcbKeywordSettingsHotCacheV1');
-    return hot?.data.keywordBlockCategories?.politics && hot.data.keywordBlockCategories.poll;
+    return hot?.data.keywordBlockCategories?.politics && hot.data.keywordBlockCategories.poll
+      && hot.data.keywordHideCategories?.promotion && hot.data.keywordHideCategories.poll;
   });
   const download = options.waitForEvent('download');
   await options.evaluate(() => exportSettings());
   const backup = JSON.parse(await fs.readFile(await (await download).path(), 'utf8'));
   assert.deepEqual(backup.storage.sync.keywordBlockCategories, enabled);
+  assert.deepEqual(backup.storage.sync.keywordHideCategories, hideFlags);
+  assert.deepEqual(backup.storage.sync.hiddenKeywords, ['직접숨김']);
   assert.deepEqual(backup.storage.sync.blockedKeywords, ['수동등록']);
 
   const gallery = await context.newPage();
@@ -111,26 +121,39 @@ test('an unpacked extension synchronizes categories, re-filters open pages and r
   await gallery.locator('#row2 a').click({ button: 'right' });
   await attached(gallery, '.dcbpv-article .dcbpv-filter-chip');
   await attached(gallery, '.dcbpv-comment-item[data-dcbpv-blocked-label="투표"]');
+  assert.equal(await gallery.locator('.dcbpv-filter-reveal').count(), 0);
   await options.evaluate(targets => chrome.storage.sync.set({ keywordBlockTargets: { ...targets, viewTitle: false, comments: false } }), targets);
   await attached(view, '#dcb-keyword-article-overlay[data-block-key^="body:category:politics"]');
   await attached(view, '#comment_li_1:not([data-dcb-keyword-match])');
-  await attached(gallery, '.dcbpv-comment-item:not(.dcbpv-filter-hidden)');
+  await attached(gallery, '.dcbpv-comment-item[data-dcbpv-blocked-reason="keyword-hide"]');
   await attached(gallery, '.dcbpv-article .dcbpv-filter-chip[title="정치"]');
   await clickFlag(popup, 'poll');
   await attached(gallery, '#row0:not([data-dcb-list-hidden])');
+  await attached(gallery, '#row0[data-dcb-keyword-soft-match="투표"]');
   assert.equal(await gallery.locator('#row1').getAttribute('data-dcb-list-keyword'), '수동등록');
   await options.evaluate(() => chrome.storage.sync.set({ keywordBlockEnabled: false }));
   await attached(view, 'html:not(.dcb-keyword-article-blocked)');
   await attached(gallery, '#row1:not([data-dcb-list-hidden])');
+  await attached(view, '.write_div[data-dcb-keyword-soft-match="투표"]');
+  await attached(view, '#comment_li_1[data-dcb-keyword-soft-match="투표"]');
+  await gallery.locator('[data-dcbpv-reveal="article"]').click();
+  assert.match(await gallery.locator('.dcbpv-article').innerText(), /국회의원/);
+  await gallery.locator('[data-dcbpv-reveal^="comment-"]').click();
+  await attached(gallery, '.dcbpv-comment-item:not(.dcbpv-filter-hidden)');
+  await view.locator('[data-dcb-keyword-soft-placeholder]:has(+ #comment_li_1) button').click();
+  assert.equal(await view.locator('#comment_li_1').isVisible(), true);
+  await options.evaluate(() => chrome.storage.sync.set({ keywordHideEnabled: false }));
+  await attached(gallery, '#row0:not([data-dcb-keyword-soft-hidden])');
+  await attached(view, '.write_div:not([data-dcb-keyword-soft-hidden])');
 
   const restore = payload => options.evaluate(async raw => {
     const { sync, local, blockedUids } = parseBackupPayload(raw);
     await commitBackupImportCaches(sync, local, blockedUids);
-    return chrome.storage.sync.get(['keywordBlockCategories', 'blockedKeywords']);
+    return chrome.storage.sync.get(['keywordBlockCategories', 'keywordHideCategories', 'blockedKeywords']);
   }, payload);
   assert.deepEqual(await restore({ data: { blockedKeywords: ['구버전'] } }),
-    { keywordBlockCategories: off, blockedKeywords: ['구버전'] });
-  assert.deepEqual(await restore(backup), { keywordBlockCategories: enabled, blockedKeywords: ['수동등록'] });
+    { keywordBlockCategories: off, keywordHideCategories: off, blockedKeywords: ['구버전'] });
+  assert.deepEqual(await restore(backup), { keywordBlockCategories: enabled, keywordHideCategories: hideFlags, blockedKeywords: ['수동등록'] });
   await gallery.reload();
   await attached(gallery, '#row0[data-dcb-list-keyword="투표"]');
 });

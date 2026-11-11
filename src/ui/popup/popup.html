@@ -553,8 +553,8 @@
     ul#keywordList li.keyword-just-added,
     ul#hideKeywordList li.keyword-just-added{animation:none}
   }
-  #keywordBlockCategories{border:0;padding:0;margin:12px 0;min-width:0}
-  #keywordBlockCategories legend{padding:0;font-weight:600}
+  .keyword-categories{border:0;padding:0;margin:12px 0;min-width:0}
+  .keyword-categories legend{padding:0;font-weight:600}
   .keyword-targets{
     display:grid;
     grid-template-columns:1fr 1fr;
@@ -1572,7 +1572,7 @@
     </label>
   </div>
 
-  <fieldset id="keywordBlockCategories">
+  <fieldset class="keyword-categories" id="keywordBlockCategories">
     <legend>자동 차단 카테고리</legend>
     <div class="keyword-targets"></div>
     <small role="status"></small>
@@ -1616,6 +1616,12 @@
       <input type="checkbox" id="keywordHideTargetComments">
     </label>
   </div>
+
+  <fieldset class="keyword-categories" id="keywordHideCategories">
+    <legend>자동 숨기기 카테고리</legend>
+    <div class="keyword-targets"></div>
+    <small role="status"></small>
+  </fieldset>
 
   <div class="row-input">
     <input id="hideKeywordInput" type="text" placeholder="예: 숨길 단어">

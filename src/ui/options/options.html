@@ -232,8 +232,8 @@
   gap:14px;
 }
 
-#keywordBlockCategories{border:0;padding:0;margin:0;min-width:0}
-#keywordBlockCategories legend{padding:0;margin-bottom:8px;font-weight:600}
+.keyword-categories{border:0;padding:0;margin:0;min-width:0}
+.keyword-categories legend{padding:0;margin-bottom:8px;font-weight:600}
 .keyword-targets{
   display:grid;
   grid-template-columns:repeat(2, minmax(0, 1fr));
@@ -1443,7 +1443,7 @@
     </div>
 
     <div>
-      <fieldset id="keywordBlockCategories">
+      <fieldset class="keyword-categories" id="keywordBlockCategories">
         <legend>자동 차단 카테고리</legend>
         <div class="keyword-targets"></div>
         <small role="status"></small>
@@ -1513,6 +1513,14 @@
           <input type="checkbox" id="optionKeywordHideTargetComments">
         </label>
       </div>
+    </div>
+
+    <div>
+      <fieldset class="keyword-categories" id="keywordHideCategories">
+        <legend>자동 숨기기 카테고리</legend>
+        <div class="keyword-targets"></div>
+        <small role="status"></small>
+      </fieldset>
     </div>
 
     <div>

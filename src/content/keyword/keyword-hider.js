@@ -28,6 +28,7 @@
   const DEFAULTS = {
     keywordHideEnabled: false,
     hiddenKeywords: [],
+    keywordHideCategories: {},
     keywordHideTargets: {
       listTitle: true,
       viewTitle: true,
@@ -38,6 +39,7 @@
 
   let enabled = false;
   let keywords = [];
+  let config = { ...DEFAULTS };
   let targets = { ...DEFAULTS.keywordHideTargets };
   let unsubscribeDomBus = null;
   let scheduled = false;
@@ -104,7 +106,8 @@
     const style = document.createElement("style");
     style.id = STYLE_ID;
     style.textContent = `
-      [${HIDDEN_ATTR}="1"] {
+      [${HIDDEN_ATTR}="1"],
+      [${PLACEHOLDER_ATTR}]:has(+ [data-dcb-keyword-hidden="1"]) {
         display: none !important;
       }
 
@@ -690,9 +693,11 @@
     unsubscribeDomBus = null;
   }
 
-  function applySettings(config = {}) {
+  function applySettings(patch = {}) {
+    config = { ...config, ...patch };
     enabled = !!config.keywordHideEnabled;
-    keywords = prepareKeywords(config.hiddenKeywords);
+    const categories = enabled ? globalThis.DCBKeywordMatcher.prepareCategories(config.keywordHideCategories) : [];
+    keywords = categories.concat(prepareKeywords(config.hiddenKeywords));
     targets = {
       ...DEFAULTS.keywordHideTargets,
       ...(config.keywordHideTargets || {})
@@ -719,20 +724,11 @@
   if (chrome?.storage?.onChanged) {
     (globalThis.DCBRuntimeSettingsCache?.onChanged || chrome.storage.onChanged).addListener((changes, area) => {
       if (area !== "sync") return;
-      if (!changes.keywordHideEnabled && !changes.hiddenKeywords && !changes.keywordHideTargets) return;
-
-      if (changes.keywordHideEnabled) enabled = !!changes.keywordHideEnabled.newValue;
-      if (changes.hiddenKeywords) keywords = prepareKeywords(changes.hiddenKeywords.newValue);
-      if (changes.keywordHideTargets) {
-        targets = {
-          ...DEFAULTS.keywordHideTargets,
-          ...(changes.keywordHideTargets.newValue || {})
-        };
+      const patch = {};
+      for (const key of Object.keys(DEFAULTS)) {
+        if (changes[key]) patch[key] = changes[key].newValue ?? DEFAULTS[key];
       }
-
-      if (enabled && keywords.length) startObserver();
-      else stopObserver();
-      scheduleApply(document, { reset: true });
+      if (Object.keys(patch).length) applySettings(patch);
     });
   }
 

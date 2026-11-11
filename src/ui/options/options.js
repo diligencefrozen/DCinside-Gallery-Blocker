@@ -204,7 +204,7 @@ const BACKUP_KEYS = [
   IMAGE_BLOCK_CONFIG_KEY, IMAGE_BLOCK_RECORD_KEY, IMAGE_BLOCK_AUTHOR_TARGET_KEY, IMAGE_ACCOUNT_RULE_KEY,
   DCCON_BLOCK_STATE_KEY,
   "keywordBlockEnabled", "blockedKeywords", "keywordBlockTargets", "keywordBlockCategories",
-  "keywordHideEnabled", "hiddenKeywords", "keywordHideTargets",
+  "keywordHideEnabled", "hiddenKeywords", "keywordHideTargets", "keywordHideCategories",
   "dcbFontFamily", "dcbFontCustomFamily", "dcbFontScale", "dcbApplyFontToDc", "dcbTextDetection"
 ];
 
@@ -259,6 +259,7 @@ const BACKUP_DEFAULTS = {
   keywordHideEnabled: false,
   hiddenKeywords: [],
   keywordHideTargets: KEYWORD_DEFAULT_TARGETS,
+  keywordHideCategories: globalThis.DCBKeywordCategoryUI.normalize(),
   dcbFontFamily: "Noto Sans KR",
   dcbFontCustomFamily: "",
   dcbFontScale: 100,
@@ -992,6 +993,7 @@ function parseBackupPayload(raw) {
 
     if (!Object.keys(sync).length && !Object.keys(local).length && !blockedUids?.length) throw new Error("empty");
     sync.keywordBlockCategories = globalThis.DCBKeywordCategoryUI.normalize(sync.keywordBlockCategories);
+    sync.keywordHideCategories = globalThis.DCBKeywordCategoryUI.normalize(sync.keywordHideCategories);
     sync.readPostsHighlightEnabled = Object.prototype.hasOwnProperty.call(sync, "readPostsHighlightEnabled")
       ? normalizeReadPostsHighlightValue(sync.readPostsHighlightEnabled)
       : true;
@@ -1003,6 +1005,7 @@ function parseBackupPayload(raw) {
   const local = {};
   const sync = { ...legacy };
   sync.keywordBlockCategories = globalThis.DCBKeywordCategoryUI.normalize(sync.keywordBlockCategories);
+  sync.keywordHideCategories = globalThis.DCBKeywordCategoryUI.normalize(sync.keywordHideCategories);
   const blockedUids = Object.prototype.hasOwnProperty.call(sync, "blockedUids") ? sync.blockedUids : null;
 
   if (blockedUids !== null && (!Array.isArray(blockedUids) || !blockedUids.every((value) => typeof value === "string"))) {

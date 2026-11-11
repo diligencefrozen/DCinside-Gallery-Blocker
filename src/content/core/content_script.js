@@ -3736,6 +3736,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     keywordBlockTargets: { listTitle: true, viewTitle: true, viewBody: true, comments: true },
     keywordHideEnabled: false,
     hiddenKeywords: [],
+    keywordHideCategories: {},
     keywordHideTargets: { listTitle: true, viewTitle: true, viewBody: true, comments: true }
   };
 
@@ -4285,23 +4286,24 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
 
     const blockKeywords = previewKeywords(conf.blockedKeywords);
     const keywordMatcher = globalThis.DCBKeywordMatcher;
-    const findBlockKeyword = keywordMatcher?.findKeyword || findPreviewKeyword;
+    const matchKeyword = keywordMatcher?.findKeyword || findPreviewKeyword;
     if (conf.keywordBlockEnabled && keywordMatcher) blockKeywords.unshift(...keywordMatcher.prepareCategories(conf.keywordBlockCategories));
     const hideKeywords = previewKeywords(conf.hiddenKeywords);
+    if (conf.keywordHideEnabled && keywordMatcher) hideKeywords.unshift(...keywordMatcher.prepareCategories(conf.keywordHideCategories));
     const blockTargets = conf.keywordBlockTargets || PREVIEW_FILTER_DEFAULTS.keywordBlockTargets;
     const hideTargets = conf.keywordHideTargets || PREVIEW_FILTER_DEFAULTS.keywordHideTargets;
     const titleText = data.title || "";
     const articleText = overlay.querySelector(".dcbpv-article")?.innerText || "";
 
     if (conf.keywordBlockEnabled) {
-      const titleKw = blockTargets.viewTitle ? findBlockKeyword(titleText, blockKeywords) : null;
-      const bodyKw = blockTargets.viewBody ? findBlockKeyword(articleText, blockKeywords) : null;
+      const titleKw = blockTargets.viewTitle ? matchKeyword(titleText, blockKeywords) : null;
+      const bodyKw = blockTargets.viewBody ? matchKeyword(articleText, blockKeywords) : null;
       if (titleKw || bodyKw) replaceSectionWithNote(articleSection, filterNote("keyword-block", (titleKw || bodyKw).label));
     }
 
     if (conf.keywordHideEnabled) {
-      const titleKw = hideTargets.viewTitle ? findPreviewKeyword(titleText, hideKeywords) : null;
-      const bodyKw = hideTargets.viewBody ? findPreviewKeyword(articleText, hideKeywords) : null;
+      const titleKw = hideTargets.viewTitle ? matchKeyword(titleText, hideKeywords) : null;
+      const bodyKw = hideTargets.viewBody ? matchKeyword(articleText, hideKeywords) : null;
       if (titleKw || bodyKw) replaceSectionWithNote(articleSection, filterNote("keyword-hide", (titleKw || bodyKw).label, "article"));
     }
 
@@ -4321,14 +4323,14 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
       }
       const text = commentText(row);
       if (conf.keywordBlockEnabled && blockTargets.comments) {
-        const kw = findBlockKeyword(text, blockKeywords);
+        const kw = matchKeyword(text, blockKeywords);
         if (kw) {
           markPreviewCommentBlocked(row, "keyword");
           row.dataset.dcbpvBlockedLabel = kw.label;
         }
       }
       if (conf.keywordHideEnabled && hideTargets.comments && !row.classList.contains("dcbpv-filter-hidden")) {
-        const kw = findPreviewKeyword(text, hideKeywords);
+        const kw = matchKeyword(text, hideKeywords);
         if (kw) {
           row.dataset.dcbpvSoftKey = `comment-${index}`;
           markPreviewCommentBlocked(row, "keyword-hide");
@@ -5123,7 +5125,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     const keys = new Set([
       "userBlockEnabled", "includeGray", "hideDCGray", "blockedUids", "hideComment", "hideImgComment", "hideDccon", "hideTextCon",
       "showUidBadge", "hideAnonymousEnabled", "hideForeignIpEnabled", "doryBlockEnabled", "keywordBlockEnabled", "blockedKeywords", "keywordBlockTargets",
-      "keywordBlockCategories", "keywordHideEnabled", "hiddenKeywords", "keywordHideTargets"
+      "keywordBlockCategories", "keywordHideEnabled", "hiddenKeywords", "keywordHideTargets", "keywordHideCategories"
     ]);
     const knownSettingChanged = Object.keys(changes || {}).some((key) => keys.has(key));
     const userBlockStoreChanged = area === "local"

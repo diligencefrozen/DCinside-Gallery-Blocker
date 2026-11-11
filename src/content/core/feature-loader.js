@@ -58,7 +58,7 @@
       const keywordCoreOn = galleryFilterOn || settings.keywordBlockEnabled === true || settings.keywordHideEnabled === true;
       const ipCoreOn = settings.showMemberIpInfo === true || settings.hideForeignIpEnabled === true || settings.hideAnonymousEnabled === true;
       add("keyword-core", keywordCoreOn, "critical");
-      add("list-filter", galleryFilterOn || settings.keywordBlockEnabled === true, "critical");
+      add("list-filter", keywordCoreOn, "critical");
       add("keyword-hider", settings.keywordHideEnabled === true, "visual");
       add("keyword-blocker", settings.keywordBlockEnabled === true, "visual");
       add("uid-badge", settings.showUidBadge === true, "visual");
