@@ -1329,16 +1329,9 @@
         </label>
       </div>
 
-      <label class="setting-row">작성자 이름 표시
-        <select id="dcbMaskWriterNames">
-          <option value="off">원래 닉네임</option>
-          <option value="all">모두 ㅇㅇ로 표시</option>
-          <option value="members">회원만 ㅇㅇ로 표시</option>
-        </select>
-      </label>
-      <label class="setting-row"><span class="setting-copy"><strong>작성자 활동량 표시</strong>
-        <span>계정 활동 필터가 확인한 회원의 글·댓글 수를 이름 옆에 표시합니다.</span></span>
-        <input type="checkbox" id="dcbShowWriterActivity"></label>
+      <div class="setting-row row"><span class="setting-copy">작성자 이름 익명화</span><label class="switch"><input type="checkbox" aria-label="작성자 이름 익명화" id="dcbMaskEnabled"><span class="slider"></span></label></div>
+      <label class="setting-row row" id="dcbMaskScope">적용 대상 <select id="dcbMaskWriterNames"><option value="all">모두 적용</option><option value="members">회원만 적용</option></select></label>
+      <div class="setting-row row"><span class="setting-copy">작성자 활동량 표시</span><label class="switch"><input type="checkbox" aria-label="작성자 활동량 표시" id="dcbShowWriterActivity"><span class="slider"></span></label></div>
 
       <div class="setting-row">
         <div class="setting-copy">
@@ -1863,8 +1856,9 @@
       <input id="importUserMemoFile" type="file" accept=".json,application/json" style="display:none">
     </div>
 
-    <details>
-      <summary>디시 웹 이용자 메모 가져오기</summary>
+    <details id="dcRecordsImport">
+      <summary>디시 기록 가져오기</summary>
+      <p><a href="#settingsBackup">확장 자체 백업 복원</a> · 아래에서는 공식 웹 메모를 가져옵니다. 공식 앱 및 웹 차단 목록 파일은 지원 형식 확인 전입니다.</p>
       <p>PC웹의 dcbackup_PC(.dcdata) 또는 모바일웹의 dcbackup_M(.txt) 파일을 선택하세요. 적용 전에 기존 메모 백업이 다운로드됩니다.</p>
       <input type="file" id="officialMemoFile" accept=".txt,.dcdata">
       <label>파일 형식 <select id="memoImportFormat"><option value="web">디시 웹 메모 백업</option><option value="text">직접 작성한 텍스트 목록</option></select></label>
@@ -1897,6 +1891,7 @@
 <script src="../../shared/storage/dccon-block-store.js"></script>
 <script src="../shared/keyword-category-ui.js"></script>
 <script src="official-memos.js"></script>
+<script src="../shared/writer-preferences.js"></script>
 <script src="options.js"></script>
 <script src="../shared/dccon-block-options.js"></script>
 <script src="../shared/keyword-hide-ui.js"></script>

@@ -27,7 +27,7 @@
     "userMemoEnabled", "noticeBlockEnabled", "userBlockEnabled", "gamemecaBlockEnabled",
     "doryBlockEnabled", "hideDccon", "hideTextCon", "hideComment", "hideImgComment",
     "autoRefreshEnabled", "previewEnabled", "builtinDcbestBlockEnabled",
-    "dcbApplyFontToDc", "linkWarnEnabled", "compactListEnabled", ...configKeys
+    "dcbShowWriterActivity", "dcbApplyFontToDc", "linkWarnEnabled", "compactListEnabled", ...configKeys
   ];
   const planKeySet = new Set(planKeys);
 
@@ -71,7 +71,7 @@
       add("img-comment-cleaner", isView && settings.hideImgComment === true, "normal");
       add("auto-refresh", isList && settings.autoRefreshEnabled === true, "idle");
       add("image-blocker", settings.dcbImageBlockConfig?.enabled === true, "critical");
-      add("image-tools", settings.dcbImageAccountRules?.enabled === true, "idle");
+      add("image-tools", settings.dcbShowWriterActivity === true || settings.dcbImageAccountRules?.enabled === true, "idle");
       add("text-detector", settings?.dcbTextDetection?.enabled === true && isView, "idle");
       add("preview", settings.previewEnabled !== false, "background");
     }

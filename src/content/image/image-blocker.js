@@ -526,6 +526,22 @@
     return "익명 모드";
   }
 
+  let peekPost = "";
+  const previewPeeks = new Set();
+  function revealOnce(frame, el) {
+    const src = mediaUrl(el);
+    frame.dataset.ibxSource = src;
+    frame.dataset.ibxAuthorPeek = frame.dataset.ibxPeek = "1";
+    const overlay = el.closest("#dcb-preview-overlay");
+    if (overlay) {
+      if (peekPost !== overlay.dataset.dcbpvUrl) previewPeeks.clear();
+      peekPost = overlay.dataset.dcbpvUrl;
+      previewPeeks.add(src);
+    }
+    frame.style.display = "";
+    if (el.tagName === "IMG") el.loading = "eager";
+  }
+
   function revealAuthorNotice(frame, el, identity) {
     frame.style.display = "none";
     const previous = frame.previousElementSibling;
@@ -542,7 +558,7 @@
     const reveal = (event) => {
       event?.preventDefault?.();
       event?.stopPropagation?.();
-      frame.dataset.ibxAuthorPeek = "1";
+      revealOnce(frame, el);
       box.remove();
       frame.style.display = "";
       void prepare(el);
@@ -637,15 +653,17 @@
 
   function revealNotice(frame, key) {
     frame.style.display = "none";
-    if (frame.dataset.ibxKey === key && frame.previousElementSibling?.classList.contains(`${UI}-notice`)) return;
+    if (frame.previousElementSibling?.dataset.ibxRecordKey === key) return;
     dropNotice(frame);
     if (frame.dataset.ibxPeek === "1") return;
     const box = document.createElement("div");
     box.className = `${UI}-notice`;
+    box.dataset.ibxRecordKey = key;
     // 숨긴 이미지가 알림 안의 축소판으로 다시 노출되지 않도록 텍스트와 동작만 표시한다.
     box.innerHTML = `<span><strong>이미지를 가렸어요</strong><span>필요하면 이미지만 보거나 차단을 해제할 수 있어요</span></span><button type="button" data-act="peek">이미지 보기</button><button type="button" data-act="unblock">차단 해제</button>`;
     const reveal = () => {
-      frame.dataset.ibxPeek = "1";
+      const media = frame.querySelector("img,video,iframe");
+      if (media) revealOnce(frame,media);
       box.remove();
       frame.style.display = "";
       frame.classList.remove(`${UI}-blur`);
@@ -712,6 +730,7 @@
         const quickKey = currentInfo.key || `quick:${await digestText(currentInfo.src)}`;
         if (!config.enabled || !currentFrame.isConnected || mediaUrl(currentEl) !== currentInfo.src) return;
         const item = writeAliases(quickKey, currentInfo, makeRecord(currentEl, currentInfo, quickKey));
+        previewPeeks.delete(currentInfo.src);
         delete currentFrame.dataset.ibxPeek;
         revealNotice(currentFrame, quickKey);
         void storeLocal(RECORD_KEY, records);
@@ -743,17 +762,25 @@
 
     const revision = renderRevision;
     const frame = frameFor(el);
+    if (frame.dataset.ibxSource !== src) {
+      delete frame.dataset.ibxPeek;
+      delete frame.dataset.ibxAuthorPeek;
+      frame.dataset.ibxSource = src;
+    }
+    const overlay = el.closest("#dcb-preview-overlay");
+    if (overlay && peekPost === overlay.dataset.dcbpvUrl && previewPeeks.has(src)) {
+      frame.dataset.ibxAuthorPeek = frame.dataset.ibxPeek = "1";
+    }
     const currentAuthor = detectAuthorIdentity(el);
 
     if (postAllowed(el) && shouldHideAuthorImages(currentAuthor) && frame.dataset.ibxAuthorPeek !== "1") {
+      const saved = blockedUrls.get(src);
+      if (saved) { revealNotice(frame,saved); return; }
       revealAuthorNotice(frame, el, currentAuthor);
       return;
     }
 
-    if (frame.dataset.ibxSource !== src) {
-      delete frame.dataset.ibxPeek;
-      frame.dataset.ibxSource = src;
-    }
+
     // Most saved records have the exact URL. Only older hash-only records
     // require an async digest when inspecting a page.
     const quickKey = blockedUrls.get(src) || (legacyQuickKeys ? `quick:${await digestText(src)}` : "");
@@ -944,11 +971,28 @@
     });
   });
 
-  document.addEventListener("dcb-preview-state", (event) => {
-    if (!config.enabled || !event?.detail?.open) return;
-    requestAnimationFrame(() => {
-      const previewRoot = document.getElementById("dcb-preview-overlay");
-      if (previewRoot) scan(previewRoot);
+  let pendingArticle = null;
+  let previewFrame = 0;
+  document.addEventListener("dcb-preview-state", event => {
+    if (event.detail?.open) return;
+    previewPeeks.clear();
+    peekPost = "";
+    cancelAnimationFrame(previewFrame);
+    previewFrame = 0;
+    pendingArticle = null;
+  });
+  document.addEventListener("dcb-preview-content", event => {
+    if (!config.enabled) return;
+    const root = event.detail?.root;
+    const post = root?.closest?.("#dcb-preview-overlay")?.dataset.dcbpvUrl;
+    if (post && peekPost && post !== peekPost) { previewPeeks.clear(); peekPost = ""; }
+    const article = root?.closest?.(".dcbpv-article") || root?.querySelector?.(".dcbpv-article");
+    if (!article) return;
+    pendingArticle = article;
+    if (!previewFrame) previewFrame = requestAnimationFrame(() => {
+      previewFrame = 0;
+      if (pendingArticle?.isConnected) scan(pendingArticle);
+      pendingArticle = null;
     });
   });
 

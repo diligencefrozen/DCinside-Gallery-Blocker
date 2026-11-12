@@ -1,0 +1,21 @@
+const test=require('node:test'),assert=require('node:assert/strict'),path=require('node:path'),fs=require('node:fs');
+const {chromium}=require('playwright');
+test('popup and options sync writer modes and open the official importer',async t=>{
+ const root=path.resolve(__dirname,'..');
+ const c=await chromium.launchPersistentContext('',{executablePath:chromium.executablePath(),headless:true,args:['--disable-extensions-except='+root,'--load-extension='+root]});
+ t.after(()=>c.close());const sw=c.serviceWorkers()[0]||await c.waitForEvent('serviceworker'),origin='chrome-extension://'+new URL(sw.url()).hostname;
+ const opt=await c.newPage(),popup=await c.newPage();
+ await opt.goto(origin+'/src/ui/options/options.html');await popup.goto(origin+'/src/ui/popup/popup.html');
+ await popup.locator('#popupTabDisplay').click();
+ await popup.locator('#dcbMaskEnabled').evaluate(e=>e.click());
+ await popup.locator('#dcbMaskWriterNames').selectOption('members');await popup.locator('#dcbShowWriterActivity').evaluate(e=>e.click());
+ await opt.waitForFunction(()=>document.querySelector('#dcbMaskWriterNames').value==='members'&&document.querySelector('#dcbShowWriterActivity').checked);
+ fs.mkdirSync('test-results/layout-1112',{recursive:true});
+ await opt.locator('#dcbMaskScope').scrollIntoViewIfNeeded();await opt.screenshot({path:'test-results/layout-1112/options.png'});
+ await popup.locator('#dcbShowWriterActivity').scrollIntoViewIfNeeded();await popup.screenshot({path:'test-results/layout-1112/popup.png'});
+ await opt.locator('#dcbMaskEnabled').evaluate(e=>e.click());await popup.waitForFunction(()=>!document.querySelector('#dcbMaskEnabled').checked);
+ const opened=c.waitForEvent('page');
+ await popup.locator('#openDcRecords').evaluate(e=>e.click());
+ const imported=await opened;await imported.waitForURL(/options\.html#dcRecordsImport$/);await imported.waitForLoadState('domcontentloaded');
+ assert.equal(await imported.locator('#dcRecordsImport').evaluate(e=>e.open),true);
+});

@@ -299,7 +299,11 @@
   content: "ㅇㅇ";
   font-size: 12px;
 }
-:root.dcb-show-writer-activity [data-dcb-writer-activity]::after {
+.dcb-activity-badge { display:none; }
+:root.dcb-show-writer-activity .dcb-activity-badge {display:inline-block;float:right;margin-inline:4px;white-space:nowrap;color:inherit;opacity:.72;pointer-events:none;line-height:inherit}
+:root.dcb-show-writer-activity :is(.fr,.dcbpv-comment-actions) > .dcb-activity-badge {float:none}
+@media(max-width:540px){:root.dcb-show-writer-activity .dcb-activity-badge{display:none}}
+:root.dcb-show-writer-activity .dcb-activity-badge::after {
   content: attr(data-dcb-writer-activity);
   font-size: 11px;
   margin-inline-start: 4px;

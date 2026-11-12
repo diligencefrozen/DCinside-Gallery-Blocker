@@ -2395,3 +2395,5 @@ if (openOptionsBtn) {
 
   load();
 })();
+
+document.getElementById("openDcRecords").onclick = () => chrome.tabs.create({url:chrome.runtime.getURL("src/ui/options/options.html#dcRecordsImport")});

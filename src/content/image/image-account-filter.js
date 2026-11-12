@@ -158,9 +158,9 @@
     async initialize() {
       const revision = this.settingsRevision;
       try {
-        const syncData = await globalThis.DCBRuntimeSettingsCache.get({ [SETTINGS_KEY]: DEFAULT_SETTINGS });
-        if (revision === this.settingsRevision) this.settings = normalizeSettings(syncData[SETTINGS_KEY]);
-        if (this.settings.enabled) await this.ensureCacheReady();
+        const syncData = await globalThis.DCBRuntimeSettingsCache.get({ [SETTINGS_KEY]: DEFAULT_SETTINGS, dcbShowWriterActivity:false });
+        if (revision === this.settingsRevision) this.settings = { ...normalizeSettings(syncData[SETTINGS_KEY]), display:syncData.dcbShowWriterActivity === true };
+        if (this.settings.enabled || this.settings.display) await this.ensureCacheReady();
       } catch (_) {
         if (revision === this.settingsRevision) this.settings = { ...DEFAULT_SETTINGS };
       }
@@ -249,6 +249,9 @@
         };
       }
 
+      if (![result.posts, result.comments].every(n => Number.isSafeInteger(n) && n >= 0)) {
+        return { checkedAt:Date.now(), unavailable:true, reason:"INVALID_RESPONSE" };
+      }
       return {
         checkedAt: Number(result.checkedAt) || Date.now(),
         statsKnown: Number.isInteger(result.posts) && Number.isInteger(result.comments),
@@ -293,7 +296,7 @@
     async evaluate(rawUid) {
       await this.readyPromise;
       const uid = normalizeUid(rawUid);
-      if (!uid || !this.settings.enabled) {
+      if (!uid || !(this.settings.enabled || this.settings.display)) {
         return {
           uid,
           available: false,
@@ -304,7 +307,7 @@
       }
 
       await this.ensureCacheReady();
-      if (!this.settings.enabled) return this.judge(uid, null);
+      if (!(this.settings.enabled || this.settings.display)) return this.judge(uid, null);
 
       const key = uid.toLowerCase();
       const cached = this.cache[key];
@@ -332,7 +335,7 @@
 
     peek(rawUid) {
       const uid = normalizeUid(rawUid);
-      if (!uid || !this.settings.enabled) return null;
+      if (!uid || !(this.settings.enabled || this.settings.display)) return null;
       const cached = this.cache[uid.toLowerCase()];
       return this.cacheFresh(cached) ? this.judge(uid, cached) : null;
     }
@@ -356,9 +359,10 @@
       try { window.dispatchEvent(new Event("dcb:account-activity-cache-changed")); } catch (_) {}
       return;
     }
-    if (area === "sync" && changes[SETTINGS_KEY]) {
+    if (area === "sync" && (changes[SETTINGS_KEY] || changes.dcbShowWriterActivity)) {
       service.settingsRevision += 1;
-      service.settings = normalizeSettings(changes[SETTINGS_KEY].newValue);
+      service.settings = { ...(changes[SETTINGS_KEY] ? normalizeSettings(changes[SETTINGS_KEY].newValue) : service.settings),
+        display: changes.dcbShowWriterActivity ? changes.dcbShowWriterActivity.newValue === true : service.settings.display };
       const settings = service.settings;
       const announce = () => {
         if (service.settings !== settings) return;
@@ -368,7 +372,7 @@
           }));
         } catch (_) {}
       };
-      if (settings.enabled) void service.ensureCacheReady().then(announce);
+      if (settings.enabled || settings.display) void service.ensureCacheReady().then(announce);
       else announce();
     }
   });

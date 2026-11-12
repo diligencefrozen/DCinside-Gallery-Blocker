@@ -1710,7 +1710,10 @@
 
   <hr class="divider">
 
-  <p class="section-title">사용자 차단 관리</p>
+  <p class="section-title">작성자 표시</p>
+<div class="setting-row row"><span class="setting-copy">작성자 이름 익명화</span><label class="switch"><input type="checkbox" aria-label="작성자 이름 익명화" id="dcbMaskEnabled"><span class="slider"></span></label></div>
+      <label class="setting-row row" id="dcbMaskScope">적용 대상 <select id="dcbMaskWriterNames"><option value="all">모두 적용</option><option value="members">회원만 적용</option></select></label>
+      <div class="setting-row row"><span class="setting-copy">작성자 활동량 표시</span><label class="switch"><input type="checkbox" aria-label="작성자 활동량 표시" id="dcbShowWriterActivity"><span class="slider"></span></label></div>
   <label class="row">
     <span style="min-width:110px;">닉네임 옆 회원 아이디 표시</span>
     <label class="switch">
@@ -1795,6 +1798,7 @@
   <p class="hint">디시 메모와 무관하게 확장프로그램 내부에만 저장됩니다.</p>
   <div class="row-actions">
     <button id="exportUserMemoBtn" type="button">내보내기</button>
+    <button id="openDcRecords" type="button">디시 기록 가져오기</button>
     <button id="importUserMemoBtn" type="button">가져오기</button>
   </div>
   <input id="importUserMemoFile" type="file" accept=".json,application/json" style="display:none">
@@ -1880,6 +1884,7 @@
   <script src="user-block-list.js"></script>
   <script src="release-link.js"></script>
   <script src="../shared/keyword-category-ui.js"></script>
+  <script src="../shared/writer-preferences.js"></script>
   <script src="popup.js"></script>
   <script src="../shared/dccon-block-options.js"></script>
   <script src="../shared/keyword-hide-ui.js"></script>

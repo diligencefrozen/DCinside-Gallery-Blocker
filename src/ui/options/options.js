@@ -205,7 +205,7 @@ const BACKUP_KEYS = [
   DCCON_BLOCK_STATE_KEY,
   "keywordBlockEnabled", "blockedKeywords", "keywordBlockTargets", "keywordBlockCategories",
   "keywordHideEnabled", "hiddenKeywords", "keywordHideTargets", "keywordHideCategories",
-  "dcbMaskWriterNames", "dcbShowWriterActivity",
+  "dcbMaskWriterNames", "dcbMaskLastScope", "dcbShowWriterActivity",
   "dcbFontFamily", "dcbFontCustomFamily", "dcbFontScale", "dcbApplyFontToDc", "dcbTextDetection"
 ];
 
@@ -1575,23 +1575,6 @@ function refreshUidList(delay = 0) {
 }
 
 /* ───── 이용자 메모 관리 ───── */
-{
-  const mask = document.getElementById("dcbMaskWriterNames");
-  const activity = document.getElementById("dcbShowWriterActivity");
-  function render() {
-    const settings = UI_SETTINGS_CACHE.read(BACKUP_DEFAULTS);
-    mask.value = ["all", "members"].includes(settings.dcbMaskWriterNames) ? settings.dcbMaskWriterNames : "off";
-    activity.checked = settings.dcbShowWriterActivity === true;
-  }
-  mask.addEventListener("change", () => chrome.storage.sync.set({dcbMaskWriterNames: mask.value}));
-  activity.addEventListener("change", () => chrome.storage.sync.set({dcbShowWriterActivity: activity.checked}));
-  render();
-  UI_SETTINGS_CACHE.ready.then(render);
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === "sync" && (changes.dcbMaskWriterNames || changes.dcbShowWriterActivity)) render();
-  });
-}
-
 function setMemoStatus(text, isError = false) {
   if (!userMemoStatus) return;
 

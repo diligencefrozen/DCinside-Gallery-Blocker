@@ -49,8 +49,7 @@ for (const [engine, browserType] of Object.entries({ chromium, firefox })) {
       if (phase==='after') {
         for (const id of ['pc','mobile']) assert.equal(await page.locator('#'+id).isVisible(),true);
         await page.getByRole('button',{name:'이미지 보기'}).click();
-        assert.equal(await page.locator('#original').isVisible(),false,'a saved URL still requires its own reveal');
-        await page.getByRole('button',{name:'이미지 보기'}).click();
+        assert.equal(await page.locator('.dcibx-notice').count(),0,'one click reveals both image layers');
         assert.equal(await page.locator('#original').isVisible(),true);
         await page.evaluate(()=>{fixtureEnabled=false;fixtureChange({dcbImageBlockConfig:{newValue:{enabled:false}}},'sync')});
         await page.waitForFunction(()=>!document.querySelector('.dcibx-frame'));

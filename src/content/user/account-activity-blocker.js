@@ -206,6 +206,14 @@
     return kind === "comment" ? settings.blockComments !== false : settings.blockPosts !== false;
   }
 
+  const badges = new WeakMap();
+  function badgeHost(writer, info) {
+    if (info.kind === "comment") {
+      const comment = writer.closest(".cmt_info,.reply_info,.dcbpv-comment-item");
+      return comment?.querySelector(":scope > .fr,.dcbpv-comment-actions,.dcbpv-comment-meta") || comment;
+    }
+    return writer.closest("tr")?.querySelector("td.gall_tit.ub-word,td.gall_tit") || writer.parentElement;
+  }
   function registerWriter(writer, filter, settings) {
     const info = targetForWriter(writer);
     if (!info) return;
@@ -215,11 +223,15 @@
       delete writer.dataset.dcbWriterActivity;
     }
     const { target } = info;
-    if (!uid || !settingAllows(settings, info.kind)) {
+    if (settings.display && (!uid || writer.dataset.dcbActivityUid !== uid)) {
+      const stale = badgeHost(writer, info)?.querySelector(":scope > .dcb-activity-badge");
+      if (stale && stale.dataset.activityOwner !== uid) stale.remove();
+    }
+    if (!uid || (!settings.display && !settingAllows(settings, info.kind))) {
       clearTarget(target);
       return;
     }
-    if (target.dataset.dcbAccountActivityPeek === uid) {
+    if (!settings.display && target.dataset.dcbAccountActivityPeek === uid) {
       clearTarget(target, uid);
       return;
     }
@@ -248,7 +260,7 @@
       if (!target.isConnected || !item.writer.isConnected ||
           extractUid(item.writer).toLowerCase() !== entry.key) {
         entry.targets.delete(target);
-      } else if (!settingAllows(settings, item.info.kind) || target.dataset.dcbAccountActivityPeek === item.uid) {
+      } else if (!settings.display && (!settingAllows(settings, item.info.kind) || target.dataset.dcbAccountActivityPeek === item.uid)) {
         clearTarget(target, item.uid);
         entry.targets.delete(target);
       }
@@ -259,18 +271,33 @@
   function applyVerdict(entry, verdict, settings) {
     for (const { info, uid, writer } of liveTargets(entry, settings)) {
       const counts = verdict.stats;
-      if (Number.isInteger(counts?.posts) && Number.isInteger(counts?.comments)) {
+      if (settings.display && Number.isInteger(counts?.posts) && Number.isInteger(counts?.comments)) {
         const label = `글 ${counts.posts} · 댓 ${counts.comments}`;
         if (writer.dataset.dcbActivityUid !== uid) writer.dataset.dcbActivityUid = uid;
-        if (writer.dataset.dcbWriterActivity !== label) writer.dataset.dcbWriterActivity = label;
+        const host = badgeHost(writer, info);
+        if (host) {
+          let badge = badges.get(writer) || host.querySelector(":scope > .dcb-activity-badge");
+          if (!badge) {
+            badge = document.createElement("span");
+            badge.className = "dcb-activity-badge";
+            badge.dataset.dcbOwned = "activity";
+            badge.title = "작성자 활동량";
+          }
+          badges.set(writer,badge);
+          if (badge.dataset.activityOwner !== uid) badge.dataset.activityOwner = uid;
+          if (badge.parentElement !== host) host.prepend(badge);
+          if (badge.dataset.dcbWriterActivity !== label) badge.dataset.dcbWriterActivity = label;
+        }
       }
-      if (verdict.shouldHide) setState(info, uid, "hidden", verdict);
-      else clearTarget(info.target, uid);
+      if (settings.enabled && settingAllows(settings,info.kind) && info.target.dataset.dcbAccountActivityPeek !== uid && verdict.shouldHide) setState(info, uid, "hidden", verdict);
+      else if (info.target.hasAttribute("data-dcb-account-activity-uid")) clearTarget(info.target, uid);
     }
   }
 
   function applyQueueState(entry, settings) {
-    for (const { info, uid } of liveTargets(entry, settings)) {
+    for (const { info, uid, writer } of liveTargets(entry, settings)) {
+      badges.get(writer)?.remove();
+      if (!settings.enabled || !settingAllows(settings,info.kind) || info.target.dataset.dcbAccountActivityPeek === uid) continue;
       setState(info, uid, entry.state, null,
         entry.state !== "unavailable" && settings.holdWhileChecking === true);
     }
@@ -328,7 +355,7 @@
         }
         if (!enabled || epoch !== rulesEpoch || document.hidden) break;
         const settings = filter.getSettings();
-        if (!settings.enabled) break;
+        if (!settings.enabled && !settings.display) break;
         liveTargets(next, settings);
         if (!next.targets.size) {
           uidQueue.delete(key);
@@ -366,6 +393,7 @@
   }
 
   function clearAll(resetPeek = false) {
+    document.querySelectorAll(".dcb-activity-badge").forEach(badge=>badge.remove());
     document.querySelectorAll("[data-dcb-activity-uid]").forEach(writer => {
       delete writer.dataset.dcbActivityUid;
       delete writer.dataset.dcbWriterActivity;
@@ -401,7 +429,7 @@
     await filter.ready();
     if (!enabled) return;
     const settings = filter.getSettings();
-    if (!settings.enabled) {
+    if (!settings.enabled && !settings.display) {
       if (scope === document) clearAll();
       return;
     }
@@ -514,7 +542,8 @@
     const filter = FILTER();
     if (!filter) return;
     await filter.ready();
-    enabled = filter.getSettings().enabled === true;
+    const settings = filter.getSettings();
+    enabled = settings.enabled || settings.display;
     if (!enabled) {
       stopWork();
       document.getElementById(STYLE_ID)?.remove();
@@ -544,14 +573,8 @@
   window.addEventListener("dcb:account-activity-cache-changed", () => {
     if (enabled && uidQueue.size) void drainUidQueue();
   });
-  document.addEventListener("dcb-preview-state", (event) => {
-    if (!enabled || !event?.detail?.open) return;
-    const preview = document.getElementById("dcb-preview-overlay");
-    preview?.querySelectorAll?.(`[data-dcb-account-activity-uid],[data-dcb-account-activity-peek],.${HIDDEN_CLASS},.${PENDING_CLASS}`).forEach((target) => {
-      clearTarget(target);
-      delete target.dataset.dcbAccountActivityPeek;
-    });
-    if (preview) queueIncrementalScan(preview, true);
+  document.addEventListener("dcb-preview-content", event => {
+    if (enabled && event.detail?.root) queueIncrementalScan(event.detail.root, true);
   });
 
   void updateFeatureState();

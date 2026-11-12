@@ -598,6 +598,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
         if (body?.dataset.dcbpvOriginalHtml) {
           body.innerHTML = body.dataset.dcbpvOriginalHtml;
           delete body.dataset.dcbpvFiltered;
+          emitPreviewContent(body);
           markRenderedPreviewRead(data, overlay);
         }
         revealButton.closest(".dcbpv-filter-note")?.remove();
