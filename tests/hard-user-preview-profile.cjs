@@ -7,6 +7,7 @@ const { spawn } = require('node:child_process');
 const { chromium, firefox } = require('playwright');
 const { setTimeout: delay } = require('node:timers/promises');
 const assert = require('node:assert/strict');
+const nativeDocument = require('./helpers/native-preview-document.cjs');
 
 async function run() {
   const [extension, input, output, soak = '0'] = process.argv.slice(2);
@@ -70,20 +71,16 @@ async function run() {
         }finally{await api.tabs.remove(native.id);}
       }
       await api.storage.sync.set(sync);
+      await api.storage.local.set({fixtureGroupResults:nativeSamples});
     }
-    const main=await api.tabs.create({url});
-    if(groups){
-      while((await api.tabs.get(main.id)).status!=='complete')await new Promise(r=>setTimeout(r,50));
-      await api.scripting.executeScript({target:{tabId:main.id},args:[nativeSamples],func:rows=>{
-        document.documentElement.dataset.fixtureGroups=JSON.stringify(rows);
-      }});
-    }
+    await api.tabs.create({url});
     if(multipleTabs)await api.tabs.create({url:url+'&page=2',active:false});
   };
   await fs.appendFile(path.join(staged,'src/ui/options/options.js'),
     '\n;('+restore.toString()+')('+JSON.stringify(backup)+','+JSON.stringify(fixtureUrl)+','+(Number(soak)>0)+','+useChrome+','+process.argv.includes('--groups')+');\n');
   await fs.appendFile(path.join(staged,'src/content/core/content_script.js'),
-    '\ndocument.documentElement.dataset.fixturePreviewReady="1";');
+    '\ndocument.documentElement.dataset.fixturePreviewReady="1";\n'+
+    (process.argv.includes('--groups') ? 'chrome.storage.local.get("fixtureGroupResults").then(({fixtureGroupResults})=>{if(fixtureGroupResults)document.documentElement.dataset.fixtureGroups=JSON.stringify(fixtureGroupResults)});' : ''));
   const loader=path.join(staged,'src/content/core/feature-loader.js');
   const elapsed='const elapsed = performance.now() - started;';
   const loaderSource=await fs.readFile(loader,'utf8');
@@ -130,6 +127,7 @@ async function run() {
     const original=await fs.readFile(bg,'utf8');
     assert.ok(original.includes(needle));
     const fixtures=Object.fromEntries([[1,50],[3,500],[5,2000]].map(([no,n])=>[no,article(n)]));
+    for(let no=81;no<=84;no++)fixtures[no]=article(2);
     await fs.writeFile(bg,original.replace(needle,()=>needle+'\n  if(msg.type==="dcb.fetchText" && msg.url.includes("dcbfixture")) {const u=new URL(msg.url);const text=fixtureArticles[u.searchParams.get("no")||u.pathname.split("/").pop()]; sendResponse({ok:true,status:200,text,finalUrl:msg.url});return;}')+'\nconst fixtureArticles='+JSON.stringify(fixtures)+';\n');
     let tab, evalIn, version;
     const wait=async(ctx,expression)=>{for(let i=0;i<160;i++){try{if(await evalIn(ctx,expression))return;}catch{}await delay(100)}throw Error('Timed out: '+expression)};
@@ -138,13 +136,16 @@ async function run() {
       await chromeContext.route(/^https?:/,route=>{
         const url=new URL(route.request().url()),fixture=url.searchParams.get('id')==='dcbfixture';
         if(fixture)reads++;
-        return route.fulfill({status:fixture?200:404,contentType:'text/html; charset=utf-8',body:fixture?(url.searchParams.get('no')==='777'?nativeArticle:'<table class="gall_list"><tbody>'+list+'</tbody></table>'):''});
+        const no=Number(url.searchParams.get('no'));
+        const body=no>=81&&no<=84?nativeDocument(url.href,false):no===777?nativeArticle:'<table class="gall_list"><tbody>'+list+'</tbody></table>';
+        return route.fulfill({status:fixture?200:404,contentType:'text/html; charset=utf-8',body:fixture?body:''});
       });
       const worker=chromeContext.serviceWorkers()[0]||await chromeContext.waitForEvent('serviceworker');
       await worker.evaluate(()=>chrome.storage.session.set({fixtureRoutesReady:true}));
       const pageAt=()=>chromeContext.pages().find(p=>p.url()===fixtureUrl);
       for(let i=0;i<(process.argv.includes('--groups')?1500:160)&&!pageAt();i++)await delay(100);
       tab=pageAt();assert.ok(tab,'Chromium restored fixture tab');
+      if(await tab.locator('tr.ub-content').count()!==100) await tab.reload({waitUntil:'domcontentloaded'});
       evalIn=(page,expression)=>page.evaluate(expression);
       version=chromeContext.browser().version();
     }else{
@@ -156,7 +157,8 @@ async function run() {
         const req=msg.params.request;const url=new URL(req.url);
         const isFixture=url.searchParams.get('id')==='dcbfixture'||url.pathname.includes('/dcbfixture/');
         if(isFixture)reads++;
-        const body=isFixture?(url.pathname.includes('lists')?'<table class="gall_list"><tbody>'+list+'</tbody></table>':url.searchParams.get('no')==='777'?nativeArticle:article(count)):'';
+        const no=Number(url.searchParams.get('no'));
+        const body=isFixture?(url.pathname.includes('lists')?'<table class="gall_list"><tbody>'+list+'</tbody></table>':no>=81&&no<=84?nativeDocument(url.href,false):no===777?nativeArticle:article(count)):'';
         void command('network.provideResponse',{request:req.request,statusCode:isFixture?200:404,headers:[{name:'Content-Type',value:{type:'string',value:'text/html; charset=utf-8'}}],body:{type:'string',value:body}}).catch(()=>{});
       }};
     const session=await command('session.new',{capabilities:{alwaysMatch:{}}});
@@ -178,6 +180,11 @@ async function run() {
     console.log('Firefox backup restored');
     }
     await wait(tab,'document.querySelectorAll("tr.ub-content").length===100');
+    let nativeGroups=[];
+    if(process.argv.includes('--groups')){
+      await wait(tab,'!!document.documentElement.dataset.fixtureGroups');
+      nativeGroups=JSON.parse(await evalIn(tab,'document.documentElement.dataset.fixtureGroups'));
+    }
     await wait(tab,'document.documentElement.dataset.fixturePreviewReady==="1"');
     const samples=[];
     const effects=[];
@@ -223,19 +230,42 @@ async function run() {
         assert.equal(await evalIn(tab,'document.querySelectorAll("#dcb-preview-overlay iframe").length'),0);
       }
     }
-    const nativeGroups=process.argv.includes('--groups')?JSON.parse(await evalIn(tab,'document.documentElement.dataset.fixtureGroups')):[];
     const batches=JSON.parse(await evalIn(tab,'document.documentElement.dataset.fixtureBatches||"[]"'));
-    const result={browser:version,reads,samples,effects,nativeGroups,batches};
+    const editors=[];
+    if(process.argv.includes('--editors')){
+      for(const [i,board] of ['','mgallery/','mini/','person/'].entries()){
+        const url='/'+board+'board/view/?id=dcbfixture&no='+(81+i);
+        for(const phase of ['cold','warm']){
+          await evalIn(tab,`document.querySelector('.gall_tit a').href=${JSON.stringify(url)};document.querySelector('.gall_tit a').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true}));true`);
+          await wait(tab,'!!document.querySelector(".dcbpv-article")');
+          const start=Date.now();
+          await evalIn(tab,`{const toggle=document.querySelector('[data-act=compose]');if(toggle.getAttribute('aria-expanded')==='false')toggle.click();const input=document.querySelector('.dcbpv-resume-input');if(input)input.dispatchEvent(new Event('focus'));}true`);
+          const editor='document.querySelector("iframe[data-dcbpv-compose-frame]")?.contentDocument?.querySelector("#dcbpv-native-editor textarea")';
+          await wait(tab,'!!('+editor+')');
+          editors.push({board:board||'main',phase,readyMs:Date.now()-start,frames:await evalIn(tab,'document.querySelectorAll("iframe[data-dcbpv-compose-frame]").length')});
+          await evalIn(tab,`{const input=${editor};input.value='합성 초안';input.dispatchEvent(new Event('input',{bubbles:true}));}true`);
+          await evalIn(tab,'document.querySelector("#dcb-preview-overlay [data-act=close]").click();true');
+          assert.equal(await evalIn(tab,'document.querySelectorAll("iframe[data-dcbpv-compose-frame]").length'),0);
+        }
+      }
+    }
+    const result={browser:version,reads,samples,effects,nativeGroups,batches,editors};
     await fs.writeFile(output,JSON.stringify(result,null,2));console.log('Preview samples',samples.length);
     if(Number(soak)>0){const end=Date.now()+Number(soak)*60000;
       result.soakSamples=[];
+      if(useChrome) {
+        for(const page of chromeContext.pages().filter(p=>p.url().startsWith(fixtureUrl))){
+          if(await page.locator('tr.ub-content').count()!==100) await page.reload({waitUntil:'domcontentloaded'});
+          assert.equal(await page.locator('tr.ub-content').count(),100);
+        }
+      }
       while(Date.now()<end){
         await delay(Math.min(60000,end-Date.now()));
         const tabs=useChrome?chromeContext.pages().filter(p=>p.url().startsWith(fixtureUrl)):
           (await command('browsingContext.getTree',{})).contexts.filter(p=>p.url.startsWith(fixtureUrl)).map(p=>p.context);
         const pages=[];
         for(const target of tabs){
-          pages.push(JSON.parse(await evalIn(target,'JSON.stringify({hidden:document.hidden,nodes:document.getElementsByTagName("*").length,frames:document.querySelectorAll("iframe[data-dcbpv-compose-frame]").length,heap:performance.memory?.usedJSHeapSize})')));
+          pages.push(JSON.parse(await evalIn(target,'JSON.stringify({hidden:document.hidden,rows:document.querySelectorAll("tr.ub-content").length,nodes:document.getElementsByTagName("*").length,frames:document.querySelectorAll("iframe[data-dcbpv-compose-frame]").length,heap:performance.memory?.usedJSHeapSize})')));
         }
         result.soakSamples.push({at:Date.now(),pages,reads});
         await fs.writeFile(output,JSON.stringify(result,null,2));

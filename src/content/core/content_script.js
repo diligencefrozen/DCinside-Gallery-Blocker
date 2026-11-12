@@ -4310,7 +4310,10 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
 
   function refreshPreviewMemberIpBadges(root){
     try {
-      globalThis.DCMemberIpView?.refresh?.(root || document);
+      if (globalThis.DCMemberIpView?.refresh) {
+        globalThis.DCMemberIpView.refresh(root || document);
+        return;
+      }
     } catch (_) {}
     try {
       document.dispatchEvent(new CustomEvent("dc-member-ip-view:refresh", { detail: { root: root || document } }));

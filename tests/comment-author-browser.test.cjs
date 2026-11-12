@@ -115,6 +115,18 @@ async function fixture(settings = {}, local = {}) {
 }
 
 async function settle(page) {
+  // UI hydration and the IP feature's initial timer can complete after two
+  // frames on a high-refresh display. Start measuring once the requested
+  // controls exist and each populated native column has received a width.
+  await page.waitForFunction(() => {
+    const s=window.fixtureStore.sync;
+    if (!!document.querySelector('#member .dcb-uid-badge')!==!!s.showUidBadge ||
+        !!document.querySelector('#nested .dc-member-ip-chip')!==!!s.showMemberIpInfo ||
+        !!document.querySelector('#member .dcb-user-memo-trigger')!==!!s.userMemoEnabled) return false;
+    return [...document.querySelectorAll('.cmt_nickbox .dcb-writer-tools')].every(tools=>
+      !tools.children.length || !!tools.closest('.dcb-writer-layout')?.style.getPropertyValue('--dcb-writer-available') ||
+      tools.getBoundingClientRect().top>innerHeight+400);
+  },null,{timeout:5000});
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 }
 

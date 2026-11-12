@@ -57,6 +57,24 @@ test('options preview preserves existing memos, commits gallery scope, and undoe
   await page.waitForFunction(()=>!document.querySelector('#officialMemoUndo').hidden);
   assert.equal((await memos())['uid:fixtureuser'].memo,'기존');
   assert.equal((await memos())['gallery:bg3:uid:fixtureuser'].memo,'갤러리 메모');
+  // Confirm that masking a name changes only its painted label. Both memo
+  // resolution and the cached activity verdict must still see the native UID.
+  await page.evaluate(async()=>{
+    await chrome.storage.local.set({dcbImageAccountSignalCache:{fixtureuser:{checkedAt:Date.now(),posts:71,comments:83}}});
+    await chrome.storage.sync.set({dcbMaskWriterNames:'all',dcbShowWriterActivity:true,userMemoEnabled:true,
+      dcbImageAccountRules:{enabled:true,blockComments:true},hideComment:false,doryBlockEnabled:false});
+  });
+  await context.route('https://gall.dcinside.com/board/view/**',route=>route.fulfill({contentType:'text/html',body:
+    '<div class="write_div">Fixture</div><ul class="cmt_list"><li class="ub-content" id="comment_li_1"><div class="cmt_info"><div class="cmt_nickbox"><span class="gall_writer" data-uid="fixtureuser" data-nick="Original"><span class="nickname"><em>Original</em></span><span class="writer_nikcon"></span></span></div><p class="usertxt">Fixture</p></div></li></ul>'}));
+  const view=await context.newPage();await view.goto('https://gall.dcinside.com/board/view/?id=bg3&no=1');
+  await view.waitForSelector('[data-full-memo="갤러리 메모"]',{state:'attached'});
+  await view.waitForSelector('[data-dcb-writer-activity="글 71 · 댓 83"]',{state:'attached'});
+  assert.deepEqual(await view.locator('.gall_writer').first().evaluate(w=>[
+    getComputedStyle(w.querySelector('.nickname'),'::before').content,w.dataset.uid,w.dataset.nick,w.querySelector('.nickname em').textContent
+  ]),['"ㅇㅇ"','fixtureuser','Original','Original']);
+  await view.goto('https://gall.dcinside.com/board/view/?id=fixture&no=1');
+  await view.waitForSelector('[data-full-memo="기존"]',{state:'attached'});
+  await view.close();
   await page.locator('#officialMemoUndo').click();
   await page.waitForFunction(()=>document.querySelector('#officialMemoUndo').hidden);
   assert.deepEqual(await memos(),{'uid:fixtureuser':{memo:'기존'}});

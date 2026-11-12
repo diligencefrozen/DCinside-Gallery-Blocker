@@ -22,6 +22,13 @@
 
   let enabled = false;
   let memoMap = {};
+  let hasGalleryMemos = false;
+  const renderedTriggers = new WeakMap();
+
+  function useMemos(value) {
+    memoMap = value || {};
+    hasGalleryMemos = Object.keys(memoMap).some(key => key.startsWith("gallery:"));
+  }
   let memoReadRevision = 0;
   let currentMeta = null;
   let renderQueued = false;
@@ -368,10 +375,12 @@
     else if (!isStrictIdentityPage() && nickname) key = `nick:${nickname}`;
 
     if (!key) return null;
-    const url = writer.closest("#dcb-preview-overlay")?.dataset.dcbpvUrl || location.href;
-    const gallery = new URL(url, location.href).searchParams.get("id");
-    const scoped = `gallery:${gallery}:${key}`;
-    if (gallery && Object.hasOwn(memoMap, scoped)) key = scoped;
+    if (hasGalleryMemos) {
+      const url = writer.closest("#dcb-preview-overlay")?.dataset.dcbpvUrl || location.href;
+      const gallery = new URL(url, location.href).searchParams.get("id");
+      const scoped = `gallery:${gallery}:${key}`;
+      if (gallery && Object.hasOwn(memoMap, scoped)) key = scoped;
+    }
     return { key, uid, ip, nickname };
   }
 
@@ -536,7 +545,7 @@
 
       chrome.storage.local.set({ userMemos: next }, () => {
         memoReadRevision += 1;
-        memoMap = next;
+        useMemos(next);
         renderAll();
         closeModal();
       });
@@ -552,7 +561,7 @@
 
       chrome.storage.local.set({ userMemos: next }, () => {
         memoReadRevision += 1;
-        memoMap = next;
+        useMemos(next);
         renderAll();
         closeModal();
       });
@@ -612,6 +621,10 @@
 
   function updateTrigger(btn, meta, writer) {
     const context = globalThis.DCBWriterLayout.detectContext(writer);
+    const saved = memoMap[meta.key];
+    const signature = JSON.stringify([meta.key, meta.uid, meta.ip, meta.nickname, context, saved?.memo, saved?.color]);
+    if (renderedTriggers.get(btn) === signature && btn.firstElementChild?.classList.contains("dcb-memo-value")) return;
+    renderedTriggers.set(btn, signature);
 
     btn.dataset.memoKey = meta.key;
     btn.dataset.memoUid = meta.uid || '';
@@ -619,7 +632,6 @@
     btn.dataset.memoNickname = meta.nickname || '';
     btn.dataset.loc = context;
 
-    const saved = memoMap[meta.key];
     btn.dataset.dcbMemoMode = globalThis.DCBWriterLayout.memoMode(writer, !!saved?.memo);
 
     btn.classList.toggle('has-memo', !!saved);
@@ -872,7 +884,7 @@
 
     const revision = memoReadRevision;
     chrome.storage.local.get(LOCAL_DEFAULTS, ({ userMemos }) => {
-      if (revision === memoReadRevision) memoMap = userMemos || {};
+      if (revision === memoReadRevision) useMemos(userMemos);
       localReady = true;
       renderWhenReady();
     });
@@ -887,7 +899,7 @@
 
       if (area === 'local' && changes.userMemos) {
         memoReadRevision += 1;
-        memoMap = changes.userMemos.newValue || {};
+        useMemos(changes.userMemos.newValue);
         if (enabled) queueRender();
       }
     });
