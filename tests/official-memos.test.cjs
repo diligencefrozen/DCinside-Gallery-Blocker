@@ -33,3 +33,39 @@ test('review flags ambiguous lines and preserves explicit identifiers and memo p
   assert.equal(duplicates,1);
   assert.deepEqual(badLines,[3,4]);
 });
+
+test('options preview preserves existing memos, commits gallery scope, and undoes only unchanged imports', async t => {
+  const path=require('node:path');
+  const {chromium}=require('playwright');
+  const root=path.resolve(__dirname,'..');
+  const context=await chromium.launchPersistentContext('',{executablePath:chromium.executablePath(),headless:true,args:['--disable-extensions-except='+root,'--load-extension='+root]});
+  t.after(()=>context.close());
+  const worker=context.serviceWorkers()[0]||await context.waitForEvent('serviceworker');
+  const page=await context.newPage();
+  await page.goto('chrome-extension://'+new URL(worker.url()).hostname+'/src/ui/options/options.html');
+  await page.waitForFunction(async()=>(await chrome.storage.local.get('dcbSettingsBatchV1')).dcbSettingsBatchV1?.phase==='committed');
+  await page.evaluate(()=>chrome.storage.local.set({userMemos:{'uid:fixtureuser':{memo:'기존'}}}));
+  await page.locator('#officialMemoFile').evaluate(input=>input.closest('details').open=true);
+  const importFile=async()=>{
+    await page.locator('#officialMemoFile').setInputFiles({name:'dcbackup_PC_fixture.dcdata',mimeType:'application/octet-stream',buffer:Buffer.from(pc)});
+    await page.waitForFunction(()=>!document.querySelector('#officialMemoApply').disabled);
+  };
+  const memos=()=>page.evaluate(async()=>(await chrome.storage.local.get('userMemos')).userMemos);
+  await importFile();
+  assert.match(await page.locator('#officialMemoPreview').textContent(),/충돌 1건/);
+  await page.locator('#officialMemoApply').click();
+  await page.waitForFunction(()=>!document.querySelector('#officialMemoUndo').hidden);
+  assert.equal((await memos())['uid:fixtureuser'].memo,'기존');
+  assert.equal((await memos())['gallery:bg3:uid:fixtureuser'].memo,'갤러리 메모');
+  await page.locator('#officialMemoUndo').click();
+  await page.waitForFunction(()=>document.querySelector('#officialMemoUndo').hidden);
+  assert.deepEqual(await memos(),{'uid:fixtureuser':{memo:'기존'}});
+  await importFile();
+  await page.locator('#officialMemoReplace').check();
+  await page.locator('#officialMemoApply').click();
+  await page.waitForFunction(()=>!document.querySelector('#officialMemoUndo').hidden);
+  await page.evaluate(async()=>{const {userMemos}=await chrome.storage.local.get('userMemos');userMemos['uid:fixtureuser'].memo='가져온 뒤 수정';await chrome.storage.local.set({userMemos})});
+  await page.locator('#officialMemoUndo').click();
+  await page.waitForFunction(()=>document.querySelector('#officialMemoUndo').hidden);
+  assert.equal((await memos())['uid:fixtureuser'].memo,'가져온 뒤 수정');
+});

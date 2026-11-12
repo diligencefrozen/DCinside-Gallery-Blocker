@@ -25,7 +25,7 @@ const counts=[20,50,500,2000];
   await page.evaluate(()=>{window.profileRender=count=>{
    const icon='data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80"><rect width="80" height="80" fill="#a9cfef"/></svg>');
    const html=Array.from({length:count},(_,i)=>`<div class="dcbpv-comment-item" data-dcbpv-native-id="${i+1}"><div class="dcbpv-comment-meta"><span class="gall_writer" data-nick="writer${i}" data-uid="writer${i}"><span class="nickname"><em>writer${i}</em></span></span><span class="dcbpv-time">12:00</span></div><div class="dcbpv-comment-body">Comment ${i} ${'text '.repeat(10)}${i%4===0?`<img class="dcbpv-dccon" src="${icon}">`:''}</div></div>`).join('');
-   profilePreview.renderPreview({url:'https://gall.dcinside.com/board/view/?id=fixture&no=1',title:'Scroll profile',articleHTML:'<p>Profile</p>',commentsHTML:html,counts:{up:'0',down:'0'}});
+   profilePreview.renderPreview({url:'https://gall.dcinside.com/board/view/?id=fixture&no=1',title:'Scroll profile',articleHTML:'<p>Profile</p>',commentsHTML:'<div class="dcbpv-comment-list">'+html+'</div>',counts:{up:'0',down:'0'}});
    document.querySelectorAll('.gall_writer').forEach(n=>DCBWriterLayout.ensure(n));
   };});
   for(const phase of ['cold','warm']){
@@ -50,7 +50,20 @@ const counts=[20,50,500,2000];
    const chunks=[];let chunk;do{chunk=await cdp.send('IO.read',{handle:stream});chunks.push(chunk.data);}while(!chunk.eof);
    await cdp.send('IO.close',{handle:stream});fs.writeFileSync(`test-results/preview-scroll-${baseline?'before':'after'}.trace.json`,chunks.join(''));
   }
-  if(check)assert.equal(sample.mutations,0,'settled preview must not keep rewriting writer classes');
+  // Scrolling now legitimately mounts more rows. Measure settled DOM churn
+  // with the viewport stationary, after any in-flight batch has completed.
+  if(check){
+    row.idleMutations=await page.evaluate(async()=>{
+      const root=document.querySelector('#dcb-preview-overlay');
+      let changes=0;const observer=new MutationObserver(records=>{changes+=records.length});
+      observer.observe(root,{subtree:true,attributes:true,childList:true});
+      const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+      const deadline=performance.now()+5000;
+      do{changes=0;await wait(250)}while(changes && performance.now()<deadline);
+      changes=0;await wait(500);observer.disconnect();return changes;
+    });
+    assert.equal(row.idleMutations,0,'settled preview must not keep rewriting writer classes');
+  }
   await page.evaluate(()=>profilePreview.closePreview());
   }await page.close();
  }}

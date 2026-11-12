@@ -1,4 +1,4 @@
-/* Local, deterministic Firefox WebDriver BiDi profile. Run with a sanitized DCB backup. */
+/* Windows, isolated Firefox BiDi / Chromium preview benchmark. */
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
@@ -11,7 +11,7 @@ const assert = require('node:assert/strict');
 async function run() {
   const [extension, input, output, soak = '0'] = process.argv.slice(2);
   const useChrome = process.argv.includes('--chromium');
-  const backup = JSON.parse(await fs.readFile(input, 'utf8'));
+  const backup = require('./helpers/synthetic-profile-backup.cjs')(JSON.parse(await fs.readFile(input, 'utf8')));
   const manifest = JSON.parse(await fs.readFile(path.join(extension, 'manifest.json'), 'utf8'));
   const id = manifest.browser_specific_settings.gecko.id;
   const uuid = 'e5723cfe-f725-46c3-b818-589b91c9627f';
@@ -26,20 +26,73 @@ async function run() {
   await fs.appendFile(path.join(staged,'src/background/background-entry.js'),
     '\n(globalThis.browser||chrome).runtime.onInstalled.addListener(()=>(globalThis.browser||chrome).runtime.openOptionsPage());\n');
   const fixtureUrl='https://gall.dcinside.com/board/lists/?id=dcbfixture';
-  const restore=async function(snapshot,url){
+  const restore=async function(snapshot,url,multipleTabs,waitForRoutes,groups){
     const api=globalThis.browser||chrome;
+    while(waitForRoutes && !(await api.storage.session.get('fixtureRoutesReady')).fixtureRoutesReady)
+      await new Promise(resolve=>setTimeout(resolve,50));
     while (!(await api.storage.local.get('dcbSettingsBatchV1')).dcbSettingsBatchV1?.phase?.includes('committed'))
       await new Promise(resolve=>setTimeout(resolve,100));
     const {sync,local,blockedUids}=parseBackupPayload(snapshot);
     await commitBackupImportCaches(sync,local,blockedUids);
     const stored=await api.storage.sync.get(Object.keys(sync));
     for(const key of Object.keys(sync)) if(typeof sync[key]==='boolean' && stored[key]!==sync[key]) throw Error('Restore mismatch '+key);
-    await api.tabs.create({url});
+    const nativeSamples=[];
+    if(groups){
+      const nativeUrl=url.replace('/lists/','/view/')+'&no=777';
+      const variants=[
+        ['restored',{}],
+        ['without-ai',{dcbTextDetection:{...sync.dcbTextDetection,enabled:false}}],
+        ['without-account',{dcbImageAccountRules:{...sync.dcbImageAccountRules,enabled:false}}],
+        ['without-author-ui',{showUidBadge:false,showMemberIpInfo:false,userMemoEnabled:false}],
+        ['without-font',{dcbApplyFontToDc:false}],['without-keywords',{keywordHideEnabled:false}],
+        ['without-preview',{previewEnabled:false}],['without-refresh',{autoRefreshEnabled:false}]
+      ];
+      for(const [group,patch] of variants){
+        await api.storage.sync.set({...sync,...patch});
+        const native=await api.tabs.create({url:nativeUrl});
+        try{
+          for(let i=0;i<100;i++){if((await api.tabs.get(native.id)).status==='complete')break;await new Promise(r=>setTimeout(r,50));}
+          await new Promise(r=>setTimeout(r,900));
+          const [{result}]=await api.scripting.executeScript({target:{tabId:native.id},func:async()=>{
+            const rows=document.querySelectorAll('.cmt_list li').length;
+            let changes=0;const mo=new MutationObserver(r=>changes+=r.length);
+            mo.observe(document.documentElement,{subtree:true,childList:true,attributes:true});
+            const frames=[],start=performance.now();let previous=start;
+            await new Promise(resolve=>requestAnimationFrame(function tick(now){
+              frames.push(now-previous);previous=now;scrollBy(0,16);
+              if(now-start<1800)requestAnimationFrame(tick);else resolve();
+            }));
+            mo.disconnect();frames.sort((a,b)=>a-b);
+            return {rows,mutations:changes,p95:frames[Math.ceil(frames.length*.95)-1],slow:frames.filter(ms=>ms>50).length};
+          }});
+          if(result?.rows!==500)throw Error('Invalid native gallery fixture');
+          nativeSamples.push({group,...result});
+        }finally{await api.tabs.remove(native.id);}
+      }
+      await api.storage.sync.set(sync);
+    }
+    const main=await api.tabs.create({url});
+    if(groups){
+      while((await api.tabs.get(main.id)).status!=='complete')await new Promise(r=>setTimeout(r,50));
+      await api.scripting.executeScript({target:{tabId:main.id},args:[nativeSamples],func:rows=>{
+        document.documentElement.dataset.fixtureGroups=JSON.stringify(rows);
+      }});
+    }
+    if(multipleTabs)await api.tabs.create({url:url+'&page=2',active:false});
   };
   await fs.appendFile(path.join(staged,'src/ui/options/options.js'),
-    '\n;('+restore.toString()+')('+JSON.stringify(backup)+','+JSON.stringify(fixtureUrl)+');\n');
+    '\n;('+restore.toString()+')('+JSON.stringify(backup)+','+JSON.stringify(fixtureUrl)+','+(Number(soak)>0)+','+useChrome+','+process.argv.includes('--groups')+');\n');
   await fs.appendFile(path.join(staged,'src/content/core/content_script.js'),
     '\ndocument.documentElement.dataset.fixturePreviewReady="1";');
+  const loader=path.join(staged,'src/content/core/feature-loader.js');
+  const elapsed='const elapsed = performance.now() - started;';
+  const loaderSource=await fs.readFile(loader,'utf8');
+  assert.ok(loaderSource.includes(elapsed));
+  await fs.writeFile(loader,loaderSource.replace(elapsed,elapsed+`
+        const root=document.documentElement;
+        const samples=JSON.parse(root.dataset.fixtureBatches||'[]');
+        samples.push({batch,ms:Math.round(elapsed),features:injected.length});
+        root.dataset.fixtureBatches=JSON.stringify(samples);`));
   const server = net.createServer();
   await new Promise(r => server.listen(0, '127.0.0.1', r));
   const port = server.address().port;
@@ -66,6 +119,8 @@ async function run() {
   const list=Array.from({length:100},(_,i)=>'<tr class="ub-content"><td class="gall_tit"><a href="/board/view/?id=dcbfixture&no='+(i+1)+'">Fixture '+i+'</a></td></tr>').join('');
   const rows=n=>Array.from({length:n},(_,i)=>'<div class="cmt_info" data-no="'+(i+1)+'"><span class="gall_writer" data-nick="Tester" data-uid="fixture'+i+'"></span><div class="cmt_txtbox"><p class="usertxt">Ordinary fixture '+i+'</p></div></div>').join('');
   const article=n=>'<article class="gallview"><header class="gallview_head"><span class="title_subject">Fixture</span><span class="gall_writer" data-uid="fixture0" data-nick="Tester"></span></header><div class="write_div">'+('<p>Fixture article content for the preview. </p>'.repeat(130))+'</div><div id="comment_wrap">'+rows(n)+'</div></article>';
+  const nativeArticle='<article><h3 class="title_subject">Fixture</h3><div class="write_div">Fixture article.</div><div class="comment_wrap"><ul class="cmt_list">'+
+    Array.from({length:500},(_,i)=>`<li class="ub-content" id="comment_li_${i+1}"><div class="cmt_info" data-no="${i+1}"><div class="cmt_nickbox"><span class="gall_writer" data-uid="fixture${i}" data-nick="Tester"><span class="nickname"><em>Tester</em></span><span class="writer_nikcon"></span></span></div><div class="cmt_txtbox"><p class="usertxt">Ordinary fixture comment ${i}.</p></div></div></li>`).join('')+'</ul></div></article>';
   let count=50,reads=0;
   try{
     // Firefox BiDi does not intercept the extension background's fetch. Serve
@@ -83,12 +138,13 @@ async function run() {
       await chromeContext.route(/^https?:/,route=>{
         const url=new URL(route.request().url()),fixture=url.searchParams.get('id')==='dcbfixture';
         if(fixture)reads++;
-        return route.fulfill({status:fixture?200:404,contentType:'text/html; charset=utf-8',body:fixture?'<table class="gall_list"><tbody>'+list+'</tbody></table>':''});
+        return route.fulfill({status:fixture?200:404,contentType:'text/html; charset=utf-8',body:fixture?(url.searchParams.get('no')==='777'?nativeArticle:'<table class="gall_list"><tbody>'+list+'</tbody></table>'):''});
       });
+      const worker=chromeContext.serviceWorkers()[0]||await chromeContext.waitForEvent('serviceworker');
+      await worker.evaluate(()=>chrome.storage.session.set({fixtureRoutesReady:true}));
       const pageAt=()=>chromeContext.pages().find(p=>p.url()===fixtureUrl);
-      for(let i=0;i<160&&!pageAt();i++)await delay(100);
+      for(let i=0;i<(process.argv.includes('--groups')?1500:160)&&!pageAt();i++)await delay(100);
       tab=pageAt();assert.ok(tab,'Chromium restored fixture tab');
-      await tab.reload({waitUntil:'domcontentloaded'});
       evalIn=(page,expression)=>page.evaluate(expression);
       version=chromeContext.browser().version();
     }else{
@@ -100,7 +156,7 @@ async function run() {
         const req=msg.params.request;const url=new URL(req.url);
         const isFixture=url.searchParams.get('id')==='dcbfixture'||url.pathname.includes('/dcbfixture/');
         if(isFixture)reads++;
-        const body=isFixture?(url.pathname.includes('lists')?'<table class="gall_list"><tbody>'+list+'</tbody></table>':article(count)):'';
+        const body=isFixture?(url.pathname.includes('lists')?'<table class="gall_list"><tbody>'+list+'</tbody></table>':url.searchParams.get('no')==='777'?nativeArticle:article(count)):'';
         void command('network.provideResponse',{request:req.request,statusCode:isFixture?200:404,headers:[{name:'Content-Type',value:{type:'string',value:'text/html; charset=utf-8'}}],body:{type:'string',value:body}}).catch(()=>{});
       }};
     const session=await command('session.new',{capabilities:{alwaysMatch:{}}});
@@ -113,7 +169,7 @@ async function run() {
       if(res.type==='exception')throw Error(res.exceptionDetails.text);return res.result.value;
     };
 
-    for(let i=0;i<150&&!tab;i++){
+    for(let i=0;i<(process.argv.includes('--groups')?1500:150)&&!tab;i++){
       const tree=await command('browsingContext.getTree',{});
       tab=tree.contexts.find(item=>item.url===fixtureUrl)?.context;
       if(!tab)await delay(150);
@@ -124,6 +180,7 @@ async function run() {
     await wait(tab,'document.querySelectorAll("tr.ub-content").length===100');
     await wait(tab,'document.documentElement.dataset.fixturePreviewReady==="1"');
     const samples=[];
+    const effects=[];
     for(count of [50,500,2000]){
       console.log('Measuring',count,'comments');
       for(let i=0;i<7;i++){
@@ -139,6 +196,26 @@ async function run() {
           await evalIn(tab,'document.querySelector(".dcbpv-comments").scrollIntoView();true');
           await wait(tab,'document.querySelectorAll(".dcbpv-comment-item").length>='+Math.min(count,80));
           samples.at(-1).commentWaitMs=Date.now()-start;
+          if (count===2000 && process.argv.includes('--effects')) {
+            for (const blur of [true,false,false,true]) {
+              const measure = async function(blur) {
+                const overlay=document.querySelector("#dcb-preview-overlay"),scroll=overlay.querySelector(".dcbpv-scroll");
+                overlay.style.backdropFilter=blur?'':'none';
+                const top=scroll.scrollTop, frames=[];
+                await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+                let prev=performance.now(), start=prev;
+                await new Promise(resolve=>{function tick(now){
+                  frames.push(now-prev);prev=now;
+                  scroll.scrollTop=top+Math.round(40*Math.sin((now-start)/250));
+                  if(now-start<1500)requestAnimationFrame(tick);else resolve();
+                }requestAnimationFrame(tick)});
+                scroll.scrollTop=top;overlay.style.removeProperty('backdrop-filter');
+                frames.sort((a,b)=>a-b);
+                return JSON.stringify({blur,p95Ms:frames[Math.ceil(frames.length*.95)-1],slowFrames:frames.filter(x=>x>50).length});
+              };
+              effects.push(JSON.parse(await evalIn(tab,'('+measure.toString()+')('+blur+')')));
+            }
+          }
         }
         await evalIn(tab,'performance.mark("preview-end");true');
         await fs.writeFile(output,JSON.stringify({browser:version,reads,samples},null,2));
@@ -146,9 +223,23 @@ async function run() {
         assert.equal(await evalIn(tab,'document.querySelectorAll("#dcb-preview-overlay iframe").length'),0);
       }
     }
-    const result={browser:version,reads,samples};
+    const nativeGroups=process.argv.includes('--groups')?JSON.parse(await evalIn(tab,'document.documentElement.dataset.fixtureGroups')):[];
+    const batches=JSON.parse(await evalIn(tab,'document.documentElement.dataset.fixtureBatches||"[]"'));
+    const result={browser:version,reads,samples,effects,nativeGroups,batches};
     await fs.writeFile(output,JSON.stringify(result,null,2));console.log('Preview samples',samples.length);
-    if(Number(soak)>0){const end=Date.now()+Number(soak)*60000;while(Date.now()<end)await delay(Math.min(60000,end-Date.now()));
+    if(Number(soak)>0){const end=Date.now()+Number(soak)*60000;
+      result.soakSamples=[];
+      while(Date.now()<end){
+        await delay(Math.min(60000,end-Date.now()));
+        const tabs=useChrome?chromeContext.pages().filter(p=>p.url().startsWith(fixtureUrl)):
+          (await command('browsingContext.getTree',{})).contexts.filter(p=>p.url.startsWith(fixtureUrl)).map(p=>p.context);
+        const pages=[];
+        for(const target of tabs){
+          pages.push(JSON.parse(await evalIn(target,'JSON.stringify({hidden:document.hidden,nodes:document.getElementsByTagName("*").length,frames:document.querySelectorAll("iframe[data-dcbpv-compose-frame]").length,heap:performance.memory?.usedJSHeapSize})')));
+        }
+        result.soakSamples.push({at:Date.now(),pages,reads});
+        await fs.writeFile(output,JSON.stringify(result,null,2));
+      }
       result.soakMinutes=Number(soak);result.remainingFrames=await evalIn(tab,'document.querySelectorAll("iframe[data-dcbpv-compose-frame]").length');
       await fs.writeFile(output,JSON.stringify(result,null,2));}
   }finally{

@@ -1646,6 +1646,8 @@ function setUserMemos(next) {
   const status = document.getElementById("officialMemoPreview");
   const rows = document.getElementById("officialMemoRows");
   const apply = document.getElementById("officialMemoApply");
+  const undo = document.getElementById("officialMemoUndo");
+  let undoEntries = [];
   const replace = document.getElementById("officialMemoReplace");
   const format = document.getElementById("memoImportFormat");
   const scope = document.getElementById("memoTextScope");
@@ -1692,20 +1694,24 @@ function setUserMemos(next) {
     if (!pending || apply.disabled) return;
     apply.disabled = fileInput.disabled = replace.disabled = format.disabled = scope.disabled = true;
     try {
-      const current = await getUserMemos();
-      const next = { ...current };
-      let count = 0;
-      const now = Date.now();
-      for (const [key, item] of pending) {
-        if (Object.hasOwn(current, key) && !replace.checked) continue;
-        next[key] = { ...item, importedAt: now, updatedAt: now };
-        count++;
-      }
-      if (count) {
-        downloadJson("dcb-memos-before-import-" + now + ".json", { userMemos: current });
-        await chrome.storage.local.set({ userMemos: next });
-      }
-      status.textContent = `메모 ${count}건을 가져왔습니다.`;
+      await navigator.locks.request("dcb-memo-import", async () => {
+        const current = await getUserMemos();
+        const next = { ...current };
+        const changes = [];
+        const now = Date.now();
+        for (const [key, item] of pending) {
+          if (Object.hasOwn(current, key) && !replace.checked) continue;
+          next[key] = { ...item, importedAt: now, updatedAt: now };
+          changes.push({key, before:current[key], after:next[key]});
+        }
+        if (changes.length) {
+          downloadJson("dcb-memos-before-import-" + now + ".json", { userMemos: current });
+          await chrome.storage.local.set({ userMemos: next });
+          undoEntries = changes;
+          undo.hidden = false;
+        }
+        status.textContent = `메모 ${changes.length}건을 가져왔습니다.`;
+      });
       pending = null;
       rows.replaceChildren();
       fileInput.value = "";
@@ -1715,6 +1721,26 @@ function setUserMemos(next) {
       fileInput.disabled = replace.disabled = format.disabled = scope.disabled = false;
       apply.disabled = !pending;
     }
+  });
+  undo.addEventListener("click", async () => {
+    undo.disabled = true;
+    try {
+      await navigator.locks.request("dcb-memo-import", async () => {
+        const current = await getUserMemos();
+        let reverted = 0;
+        for (const {key,before,after} of undoEntries) {
+          if (!backupValueEqual(current[key], after)) continue;
+          if (before) current[key] = before;
+          else delete current[key];
+          reverted++;
+        }
+        if (reverted) await chrome.storage.local.set({userMemos:current});
+        status.textContent = `메모 ${reverted}건의 가져오기를 취소했습니다.`;
+        undoEntries = [];
+        undo.hidden = true;
+      });
+    } catch (error) { status.textContent = "취소 실패 · " + error.message; }
+    finally { undo.disabled = false; }
   });
 }
 

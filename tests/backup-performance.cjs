@@ -11,11 +11,7 @@ const input = process.env.DCB_BACKUP_PATH;
 const label = process.env.DCB_PROFILE_LABEL || 'backup';
 assert.ok(input, 'Set DCB_BACKUP_PATH to the backup being measured');
 assert.match(label, /^[a-zA-Z0-9_-]+$/);
-const backup = JSON.parse(fs.readFileSync(input, 'utf8'));
-// Payment/account metadata is unrelated to the feature combination under test.
-for (const key of Object.keys(backup.storage.sync)) {
-  if (key.startsWith('extensionpay_')) delete backup.storage.sync[key];
-}
+const backup = require('./helpers/synthetic-profile-backup.cjs')(JSON.parse(fs.readFileSync(input, 'utf8')));
 const expected = Object.entries(backup.storage.sync).filter(([, value]) => typeof value === 'boolean');
 for (const key of ['dcbImageAccountRules', 'dcbTextDetection']) {
   for (const [field, value] of Object.entries(backup.storage.sync[key] || {})) {

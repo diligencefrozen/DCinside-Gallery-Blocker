@@ -954,6 +954,17 @@
 
   async function boot() {
     await loadStore();
+    if (config.enabled && !document.documentElement) {
+      await new Promise(resolve => {
+        const parser = new MutationObserver(() => {
+          if (!document.documentElement) return;
+          parser.disconnect();
+          resolve();
+        });
+        parser.observe(document, {childList:true});
+      });
+      indexBlockedUrls();
+    }
     // Start observing while the parser is adding images. Waiting for
     // DOMContentLoaded lets a cached image paint before the filter starts.
     reconcileFeature();
