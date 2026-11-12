@@ -46,6 +46,7 @@
   let resetRequested = false;
   let suppressObserver = false;
   const pendingRoots = new Set();
+  const placeholders = new WeakMap();
   let nextSoftId = 1;
   let allowedKeys = loadAllowedKeys();
 
@@ -279,7 +280,7 @@
     if (!row) return;
 
     const id = getSoftId(row);
-    if (document.querySelector(`[${PLACEHOLDER_ATTR}="1"][data-dcb-soft-for="${cssEscape(id)}"]`)) return;
+    if (placeholders.get(row)?.isConnected) return;
 
     const tableRow = row.tagName === "TR";
     const colSpan = Math.max(row.children.length || 1, 1);
@@ -298,13 +299,14 @@
     placeholder.innerHTML = tableRow ? `<td colspan="${colSpan}">${content}</td>` : content;
 
     row.parentNode?.insertBefore(placeholder, row);
+    placeholders.set(row, placeholder);
   }
 
   function hideElementWithBox(element, keyword, key, label, extraElements = []) {
     if (!element || allowedKeys.has(key) || isBlockedByAnonymousFilter(element)) return;
 
     const id = getSoftId(element);
-    if (document.querySelector(`[${PLACEHOLDER_ATTR}="1"][data-dcb-soft-for="${cssEscape(id)}"]`)) {
+    if (placeholders.get(element)?.isConnected) {
       element.setAttribute(HIDDEN_ATTR, "1");
       element.setAttribute(MATCH_ATTR, keyword.label);
       globalThis.DCBBlockStats?.report?.(element, "keywords");
@@ -330,6 +332,7 @@
     `;
 
     element.parentNode?.insertBefore(placeholder, element);
+    placeholders.set(element, placeholder);
     element.setAttribute(HIDDEN_ATTR, "1");
     element.setAttribute(MATCH_ATTR, keyword.label);
     globalThis.DCBBlockStats?.report?.(element, "keywords");
@@ -399,7 +402,6 @@
 
   function getCommentCandidates() {
     return Array.from(document.querySelectorAll(COMMENT_ITEM_SELECTOR))
-      .filter((element, index, array) => array.indexOf(element) === index)
       .filter((element) => !element.closest(".write_div"))
       .filter((element) => !element.closest(`[${PLACEHOLDER_ATTR}="1"]`))
       .filter((element) => !element.hasAttribute(PLACEHOLDER_ATTR))
@@ -544,7 +546,13 @@
     const roots = [...new Set(Array.from(pendingRoots, root => root?.nodeType === Node.TEXT_NODE ? root.parentElement : root))]
       .filter((root) => root && root.isConnected !== false);
     pendingRoots.clear();
-    const minimal = roots.filter(root => !roots.some(other => other !== root && other.contains?.(root)));
+    const rootSet = new Set(roots);
+    const minimal = roots.filter(root => {
+      for (let parent = root.parentNode; parent; parent = parent.parentNode) {
+        if (rootSet.has(parent)) return false;
+      }
+      return true;
+    });
 
     const rows = new Set();
     const comments = new Set();

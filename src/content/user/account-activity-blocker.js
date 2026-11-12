@@ -207,6 +207,8 @@
   }
 
   const badges = new WeakMap();
+  let activityViewport;
+  let seenInViewport = new WeakSet();
   function badgeHost(writer, info) {
     if (info.kind === "comment") {
       const comment = writer.closest(".cmt_info,.reply_info,.dcbpv-comment-item");
@@ -235,6 +237,20 @@
       clearTarget(target, uid);
       return;
     }
+    if (settings.display && !settings.enabled && !seenInViewport.has(writer) && typeof IntersectionObserver === "function") {
+      activityViewport ||= new IntersectionObserver(entries => {
+        for (const item of entries) {
+          if (!item.target.isConnected || item.isIntersecting) activityViewport?.unobserve(item.target);
+          if (item.isIntersecting && item.target.isConnected) {
+            seenInViewport.add(item.target);
+            registerWriter(item.target, filter, filter.getSettings());
+          }
+        }
+        void drainUidQueue();
+      }, {rootMargin:"160px"});
+      activityViewport.observe(writer);
+      return;
+    }
 
     const key = uid.toLowerCase();
     let entry = uidQueue.get(key);
@@ -251,7 +267,11 @@
     } else {
       if (cached && entry.state === "queued") deferEntry(entry, cached, false);
       if (entry.state === "queued" && guardRetryAt > Date.now()) entry.state = "deferred";
-      applyQueueState(entry, settings);
+      // Registration can encounter the same author hundreds of times in one
+      // scan. The other rows already carry this queue state.
+      if (settings.enabled && settingAllows(settings, info.kind) && target.dataset.dcbAccountActivityPeek !== uid) {
+        setState(info, uid, entry.state, null, entry.state !== "unavailable" && settings.holdWhileChecking === true);
+      }
     }
   }
 
@@ -503,6 +523,11 @@
           continue;
         }
         for (const node of record.addedNodes || []) queueIncrementalScan(node);
+        if (activityViewport) for (const node of record.removedNodes || []) {
+          if (node.nodeType !== 1 || node.isConnected) continue;
+          activityViewport.unobserve(node);
+          node.querySelectorAll(".gall_writer,.ub-writer").forEach(writer=>activityViewport.unobserve(writer));
+        }
       }
     };
     const attributes = ["data-uid", "data-full-uid", "data-memo-uid", "href", "onclick"];
@@ -523,6 +548,9 @@
   }
 
   function stopWork() {
+    activityViewport?.disconnect();
+    activityViewport = null;
+    seenInViewport = new WeakSet();
     observer?.disconnect();
     observer = null;
     unsubscribeDomBus?.();

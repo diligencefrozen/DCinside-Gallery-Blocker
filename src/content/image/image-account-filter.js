@@ -262,7 +262,8 @@
     }
 
     judge(uid, entry) {
-      if (!entry || entry.unavailable) {
+      if (!entry || entry.unavailable || entry.statsKnown === false ||
+          ![entry.posts, entry.comments].every(n => Number.isSafeInteger(n) && n >= 0)) {
         return {
           uid,
           available: false,

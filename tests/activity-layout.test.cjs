@@ -40,6 +40,12 @@ for(const [engine,type] of Object.entries({chromium,firefox})) test(engine+' act
   await page.locator('.dcbpv-article [data-act=peek]').click();
   await page.waitForFunction(()=>{const im=document.querySelector('.dcbpv-article img');return im?.naturalWidth>0 && im.getClientRects().length && getComputedStyle(im).visibility==='visible'});
   assert.equal(await page.evaluate(()=>Object.keys(local.dcbImageBlockRecords).length),1);
+  await page.evaluate(()=>{
+    const body=document.querySelector('.dcbpv-article');
+    body.innerHTML='<p>다시 그린 본문</p><img src="/picture.svg">';
+    document.dispatchEvent(new CustomEvent('dcb-preview-content',{detail:{root:body}}));
+  });
+  await page.waitForFunction(()=>document.querySelector('.dcbpv-article [data-ibx-peek="1"] img')?.getClientRects().length);
   await page.screenshot({path:'test-results/layout-1112/'+engine+'-revealed.png'});
   await page.evaluate(()=>{closeFixture();change({dcbShowWriterActivity:false})});
   await page.waitForFunction(()=>!document.querySelector('.dcb-activity-badge'));

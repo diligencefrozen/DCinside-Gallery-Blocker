@@ -750,7 +750,7 @@
     actionState.set(actions, { frame, el, info });
   }
 
-  async function prepare(el) {
+  async function prepare(el, identity) {
     if (!ready || !mediaAllowed(el)) return;
     const src = mediaUrl(el);
     if (!src) return;
@@ -771,7 +771,7 @@
     if (overlay && peekPost === overlay.dataset.dcbpvUrl && previewPeeks.has(src)) {
       frame.dataset.ibxAuthorPeek = frame.dataset.ibxPeek = "1";
     }
-    const currentAuthor = detectAuthorIdentity(el);
+    const currentAuthor = identity || detectAuthorIdentity(el);
 
     if (postAllowed(el) && shouldHideAuthorImages(currentAuthor) && frame.dataset.ibxAuthorPeek !== "1") {
       const saved = blockedUrls.get(src);
@@ -803,10 +803,14 @@
     // 자동 판정은 저장된 원본 URL의 quickKey만 사용해 DCinside 서버 추가 요청을 만들지 않는다.
   }
 
-  function scan(base = document) {
+  function scan(base = document, checkAuthor = true) {
     if (!ready || !config.enabled) return;
-    const authorChanged = refreshAuthorIdentity();
-    gatherMedia(authorChanged ? document : base).forEach((el) => void prepare(el));
+    const authorChanged = checkAuthor && refreshAuthorIdentity();
+    let previewAuthor;
+    for (const el of gatherMedia(authorChanged ? document : base)) {
+      const identity = previewRootFor(el) ? (previewAuthor ||= detectAuthorIdentity(el)) : authorIdentity;
+      void prepare(el, identity);
+    }
   }
 
   function isOwnedUiNode(node) {
@@ -820,10 +824,11 @@
     if (!config.enabled || observer || unsubscribeDomBus) return;
     const handleChanges = (changes) => {
       if (!config.enabled) return;
+      const roots = new Set();
       for (const item of changes) {
         if (item.type === "childList") {
           item.addedNodes.forEach((node) => {
-            if ((node.nodeType === 1 || node.nodeType === 11) && !isOwnedUiNode(node)) scan(node);
+            if ((node.nodeType === 1 || node.nodeType === 11) && !isOwnedUiNode(node)) roots.add(node);
           });
           continue;
         }
@@ -832,8 +837,16 @@
           const target = item.target;
           if (isOwnedUiNode(target)) continue;
           if (item.attributeName === "class" && target.classList?.contains(`${UI}-frame`)) continue;
-          scan(target);
+          roots.add(target);
         }
+      }
+      if (!roots.size) return;
+      if (refreshAuthorIdentity()) { scan(document); return; }
+      for (const root of roots) {
+        if (!root.isConnected) continue;
+        let parent = root.parentNode;
+        while (parent && !roots.has(parent)) parent = parent.parentNode;
+        if (!parent) scan(root, false);
       }
     };
 
