@@ -104,7 +104,7 @@
     accent-color:var(--neon);
   }
   label.row{display:flex;align-items:center;gap:12px;min-height:28px;padding-right:2px}
-  label.row > span{flex:1 1 auto;min-width:128px !important}
+  label.row > span:not(.switch){flex:1 1 auto;min-width:128px !important}
   label.row > .switch,
   label.row > select,
   label.row > input[type="number"]{flex:0 0 auto}
@@ -1711,9 +1711,21 @@
   <hr class="divider">
 
   <p class="section-title">작성자 표시</p>
-<div class="setting-row row"><span class="setting-copy">작성자 이름 익명화</span><label class="switch"><input type="checkbox" aria-label="작성자 이름 익명화" id="dcbMaskEnabled"><span class="slider"></span></label></div>
-      <label class="setting-row row" id="dcbMaskScope">적용 대상 <select id="dcbMaskWriterNames"><option value="all">모두 적용</option><option value="members">회원만 적용</option></select></label>
-      <div class="setting-row row"><span class="setting-copy">작성자 활동량 표시</span><label class="switch"><input type="checkbox" aria-label="작성자 활동량 표시" id="dcbShowWriterActivity"><span class="slider"></span></label></div>
+  <label class="row" for="dcbMaskWriterNames">
+    <span>작성자 이름 익명화</span>
+    <select id="dcbMaskWriterNames" aria-label="작성자 이름 익명화">
+        <option value="off" selected>끄기</option>
+        <option value="all">모두 적용</option>
+        <option value="members">회원만 적용</option>
+      </select>
+  </label>
+  <label class="row" for="dcbShowWriterActivity">
+    <span>작성자 활동량 표시</span>
+    <span class="switch">
+      <input type="checkbox" id="dcbShowWriterActivity">
+      <span class="slider"></span>
+    </span>
+  </label>
   <label class="row">
     <span style="min-width:110px;">닉네임 옆 회원 아이디 표시</span>
     <label class="switch">

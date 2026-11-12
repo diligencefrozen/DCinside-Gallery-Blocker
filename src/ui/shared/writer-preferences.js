@@ -1,25 +1,18 @@
 (() => {
-  const toggle = document.getElementById("dcbMaskEnabled");
   const scope = document.getElementById("dcbMaskWriterNames");
   const activity = document.getElementById("dcbShowWriterActivity");
   const cache = globalThis.DCBUiSettingsCache;
   function render() {
     const values = cache.read();
-    toggle.checked = ["all","members"].includes(values.dcbMaskWriterNames);
-    scope.value = (toggle.checked ? values.dcbMaskWriterNames : values.dcbMaskLastScope) === "members" ? "members" : "all";
-    scope.disabled = !toggle.checked;
+    scope.value = ["all", "members"].includes(values.dcbMaskWriterNames) ? values.dcbMaskWriterNames : "off";
     activity.checked = values.dcbShowWriterActivity === true;
   }
-  function saveMask() {
-    scope.disabled = !toggle.checked;
-    chrome.storage.sync.set({dcbMaskLastScope:scope.value, dcbMaskWriterNames:toggle.checked ? scope.value : "off"}).catch(render);
-  }
-  toggle.onchange = scope.onchange = saveMask;
+  scope.onchange = () => chrome.storage.sync.set({dcbMaskWriterNames: scope.value}).catch(render);
   activity.onchange = () => chrome.storage.sync.set({dcbShowWriterActivity:activity.checked}).catch(render);
   render();
   cache.ready.then(render);
   chrome.storage.onChanged.addListener((changes,area) => {
-    if (area === "sync" && (changes.dcbMaskWriterNames || changes.dcbShowWriterActivity || changes.dcbMaskLastScope)) render();
+    if (area === "sync" && (changes.dcbMaskWriterNames || changes.dcbShowWriterActivity)) render();
   });
   const openImport = () => {
     if (location.hash === "#dcRecordsImport") {

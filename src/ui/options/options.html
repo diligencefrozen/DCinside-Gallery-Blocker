@@ -1329,9 +1329,27 @@
         </label>
       </div>
 
-      <div class="setting-row row"><span class="setting-copy">작성자 이름 익명화</span><label class="switch"><input type="checkbox" aria-label="작성자 이름 익명화" id="dcbMaskEnabled"><span class="slider"></span></label></div>
-      <label class="setting-row row" id="dcbMaskScope">적용 대상 <select id="dcbMaskWriterNames"><option value="all">모두 적용</option><option value="members">회원만 적용</option></select></label>
-      <div class="setting-row row"><span class="setting-copy">작성자 활동량 표시</span><label class="switch"><input type="checkbox" aria-label="작성자 활동량 표시" id="dcbShowWriterActivity"><span class="slider"></span></label></div>
+      <div class="setting-row">
+        <div class="setting-copy">
+          <strong id="writerMaskLabel">작성자 이름 익명화</strong>
+          <span id="writerMaskDescription">선택한 작성자의 닉네임을 ㅇㅇ로 표시합니다.</span>
+        </div>
+        <select id="dcbMaskWriterNames" aria-labelledby="writerMaskLabel" aria-describedby="writerMaskDescription">
+        <option value="off" selected>끄기</option>
+        <option value="all">모두 적용</option>
+        <option value="members">회원만 적용</option>
+      </select>
+      </div>
+      <div class="setting-row">
+        <div class="setting-copy">
+          <strong id="writerActivityLabel">작성자 활동량 표시</strong>
+          <span id="writerActivityDescription">게시글 제목과 댓글 오른쪽에 회원이 작성한 글·댓글 수를 표시합니다.</span>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="dcbShowWriterActivity" aria-labelledby="writerActivityLabel" aria-describedby="writerActivityDescription">
+          <span class="slider"></span>
+        </label>
+      </div>
 
       <div class="setting-row">
         <div class="setting-copy">

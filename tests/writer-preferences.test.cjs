@@ -7,13 +7,15 @@ test('popup and options sync writer modes and open the official importer',async 
  const opt=await c.newPage(),popup=await c.newPage();
  await opt.goto(origin+'/src/ui/options/options.html');await popup.goto(origin+'/src/ui/popup/popup.html');
  await popup.locator('#popupTabDisplay').click();
- await popup.locator('#dcbMaskEnabled').evaluate(e=>e.click());
+ assert.equal(await popup.locator('#dcbMaskWriterNames').inputValue(),'off');
+ const right=id=>popup.locator(id).evaluate(input=>input.closest('.switch').getBoundingClientRect().right);
+ assert.ok(Math.abs(await right('#dcbShowWriterActivity')-await right('#toggleUidBadge'))<=1,'popup switches align at their right edges');
  await popup.locator('#dcbMaskWriterNames').selectOption('members');await popup.locator('#dcbShowWriterActivity').evaluate(e=>e.click());
  await opt.waitForFunction(()=>document.querySelector('#dcbMaskWriterNames').value==='members'&&document.querySelector('#dcbShowWriterActivity').checked);
  fs.mkdirSync('test-results/layout-1112',{recursive:true});
- await opt.locator('#dcbMaskScope').scrollIntoViewIfNeeded();await opt.screenshot({path:'test-results/layout-1112/options.png'});
+ await opt.locator('#dcbMaskWriterNames').scrollIntoViewIfNeeded();await opt.screenshot({path:'test-results/layout-1112/options.png'});
  await popup.locator('#dcbShowWriterActivity').scrollIntoViewIfNeeded();await popup.screenshot({path:'test-results/layout-1112/popup.png'});
- await opt.locator('#dcbMaskEnabled').evaluate(e=>e.click());await popup.waitForFunction(()=>!document.querySelector('#dcbMaskEnabled').checked);
+ await opt.locator('#dcbMaskWriterNames').selectOption('off');await popup.waitForFunction(()=>document.querySelector('#dcbMaskWriterNames').value==='off');
  const opened=c.waitForEvent('page');
  await popup.locator('#openDcRecords').evaluate(e=>e.click());
  const imported=await opened;await imported.waitForURL(/options\.html#dcRecordsImport$/);await imported.waitForLoadState('domcontentloaded');
