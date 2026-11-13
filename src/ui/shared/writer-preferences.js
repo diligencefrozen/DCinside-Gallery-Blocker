@@ -16,8 +16,7 @@
   });
   const openImport = () => {
     if (location.hash === "#dcRecordsImport") {
-      const section = document.getElementById("dcRecordsImport");
-      if (section) { section.open = true; section.scrollIntoView(); }
+      location.replace("#settingsDcRecords");
     }
   };
   openImport();

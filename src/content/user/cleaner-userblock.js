@@ -88,10 +88,10 @@
 
   function normalizeToken(value) {
     const raw = String(value || "").trim();
-    const nickMatch = raw.match(/^nick\s*[:=]\s*(.+)$/i);
+    const nickMatch = raw.match(/^(nick(?:-exact)?)\s*[:=]\s*(.+)$/i);
     if (nickMatch) {
-      const nick = normalizeNick(nickMatch[1]);
-      return nick ? `nick:${nick}` : "";
+      const nick = normalizeNick(nickMatch[2]);
+      return nick ? `${nickMatch[1].toLowerCase()}:${nick}` : "";
     }
 
     const clean = raw
@@ -315,16 +315,17 @@
     const uidTokens = new Map();
     const ipTokens = new Map();
     const nickTokens = new Map();
+    const exactNicks = new Map();
 
     (Array.isArray(rawTokens) ? rawTokens : []).forEach((raw) => {
       const clean = normalizeToken(raw);
       if (!clean) return;
 
-      if (/^nick:/i.test(clean)) {
-        const nick = normalizeNick(clean.replace(/^nick\s*[:=]\s*/i, ""));
+      if (/^nick(?:-exact)?:/i.test(clean)) {
+        const nick = normalizeNick(clean.replace(/^nick(?:-exact)?\s*[:=]\s*/i, ""));
         if (nick) {
           const key = nick.toLowerCase();
-          nickTokens.set(key, clean);
+          (clean.startsWith("nick-exact:") ? exactNicks : nickTokens).set(key, clean);
         }
         return;
       }
@@ -346,7 +347,8 @@
       uidTokens,
       ipTokens,
       nickTokens,
-      empty: !uidTokens.size && !ipTokens.size && !nickTokens.size
+      exactNicks,
+      empty: !exactNicks.size && !uidTokens.size && !ipTokens.size && !nickTokens.size
     };
   }
 
@@ -361,6 +363,7 @@
     if (ipKey && matcher.ipTokens.has(ipKey)) return true;
 
     const haystack = normalizeNick(nick).toLowerCase();
+    if (matcher.exactNicks.has(haystack)) return true;
     if (!haystack) return false;
     for (const needle of matcher.nickTokens.keys()) {
       if (needle && haystack.includes(needle)) return true;
@@ -385,6 +388,7 @@
     if (ipKey && matcher.ipTokens.has(ipKey)) matched.push(matcher.ipTokens.get(ipKey));
 
     const haystack = normalizeNick(nick).toLowerCase();
+    if (matcher.exactNicks.has(haystack)) matched.push(matcher.exactNicks.get(haystack));
     if (haystack) {
       for (const [needle, token] of matcher.nickTokens) {
         if (needle && haystack.includes(needle)) matched.push(token);
@@ -587,12 +591,13 @@
         const clean = normalizeToken(raw);
         if (!clean) return;
 
-        if (/^nick:/i.test(clean)) {
-          const nick = normalizeNick(clean.replace(/^nick\s*[:=]\s*/i, ""));
+        if (/^nick(?:-exact)?:/i.test(clean)) {
+          const nick = normalizeNick(clean.replace(/^nick(?:-exact)?\s*[:=]\s*/i, ""));
           if (nick) {
-            addRulesForAttr(`[data-nick*="${cssEscape(nick)}"]`);
+            const op = clean.startsWith("nick-exact:") ? "=" : "*=";
+            addRulesForAttr(`[data-nick${op}"${cssEscape(nick)}"]`);
             lines.push(
-              `.gall_list tr:has(.gall_writer .nickname[title*="${cssEscape(nick)}"]){display:none!important}`
+              `.gall_list tr:has(.gall_writer .nickname[title${op}"${cssEscape(nick)}"]){display:none!important}`
             );
           }
           return;
@@ -853,9 +858,9 @@
   function setUnblockButtonState(button, state = "default") {
     const safeState = ["busy", "success", "error"].includes(state) ? state : "default";
     const labels = {
-      default: { status: "차단됨", action: "해제" },
+      default: button.dataset.add === "true" ? {status:"차단 안 됨", action:"차단"} : { status: "차단됨", action: "해제" },
       busy: { status: "처리 중", action: "" },
-      success: { status: "해제됨", action: "" },
+      success: { status: button.dataset.add === "true" ? "차단됨" : "해제됨", action: "" },
       error: { status: "실패", action: "재시도" }
     }[safeState];
 
@@ -865,7 +870,8 @@
     const icon = document.createElement("span");
     icon.className = "dcb-userblock-unblock-icon";
     icon.setAttribute("aria-hidden", "true");
-    icon.appendChild(createUnblockIcon(safeState));
+    if (safeState === "default" && button.dataset.add === "true") icon.textContent = "+";
+    else icon.appendChild(createUnblockIcon(safeState));
 
     const status = document.createElement("span");
     status.className = "dcb-userblock-unblock-status";
@@ -1047,14 +1053,31 @@
     return host;
   }
 
+  let controlViewport;
+  let visibleOwners = new WeakSet();
+  function waitForCommentViewport(owner) {
+    if (!owner || visibleOwners.has(owner) || typeof IntersectionObserver !== "function") return false;
+    controlViewport ||= new IntersectionObserver(entries => {
+      if (activeConf?.userBlockEnabled !== false) return;
+      for (const entry of entries) {
+        if (!entry.isIntersecting || !entry.target.isConnected) continue;
+        visibleOwners.add(entry.target);
+        controlViewport.unobserve(entry.target);
+        applyUnblockControls(activeMatcher, entry.target, false);
+      }
+    }, {rootMargin:"160px"});
+    controlViewport.observe(owner);
+    return true;
+  }
+
   function collectUnblockGroups(matcher, base = document) {
     const groups = new Map();
 
     getCandidateWriters(base).forEach((writer) => {
-      const tokens = findMatchedBlockedTokens(writer, matcher);
-      if (!tokens.length) return;
-
       const owner = findUnblockOwner(writer);
+      if (isInsideCommentRoot(writer) && waitForCommentViewport(owner)) return;
+      const tokens = findMatchedBlockedTokens(writer, matcher);
+      if (!tokens.length && !isInsideCommentRoot(writer)) return;
       if (!owner) return;
 
       let group = groups.get(owner);
@@ -1078,38 +1101,36 @@
   function applyUnblockControls(matcher, base = document, cleanup = true) {
     const activeButtons = new Set();
 
-    if (!matcher.empty) {
-      collectUnblockGroups(matcher, base).forEach(({ owner, writer, tokens: tokenSet }) => {
-        const tokens = [...tokenSet];
-        if (!tokens.length) return;
+    collectUnblockGroups(matcher, base).forEach(({ owner, writer, tokens: tokenSet }) => {
+      const adding = tokenSet.size === 0;
+      const tokens = adding ? DCBBlockTarget.options(extractWriterTokens(writer)) : [...tokenSet];
+      if (!tokens.length) return;
 
-        const host = ensureUnblockControlHost(writer, owner);
-        if (!host) return;
-        host.dataset.dcbOwned = "userblock";
-        let button = host.querySelector?.(`:scope > .${UNBLOCK_BUTTON_CLASS}`);
+      const host = ensureUnblockControlHost(writer, owner);
+      if (!host) return;
+      host.dataset.dcbOwned = "userblock";
+      let button = host.querySelector?.(`:scope > .${UNBLOCK_BUTTON_CLASS}`);
 
-        if (!button) {
-          button = document.createElement("button");
-          button.type = "button";
-          button.className = UNBLOCK_BUTTON_CLASS;
-          host.appendChild(button);
-          setUnblockButtonState(button, "default");
-        }
-
+      if (!button) {
+        button = document.createElement("button");
+        button.type = "button";
+        button.className = UNBLOCK_BUTTON_CLASS;
+        host.appendChild(button);
+      }
+      const signature = JSON.stringify(tokens);
+      if (button.dataset.tokens !== signature || button.dataset.add !== String(adding)) {
         button.dataset.token = tokens[0];
-        button.dataset.tokens = JSON.stringify(tokens);
-        button.dataset.defaultLabel = "차단됨 · 해제";
-        button.title = tokens.length > 1
-          ? `${tokens.length}개 차단 조건 모두 해제: ${tokens.join(", ")}`
-          : `${tokens[0]} 차단 해제`;
-        button.setAttribute("aria-label", `차단된 작성자. ${button.title}`);
-
-        if (button.dataset.busy !== "1" && button.dataset.state !== "error") {
-          setUnblockButtonState(button, "default");
-        }
-        activeButtons.add(button);
-      });
-    }
+        button.dataset.tokens = signature;
+        button.dataset.add = String(adding);
+        button.dataset.busy = "0";
+        button.disabled = false;
+        const action = adding ? "차단 안 됨 · 차단" : "차단됨 · 해제";
+        button.title = action + " · " + tokens.join(", ");
+        button.setAttribute("aria-label", button.title);
+        setUnblockButtonState(button, "default");
+      }
+      activeButtons.add(button);
+    });
 
     if (!cleanup) return;
 
@@ -1211,6 +1232,9 @@
       return;
     }
 
+    controlViewport?.disconnect();
+    controlViewport = null;
+    visibleOwners = new WeakSet();
     clearUnblockControls();
     applyDomBlocks(activeMatcher, document, { reset: true });
   }
@@ -1256,7 +1280,7 @@
   }
 
   function queueIncrementalApply(root) {
-    if (!root || !activeConf || activeMatcher.empty || isInternalUiNode(root)) return;
+    if (!root || !activeConf || (activeConf.userBlockEnabled && activeMatcher.empty) || isInternalUiNode(root)) return;
     // Native icons can arrive as writer siblings; reconcile their local author
     // cluster so an existing action remains after the newly inserted identity.
     pendingRoots.add(root.closest?.(".cmt_nickbox") || root);
@@ -1266,9 +1290,9 @@
 
   apply();
 
-  function requestUserBlockRemoval(tokens) {
+  function requestUserBlockChange(token, adding) {
     return new Promise((resolve, reject) => {
-      chrome.runtime.sendMessage({ type: "dcb.userBlockRemoveMany", tokens }, (res) => {
+      chrome.runtime.sendMessage(adding ? { type: "dcb.userBlockAdd", token } : { type: "dcb.userBlockRemoveMany", tokens: [token] }, (res) => {
         if (chrome.runtime.lastError) {
           reject(new Error(chrome.runtime.lastError.message || "확장 프로그램 연결 실패"));
           return;
@@ -1300,7 +1324,17 @@
     setUnblockButtonState(button, "busy");
 
     try {
-      const res = await requestUserBlockRemoval(tokens);
+      const adding = button.dataset.add === "true";
+      const member = adding && !tokens[0].includes(":") && !isIpLike(tokens[0]);
+      const token = tokens.length === 1 || member ? tokens[0] :
+        await DCBBlockTarget.choose(tokens, adding ? "차단 조건 선택" : "해제할 조건 선택");
+      if (!token) {
+        button.dataset.busy = "0";
+        button.disabled = false;
+        setUnblockButtonState(button, "default");
+        return;
+      }
+      const res = await requestUserBlockChange(token, adding);
       if (!res?.ok) throw new Error(res?.message || "차단 해제 실패");
 
       if (button.isConnected) setUnblockButtonState(button, "success");
@@ -1323,6 +1357,11 @@
       if (record.type === "attributes") {
         queueIncrementalApply(record.target);
         return;
+      }
+      if (controlViewport) for (const node of record.removedNodes) {
+        if (node.nodeType !== 1 || node.isConnected || node.hasAttribute("data-dcb-owned")) continue;
+        controlViewport.unobserve(node);
+        node.querySelectorAll(COMMENT_UNIT_SELECTOR).forEach(item => controlViewport.unobserve(item));
       }
       // Native may attach a nested reply thread after its parent was hidden.
       // Recompute only that blocked owner's own surfaces, releasing the new

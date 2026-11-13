@@ -18,6 +18,6 @@ test('popup and options sync writer modes and open the official importer',async 
  await opt.locator('#dcbMaskWriterNames').selectOption('off');await popup.waitForFunction(()=>document.querySelector('#dcbMaskWriterNames').value==='off');
  const opened=c.waitForEvent('page');
  await popup.locator('#openDcRecords').evaluate(e=>e.click());
- const imported=await opened;await imported.waitForURL(/options\.html#dcRecordsImport$/);await imported.waitForLoadState('domcontentloaded');
- assert.equal(await imported.locator('#dcRecordsImport').evaluate(e=>e.open),true);
+ const imported=await opened;await imported.waitForURL(/options\.html#settingsDcRecords$/);await imported.waitForLoadState('domcontentloaded');
+ assert.equal(await imported.locator('#settingsDcRecords h2').innerText(),'디시 기록 가져오기');
 });

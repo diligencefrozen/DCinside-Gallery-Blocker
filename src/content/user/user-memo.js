@@ -449,13 +449,13 @@
     root.querySelector('[data-act="save"]').addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      saveCurrentMemo();
+      void updateCurrentMemo(false);
     });
 
     root.querySelector('[data-act="delete"]').addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      deleteCurrentMemo();
+      void updateCurrentMemo(true);
     });
 
     document.body.appendChild(root);
@@ -519,55 +519,19 @@
     currentMeta = null;
   }
 
-  function saveCurrentMemo() {
-    if (!currentMeta) return;
-
+  async function updateCurrentMemo(remove) {
+    const meta = currentMeta;
+    if (!meta) return;
     const els = modalEls();
-    const memo = sanitizeText(els.memo.value, 80);
-    const color = isValidColor(els.color.value) ? els.color.value : DEFAULT_COLOR;
-
-    chrome.storage.local.get(LOCAL_DEFAULTS, ({ userMemos }) => {
-      const next = { ...(userMemos || {}) };
-
-      if (!memo) {
-        delete next[currentMeta.key];
-      } else {
-        next[currentMeta.key] = {
-          ...next[currentMeta.key],
-          memo,
-          color,
-          nickname: currentMeta.nickname || '',
-          uid: currentMeta.uid || '',
-          ip: currentMeta.ip || '',
-          updatedAt: Date.now()
-        };
-      }
-
-      chrome.storage.local.set({ userMemos: next }, () => {
-        memoReadRevision += 1;
-        useMemos(next);
-        renderAll();
-        closeModal();
-      });
-    });
+    const memo = remove ? "" : sanitizeText(els.memo.value, 80);
+    const patch = memo ? { memo, color:isValidColor(els.color.value) ? els.color.value : DEFAULT_COLOR,
+      nickname:meta.nickname || "", uid:meta.uid || "", ip:meta.ip || "", updatedAt:Date.now() } : null;
+    try {
+      const result = await chrome.runtime.sendMessage({ type:"dcb.memoPatch", entries:[[meta.key,patch]] });
+      if (!result?.ok) throw Error("메모 저장 실패");
+      if (currentMeta === meta) closeModal();
+    } catch (_) { window.alert("메모를 저장하지 못했습니다. 다시 시도해 주세요."); }
   }
-
-  function deleteCurrentMemo() {
-    if (!currentMeta) return;
-
-    chrome.storage.local.get(LOCAL_DEFAULTS, ({ userMemos }) => {
-      const next = { ...(userMemos || {}) };
-      delete next[currentMeta.key];
-
-      chrome.storage.local.set({ userMemos: next }, () => {
-        memoReadRevision += 1;
-        useMemos(next);
-        renderAll();
-        closeModal();
-      });
-    });
-  }
-
 
   function rememberContextMemoTarget(target) {
     const writer = target?.closest?.(WRITER_SELECTOR);

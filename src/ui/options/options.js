@@ -390,16 +390,16 @@ const keywordTargetComments = document.getElementById("keywordTargetComments");
 const norm = s => String(s || "").trim().toLowerCase();
 function sanitizeUid(s) {
   const raw = String(s || "").trim();
-  const nickMatch = raw.match(/^nick\s*[:=]\s*(.+)$/i);
+  const nickMatch = raw.match(/^(nick(?:-exact)?)\s*[:=]\s*(.+)$/i);
   if (nickMatch) {
-    const nick = nickMatch[1]
+    const nick = nickMatch[2]
       .normalize("NFKC")
       .trim()
       .replace(/\s+/g, " ")
       .replace(/\((?:\d{1,3}\.){1,3}\d{0,3}\)\s*$/g, "")
       .trim()
       .slice(0, 80);
-    return nick ? `nick:${nick}` : "";
+    return nick ? `${nickMatch[1].toLowerCase()}:${nick}` : "";
   }
 
   const compact = raw.replace(/\s+/g, "");
@@ -937,6 +937,11 @@ async function exportSettings() {
 function parseBackupPayload(raw) {
   if (!raw || typeof raw !== "object") throw new Error("invalid");
 
+  if (raw.format === "dcb-records" && raw.version === 1) {
+    if (!raw.userMemos || typeof raw.userMemos !== "object" || Array.isArray(raw.userMemos) ||
+        !Array.isArray(raw.blockedUids) || !raw.blockedUids.every(token => typeof token === "string")) throw Error("잘못된 기록 백업");
+    return {sync:{}, local:{userMemos:normalizeImportedMemoObject(raw.userMemos)}, blockedUids:raw.blockedUids};
+  }
   if (Number(raw.version) >= 8 && raw.storage && typeof raw.storage === "object") {
     const sync = raw.storage.sync && typeof raw.storage.sync === "object" && !Array.isArray(raw.storage.sync)
       ? { ...raw.storage.sync }
@@ -1430,13 +1435,13 @@ function updateOptionUserBlockModeGuide(mode) {
   if (optionUserBlockModeTitle) {
     optionUserBlockModeTitle.textContent = normalized === "contextMenu"
       ? "메뉴 방식: 우클릭 메뉴에서 차단 상태를 전환합니다."
-      : "즉시 전환: 우클릭 한 번으로 차단하고, 한 번 더 하면 해제합니다.";
+      : "즉시 전환: 회원은 우클릭으로 전환하고, 비회원은 조건을 선택합니다.";
   }
 
   if (optionUserBlockModeText) {
     optionUserBlockModeText.innerHTML = normalized === "contextMenu"
       ? "<strong>닉네임, 갤로그 아이콘, 메모 버튼</strong> 위에서 우클릭한 뒤 브라우저 메뉴의 “이 사용자 차단/해제”를 누르세요. 같은 대상을 다시 실행하면 해제됩니다."
-      : "<strong>닉네임, 갤로그 아이콘, 메모 버튼</strong> 위에서 우클릭하세요. UID/IP를 우선 저장하고, 이미 차단된 대상이면 목록에서 제거합니다.";
+      : "<strong>닉네임, 갤로그 아이콘, 메모 버튼</strong> 위에서 우클릭하세요. 회원은 ID로, 비회원은 IP 또는 닉네임 조건을 선택해 차단하거나 해제합니다.";
   }
 
   if (optionUserBlockModeSub) {
@@ -1493,7 +1498,8 @@ function renderUidList(uids) {
   list.forEach((uid) => {
     const li = document.createElement("li");
     const code = document.createElement("code");
-    code.textContent = uid;
+    code.textContent = uid.startsWith("nick-exact:") ? uid.slice(11) + " (닉네임 정확 일치)" :
+      uid.startsWith("nick:") ? uid.slice(5) + " (닉네임 일부 포함)" : uid;
 
     const del = document.createElement("button");
     del.type = "button";
@@ -1618,113 +1624,9 @@ function getUserMemos() {
   });
 }
 
-function setUserMemos(next) {
-  return new Promise((resolve) => {
-    chrome.storage.local.set({ userMemos: next }, resolve);
-  });
-}
-
-{
-  const fileInput = document.getElementById("officialMemoFile");
-  const status = document.getElementById("officialMemoPreview");
-  const rows = document.getElementById("officialMemoRows");
-  const apply = document.getElementById("officialMemoApply");
-  const undo = document.getElementById("officialMemoUndo");
-  let undoEntries = [];
-  const replace = document.getElementById("officialMemoReplace");
-  const format = document.getElementById("memoImportFormat");
-  const scope = document.getElementById("memoTextScope");
-  let pending;
-  let revision = 0;
-  async function previewImport() {
-    const version = ++revision;
-    document.getElementById("memoScopeLabel").hidden = format.value !== "text";
-    const file = fileInput.files[0];
-    pending = null;
-    apply.disabled = true;
-    replace.checked = false;
-    rows.replaceChildren();
-    status.textContent = "";
-    if (!file) return;
-    try {
-      if (file.size > 4 * 1024 * 1024) throw Error("4MB 이하의 파일을 선택하세요.");
-      const text = await file.text();
-      const parsed = format.value === "text" ? DCBOfficialMemos.parseText(text, scope.value.trim()) : DCBOfficialMemos.parse(text);
-      const current = await getUserMemos();
-      if (version !== revision) return;
-      let conflicts = 0;
-      const items = document.createDocumentFragment();
-      for (const [key, item] of parsed.entries) {
-        const li = document.createElement("li");
-        const conflict = Object.hasOwn(current, key);
-        if (conflict) conflicts++;
-        li.textContent = `${item.scope === "global" ? "전체 갤러리" : item.scope} · ${item.value} · ${item.memo}${conflict ? " (기존 메모 있음)" : ""}`;
-        items.append(li);
-      }
-      rows.replaceChildren(items);
-      status.textContent = `가져올 수 있는 메모 ${parsed.entries.size}건 · 충돌 ${conflicts}건 · 중복 ${parsed.duplicates}건 · 잘못된 항목 ${parsed.invalid}건`;
-      if (parsed.badLines?.length) status.textContent += " · 파일에서 확인할 줄 " + parsed.badLines.slice(0,20).join(", ");
-      pending = parsed.entries;
-      apply.disabled = !pending.size;
-    } catch (error) {
-      if (version === revision) status.textContent = "가져오기 실패 · " + error.message;
-    }
-  }
-  fileInput.addEventListener("change", previewImport);
-  format.addEventListener("change", previewImport);
-  scope.addEventListener("input", previewImport);
-  apply.addEventListener("click", async () => {
-    if (!pending || apply.disabled) return;
-    apply.disabled = fileInput.disabled = replace.disabled = format.disabled = scope.disabled = true;
-    try {
-      await navigator.locks.request("dcb-memo-import", async () => {
-        const current = await getUserMemos();
-        const next = { ...current };
-        const changes = [];
-        const now = Date.now();
-        for (const [key, item] of pending) {
-          if (Object.hasOwn(current, key) && !replace.checked) continue;
-          next[key] = { ...item, importedAt: now, updatedAt: now };
-          changes.push({key, before:current[key], after:next[key]});
-        }
-        if (changes.length) {
-          downloadJson("dcb-memos-before-import-" + now + ".json", { userMemos: current });
-          await chrome.storage.local.set({ userMemos: next });
-          undoEntries = changes;
-          undo.hidden = false;
-        }
-        status.textContent = `메모 ${changes.length}건을 가져왔습니다.`;
-      });
-      pending = null;
-      rows.replaceChildren();
-      fileInput.value = "";
-      await renderMemoList();
-    } catch (error) { status.textContent = "저장 실패 · " + error.message; }
-    finally {
-      fileInput.disabled = replace.disabled = format.disabled = scope.disabled = false;
-      apply.disabled = !pending;
-    }
-  });
-  undo.addEventListener("click", async () => {
-    undo.disabled = true;
-    try {
-      await navigator.locks.request("dcb-memo-import", async () => {
-        const current = await getUserMemos();
-        let reverted = 0;
-        for (const {key,before,after} of undoEntries) {
-          if (!backupValueEqual(current[key], after)) continue;
-          if (before) current[key] = before;
-          else delete current[key];
-          reverted++;
-        }
-        if (reverted) await chrome.storage.local.set({userMemos:current});
-        status.textContent = `메모 ${reverted}건의 가져오기를 취소했습니다.`;
-        undoEntries = [];
-        undo.hidden = true;
-      });
-    } catch (error) { status.textContent = "취소 실패 · " + error.message; }
-    finally { undo.disabled = false; }
-  });
+async function patchUserMemos(entries) {
+  const result = await chrome.runtime.sendMessage({ type:"dcb.memoPatch", entries });
+  if (!result?.ok) throw Error(result?.message || "메모 저장 실패");
 }
 
 function memoMatchesFilter(key, item, query) {
@@ -1809,18 +1711,14 @@ async function renderMemoList() {
 
     saveBtn.addEventListener("click", async () => {
       const memo = sanitizeText(textarea.value, 80);
-      const next = await getUserMemos();
-
       if (!memo) {
-        delete next[key];
-        await setUserMemos(next);
+        await patchUserMemos([[key,null]]);
         setMemoStatus(`빈 메모는 삭제 처리됨 · ${key}`);
         renderMemoList();
         return;
       }
 
-      next[key] = {
-        ...(next[key] || {}),
+      const updated = {
         memo,
         color: isValidColor(color.value) ? color.value : "#999999",
         nickname: sanitizeText(item.nickname, 60),
@@ -1829,15 +1727,13 @@ async function renderMemoList() {
         updatedAt: Date.now()
       };
 
-      await setUserMemos(next);
+      await patchUserMemos([[key,updated]]);
       setMemoStatus(`저장 완료 · ${key}`);
       renderMemoList();
     });
 
     deleteBtn.addEventListener("click", async () => {
-      const next = await getUserMemos();
-      delete next[key];
-      await setUserMemos(next);
+      await patchUserMemos([[key,null]]);
       setMemoStatus(`삭제 완료 · ${key}`);
       renderMemoList();
     });
@@ -2427,14 +2323,7 @@ if (importUserMemoBtn && importUserMemoFile) {
       const text = await file.text();
       const parsed = JSON.parse(text);
       const imported = normalizeImportedMemoObject(parsed);
-      const current = await getUserMemos();
-
-      const merged = {
-        ...current,
-        ...imported
-      };
-
-      await setUserMemos(merged);
+      await patchUserMemos(Object.entries(imported));
 
       setMemoStatus(`가져오기 완료 · ${Object.keys(imported).length}건 반영`);
       renderMemoList();

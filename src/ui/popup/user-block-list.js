@@ -3,12 +3,13 @@
   const kindOrder = Object.freeze({ UID: 0, IP: 1, NICK: 2 });
   function kindOf(token) {
     const text = String(token || "").trim();
-    if (/^nick\s*[:=]/i.test(text)) return "NICK";
+    if (/^nick(?:-exact)?\s*[:=]/i.test(text)) return "NICK";
     return /^\d{1,3}(?:\.\d{1,3}){1,3}$/.test(text) ? "IP" : "UID";
   }
   function labelOf(token) {
     const text = String(token || "").trim();
-    return kindOf(text) === "NICK" ? text.replace(/^nick\s*[:=]\s*/i, "") : text;
+    if (/^nick-exact:/i.test(text)) return text.slice(11) + " (정확 일치)";
+    return kindOf(text) === "NICK" ? text.replace(/^nick(?:-exact)?\s*[:=]\s*/i, "") : text;
   }
   function counts(tokens) {
     const result = { all: 0, UID: 0, IP: 0, NICK: 0 };

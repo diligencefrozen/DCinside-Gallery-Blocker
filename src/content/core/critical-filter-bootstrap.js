@@ -118,13 +118,14 @@
   }
 
   function buildMatcher(tokens) {
-    const matcher = { uids: new Set(), ips: new Set(), nicks: [] };
+    const matcher = { uids: new Set(), ips: new Set(), nicks: [], exactNicks: new Set() };
     for (const raw of Array.isArray(tokens) ? tokens : []) {
       const value = String(raw || "").trim();
-      const nickMatch = value.match(/^nick\s*[:=]\s*(.+)$/i);
+      const nickMatch = value.match(/^nick(?:-exact)?\s*[:=]\s*(.+)$/i);
       if (nickMatch) {
         const nick = normalizeNick(nickMatch[1]).toLowerCase();
-        if (nick) matcher.nicks.push(nick);
+        if (/^nick-exact/i.test(value)) matcher.exactNicks.add(nick);
+        else if (nick) matcher.nicks.push(nick);
         continue;
       }
       const ip = normalizeIp(value);
@@ -167,7 +168,7 @@
     if (!matcher || state.sync.userBlockEnabled === false) return false;
     const { uid, ip, nick } = tokens || writerTokens(writer);
     return (uid && matcher.uids.has(uid)) || (ip && matcher.ips.has(ip)) ||
-      (nick && matcher.nicks.some((needle) => nick.includes(needle)));
+      matcher.exactNicks.has(nick) || (nick && matcher.nicks.some((needle) => nick.includes(needle)));
   }
 
   function isNoticeRow(row) {

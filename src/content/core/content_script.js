@@ -2003,11 +2003,11 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     const uid = previewUidToken(menu?.dataset?.uid || "");
     const nick = String(menu?.dataset?.nick || "").trim();
     const ip = previewIpPrefix(menu?.dataset?.ip || "", { allowDateLike: true });
-    return action === "block-uid" ? uid : action === "block-ip" ? ip : (nick ? `nick:${nick}` : "");
+    return action === "block-uid" ? uid : action === "block-ip" ? ip : action === "block-exact" ? "nick-exact:" + nick : (nick ? `nick:${nick}` : "");
   }
 
   function previewMenuBlockLabel(action, blocked){
-    const kind = action === "block-uid" ? "식별 코드" : action === "block-ip" ? "IP" : "닉네임";
+    const kind = action === "block-uid" ? "식별 코드" : action === "block-ip" ? "IP" : action === "block-exact" ? "닉네임 정확 일치" : "닉네임 일부 포함";
     return `${blocked ? "차단 해제" : "차단"}(${kind})`;
   }
 
@@ -2023,18 +2023,14 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
 
     const matches = [];
     const seen = new Set();
-    const targetNick = action === "block-nick"
-      ? target.replace(/^nick\s*[:=]\s*/i, "").toLowerCase()
-      : "";
-
     for (const raw of Array.isArray(storedTokens) ? storedTokens : []) {
       const stored = normalize(raw);
       if (!stored) continue;
 
-      const matched = action === "block-nick"
-        ? /^nick\s*[:=]/i.test(stored)
-          && targetNick.includes(stored.replace(/^nick\s*[:=]\s*/i, "").toLowerCase())
-        : makeKey(stored) === makeKey(target);
+      const matched = makeKey(stored) === makeKey(target) || (
+        action === "block-nick" && stored.startsWith("nick:") &&
+        target.slice(5).toLowerCase().includes(stored.slice(5).toLowerCase())
+      );
       const key = makeKey(stored);
       if (!matched || !key || seen.has(key)) continue;
       seen.add(key);
@@ -2054,7 +2050,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
   async function refreshPreviewUserMenuBlockStates(menu){
     if (!globalThis.DCBUserBlockStore?.getAllTokens || !menu?.isConnected) return;
 
-    const actions = ["block-nick", "block-uid", "block-ip"];
+    const actions = ["block-nick", "block-exact", "block-uid", "block-ip"];
     try {
       const storedTokens = await previewStoredBlockTokens();
       await Promise.all(actions.map(async (action) => {
@@ -2126,7 +2122,8 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
       ${uid ? `<li class="dcbpv-menu-row"><a href="${escapeText(previewGallogUrl(uid))}" target="_blank" rel="noreferrer noopener">갤로그<span class="dcbpv-menu-arrow">›</span></a></li>` : ""}
       ${searchUrl ? `<li class="dcbpv-menu-row"><a href="${escapeText(searchUrl)}" target="_blank" rel="noreferrer noopener">작성글 검색<span class="dcbpv-menu-arrow">›</span></a></li>` : ""}
       ${(uid || ip) ? `<li class="dcbpv-menu-row"><a href="javascript:;" data-dcbpv-menu-act="memo">이용자 메모<span class="dcbpv-menu-arrow">›</span></a></li>` : ""}
-      ${nick ? `<li class="dcbpv-menu-row dcbpv-menu-danger"><a href="javascript:;" data-dcbpv-menu-act="block-nick">차단(닉네임)<span class="dcbpv-menu-arrow">›</span></a></li>` : ""}
+      ${nick && !/^(?:ᄋᄋ|ㅇㅇ|익명|무명|유동|유동닉|anonymous)$/i.test(nick.normalize("NFKC")) ? `<li class="dcbpv-menu-row dcbpv-menu-danger"><a href="javascript:;" data-dcbpv-menu-act="block-exact">차단(닉네임 정확 일치)<span class="dcbpv-menu-arrow">›</span></a></li>` : ""}
+      ${nick && !/^(?:ᄋᄋ|ㅇㅇ|익명|무명|유동|유동닉|anonymous)$/i.test(nick.normalize("NFKC")) && [...nick].length >= 2 ? `<li class="dcbpv-menu-row dcbpv-menu-danger"><a href="javascript:;" data-dcbpv-menu-act="block-nick">차단(닉네임 일부 포함)<span class="dcbpv-menu-arrow">›</span></a></li>` : ""}
       ${uid ? `<li class="dcbpv-menu-row dcbpv-menu-danger"><a href="javascript:;" data-dcbpv-menu-act="block-uid">차단(식별 코드)<span class="dcbpv-menu-arrow">›</span></a></li>` : ""}
       ${(!uid && ip) ? `<li class="dcbpv-menu-row dcbpv-menu-danger"><a href="javascript:;" data-dcbpv-menu-act="block-ip">차단(IP)<span class="dcbpv-menu-arrow">›</span></a></li>` : ""}
     `;
@@ -2177,7 +2174,15 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
       let result;
 
       if (matchedTokens.length) {
-        result = await removePreviewUserBlocks(matchedTokens);
+        const chosen = matchedTokens.length === 1 ? matchedTokens[0] :
+          await globalThis.DCBBlockTarget?.choose(matchedTokens, "해제할 조건 선택");
+        if (!chosen) {
+          menu.dataset.busy = actionLink.dataset.busy = "0";
+          actionLink.removeAttribute("aria-disabled");
+          await refreshPreviewUserMenuBlockStates(menu);
+          return;
+        }
+        result = await removePreviewUserBlocks([chosen]);
       } else {
         result = await togglePreviewUserBlock(token);
       }
@@ -3918,7 +3923,12 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     const uids = new Set();
     const ips = new Set();
     const nicks = new Set();
+    const exactNicks = new Set();
     (Array.isArray(tokens) ? tokens : []).forEach((raw) => {
+      if (/^nick-exact:/i.test(raw)) {
+        exactNicks.add(normalizePreviewBlockNick(raw.slice(11)).toLowerCase());
+        return;
+      }
       const nick = previewNickToken(raw);
       if (nick) {
         nicks.add(nick.toLowerCase());
@@ -3941,7 +3951,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
       const implicitNick = normalizePreviewBlockNick(clean);
       if (implicitNick) nicks.add(implicitNick.toLowerCase());
     });
-    return { uids, ips, nicks, empty: !uids.size && !ips.size && !nicks.size };
+    return { uids, ips, nicks, exactNicks, empty: !exactNicks.size && !uids.size && !ips.size && !nicks.size };
   }
 
   function previewNickMatchesBlockedToken(nick, blockedNicks){
@@ -3962,7 +3972,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     const nick = normalizePreviewBlockNick(meta.nick);
     return !!(uid && matcher.uids.has(uid.toLowerCase()))
       || !!(ip && matcher.ips.has(ip))
-      || previewNickMatchesBlockedToken(nick, matcher.nicks);
+      || matcher.exactNicks.has(nick.toLowerCase()) || previewNickMatchesBlockedToken(nick, matcher.nicks);
   }
 
   function previewIsAnonymous(meta, node){

@@ -541,13 +541,13 @@ function updateUserBlockModeGuide(mode) {
   if (userBlockModeGuide) {
     userBlockModeGuide.innerHTML = normalized === "contextMenu"
       ? '<strong>메뉴 방식:</strong> 작성자 위에서 우클릭한 뒤 브라우저 메뉴의 “이 사용자 차단/해제”를 누르세요. 같은 대상을 다시 실행하면 해제됩니다.'
-      : '<strong>즉시 전환:</strong> 작성자 닉네임, 갤로그 아이콘, 메모 버튼 위에서 우클릭하면 차단되고, 같은 작성자를 다시 우클릭하면 해제됩니다.';
+      : '<strong>즉시 전환:</strong> 작성자를 우클릭하세요. 회원은 ID로 전환하고 비회원은 IP 또는 닉네임 조건을 선택합니다.';
   }
 
   if (userBlockModeSubGuide) {
     userBlockModeSubGuide.textContent = normalized === "contextMenu"
       ? '실수 방지를 위해 메뉴를 한 번 더 선택하는 방식입니다. 사용자 차단이 OFF여도 기존 목록은 아래에서 해제할 수 있습니다.'
-      : '글 제목, 본문, 댓글 내용 영역에서는 실행되지 않습니다. 사용자 차단이 OFF일 때는 차단된 작성자 옆의 “차단됨 · 해제” 버튼도 사용할 수 있습니다.';
+      : '글 제목, 본문, 댓글 내용 영역에서는 실행되지 않습니다. 사용자 차단이 꺼져 있어도 댓글 작성자 옆에서 차단 목록을 관리할 수 있습니다.';
   }
 }
 
@@ -697,16 +697,16 @@ function setMemoTransferStatus(text, isError = false) {
 
 function sanitizeUid(s) {
   const raw = String(s || "").trim();
-  const nickMatch = raw.match(/^nick\s*[:=]\s*(.+)$/i);
+  const nickMatch = raw.match(/^(nick(?:-exact)?)\s*[:=]\s*(.+)$/i);
   if (nickMatch) {
-    const nick = nickMatch[1]
+    const nick = nickMatch[2]
       .normalize("NFKC")
       .trim()
       .replace(/\s+/g, " ")
       .replace(/\((?:\d{1,3}\.){1,3}\d{0,3}\)\s*$/g, "")
       .trim()
       .slice(0, 80);
-    return nick ? `nick:${nick}` : "";
+    return nick ? `${nickMatch[1].toLowerCase()}:${nick}` : "";
   }
 
   const compact = raw.replace(/\s+/g, "");
@@ -1499,10 +1499,9 @@ function getUserMemos() {
   });
 }
 
-function setUserMemos(next) {
-  return new Promise((resolve) => {
-    chrome.storage.local.set({ userMemos: next }, resolve);
-  });
+async function patchUserMemos(entries) {
+  const result = await chrome.runtime.sendMessage({ type:"dcb.memoPatch", entries });
+  if (!result?.ok) throw Error(result?.message || "메모 저장 실패");
 }
 
 async function renderPopupMemoList() {
@@ -1554,9 +1553,7 @@ async function renderPopupMemoList() {
     deleteBtn.textContent = "삭제";
 
     deleteBtn.addEventListener("click", async () => {
-      const next = await getUserMemos();
-      delete next[key];
-      await setUserMemos(next);
+      await patchUserMemos([[key,null]]);
       renderPopupMemoList();
     });
 
@@ -2128,16 +2125,9 @@ if (importUserMemoBtn && importUserMemoFile) {
       const parsed = JSON.parse(text);
       const imported = normalizeImportedMemoObject(parsed);
 
-      chrome.storage.local.get({ userMemos: {} }, ({ userMemos }) => {
-        const merged = {
-          ...(userMemos || {}),
-          ...imported
-        };
-        chrome.storage.local.set({ userMemos: merged }, () => {
-          setMemoTransferStatus(`가져오기 완료 · ${Object.keys(imported).length}건 반영`);
-          renderPopupMemoList();
-        });
-      });
+      await patchUserMemos(Object.entries(imported));
+      setMemoTransferStatus("가져오기 완료 · " + Object.keys(imported).length + "건 반영");
+      renderPopupMemoList();
     } catch (err) {
       setMemoTransferStatus("가져오기 실패 · JSON 형식을 확인해 주세요.", true);
     } finally {
@@ -2396,4 +2386,4 @@ if (openOptionsBtn) {
   load();
 })();
 
-document.getElementById("openDcRecords").onclick = () => chrome.tabs.create({url:chrome.runtime.getURL("src/ui/options/options.html#dcRecordsImport")});
+document.getElementById("openDcRecords").onclick = () => chrome.tabs.create({url:chrome.runtime.getURL("src/ui/options/options.html#settingsDcRecords")});

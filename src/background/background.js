@@ -253,7 +253,7 @@ const DCB_LAZY_FEATURE_FILES = Object.freeze({
   "member-ip": ["src/content/user/writer-layout.js", "src/content/user/member-ip-view.js"],
   "user-memo": ["src/content/user/writer-layout.js", "src/content/user/user-memo.js"],
   "notice-cleaner": ["src/content/cleaner/cleaner-notice.js"],
-  "user-block": ["src/shared/storage/user-block-store.js", "src/content/user/cleaner-userblock.js"],
+  "user-block": ["src/shared/storage/user-block-store.js", "src/content/user/block-target.js", "src/content/user/cleaner-userblock.js"],
   "foreign-anonymous": ["src/content/cleaner/cleaner-foreign-ip.js", "src/content/cleaner/cleaner-anonymous.js"],
   "gamemeca": ["src/content/cleaner/cleaner-gamemeca.js"],
   "dory": ["src/content/cleaner/cleaner-dory.js"],
@@ -266,7 +266,7 @@ const DCB_LAZY_FEATURE_FILES = Object.freeze({
   "text-detector": ["src/shared/detection-config.js", "src/content/detection/text-detector.js"],
   "preview": ["src/shared/keyword-matcher.js", "src/content/core/content_script.js"],
   "quick-block": ["src/content/gallery/gallery-quick-block.js"],
-  "ctx-probe": ["src/content/user/ctx-probe.js"],
+  "ctx-probe": ["src/content/user/block-target.js", "src/content/user/ctx-probe.js"],
   "dcbest-source": ["src/shared/keyword-settings-hot-cache.js", "src/shared/keyword-matcher.js", "src/content/gallery/dcbest-source-filter.js"],
   "font": ["src/content/appearance/font-manager.js"],
   "link-blocker": ["src/content/gallery/link-blocker.js"],
@@ -2111,6 +2111,7 @@ function ensureAccountSignalGuardReady() {
         });
         const value = stored[ACCOUNT_SIGNAL_GUARD_KEY];
         if (value && typeof value === "object") {
+          accountSignalLastRequestAt = Math.max(0, ...(Array.isArray(value.requestTimes) ? value.requestTimes.filter(Number.isFinite) : []));
           accountSignalGuard = {
             requestTimes: Array.isArray(value.requestTimes)
               ? value.requestTimes.map(Number).filter(Number.isFinite)
@@ -3228,7 +3229,8 @@ async function toggleBlockedUserToken(token, candidates = []) {
     ...(Array.isArray(candidates) ? candidates : [])
   ]);
   const storedTokens = await globalThis.DCBUserBlockStore.getAllTokens();
-  const matchedTokens = matchingBlockedUserTokens(storedTokens, normalizedCandidates);
+  const matchedTokens = candidates.length > 1 ? matchingBlockedUserTokens(storedTokens, normalizedCandidates) :
+    storedTokens.filter(value => DCBUserBlockStore.makeBlockKey(value) === DCBUserBlockStore.makeBlockKey(normalizedToken));
   let res;
 
   if (matchedTokens.length) {
@@ -3294,6 +3296,10 @@ async function mutateUserBlockList(message) {
     };
   }
 
+  if (message.type === "dcb.memoPatch") return DCBUserBlockStore.patchMemos(message.entries);
+  if (message.type === "dcb.recordsImport" || message.type === "dcb.recordsUndo") {
+    return DCBUserBlockStore.importRecords(message, message.type === "dcb.recordsUndo");
+  }
   if (message.type === "dcb.userBlockAdd") {
     return globalThis.DCBUserBlockStore.addToken(message.token);
   }
@@ -3393,7 +3399,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 });
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-  if (!["dcb.userBlockAdd", "dcb.userBlockSetAll", "dcb.userBlockClear"].includes(msg?.type)) return;
+  const records = msg?.type === "dcb.recordsImport" || msg?.type === "dcb.recordsUndo";
+  if (records && _sender.url?.split("#")[0] !== chrome.runtime.getURL("src/ui/options/options.html")) return;
+  if (!records && !["dcb.memoPatch", "dcb.userBlockAdd", "dcb.userBlockSetAll", "dcb.userBlockClear"].includes(msg?.type)) return;
 
   queueUserBlockMutation(() => mutateUserBlockList(msg))
     .then((result) => sendResponse(result))

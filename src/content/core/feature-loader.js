@@ -62,7 +62,7 @@
       add("member-ip", settings.showMemberIpInfo === true, "visual");
       add("user-memo", settings.userMemoEnabled === true, "normal");
       add("notice-cleaner", isList && settings.noticeBlockEnabled !== false, "critical");
-      add("user-block", settings.userBlockEnabled !== false, "critical");
+      add("user-block", settings.userBlockEnabled !== false || isView, settings.userBlockEnabled !== false ? "critical" : "normal");
       add("foreign-anonymous", settings.hideForeignIpEnabled === true || settings.hideAnonymousEnabled === true, "normal");
       add("gamemeca", settings.gamemecaBlockEnabled === true, "normal");
       add("dory", settings.doryBlockEnabled === true, "normal");

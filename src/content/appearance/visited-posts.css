@@ -1,9 +1,9 @@
 /* Read state belongs to DCB; these rules never change row geometry. */
-.gall_list tr.dcb-read-post {
+.gall_list tr.dcb-read-post > .gall_tit > a {
   opacity: .74;
 }
 
-.gall_list tr.dcb-read-post:hover {
+.gall_list tr.dcb-read-post:hover > .gall_tit > a {
   opacity: .84;
 }
 

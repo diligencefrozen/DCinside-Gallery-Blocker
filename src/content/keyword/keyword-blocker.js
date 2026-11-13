@@ -291,6 +291,15 @@
     location.replace(getListUrl());
   }
 
+  let allowedArticle = "";
+  function articleKey() {
+    const url = new URL(location.href);
+    return JSON.stringify([url.pathname, url.searchParams.get("id"), url.searchParams.get("no")]);
+  }
+  window.addEventListener("pagehide", () => { allowedArticle = ""; });
+  window.addEventListener("pageshow", event => { if (event.persisted && enabled) blockArticleIfNeeded(); });
+  window.addEventListener("popstate", () => { if (enabled) blockArticleIfNeeded(); });
+
   function handleOverlayClick(e) {
     const btn = e.target.closest("[data-act]");
     if (!btn) return;
@@ -300,6 +309,12 @@
 
     const act = btn.getAttribute("data-act");
 
+    if (act === "continue") {
+      if (btn.closest("[data-article]")?.dataset.article !== articleKey()) { blockArticleIfNeeded(); return; }
+      allowedArticle = articleKey();
+      clearArticleOverlay();
+      return;
+    }
     if (act === "back") {
       goBackOrList();
       return;
@@ -315,7 +330,7 @@
 
     const postNo = getPostNoFromUrl();
     const sourceLabel = source === "title" ? "제목" : "본문";
-    const blockKey = `${source}:${kw.needle}:${postNo}`;
+    const blockKey = JSON.stringify([articleKey(),source,kw.needle]);
 
     let overlay = document.getElementById(ARTICLE_OVERLAY_ID);
 
@@ -336,6 +351,7 @@
       }
 
       overlay.dataset.blockKey = blockKey;
+      overlay.dataset.article = articleKey();
 
       overlay.innerHTML = `
         <div class="dcb-keyword-card" role="dialog" aria-modal="true" aria-labelledby="dcb-keyword-title">
@@ -351,15 +367,19 @@
           <div class="dcb-keyword-actions">
             <button type="button" class="dcb-keyword-btn primary" data-act="back">뒤로 가기</button>
             <button type="button" class="dcb-keyword-btn" data-act="list">목록으로</button>
+            <button type="button" class="dcb-keyword-btn" data-act="continue">이번 글 계속 보기</button>
           </div>
         </div>
       `;
 
       overlay.onclick = handleOverlayClick;
+      overlay.querySelector("button")?.focus({preventScroll:true});
     });
   }
 
   function blockArticleIfNeeded() {
+    if (allowedArticle === articleKey()) return;
+    allowedArticle = "";
     let matched = null;
     let source = "";
 

@@ -13,7 +13,7 @@
   if (globalThis.DCBContentScriptProfiles) return;
 
   globalThis.DCBContentScriptProfiles = Object.freeze({
-    version: 12,
+    version: 13,
     chrome: Object.freeze([
     {
         "id": "dcb-profile-chrome-00",
@@ -330,7 +330,7 @@
         "persistAcrossSessions": true,
         "js": [
             "src/shared/storage/user-block-store.js",
-            "src/content/user/cleaner-userblock.js"
+            "src/content/user/block-target.js", "src/content/user/cleaner-userblock.js"
         ],
         "runAt": "document_end",
         "allFrames": false
@@ -420,7 +420,7 @@
         ],
         "persistAcrossSessions": true,
         "js": [
-            "src/content/user/ctx-probe.js"
+            "src/content/user/block-target.js", "src/content/user/ctx-probe.js"
         ],
         "runAt": "document_end",
         "allFrames": true

@@ -45,7 +45,7 @@ test('options preview preserves existing memos, commits gallery scope, and undoe
   await page.goto('chrome-extension://'+new URL(worker.url()).hostname+'/src/ui/options/options.html');
   await page.waitForFunction(async()=>(await chrome.storage.local.get('dcbSettingsBatchV1')).dcbSettingsBatchV1?.phase==='committed');
   await page.evaluate(()=>chrome.storage.local.set({userMemos:{'uid:fixtureuser':{memo:'기존'}}}));
-  await page.locator('#officialMemoFile').evaluate(input=>input.closest('details').open=true);
+  await page.locator('#settingsDcRecords').scrollIntoViewIfNeeded();
   const importFile=async()=>{
     await page.locator('#officialMemoFile').setInputFiles({name:'dcbackup_PC_fixture.dcdata',mimeType:'application/octet-stream',buffer:Buffer.from(pc)});
     await page.waitForFunction(()=>!document.querySelector('#officialMemoApply').disabled);

@@ -32,6 +32,25 @@
   let rulesEpoch = 0;
   const uidQueue = new Map();
   const pendingRoots = new Set();
+  const registeredUids = new Set(), newUids = new Set();
+
+  function registerCandidates() {
+    if (!newUids.size) return;
+    const uids = [...newUids];
+    newUids.clear();
+    chrome.runtime.sendMessage({type:"dcb.activityCandidates", uids}, result => {
+      if (chrome.runtime.lastError || !result?.ok) for (const uid of uids) registeredUids.delete(uid);
+    });
+  }
+  chrome.runtime.onMessage?.addListener((message, sender, reply) => {
+    if (message?.type !== "dcb.activityRecheck" || sender.id !== chrome.runtime.id) return;
+    if (document.hidden || !enabled) { reply({inactive:true}); return; }
+    FILTER().evaluate(message.uid, true).then(verdict => {
+      reply({available:verdict.available, reason:verdict.reason, checkedAt:verdict.checkedAt, retryAt:verdict.retryAt});
+
+    }, () => reply({available:false, reason:"UNAVAILABLE"}));
+    return true;
+  });
 
   const cleanText = (value) => String(value ?? "").trim();
 
@@ -88,10 +107,16 @@
     return (scope.hasAttribute("href") || scope.hasAttribute("onclick")) && !!uidFromGallog(scope);
   }
 
+  const identityAttributes = ["data-full-uid","data-uid","data-memo-uid","data-user-id","data-userid","data-user_id"];
   function extractUid(writer) {
+    const explicit = identityAttributes.find(name => writer.hasAttribute(name) && writer.getAttribute(name));
+    if (explicit && writer.matches(".gall_writer,.ub-writer") && !writer.getAttribute("data-ip")) {
+      const uid = normalizeUid(writer.getAttribute(explicit));
+      if (uid) return uid;
+    }
     if (!hasGallogMarker(writer)) return "";
     const raw =
-      dataValue(writer, ["data-full-uid", "data-uid", "data-memo-uid", "data-user-id", "data-userid", "data-user_id"]) ||
+      dataValue(writer, identityAttributes) ||
       cleanText(writer?.querySelector?.(".dcb-uid-badge")?.getAttribute?.("data-full-uid")) ||
       uidFromGallog(writer);
     return normalizeUid(raw);
@@ -237,6 +262,10 @@
       clearTarget(target, uid);
       return;
     }
+    if (!registeredUids.has(uid.toLowerCase())) {
+      registeredUids.add(uid.toLowerCase());
+      newUids.add(uid.toLowerCase());
+    }
     if (settings.display && !settings.enabled && !seenInViewport.has(writer) && typeof IntersectionObserver === "function") {
       activityViewport ||= new IntersectionObserver(entries => {
         for (const item of entries) {
@@ -266,6 +295,7 @@
       uidQueue.delete(key);
     } else {
       if (cached && entry.state === "queued") deferEntry(entry, cached, false);
+      if (settings.display && entry.reason) setBadge(writer, info, uid, "—", activityStatus(entry));
       if (entry.state === "queued" && guardRetryAt > Date.now()) entry.state = "deferred";
       // Registration can encounter the same author hundreds of times in one
       // scan. The other rows already carry this queue state.
@@ -288,35 +318,60 @@
     return entry.targets.values();
   }
 
+  function setBadge(writer, info, uid, label, description) {
+    if (writer.dataset.dcbActivityUid !== uid) writer.dataset.dcbActivityUid = uid;
+    const host = badgeHost(writer, info);
+    if (host) {
+      let badge = badges.get(writer) || host.querySelector(":scope > .dcb-activity-badge");
+      if (!badge) {
+        badge = document.createElement("span");
+        badge.className = "dcb-activity-badge";
+        badge.dataset.dcbOwned = "activity";
+      }
+      badges.set(writer,badge);
+      if (badge.dataset.activityOwner !== uid) badge.dataset.activityOwner = uid;
+      if (badge.title !== description) badge.title = description;
+      if (badge.dataset.dcbWriterActivity !== label) badge.dataset.dcbWriterActivity = label;
+      if (badge.parentElement !== host) host.prepend(badge);
+    }
+  }
+
   function applyVerdict(entry, verdict, settings) {
+    const description = settings.display ? "작성자 활동량 · " + new Date(verdict.checkedAt).toLocaleString() : "";
     for (const { info, uid, writer } of liveTargets(entry, settings)) {
       const counts = verdict.stats;
       if (settings.display && Number.isInteger(counts?.posts) && Number.isInteger(counts?.comments)) {
         const label = `글 ${counts.posts} · 댓 ${counts.comments}`;
-        if (writer.dataset.dcbActivityUid !== uid) writer.dataset.dcbActivityUid = uid;
-        const host = badgeHost(writer, info);
-        if (host) {
-          let badge = badges.get(writer) || host.querySelector(":scope > .dcb-activity-badge");
-          if (!badge) {
-            badge = document.createElement("span");
-            badge.className = "dcb-activity-badge";
-            badge.dataset.dcbOwned = "activity";
-            badge.title = "작성자 활동량";
-          }
-          badges.set(writer,badge);
-          if (badge.dataset.activityOwner !== uid) badge.dataset.activityOwner = uid;
-          if (badge.parentElement !== host) host.prepend(badge);
-          if (badge.dataset.dcbWriterActivity !== label) badge.dataset.dcbWriterActivity = label;
-        }
+        setBadge(writer, info, uid, label, description);
       }
       if (settings.enabled && settingAllows(settings,info.kind) && info.target.dataset.dcbAccountActivityPeek !== uid && verdict.shouldHide) setState(info, uid, "hidden", verdict);
       else if (info.target.hasAttribute("data-dcb-account-activity-uid")) clearTarget(info.target, uid);
     }
   }
 
+  // Expose the transient queue state on demand, without constructing a badge
+  // for every pending row during the initial scan.
+  function showPendingStatus(event) {
+    if (!enabled || !FILTER()?.getSettings().display) return;
+    const writer = event.target.closest?.(".gall_writer,.ub-writer");
+    if (!writer) return;
+    const uid = extractUid(writer), entry = uidQueue.get(uid.toLowerCase());
+    const info = entry && targetForWriter(writer);
+    if (info) setBadge(writer, info, uid, "—", activityStatus(entry));
+  }
+  document.addEventListener("pointerover", showPendingStatus);
+  document.addEventListener("focusin", showPendingStatus);
+
+  function activityStatus(entry) {
+    if (entry.reason === "NO_TOKEN") return "활동량 · 세션 토큰 없음";
+    if (entry.reason === "BUDGET" || entry.reason === "COOLDOWN" || /^HTTP_(403|429|503)$/.test(entry.reason)) return "활동량 · 서버 요청 제한";
+    if (entry.reason) return "활동량 조회 실패 · " + entry.reason;
+    return entry.state === "checking" ? "활동량 조회 중" : "활동량 조회 대기";
+  }
+
   function applyQueueState(entry, settings) {
     for (const { info, uid, writer } of liveTargets(entry, settings)) {
-      badges.get(writer)?.remove();
+      if (settings.display && entry.reason) setBadge(writer, info, uid, "—", activityStatus(entry));
       if (!settings.enabled || !settingAllows(settings,info.kind) || info.target.dataset.dcbAccountActivityPeek === uid) continue;
       setState(info, uid, entry.state, null,
         entry.state !== "unavailable" && settings.holdWhileChecking === true);
@@ -324,6 +379,7 @@
   }
 
   function deferEntry(entry, verdict, attempted) {
+    entry.reason = verdict?.reason;
     const guarded = verdict?.reason === "BUDGET" || verdict?.reason === "COOLDOWN";
     const retryAt = Number(verdict?.retryAt) || 0;
     if (attempted && !guarded) entry.failures += 1;
@@ -462,6 +518,7 @@
       seen.add(writer);
       registerWriter(writer, filter, settings);
     });
+    registerCandidates();
     void drainUidQueue();
   }
 
@@ -530,7 +587,7 @@
         }
       }
     };
-    const attributes = ["data-uid", "data-full-uid", "data-memo-uid", "href", "onclick"];
+    const attributes = [...identityAttributes, "data-ip", "href", "onclick"];
     if (globalThis.DCBDomMutationBus) {
       unsubscribeDomBus = globalThis.DCBDomMutationBus.subscribe(
         "account-activity-blocker", handleRecords,
@@ -563,6 +620,8 @@
     cancelScheduledScan = null;
     pendingRoots.clear();
     uidQueue.clear();
+    registeredUids.clear();
+    newUids.clear();
     guardRetryAt = 0;
   }
 
@@ -598,8 +657,20 @@
       queueWakeTimer = null;
     }
   });
-  window.addEventListener("dcb:account-activity-cache-changed", () => {
-    if (enabled && uidQueue.size) void drainUidQueue();
+  window.addEventListener("dcb:account-activity-cache-changed", event => {
+    if (!enabled || document.hidden) return;
+    const filter = FILTER(), settings = filter.getSettings();
+    if (settings.display && event.detail?.length) {
+      const changed = new Set(event.detail);
+      for (const writer of document.querySelectorAll("[data-dcb-activity-uid]")) {
+        const uid = writer.dataset.dcbActivityUid, key = uid.toLowerCase();
+        if (!changed.has(key)) continue;
+        const info = targetForWriter(writer), verdict = filter.peek(uid);
+        if (info && verdict?.available) applyVerdict({key, targets:new Map([[info.target,{writer,info,uid}]])},verdict,settings);
+        else if (info) registerWriter(writer,filter,settings);
+      }
+    }
+    if (uidQueue.size) void drainUidQueue();
   });
   document.addEventListener("dcb-preview-content", event => {
     if (enabled && event.detail?.root) queueIncrementalScan(event.detail.root, true);

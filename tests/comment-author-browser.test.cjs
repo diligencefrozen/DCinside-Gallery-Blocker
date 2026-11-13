@@ -86,7 +86,15 @@ async function fixture(settings = {}, local = {}) {
         set(patch, callback) { changeSettings(patch, area); callback?.(); return Promise.resolve(); }
       };
     }
-    window.chrome = { runtime: { onMessage: { addListener() {} } }, storage: {
+    window.chrome = { runtime: { async sendMessage(message) {
+      if (message.type !== "dcb.memoPatch") return;
+      const next = {...fixtureStore.local.userMemos};
+      for (const [key,value] of message.entries) {
+        if (value === null) delete next[key]; else next[key] = {...next[key], ...value};
+      }
+      changeSettings({userMemos:next}, "local");
+      return {ok:true};
+    }, onMessage: { addListener() {} } }, storage: {
       sync: storageArea('sync'), local: storageArea('local'), onChanged: { addListener(listener) { listeners.push(listener); } }
     } };
     window.nativeMenuClicks = 0;

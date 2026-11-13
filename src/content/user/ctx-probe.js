@@ -146,11 +146,6 @@
     return nick.slice(0, 80);
   }
 
-  function isWeakNickname(nick) {
-    const key = normalizeNick(nick).replace(/\s+/g, "").toLowerCase();
-    return !key || ["ㅇㅇ", "익명", "무명", "유동", "유동닉", "anonymous"].includes(key);
-  }
-
   function isIpLike(v) {
     return /^\d{1,3}(?:\.\d{1,3}){1,3}$/.test(String(v || "").trim());
   }
@@ -318,7 +313,7 @@
   }
 
   function getAuthorHitElement(start) {
-    if (!(start instanceof Element)) return null;
+    if (!(start instanceof Element) || start.closest(".user_data_list,.user_data,[data-dcb-owned]")) return null;
 
     const hit = closest(start, AUTHOR_HIT_SELECTOR);
     if (!hit) return null;
@@ -371,9 +366,7 @@
       "";
 
     const nick = nicknameFromAuthor(author);
-    const candidates = [uid, ip, nick && !isWeakNickname(nick) ? `nick:${nick}` : ""]
-      .map(normalizeToken)
-      .filter(Boolean);
+    const candidates = DCBBlockTarget.options({uid, ip, nick});
     const primary = normalizeToken(uid || ip) || candidates[0] || "";
 
     return { primary, candidates: Array.from(new Set(candidates)) };
@@ -735,7 +728,7 @@
 
     const title = "작성자 차단 · 해제";
     const subtitle = "같은 동작을 반복하면 바로 되돌릴 수 있습니다";
-    const body = "댓글에서는 게시글 목록·본문과 달리 차단 아이콘이 표시되지 않습니다. 닉네임을 <b>우클릭</b>하면 차단되고, 다시 우클릭하면 해제됩니다.";
+    const body = "닉네임을 <b>우클릭</b>하세요. 비회원은 IP 또는 닉네임 조건을 선택할 수 있습니다.";
     const action = "차단 / 차단 해제";
 
     const hint = document.createElement("div");
@@ -912,6 +905,20 @@
     lastContextBlockAt = lastContextBlockToken ? Date.now() : 0;
   }
 
+  async function selectBlock(primary, candidates) {
+    const guest = isIpLike(primary) || /^nick(?:-exact)?:/.test(primary);
+    if (!guest) { sendInstantBlock(primary, [primary]); return; }
+    const nickname = candidates.find(value => value.startsWith("nick-exact:"))?.slice(11).toLowerCase();
+    let stored = [];
+    if (nickname && globalThis.DCBUserBlockStore) {
+      try { stored = await DCBUserBlockStore.getAllTokensReadOnly(); } catch (_) {}
+    }
+    const matching = stored.filter(value => value.startsWith("nick:") && nickname?.includes(value.slice(5).toLowerCase()));
+    const tokens = [...new Set([...candidates, ...matching])];
+    const token = await DCBBlockTarget.choose(tokens, "차단 또는 해제할 조건 선택", new Set(stored.map(value => value.toLowerCase())));
+    if (token) sendInstantBlock(token, [token]);
+  }
+
   function runLegacyContextBlock() {
     const fresh = lastContextBlockToken && Date.now() - lastContextBlockAt <= LEGACY_CONTEXT_TOKEN_TTL;
 
@@ -924,7 +931,7 @@
       return;
     }
 
-    sendInstantBlock(lastContextBlockToken, lastContextBlockCandidates);
+    void selectBlock(lastContextBlockToken, lastContextBlockCandidates);
   }
 
   document.addEventListener(
@@ -963,7 +970,7 @@
       e.stopPropagation();
       e.stopImmediatePropagation?.();
 
-      sendInstantBlock(token, candidates);
+      void selectBlock(token, candidates);
     },
     { capture: true }
   );

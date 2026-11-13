@@ -1041,6 +1041,7 @@
         <li><a href="#settingsUsers">👤 사용자 · 갤러리 관리</a></li>
         <li><a href="#settingsAreas">🧹 영역 · 콘텐츠 숨기기</a></li>
         <li><a href="#settingsImages">🖼️ 이미지 · 활동량 차단</a></li>
+        <li><a href="#settingsDcRecords">디시 기록 가져오기</a></li>
         <li><a href="#settingsNotes">📝 메모 · 문의</a></li>
       </ul>
     </nav>
@@ -1611,7 +1612,7 @@
     </div>
     <ul id="uidList"></ul>
     <p id="optionUserBlockStatus" class="note" role="status" aria-live="polite"></p>
-    <p class="note">* 사용자 차단이 OFF여도 목록은 유지됩니다. 기존 대상은 여기서 <strong>차단 해제</strong>하거나, 페이지의 작성자 옆 <strong>차단됨 · 해제</strong> 버튼으로 해제할 수 있습니다.</p>
+    <p class="note">* 사용자 차단이 OFF여도 목록은 유지됩니다. 댓글과 답글의 작성자 옆에서 차단하거나 해제할 수 있습니다.</p>
     <p class="note">* UID는 작성자 요소의 <code>data-uid</code> 값 또는 갤로그 주소의 사용자 ID입니다. 한글/특수문자 닉네임은 <code>무갤러</code>처럼 입력해도 <code>nick:무갤러</code>로 저장됩니다.</p>
     <p class="note">* 비회원은 IP 앞부분(예: <code>39.7</code>), 닉네임은 포함 매칭으로 일괄 차단됩니다. 예: <code>무갤러</code> 등록 시 <code>무갤러123</code>도 차단됩니다.</p>
     <p class="note">* 사용자 차단 목록은 대량 차단 사용자를 위해 Chrome 로컬 저장소에만 저장되며, 외부 서버로 전송되지 않습니다.</p>
@@ -1854,7 +1855,7 @@
           </select>
         </label>
       </div>
-      <p class="image-risk-note">회원 UID에만 적용됩니다. 갤로그 페이지를 추가로 조회하지 않으며, 페이지당 캐시에 없는 UID를 최대 12개까지 확인합니다. 모든 탭을 합쳐 10분당 최대 12회로 제한하고 결과를 최소 72시간 캐시합니다. 한도 초과·오류 항목은 숨기지 않습니다.</p>
+      <p class="image-risk-note">회원 UID에만 적용됩니다. 활동량은 캐시에서 먼저 표시합니다. 확인한 UID는 순서대로 예약하고, 보이는 갤러리 탭에서 약 6시간 이후 재확인합니다. 모든 탭을 합쳐 10분당 최대 12회로 제한합니다. 한도 초과·오류 항목은 숨기지 않습니다.</p>
       <div class="image-risk-actions">
         <button type="button" data-account-clear-cache>판정 캐시 초기화</button>
         <span class="image-risk-status" data-account-status></span>
@@ -1874,22 +1875,29 @@
       <input id="importUserMemoFile" type="file" accept=".json,application/json" style="display:none">
     </div>
 
-    <details id="dcRecordsImport">
-      <summary>디시 기록 가져오기</summary>
-      <p><a href="#settingsBackup">확장 자체 백업 복원</a> · 아래에서는 공식 웹 메모를 가져옵니다. 공식 앱 및 웹 차단 목록 파일은 지원 형식 확인 전입니다.</p>
-      <p>PC웹의 dcbackup_PC(.dcdata) 또는 모바일웹의 dcbackup_M(.txt) 파일을 선택하세요. 적용 전에 기존 메모 백업이 다운로드됩니다.</p>
-      <input type="file" id="officialMemoFile" accept=".txt,.dcdata">
-      <label>파일 형식 <select id="memoImportFormat"><option value="web">디시 웹 메모 백업</option><option value="text">직접 작성한 텍스트 목록</option></select></label>
-      <label id="memoScopeLabel" hidden>적용 범위 <input id="memoTextScope" value="global" placeholder="global 또는 갤러리 ID">
-        한 줄에 식별 코드 또는 IP와 메모를 입력하세요. 구분은 탭 또는 하이픈이며 식별 코드에 하이픈이 있으면 탭을 사용하세요.</label>
-      <p id="officialMemoPreview" role="status"></p>
-      <ul id="officialMemoRows" style="max-height:12rem;overflow:auto"></ul>
-      <label><input type="checkbox" id="officialMemoReplace"> 같은 범위·이용자의 기존 메모 덮어쓰기</label>
-      <button type="button" id="officialMemoApply" disabled>가져오기</button>
-      <button type="button" id="officialMemoUndo" hidden>방금 가져오기 취소</button>
-    </details>
+
     <p class="memo-status" id="userMemoStatus"></p>
     <ul id="memoList" class="memo-list"></ul>
+  </section>
+
+  <section class="card" id="settingsDcRecords">
+    <h2 id="dcRecordsImport">디시 기록 가져오기</h2>
+    <p class="note">공식 PC웹·모바일웹 메모 백업 또는 복사한 텍스트를 가져옵니다. 공식 앱 백업 파일과 웹 차단 파일의 형식은 확인되지 않았습니다. <a href="#settingsBackup">확장 자체 백업 복원</a></p>
+    <label>입력 형식 <select id="memoImportFormat"><option value="web">공식 웹 메모 백업</option><option value="text">복사한 텍스트 목록</option></select></label>
+    <input type="file" id="officialMemoFile" accept=".txt,.dcdata">
+    <div id="memoScopeLabel" hidden>
+      <label>분류 <select id="recordsKind"><option value="auto">자동 분류</option><option value="memo">메모 기록</option><option value="block">차단 기록</option></select></label>
+      <label>적용 범위 <input id="memoTextScope" value="global" placeholder="global 또는 갤러리 ID"></label>
+      <p class="note">메모는 식별자와 내용을 탭 또는 하이픈으로 구분하세요. 하이픈이 포함된 ID에는 탭을 사용하세요. 차단은 전체 갤러리에 적용됩니다. 단독 이름·숫자는 정확 일치 닉네임, uid:로 시작하는 값은 회원 ID, IP는 앞 두 옥텟으로 분류됩니다.</p>
+      <textarea id="recordsPaste" rows="7" maxlength="4194304" style="width:100%;box-sizing:border-box" aria-label="가져올 기록 붙여넣기"></textarea>
+    </div>
+    <p id="officialMemoPreview" role="status"></p>
+    <ul id="officialMemoRows" style="max-height:12rem;overflow:auto"></ul>
+    <button type="button" id="recordsMore" hidden>다음 100건</button>
+    <label><input type="checkbox" id="officialMemoReplace"> 같은 범위·이용자의 기존 메모 덮어쓰기</label>
+    <label id="recordsConfirmLabel" hidden><input type="checkbox" id="recordsConfirm"> 표시된 차단 규칙을 전체 갤러리에 적용</label>
+    <button type="button" id="officialMemoApply" disabled>백업 후 가져오기</button>
+    <button type="button" id="officialMemoUndo" hidden>방금 가져오기 취소</button>
   </section>
 
   <section class="card support-card">
@@ -1911,6 +1919,7 @@
 <script src="official-memos.js"></script>
 <script src="../shared/writer-preferences.js"></script>
 <script src="options.js"></script>
+<script src="dc-records-import.js"></script>
 <script src="../shared/dccon-block-options.js"></script>
 <script src="../shared/keyword-hide-ui.js"></script>
 <script src="../shared/image-account-settings-ui.js"></script>

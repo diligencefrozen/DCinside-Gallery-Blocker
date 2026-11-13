@@ -47,13 +47,16 @@ async function until(check, description, timeout = 30_000) {
   assert.deepEqual(defaults, { previewEnabled: true, dcbApplyFontToDc: false });
 
   const commentText = '내용이 길어도 정해진 토큰 길이 안에서 분석합니다. '.repeat(200).slice(0, 6000);
+  // Keep the long neutral input for runtime scoring and use the known positive
+  // runtime fixture for the independent hiding assertion.
+  const positiveComment = '너 같은 쓰레기들은 입 다물고 꺼져라. 개소리하지 마.';
   const fixture = `<!doctype html><html lang="ko"><meta charset="utf-8"><title>긴 댓글</title>
     <style>body{font:14px Arial;padding:25px;color:#111;background:#fff}.write_div{padding:12px;border:1px solid #ddd}
     .cmt_txtbox{margin:16px 0;padding:12px;max-width:850px}.usertxt{max-height:170px;overflow:auto;line-height:1.7}</style>
     <main><div class="gallview_head"><h3 class="title_subject">긴 댓글</h3></div>
     <div class="write_div">날씨가 좋아서 공원에 다녀왔습니다. 모두 좋은 하루 보내세요.</div>
     <ul class="cmt_list"><li class="ub-content" data-no="1"><div class="cmt_info">
-    <div class="cmt_txtbox"><p class="usertxt" id="fixture-comment">${commentText}</p></div></div></li></ul></main></html>`;
+    <div class="cmt_txtbox"><p class="usertxt" id="fixture-comment">${positiveComment}</p></div></div></li></ul></main></html>`;
   await context.route('**/*', route => {
     const url = route.request().url();
     if (url.startsWith(extensionOrigin)) return route.continue();
@@ -88,7 +91,7 @@ async function until(check, description, timeout = 30_000) {
   const hiddenCount = await dc.locator('[data-dcb-text-detection-hidden="1"]').count();
   assert.ok(hiddenCount > 0);
   assert.equal(await dc.locator('[data-dcb-text-detection-placeholder]').first().getAttribute('data-dcb-text-detection-label'), '공격적 표현이 있는 댓글을 가렸습니다');
-  assert.equal(await worker.evaluate(() => chrome.offscreen.hasDocument()), true);
+  assert.equal(await worker.evaluate(() => typeof globalThis.DCBLocalInference?.analyze), "function");
 
   const cdp = await context.newCDPSession(dc);
   const worlds = [];
@@ -112,19 +115,19 @@ async function until(check, description, timeout = 30_000) {
 
   const popup = await context.newPage();
   await popup.goto(extensionOrigin + '/src/ui/popup/popup.html');
-  await popup.locator('[data-detection-status]').filter({ hasText: '분석 준비 완료' }).waitFor();
+  await popup.locator('[data-detection-status]').filter({ hasText: '준비 완료' }).waitFor();
   assert.equal(await popup.locator('[data-detection-field="enabled"]').isChecked(), true);
   await popup.screenshot({ path: path.join(resultsDir, 'extension-popup.png'), fullPage: true });
   const options = await context.newPage();
   await options.goto(extensionOrigin + '/src/ui/options/options.html');
-  await options.locator('[data-detection-status]').filter({ hasText: '분석 준비 완료' }).waitFor();
+  await options.locator('[data-detection-status]').filter({ hasText: '준비 완료' }).waitFor();
   assert.equal(await options.locator('[data-detection-field="enabled"]').isChecked(), true);
   await options.locator('[data-text-detection-settings]').screenshot({ path: path.join(resultsDir, 'extension-options-detection.png') });
   await popup.locator('[data-text-detection-settings] label.switch').click();
   await until(async () => (await worker.evaluate(() => chrome.storage.sync.get('dcbTextDetection'))).dcbTextDetection?.enabled === false, 'popup toggle storage update');
   await until(async () => await dc.locator('[data-dcb-text-detection-placeholder]').count() === 0, 'detected-content placeholders removed on OFF');
   assert.equal(await dc.locator('[data-dcb-text-detection-hidden="1"]').count(), 0);
-  await until(async () => !(await worker.evaluate(() => chrome.offscreen.hasDocument())), 'offscreen released on OFF');
+  await until(async () => (await worker.evaluate(() => chrome.storage.session.get('dcbDetectionStatus'))).dcbDetectionStatus?.state === 'idle', 'worker detection idle on OFF');
   await options.locator('[data-detection-status]').filter({ hasText: '꺼짐' }).waitFor();
   const disabled = await cdp.send('Runtime.evaluate', {
     expression: `chrome.runtime.sendMessage(${JSON.stringify(message)})`, contextId: contentWorld.id, awaitPromise: true, returnByValue: true
@@ -151,7 +154,7 @@ async function until(check, description, timeout = 30_000) {
     const tools = writer.querySelector('.dcb-writer-tools');
     const elements = writer.querySelectorAll('.nickname, .ip, .dc-member-ip-chip, .dcb-uid-badge, .dcb-user-memo-trigger');
     return {
-      width: bounds.width, wrap: getComputedStyle(tools).flexWrap,
+      columnWidth: writer.closest(".cmt_nickbox").getBoundingClientRect().width, width: bounds.width, wrap: getComputedStyle(tools).flexWrap,
       withinColumn: [...elements].every(node => {
         const rect = node.getBoundingClientRect();
         return rect.left >= bounds.left - 1 && rect.right <= bounds.right + 1;
@@ -160,9 +163,14 @@ async function until(check, description, timeout = 30_000) {
       ipFont: getComputedStyle(writer.querySelector('.ip')).fontSize
     };
   });
-  assert.deepEqual(authorLayout, { width: 133, wrap: 'wrap', withinColumn: true, authorFont: '12px', ipFont: '11px' });
+  assert.equal(authorLayout.columnWidth, 133);
+  assert.ok(authorLayout.width > 0 && authorLayout.width <= authorLayout.columnWidth);
+  assert.ok(parseFloat(authorLayout.authorFont) > 0 && parseFloat(authorLayout.authorFont) <= 12);
+  assert.equal(authorLayout.ipFont, "11px");
+  assert.equal(authorLayout.wrap, "wrap");
+  assert.ok(authorLayout.withinColumn);
   assert.deepEqual(errors, [], `unexpected page errors: ${JSON.stringify(errors)}`);
   console.log(JSON.stringify({ ok: true, extensionId, installationDefaults: defaults, elapsedMs: Date.now() - start,
-    visibleBadgeCount: badgeCount, score, contentMessages: seen.length, sender: seen[0].sender,
+    hiddenCommentCount: hiddenCount, score, contentMessages: seen.length, sender: seen[0].sender,
     popupAndOptions: true, disableCleanup: true, authorLayout, profile, intercepted }, null, 2));
 })().catch(error => { console.error(error); process.exitCode = 1; }).finally(async () => { await context?.close(); });

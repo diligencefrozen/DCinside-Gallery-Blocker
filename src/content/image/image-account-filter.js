@@ -148,6 +148,7 @@
       this.settings = { ...DEFAULT_SETTINGS };
       this.cache = {};
       this.inflight = new Map();
+      this.dirty = new Map();
       this.cacheWriteTimer = null;
       this.cacheReadyPromise = null;
       this.cacheRevision = 0;
@@ -193,12 +194,27 @@
       this.cache = Object.fromEntries(entries);
     }
 
-    scheduleCacheWrite() {
-      if (this.cacheWriteTimer) clearTimeout(this.cacheWriteTimer);
-      this.cacheWriteTimer = setTimeout(() => {
+    scheduleCacheWrite(key, entry) {
+      this.dirty.set(key, entry);
+      if (this.cacheWriteTimer) return;
+      this.cacheWriteTimer = setTimeout(async () => {
         this.cacheWriteTimer = null;
-        this.trimCache();
-        void chrome.storage.local.set({ [CACHE_KEY]: this.cache });
+        const pending = this.dirty;
+        this.dirty = new Map();
+        try {
+          // Coordinate same-origin gallery tabs and merge only this tab's changes.
+          await navigator.locks.request("dcb-activity-cache", async () => {
+            const data = await chrome.storage.local.get({[CACHE_KEY]:{}});
+            const merged = {...data[CACHE_KEY]};
+            for (const [uid, item] of pending) {
+              if (!Object.hasOwn(merged,uid) || item.checkedAt >= merged[uid].checkedAt) {
+                Object.defineProperty(merged, uid, {value:item, enumerable:true, configurable:true, writable:true});
+              }
+            }
+            const recent = Object.entries(merged).sort((a,b) => b[1].checkedAt - a[1].checkedAt).slice(0, MAX_CACHE_ENTRIES);
+            await chrome.storage.local.set({[CACHE_KEY]:Object.fromEntries(recent)});
+          });
+        } catch (_) { /* The in-memory result remains available in this tab. */ }
       }, 250);
     }
 
@@ -230,7 +246,7 @@
       });
 
       if (!result?.ok) {
-        const reason = cleanText(result?.reason) || "UNAVAILABLE";
+        const reason = result?.reason === "HTTP" ? "HTTP_" + result.status : cleanText(result?.reason) || "UNAVAILABLE";
         const guarded = reason === "BUDGET" || reason === "COOLDOWN";
         // A budget/circuit wait is not a failed activity verdict. Preserve its
         // deadline so the content queue can resume when the guard permits it.
@@ -294,7 +310,7 @@
       };
     }
 
-    async evaluate(rawUid) {
+    async evaluate(rawUid, refreshDisplay = false) {
       await this.readyPromise;
       const uid = normalizeUid(rawUid);
       if (!uid || !(this.settings.enabled || this.settings.display)) {
@@ -312,13 +328,15 @@
 
       const key = uid.toLowerCase();
       const cached = this.cache[key];
-      if (this.cacheFresh(cached)) return this.judge(uid, cached);
+      if (this.cacheFresh(cached) && (!refreshDisplay || cached.unavailable || Date.now() - cached.checkedAt < 6 * 3600000)) return this.judge(uid, cached);
       if (this.inflight.has(key)) return this.inflight.get(key);
 
       const request = this.fetchSignal(uid)
         .then((entry) => {
-          this.cache[key] = entry;
-          this.scheduleCacheWrite();
+          if (!entry.unavailable || !cached || cached.unavailable || !this.cacheFresh(cached)) {
+            this.cache[key] = entry;
+            this.scheduleCacheWrite(key, entry);
+          }
           return this.judge(uid, entry);
         })
         .catch(() => ({
@@ -344,8 +362,11 @@
     async clearCache() {
       await this.readyPromise;
       await this.ensureCacheReady();
+      clearTimeout(this.cacheWriteTimer);
+      this.cacheWriteTimer = null;
+      this.dirty.clear();
       this.cache = {};
-      await chrome.storage.local.set({ [CACHE_KEY]: {} });
+      await navigator.locks.request("dcb-activity-cache", () => chrome.storage.local.set({ [CACHE_KEY]: {} }));
     }
   }
 
@@ -357,7 +378,10 @@
       service.cache = changes[CACHE_KEY].newValue && typeof changes[CACHE_KEY].newValue === "object"
         ? changes[CACHE_KEY].newValue
         : {};
-      try { window.dispatchEvent(new Event("dcb:account-activity-cache-changed")); } catch (_) {}
+      const previous = changes[CACHE_KEY].oldValue || {};
+      const keys = new Set([...Object.keys(previous), ...Object.keys(service.cache)]);
+      const changed = [...keys].filter(uid => previous[uid]?.checkedAt !== service.cache[uid]?.checkedAt);
+      window.dispatchEvent(new CustomEvent("dcb:account-activity-cache-changed", {detail:changed}));
       return;
     }
     if (area === "sync" && (changes[SETTINGS_KEY] || changes.dcbShowWriterActivity)) {
@@ -386,7 +410,7 @@
     ready: () => service.readyPromise,
     getSettings: () => ({ ...service.settings }),
     peek: (uid) => service.peek(uid),
-    evaluate: (uid) => service.evaluate(uid),
+    evaluate: (uid, refreshDisplay) => service.evaluate(uid, refreshDisplay),
     clearCache: () => service.clearCache()
   });
   globalThis.DCBAccountActivityFilter = api;

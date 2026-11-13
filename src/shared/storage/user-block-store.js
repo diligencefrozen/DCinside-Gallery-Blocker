@@ -32,10 +32,10 @@
 
   function normalizeToken(value) {
     const raw = String(value || "").trim();
-    const nickMatch = raw.match(/^nick\s*[:=]\s*(.+)$/i);
+    const nickMatch = raw.match(/^(nick(?:-exact)?)\s*[:=]\s*(.+)$/i);
     if (nickMatch) {
-      const nick = normalizeNick(nickMatch[1]);
-      return nick ? `nick:${nick}` : "";
+      const nick = normalizeNick(nickMatch[2]);
+      return nick ? `${nickMatch[1].toLowerCase()}:${nick}` : "";
     }
 
     const clean = raw
@@ -73,7 +73,7 @@
 
   function classifyToken(value) {
     const clean = normalizeToken(value);
-    if (/^nick:/i.test(clean)) return "nick";
+    if (/^nick(?:-exact)?:/i.test(clean)) return "nick";
     return normalizeIpPrefix(clean) && isIpLike(clean) ? "ip" : "uid";
   }
 
@@ -669,6 +669,76 @@
     }
   }
 
+  async function patchMemos(entries) {
+    const { userMemos = {} } = await storageGet("local", { userMemos:{} });
+    const current = {...userMemos};
+    for (const [key, value] of entries) {
+      if (typeof key !== "string" || ["__proto__", "constructor", "prototype"].includes(key)) throw Error("메모 키 오류");
+      if (value === null) delete current[key];
+      else current[key] = {...current[key], ...value};
+    }
+    await storageSet("local", {userMemos:current});
+    return {ok:true};
+  }
+
+  // Commit the memo map, changed v2 buckets and undo journal in one local write.
+  async function importRecords({ memos = [], tokens = [], replace = false }, undo = false) {
+    await migrateLegacyToBuckets();
+    const journalKey = "dcbRecordsImportUndo";
+    const state = await storageGet("local", ["userMemos", META_KEY, journalKey]);
+    const journal = undo ? state[journalKey] : { id: crypto.randomUUID(), memos: [], tokens: [] };
+    if (!journal) throw Error("취소할 가져오기가 없습니다.");
+    const list = normalizeList(undo ? journal.tokens : tokens);
+    const keys = [...new Set(list.map(token => bucketKeyForBlockKey(makeBlockKey(token))))];
+    const buckets = keys.length ? await storageGet("local", keys) : {};
+    const patch = {};
+    let blockCount = 0, memoCount = 0;
+    const stamp = now();
+    for (const token of list) {
+      const key = makeBlockKey(token);
+      const bucketKey = bucketKeyForBlockKey(key);
+      const bucket = buckets[bucketKey] ||= {};
+      if (undo) {
+        if (bucket[key]?.importId !== journal.id) continue;
+        delete bucket[key];
+      } else {
+        if (Object.hasOwn(bucket, key)) continue;
+        bucket[key] = { token, type: classifyToken(token), createdAt: stamp, updatedAt: stamp, importId: journal.id };
+        journal.tokens.push(token);
+      }
+      patch[bucketKey] = bucket;
+      blockCount++;
+    }
+    const current = { ...state.userMemos };
+    if (undo) {
+      for (const { key, before, after } of journal.memos) {
+        const value = current[key];
+        if (!value || Object.keys(value).length !== Object.keys(after).length ||
+            !Object.keys(after).every(field => value[field] === after[field])) continue;
+        if (before) current[key] = before;
+        else delete current[key];
+        memoCount++;
+      }
+    } else {
+      for (const [key, item] of memos) {
+        if (!/^(?:gallery:[a-z0-9_]{1,80}:)?(?:ip|uid):/i.test(key) || !item?.memo) throw Error("메모 형식 오류");
+        if (Object.hasOwn(current,key) && !replace) continue;
+        const after = { ...item, importedAt: stamp, updatedAt: stamp };
+        journal.memos.push({ key, before: current[key] ?? null, after });
+        current[key] = after;
+        memoCount++;
+      }
+    }
+    if (memoCount) patch.userMemos = current;
+    if (blockCount) patch[META_KEY] = { ...state[META_KEY], updatedAt: stamp,
+      count: state[META_KEY].count + (undo ? -blockCount : blockCount) };
+    if (undo || memoCount || blockCount) {
+      patch[journalKey] = undo ? null : journal;
+      await storageSet("local", patch);
+    }
+    return { ok: true, memoCount, blockCount };
+  }
+
   async function clearAllTokens() {
     return setAllTokens([]);
   }
@@ -714,6 +784,8 @@
     removeTokens,
     toggleToken,
     clearAllTokens,
+    importRecords,
+    patchMemos,
     migrateLegacyToBuckets,
     getUsage,
     isRelevantChange
