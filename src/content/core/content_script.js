@@ -530,8 +530,8 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     }
   }
 
-  function emitPreviewContent(root){
-    document.dispatchEvent(new CustomEvent("dcb-preview-content", { detail: { root: root || null } }));
+  function emitPreviewContent(root, addedRows){
+    document.dispatchEvent(new CustomEvent("dcb-preview-content", { detail: { root: root || null, addedRows } }));
   }
 
   function resetPreviewSurface(){
@@ -2486,6 +2486,11 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     return found;
   }
 
+  function previewCommentMetaHTML(writer, date){
+    const time = date ? `<span class="dcbpv-time">${escapeText(date)}</span>` : "";
+    return `<div class="dcbpv-comment-meta">${previewWriterBadge({...writer, loc:"preview-comment"})}<span class="dcbpv-comment-actions">${time}</span></div>`;
+  }
+
   function previewCommentRowHTML(item, baseUrl){
     const meta = commentMetaFromElement(item);
     const nick = meta.nick || commentNick(item);
@@ -2499,7 +2504,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     const doryClass = commentLooksAutomated(item, { ...meta, nick }) ? " dory" : "";
     const packageAttr = previewDcconPackageAttr(previewDcconPackageIdxFromElement(item));
     const threadAttr = previewNativeThreadAttributes(item);
-    return `<div class="dcbpv-comment-item${depthClass}${deletedClass}${doryClass}" data-dcbpv-comment="1" data-nick="${escapeText(nick)}" data-uid="${escapeText(meta.uid)}" data-ip="${escapeText(meta.ip)}"${packageAttr}${threadAttr}><div class="dcbpv-comment-meta">${previewWriterBadge({ nick, uid: meta.uid, ip: meta.ip, loc: "preview-comment" })}${date ? `<span>${escapeText(date)}</span>` : ""}</div><div class="dcbpv-comment-body">${body}</div></div>`;
+    return `<div class="dcbpv-comment-item${depthClass}${deletedClass}${doryClass}" data-dcbpv-comment="1" data-nick="${escapeText(nick)}" data-uid="${escapeText(meta.uid)}" data-ip="${escapeText(meta.ip)}"${packageAttr}${threadAttr}>${previewCommentMetaHTML({nick, uid:meta.uid, ip:meta.ip}, date)}<div class="dcbpv-comment-body">${body}</div></div>`;
   }
 
   function buildCommentsHTML(doc, root, baseUrl, items = collectCommentItems(doc, root)){
@@ -3086,7 +3091,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
       const doryClass = commentRecordLooksAutomated(record, { ...meta, nick }) ? " dory" : "";
       const packageAttr = previewDcconPackageAttr(previewDcconPackageIdxFromRecord(record));
       const threadAttr = previewNativeThreadAttributes(record);
-      return `<div class="dcbpv-comment-item${replyClass}${deletedClass}${doryClass}" data-dcbpv-comment="1" data-nick="${escapeText(nick)}" data-uid="${escapeText(meta.uid)}" data-ip="${escapeText(meta.ip)}"${packageAttr}${threadAttr}><div class="dcbpv-comment-meta">${previewWriterBadge({ nick, uid: meta.uid, ip: meta.ip, loc: "preview-comment" })}${date ? `<span>${escapeText(date)}</span>` : ""}</div><div class="dcbpv-comment-body">${body}</div></div>`;
+      return `<div class="dcbpv-comment-item${replyClass}${deletedClass}${doryClass}" data-dcbpv-comment="1" data-nick="${escapeText(nick)}" data-uid="${escapeText(meta.uid)}" data-ip="${escapeText(meta.ip)}"${packageAttr}${threadAttr}>${previewCommentMetaHTML({nick, uid:meta.uid, ip:meta.ip}, date)}<div class="dcbpv-comment-body">${body}</div></div>`;
     }).filter(Boolean);
     return rows.length ? `<div class="dcbpv-comment-list">${rows.join("")}</div>` : "";
   }
@@ -4569,7 +4574,10 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     ensurePreviewFilterStyle();
     overlay.querySelectorAll('.dcbpv-time').forEach((time) => {
       const fullTime=time.dataset.dcbpvFullTime||time.textContent.trim();
-      time.title=fullTime;time.dataset.dcbpvFullTime=fullTime;time.textContent=formatPreviewCommentTime(fullTime);
+      const formatted=formatPreviewCommentTime(fullTime);
+      if(time.title!==fullTime)time.title=fullTime;
+      if(time.dataset.dcbpvFullTime!==fullTime)time.dataset.dcbpvFullTime=fullTime;
+      if(time.textContent!==formatted)time.textContent=formatted;
     });
     overlay.querySelectorAll(".gall_writer,.ub-writer").forEach((writer) => globalThis.DCBWriterLayout?.normalize(writer));
     updatePreviewThreadDesign(overlay);
@@ -4715,24 +4723,38 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
       remove.dataset.target=id;remove.textContent='×';remove.title='내 댓글 삭제';remove.setAttribute('aria-label','내 댓글 삭제');
       reply.after(remove);
     }
-    remove.disabled=!!previewComposer?.submitting;
+    if(remove.dataset.target!==id)remove.dataset.target=id;
+    if(remove.disabled!==!!previewComposer?.submitting)remove.disabled=!!previewComposer?.submitting;
   }
   function decoratePreviewReplyActions(overlay){
     const rows=[...overlay.querySelectorAll('.dcbpv-comment-item')];
     const counts=new Map(), owned=new Set(previewComposer?.owned || []);
     for(const row of rows){const id=row.dataset.dcbpvNativeId;counts.set(id,(counts.get(id)||0)+1);}
     rows.forEach(row=>{
-      row.querySelectorAll('[data-act=compose-reply],[data-act=compose-delete]').forEach(node=>node.remove());
-      const meta=row.querySelector('.dcbpv-comment-meta');if(!meta)return;
-      let actions=meta.querySelector('.dcbpv-comment-actions');
-      if(!actions){actions=document.createElement('span');actions.className='dcbpv-comment-actions';meta.appendChild(actions);}
-      meta.querySelectorAll(':scope > .dcbpv-time,:scope > span:not(.gall_writer):not(.ub-writer):not(.dcbpv-comment-actions)').forEach(node=>{node.classList.add('dcbpv-time');actions.appendChild(node);});
+      const meta=row.querySelector(':scope > .dcbpv-comment-meta');
+      if(!meta)return;
+      let actions=meta.querySelector(':scope > .dcbpv-comment-actions');
+      if(!actions){
+        // Older comment HTML has a bare date beside its author.
+        const time=meta.querySelector(':scope > .dcbpv-time,:scope > .gall_writer + span:not([class]),:scope > strong + span:not([class])');
+        actions=document.createElement('span');
+        actions.className='dcbpv-comment-actions';
+        meta.appendChild(actions);
+        if(time){time.classList.add('dcbpv-time');actions.appendChild(time);}
+      }
       const id=row.dataset.dcbpvNativeId;
-      if(!/^[1-9]\d*$/.test(id||'')||row.matches('.deleted,.dory')||counts.get(id)!==1)return;
-      const reply=document.createElement('button');reply.type='button';reply.className='dcbpv-reply-button';reply.dataset.act='compose-reply';reply.dataset.target=id;reply.textContent='답글';
-      reply.setAttribute('aria-label',`${row.dataset.nick||'이 댓글'}에게 답글`);
-      actions.appendChild(reply);
-      if(owned.has(id))syncPreviewDeleteButton(reply,owned);
+      let reply=actions.querySelector('[data-act=compose-reply]');
+      if(!/^[1-9]\d*$/.test(id||'')||row.matches('.deleted,.dory')||counts.get(id)!==1){
+        reply?.remove();actions.querySelector('[data-act=compose-delete]')?.remove();return;
+      }
+      if(!reply){
+        reply=document.createElement('button');reply.type='button';reply.className='dcbpv-reply-button';
+        reply.dataset.act='compose-reply';reply.textContent='답글';actions.appendChild(reply);
+      }
+      if(reply.dataset.target!==id)reply.dataset.target=id;
+      const label=`${row.dataset.nick||'이 댓글'}에게 답글`;
+      if(reply.getAttribute('aria-label')!==label)reply.setAttribute('aria-label',label);
+      syncPreviewDeleteButton(reply,owned);
     });
   }
   function loadComposerFrame(state) {
@@ -5046,7 +5068,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
       void applyPreviewFeatureBridge(overlay, data, activePreviewTrace, added).then(() => {
         added.forEach(row => row.style.removeProperty("visibility"));
       });
-      emitPreviewContent(root);
+      emitPreviewContent(root, added);
     };
     more.onclick = next;
     if (typeof IntersectionObserver === "function") {

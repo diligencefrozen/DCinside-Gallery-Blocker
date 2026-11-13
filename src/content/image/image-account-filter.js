@@ -221,6 +221,7 @@
     cacheFresh(entry) {
       if (!entry || !Number(entry.checkedAt)) return false;
       if (entry.unavailable) {
+        if (entry.reason === "NO_TOKEN" && readCookie(["ci_c", "ci_t"])) return false;
         const expiresAt = Number(entry.expiresAt) || (Number(entry.checkedAt) + NEGATIVE_CACHE_MS);
         return Date.now() < expiresAt;
       }

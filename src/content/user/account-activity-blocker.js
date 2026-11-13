@@ -123,6 +123,9 @@
   }
 
   function canonicalWriter(node) {
+    if (node.matches?.(".dcbpv-comment-item")) {
+      return node.querySelector(":scope > .dcbpv-comment-meta > .gall_writer");
+    }
     return node?.closest?.(".gall_writer,.ub-writer") || node;
   }
 
@@ -237,7 +240,10 @@
   function badgeHost(writer, info) {
     if (info.kind === "comment") {
       const comment = writer.closest(".cmt_info,.reply_info,.dcbpv-comment-item");
-      return comment?.querySelector(":scope > .fr,.dcbpv-comment-actions,.dcbpv-comment-meta") || comment;
+      if (comment?.matches(".dcbpv-comment-item")) {
+        return comment.querySelector(":scope > .dcbpv-comment-meta > .dcbpv-comment-actions");
+      }
+      return comment?.querySelector(":scope > .fr") || comment;
     }
     return writer.closest("tr")?.querySelector("td.gall_tit.ub-word,td.gall_tit") || writer.parentElement;
   }
@@ -266,7 +272,8 @@
       registeredUids.add(uid.toLowerCase());
       newUids.add(uid.toLowerCase());
     }
-    if (settings.display && !settings.enabled && !seenInViewport.has(writer) && typeof IntersectionObserver === "function") {
+    const settingAllowsActiveFilter = settings.enabled && settingAllows(settings, info.kind);
+    if (settings.display && !settingAllowsActiveFilter && !seenInViewport.has(writer) && typeof IntersectionObserver === "function") {
       activityViewport ||= new IntersectionObserver(entries => {
         for (const item of entries) {
           if (!item.target.isConnected || item.isIntersecting) activityViewport?.unobserve(item.target);
@@ -295,6 +302,9 @@
       uidQueue.delete(key);
     } else {
       if (cached && entry.state === "queued") deferEntry(entry, cached, false);
+      if (!cached && entry.reason === "NO_TOKEN") {
+        entry.reason = ""; entry.retryAt = 0; entry.state = "queued";
+      }
       if (settings.display && entry.reason) setBadge(writer, info, uid, "—", activityStatus(entry));
       if (entry.state === "queued" && guardRetryAt > Date.now()) entry.state = "deferred";
       // Registration can encounter the same author hundreds of times in one
@@ -389,7 +399,7 @@
         if (queued.state === "queued") queued.state = "deferred";
       }
     }
-    const retryable = retryAt > Date.now() && verdict?.reason !== "NO_TOKEN" &&
+    const retryable = retryAt > Date.now() &&
       (guarded || entry.failures <= MAX_FAILURE_RETRIES);
     entry.retryAt = retryable ? retryAt : 0;
     entry.state = retryable ? "deferred" : "unavailable";
@@ -456,7 +466,7 @@
         if (epoch !== rulesEpoch) break;
         if (verdict?.available) {
           applyVerdict(next, verdict, filter.getSettings());
-          uidQueue.delete(next.key);
+          if (uidQueue.get(next.key) === next) uidQueue.delete(next.key);
         } else {
           deferEntry(next, verdict, true);
           applyQueueState(next, filter.getSettings());
@@ -498,7 +508,7 @@
     return nodes;
   }
 
-  async function scanScope(scope = document) {
+  async function scanScopes(scopes) {
     if (!enabled) return;
     const filter = FILTER();
     if (!filter) return;
@@ -506,13 +516,13 @@
     if (!enabled) return;
     const settings = filter.getSettings();
     if (!settings.enabled && !settings.display) {
-      if (scope === document) clearAll();
+      if (scopes.includes(document)) clearAll();
       return;
     }
     if (document.visibilityState === "hidden") return;
 
     const seen = new Set();
-    writerNodesInScope(scope).forEach((node) => {
+    for (const scope of scopes) writerNodesInScope(scope).forEach((node) => {
       const writer = canonicalWriter(node);
       if (!writer || seen.has(writer)) return;
       seen.add(writer);
@@ -523,7 +533,7 @@
   }
 
   async function scan() {
-    return scanScope(document);
+    return scanScopes([document]);
   }
 
   function scheduleScan(delay = 80) {
@@ -555,7 +565,7 @@
     incrementalTimer = null;
     const roots = minimalPendingRoots();
     if (!roots.length) return;
-    roots.forEach((root) => void scanScope(root));
+    void scanScopes(roots);
   }
 
   function queueIncrementalScan(root, allowOwned = false) {
@@ -672,8 +682,21 @@
     }
     if (uidQueue.size) void drainUidQueue();
   });
+  document.addEventListener("dcb-preview-state", event => {
+    if (event.detail?.open !== false || !uidQueue.size) return;
+    for (const [key, entry] of uidQueue) {
+      for (const [target] of entry.targets) {
+        if (!target.isConnected) entry.targets.delete(target);
+      }
+      if (!entry.targets.size) uidQueue.delete(key);
+    }
+    scheduleQueueWake();
+  });
   document.addEventListener("dcb-preview-content", event => {
-    if (enabled && event.detail?.root) queueIncrementalScan(event.detail.root, true);
+    if (!enabled) return;
+    if (event.detail?.addedRows) {
+      for (const row of event.detail.addedRows) queueIncrementalScan(row, true);
+    } else if (event.detail?.root) queueIncrementalScan(event.detail.root, true);
   });
 
   void updateFeatureState();
