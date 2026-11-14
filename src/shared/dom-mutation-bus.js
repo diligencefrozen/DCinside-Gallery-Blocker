@@ -62,6 +62,7 @@
     pendingRecords = [];
     const ownedCache = new WeakMap();
     for (const subscriber of subscribers.values()) {
+      if (subscriber.options.immediate) continue;
       const filtered = subscriber.options.raw
         ? records
         : records.filter((record) => matchesOptions(record, subscriber.options, ownedCache));
@@ -98,6 +99,15 @@
 
   function enqueue(records) {
     if (!records.length) return;
+    // Cache-only first-paint filters run in the observer microtask. Ordinary
+    // features retain frame batching; do not deliver immediate records twice.
+    const ownedCache = new WeakMap();
+    for (const subscriber of subscribers.values()) {
+      if (!subscriber.options.immediate) continue;
+      const filtered = subscriber.options.raw ? records : records.filter(record => matchesOptions(record, subscriber.options, ownedCache));
+      if (filtered.length) try { subscriber.handler(filtered); }
+      catch (error) { console.error("[DCB DOM bus] subscriber failed:", subscriber.id, error); }
+    }
     if (pendingRecords.length === 0) pendingRecords = records;
     else for (const record of records) pendingRecords.push(record);
     scheduleFlush();
@@ -178,6 +188,7 @@
   function subscribe(id, handler, options = {}) {
     if (!id || typeof handler !== "function") return () => {};
     const normalized = {
+      immediate: options.immediate === true,
       raw: options.raw === true,
       ignoreOwned: options.ignoreOwned !== false,
       types: Array.isArray(options.types) ? new Set(options.types) : null,

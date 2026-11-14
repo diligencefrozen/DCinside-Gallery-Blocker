@@ -99,8 +99,6 @@
     try {
       let payload = {};
       if (!revert) {
-        const [userMemos, blockedUids] = await Promise.all([getUserMemos(), getStoredUidList()]);
-        downloadJson("dcb-records-before-import-" + Date.now() + ".json", { format:"dcb-records", version:1, exportedAt:new Date().toISOString(), userMemos, blockedUids });
         payload = { memos: [...pending.entries], tokens: pending.blocks, replace: replace.checked };
       }
       const result = await sendUserBlockMutation(revert ? "dcb.recordsUndo" : "dcb.recordsImport", payload);

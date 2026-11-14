@@ -3771,26 +3771,31 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     }
   }
 
-  function settlePreviewMedia(root, baseUrl, articleUrl = currentPreviewData?.url || baseUrl, trace = activePreviewTrace){
+  function settlePreviewMedia(root, baseUrl, articleUrl = currentPreviewData?.url || baseUrl, trace = activePreviewTrace, addedRows = null){
     if (!root) return;
 
     // 성능 보호: 이미지 정규화는 DOM을 많이 건드리므로 overlay 1개당 짧게 묶어서 실행합니다.
     // 이전처럼 매 호출마다 5회씩 재실행하면 이미지 src/class 변경 → observer → 재정규화 루프가 생길 수 있습니다.
     if (!previewMediaSettleTimers.has(root)) previewMediaSettleTimers.set(root, []);
     const timers = previewMediaSettleTimers.get(root) || [];
+    const pendingRows = addedRows && !(timers.length && !timers.rows)
+      ? [...new Set([...(timers.rows || []), ...addedRows])] : null;
     timers.splice(0).forEach((id) => clearTimeout(id));
 
     const run = () => {
       if (!document.documentElement.contains(root)) return;
       const imageStartedAt = previewNow();
-      normalizeDcMedia(root, baseUrl);
-      restorePreviewImages(root);
+      const scopes = pendingRows ? pendingRows.filter(row => row.isConnected) : [root];
+      for (const scope of scopes) {
+        normalizeDcMedia(scope, baseUrl);
+        restorePreviewImages(scope);
+      }
       const overlay = root.closest("#" + OVERLAY_ID);
       const load = node => {
         if (node.matches(".dcbpv-movie-wrap")) loadPreviewMovie(node, articleUrl);
         else loadPreviewPoll(node, articleUrl);
       };
-      root.querySelectorAll(".dcbpv-movie-wrap,iframe.dcbpv-poll-frame").forEach(node => {
+      scopes.forEach(scope => scope.querySelectorAll(".dcbpv-movie-wrap,iframe.dcbpv-poll-frame").forEach(node => {
         const link = node.querySelector(".dcbpv-movie-note a");
         if (link) link.href = articleUrl;
         if (!overlay || typeof IntersectionObserver !== "function") return load(node);
@@ -3802,14 +3807,19 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
           }
         }, {root: overlay.querySelector(".dcbpv-scroll"), rootMargin: "200px 0px"});
         mediaObserver.observe(node);
-      });
+      }));
       addPreviewPhase("imageMs", imageStartedAt, trace);
       if (lastPreviewTrace?.key === trace?.key) lastPreviewTrace = { ...trace };
     };
 
     run();
-    const id = setTimeout(run, 180);
-    previewMediaSettleTimers.set(root, [id]);
+    const scheduled = [];
+    scheduled.rows = pendingRows;
+    scheduled.push(setTimeout(() => {
+      run();
+      if (previewMediaSettleTimers.get(root) === scheduled) previewMediaSettleTimers.delete(root);
+    }, 180));
+    previewMediaSettleTimers.set(root, scheduled);
   }
 
   const PREVIEW_FILTER_DEFAULTS = {
@@ -4364,13 +4374,17 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     const authorMeta = previewWriterFromNode(overlay.querySelector(".dcbpv-author-name .gall_writer,.dcbpv-writer .gall_writer"));
     const matcher = previewBlockMatcher(conf.blockedUids || []);
 
-    if (conf.showUidBadge) addUidBadges(overlay);
-    if (conf.showMemberIpInfo !== false) refreshPreviewMemberIpBadges(overlay);
-    refreshPreviewUserMemos(overlay);
-    if (conf.hideComment) applyCommentUiFilter(overlay);
-    if (conf.hideImgComment) applyImageCommentFilter(overlay);
-    if (conf.hideDccon) applyDcconFilter(overlay);
-    if (conf.hideDccon || conf.hideTextCon) applyTextConFilter(overlay);
+    const batchMemos = addedRows && typeof globalThis.DCBUserMemo?.refreshMany === "function";
+    for (const scope of addedRows || [overlay]) {
+      if (conf.showUidBadge) addUidBadges(scope);
+      if (conf.showMemberIpInfo !== false) refreshPreviewMemberIpBadges(scope);
+      if (!batchMemos) refreshPreviewUserMemos(scope);
+      if (conf.hideComment) applyCommentUiFilter(scope);
+      if (conf.hideImgComment) applyImageCommentFilter(scope);
+      if (conf.hideDccon) applyDcconFilter(scope);
+      if (conf.hideDccon || conf.hideTextCon) applyTextConFilter(scope);
+    }
+    if (batchMemos) globalThis.DCBUserMemo.refreshMany(addedRows);
     if (conf.hideDccon || conf.hideTextCon) {
       startPreviewDcconObserver(overlay, { hideDccon: conf.hideDccon, hideTextCon: conf.hideTextCon });
     } else {
@@ -4399,7 +4413,8 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     const blockTargets = conf.keywordBlockTargets || PREVIEW_FILTER_DEFAULTS.keywordBlockTargets;
     const hideTargets = conf.keywordHideTargets || PREVIEW_FILTER_DEFAULTS.keywordHideTargets;
     const titleText = data.title || "";
-    const articleText = overlay.querySelector(".dcbpv-article")?.innerText || "";
+    const needsArticleText = !addedRows && ((conf.keywordBlockEnabled && blockTargets.viewBody) || (conf.keywordHideEnabled && hideTargets.viewBody));
+    const articleText = needsArticleText ? overlay.querySelector(".dcbpv-article")?.innerText || "" : "";
 
     if (conf.keywordBlockEnabled) {
       const titleKw = blockTargets.viewTitle ? matchKeyword(titleText, blockKeywords) : null;
@@ -4427,7 +4442,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
       if (conf.hideForeignIpEnabled && previewIsForeignNetwork(meta)) {
         markPreviewCommentBlocked(row, "foreign");
       }
-      const text = commentText(row);
+      const text = (conf.keywordBlockEnabled && blockTargets.comments) || (conf.keywordHideEnabled && hideTargets.comments) ? commentText(row) : "";
       if (conf.keywordBlockEnabled && blockTargets.comments) {
         const kw = matchKeyword(text, blockKeywords);
         if (kw) {
@@ -5066,7 +5081,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
         }
         row.querySelectorAll(".gall_writer,.ub-writer").forEach(writer => globalThis.DCBWriterLayout?.normalize(writer));
       }
-      settlePreviewMedia(root, data.fetchedUrl || data.url, data.url);
+      settlePreviewMedia(root, data.fetchedUrl || data.url, data.url, activePreviewTrace, added);
       void applyPreviewFeatureBridge(overlay, data, activePreviewTrace, added).then(() => {
         added.forEach(row => row.style.removeProperty("visibility"));
       });

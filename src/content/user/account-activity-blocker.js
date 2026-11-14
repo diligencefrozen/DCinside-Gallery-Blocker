@@ -544,6 +544,29 @@
     void drainUidQueue();
   }
 
+  // Warm verdicts must not wait for the idle queue or the 80ms incremental
+  // debounce. Use the same policy/cache, without starting network requests.
+  function applyCachedRoots(roots) {
+    if (!enabled) return;
+    const filter = FILTER(), settings = filter?.getSettings();
+    if (!settings?.enabled) return;
+    const seen = new Set();
+    for (const root of roots) for (const node of writerNodesInScope(root)) {
+      const writer = canonicalWriter(node);
+      if (!writer || !writer.isConnected || seen.has(writer)) continue;
+      seen.add(writer);
+      const info = targetForWriter(writer), uid = extractUid(writer);
+      if (!info || !uid || !settingAllows(settings, info.kind) || info.target.dataset.dcbAccountActivityPeek === uid) continue;
+      const verdict = filter.peek(uid);
+      if (verdict?.available) {
+        if (verdict.shouldHide) setState(info, uid, "hidden", verdict, false);
+        else clearTarget(info.target, uid);
+      } else if (settings.holdWhileChecking && !verdict) {
+        setState(info, uid, "pending", null, true);
+      }
+    }
+  }
+
   async function scan() {
     return scanScopes([document]);
   }
@@ -596,24 +619,30 @@
     if (!enabled || observer || unsubscribeDomBus || !document.documentElement) return;
     const handleRecords = (records) => {
       if (!enabled) return;
+      const immediate = new Set();
       for (const record of records) {
         if (record.type === "attributes") {
+          immediate.add(record.target);
           queueIncrementalScan(record.target);
           continue;
         }
-        for (const node of record.addedNodes || []) queueIncrementalScan(node);
+        for (const node of record.addedNodes || []) {
+          if (node.nodeType === Node.ELEMENT_NODE && !node.closest?.("[data-dcb-owned]")) immediate.add(node);
+          queueIncrementalScan(node);
+        }
         if (activityViewport) for (const node of record.removedNodes || []) {
           if (node.nodeType !== 1 || node.isConnected) continue;
           activityViewport.unobserve(node);
           node.querySelectorAll(".gall_writer,.ub-writer").forEach(writer=>activityViewport.unobserve(writer));
         }
       }
+      applyCachedRoots(immediate);
     };
     const attributes = [...identityAttributes, "data-ip", "href", "onclick"];
     if (globalThis.DCBDomMutationBus) {
       unsubscribeDomBus = globalThis.DCBDomMutationBus.subscribe(
         "account-activity-blocker", handleRecords,
-        { types: ["childList", "attributes"], attributes, ignoreOwned: false }
+        { types: ["childList", "attributes"], attributes, ignoreOwned: false, immediate: true }
       );
       return;
     }
@@ -659,6 +688,7 @@
       return;
     }
     installStyle();
+    applyCachedRoots([document]);
     watch();
     scheduleScan(0);
   }
@@ -706,6 +736,7 @@
   });
   document.addEventListener("dcb-preview-content", event => {
     if (!enabled) return;
+    applyCachedRoots(event.detail?.addedRows || [event.detail?.root]);
     if (event.detail?.addedRows) {
       for (const row of event.detail.addedRows) queueIncrementalScan(row, true);
     } else if (event.detail?.root) queueIncrementalScan(event.detail.root, true);
@@ -716,6 +747,7 @@
     document.addEventListener("DOMContentLoaded", () => {
       if (!enabled) return;
       installStyle();
+      applyCachedRoots([document]);
       watch();
       scheduleScan(0);
     }, { once: true });

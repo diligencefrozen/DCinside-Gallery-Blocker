@@ -1,5 +1,22 @@
 const test=require('node:test'),assert=require('node:assert/strict');
 const {chromium}=require('playwright');
+test('immediate cache subscribers run once before deferred subscribers',async()=>{
+ const browser=await chromium.launch({headless:true});
+ try {
+  const page=await browser.newPage();await page.setContent('<main></main>');
+  await page.addScriptTag({path:'src/shared/dom-mutation-bus.js'});
+  const result=await page.evaluate(async()=>{
+   const order=[];let frames=[];
+   window.requestAnimationFrame=f=>{frames.push(f);return frames.length};
+   DCBDomMutationBus.subscribe('cache',rs=>order.push('cache:'+rs.length),{types:['childList'],immediate:true});
+   DCBDomMutationBus.subscribe('lazy',rs=>order.push('lazy:'+rs.length),{types:['childList']});
+   document.querySelector('main').append(document.createElement('i'));
+   await Promise.resolve();const before=[...order];frames.splice(0).forEach(f=>f());
+   return {before,after:order};
+  });
+  assert.deepEqual(result,{before:['cache:1'],after:['cache:1','lazy:1']});
+ }finally{await browser.close()}
+});
 test('shared observer keeps pending changes across lazy subscriptions and stale disposers',async()=>{
  const browser=await chromium.launch({headless:true});
  try{

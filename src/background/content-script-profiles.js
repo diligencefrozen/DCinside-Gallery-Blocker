@@ -13,7 +13,7 @@
   if (globalThis.DCBContentScriptProfiles) return;
 
   globalThis.DCBContentScriptProfiles = Object.freeze({
-    version: 13,
+    version: 14,
     chrome: Object.freeze([
     {
         "id": "dcb-profile-chrome-00",
@@ -103,10 +103,12 @@
         ],
         "persistAcrossSessions": true,
         "js": [
+            "src/shared/runtime-settings-cache.js",
+            "src/shared/dom-mutation-bus.js",
             "src/content/image/image-account-filter.js",
             "src/content/user/account-activity-blocker.js"
         ],
-        "runAt": "document_idle",
+        "runAt": "document_start",
         "allFrames": false
     },
     {
@@ -559,6 +561,28 @@
             "src/content/user/writer-layout.js"
         ],
         "runAt": "document_start"
+    },
+    {
+        "id": "dcb-profile-firefox-activity",
+        "matches": [
+            "*://gall.dcinside.com/board/lists*",
+            "*://gall.dcinside.com/board/view*",
+            "*://gall.dcinside.com/mgallery/board/lists*",
+            "*://gall.dcinside.com/mgallery/board/view*",
+            "*://gall.dcinside.com/mini/board/lists*",
+            "*://gall.dcinside.com/mini/board/view*",
+            "*://gall.dcinside.com/person/board/lists*",
+            "*://gall.dcinside.com/person/board/view*"
+        ],
+        "persistAcrossSessions": true,
+        "js": [
+            "src/shared/runtime-settings-cache.js",
+            "src/shared/dom-mutation-bus.js",
+            "src/content/image/image-account-filter.js",
+            "src/content/user/account-activity-blocker.js"
+        ],
+        "runAt": "document_start",
+        "allFrames": false
     },
     {
         "id": "dcb-profile-firefox-01",

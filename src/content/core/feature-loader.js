@@ -71,7 +71,7 @@
       add("img-comment-cleaner", isView && settings.hideImgComment === true, "normal");
       add("auto-refresh", isList && settings.autoRefreshEnabled === true, "idle");
       add("image-blocker", settings.dcbImageBlockConfig?.enabled === true, "critical");
-      add("image-tools", settings.dcbShowWriterActivity === true || settings.dcbImageAccountRules?.enabled === true, "idle");
+      add("image-tools", !globalThis.__DCB_ACCOUNT_ACTIVITY_BLOCKER__ && (settings.dcbShowWriterActivity === true || settings.dcbImageAccountRules?.enabled === true), settings.dcbImageAccountRules?.enabled === true ? "critical" : "idle");
       add("text-detector", settings?.dcbTextDetection?.enabled === true && isView, "idle");
       add("preview", settings.previewEnabled !== false, "background");
     }

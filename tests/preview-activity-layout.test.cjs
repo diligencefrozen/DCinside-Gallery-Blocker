@@ -13,20 +13,20 @@ const read = file => baseline
 const out = path.resolve('test-results/preview-activity', baseline ? 'before' : 'after');
 fs.mkdirSync(out, {recursive:true});
 
-async function fixture(type, token = true) {
+async function fixture(type, token = true, heavy = false) {
   const browser = await type.launch({headless:true, executablePath:type.executablePath()});
   const page = await browser.newPage({viewport:{width:1100,height:800}});
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
   await page.route('**/*', r => r.fulfill({contentType:'text/html', body:'<!doctype html><html><body></body></html>'}));
   await page.goto('https://gall.dcinside.com/board/lists/?id=fixture');
-  await page.evaluate(token => {
+  await page.evaluate(({token,heavy}) => {
     window.previewEnabled = true; window.PREVIEW_COMMENT_DEBUG = false;
     if (token) document.cookie = 'ci_c=synthetic';
     window.signalCalls = 0; window.candidates = new Set(); window.requestedUids = []; window.held = [];
     window.signalMode = 'success';
-    const listeners = [], sync = {dcbShowWriterActivity:true, dcbImageAccountRules:{enabled:false}, showUidBadge:false, showMemberIpInfo:false};
-    const local = {};
+    const listeners = [], sync = {dcbShowWriterActivity:true, dcbImageAccountRules:{enabled:false}, showUidBadge:false, showMemberIpInfo:false,userMemoEnabled:heavy};
+    const local = {userMemos:{'uid:fixtureuser':{memo:'성능 검사 메모'}}};
     const get = store => async (keys, cb) => {const result = {...keys,...store}; cb?.(result); return result;};
     window.chrome = {storage:{sync:{get:get(sync)},local:{get:get(local),set:async p=>Object.assign(local,p)},onChanged:{addListener:f=>listeners.push(f)}},runtime:{onMessage:{addListener(){}},sendMessage(m,cb){
       if(m.type==='dcb.activityCandidates'){m.uids.forEach(uid=>candidates.add(uid));cb?.({ok:true});}
@@ -37,27 +37,59 @@ async function fixture(type, token = true) {
       } else cb?.({ok:false});
     }}};
     window.DCBRuntimeSettingsCache = {get:get(sync),onChanged:chrome.storage.onChanged};
-  }, token);
+  }, {token,heavy});
   await page.addStyleTag({content:read('src/content/appearance/writer-layout.css')});
   for(const file of ['shared/dom-mutation-bus','shared/keyword-matcher','content/user/writer-layout','content/image/image-account-filter','content/user/account-activity-blocker']) {
     let content = read('src/'+file+'.js');
     if(file.endsWith('account-activity-blocker')) content = content.replace(/\}\)\(\);\s*$/, 'window.activityTest={state:()=>({queued:uidQueue.size,timer:!!queueWakeTimer,targets:[...uidQueue.values()].reduce((n,e)=>n+e.targets.size,0)})};})();');
     await page.addScriptTag({content});
   }
+  if(heavy)await page.addScriptTag({content:read('src/content/user/user-memo.js')});
   const source = read('src/content/core/content_script.js');
-  await page.addScriptTag({content:source.slice(source.indexOf('(function dcBlockPostPreview(){')).replace(/\}\)\(\);\s*$/, 'window.pv={renderPreview,closePreview,commentRecordsToHtml,decoratePreviewReplyActions,preparePreviewPresentation};})();')});
+  await page.addScriptTag({content:source.slice(source.indexOf('(function dcBlockPostPreview(){')).replace(/\}\)\(\);\s*$/, 'window.pv={renderPreview,closePreview,commentRecordsToHtml,decoratePreviewReplyActions,preparePreviewPresentation,applyPreviewFeatureBridge};})();')});
   await page.evaluate(() => {
     window.makePost = (n=50, uid='fixtureuser') => {
       const url=location.origin+'/board/view/?id=fixture&no=1';
       const records=Array.from({length:n},(_,i)=>({no:String(i+1),name:'테스트 작성자 '+(i+1),user_id:uid==='unique'?'fixture'+(i%100):uid,memo:'익명화된 회귀 검사 댓글입니다.',reg_date:'2026.11.13 12:34:56',depth:0}));
       return {url,title:'미리보기 댓글 레이아웃 검증',articleHTML:'<p>활동량과 날짜는 오른쪽, 작성자 이름은 왼쪽에 표시합니다.</p>',commentsHTML:pv.commentRecordsToHtml(records,url),counts:{}};
     };
-    window.openPost = (n,uid) => pv.renderPreview(makePost(n,uid));
+    window.openPost = (n,uid) => {window.fixturePost=makePost(n,uid);pv.renderPreview(fixturePost)};
   });
   return {browser,page,errors};
 }
 
 for(const [engine,type] of Object.entries({chromium,firefox})) {
+  test(`${engine}: incremental memo work stays scoped to added comments`,async t=>{
+    const {browser,page,errors}=await fixture(type,true,true);t.after(()=>browser.close());
+    const results=[];
+    for(const count of [50,500,2000]) {
+      await page.evaluate(count=>{pv.closePreview();openPost(count);document.querySelector('.dcbpv-comment-html').innerHTML=fixturePost.commentsHTML;},count);
+      await page.waitForTimeout(350);
+      const result=await page.evaluate(async count=>{
+        const overlay=document.querySelector('#dcb-preview-overlay'),list=overlay.querySelector('.dcbpv-comment-list');
+        const template=document.createElement('template');template.innerHTML=makePost(80).commentsHTML;
+        const added=[...template.content.querySelectorAll('.dcbpv-comment-item')];
+        for(const [i,row] of added.entries())row.dataset.dcbpvNativeId=String(count+1+i);
+        list.append(...added);
+        const original=DCBUserMemo;
+        let visited=0,ms=0,globalQueries=0;
+        window.DCBUserMemo={refresh(root){visited+=root.querySelectorAll('.gall_writer').length;const t=performance.now();original.refresh(root);ms+=performance.now()-t;}};
+        if(original.refreshMany)window.DCBUserMemo.refreshMany=roots=>{
+          visited+=roots.reduce((n,root)=>n+root.querySelectorAll('.gall_writer').length,0);
+          const t=performance.now();original.refreshMany(roots);ms+=performance.now()-t;
+        };
+        const query=Document.prototype.querySelectorAll;
+        Document.prototype.querySelectorAll=function(selector){if(selector.includes('dcb-writer-enhanced'))globalQueries++;return query.call(this,selector)};
+        try {await pv.applyPreviewFeatureBridge(overlay,fixturePost,null,added)}
+        finally {window.DCBUserMemo=original;Document.prototype.querySelectorAll=query;}
+        return {count,added:80,visited,globalQueries,memoMs:ms};
+      },count);
+      results.push(result);
+      if(!baseline){assert.equal(result.visited,80);assert.equal(result.globalQueries,0);}
+    }
+    fs.writeFileSync(path.join(out,engine+'-incremental-memo.json'),JSON.stringify({browser:browser.version(),results},null,2));
+    assert.deepEqual(errors,[]);
+  });
   test(`${engine}: preview activity layout, late token and warm reopen`, async t => {
     const {browser,page,errors}=await fixture(type,false); t.after(()=>browser.close());
     await page.evaluate(()=>openPost(50));

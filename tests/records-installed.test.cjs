@@ -70,7 +70,9 @@ test("Chromium installed records import writes both stores and selectively undoe
   const worker=context.serviceWorkers()[0]||await context.waitForEvent("serviceworker");
   const p=await context.newPage();
   await p.goto("chrome-extension://"+new URL(worker.url()).hostname+"/src/ui/options/options.html#settingsDcRecords");
+  const downloads=[];p.on('download',d=>downloads.push(d.suggestedFilename()));
   assert.equal(await p.evaluate(exercise),true);
+  assert.deepEqual(downloads,[],"Import and undo must not trigger an automatic backup download");
   fs.mkdirSync(artifacts,{recursive:true});
   await p.locator("#settingsDcRecords").screenshot({path:path.join(artifacts,"records-chromium.png")});
 });
@@ -113,6 +115,7 @@ test("Firefox installed records import writes both stores and selectively undoes
   assert.ok(tab,"installed extension opened options");
   const r=await command("script.evaluate",{target:{context:tab.context},expression:"("+exercise.toString()+")()",awaitPromise:true});
   assert.equal(r.result?.value,true,r.exceptionDetails?.text);
+  assert.deepEqual(fs.readdirSync(profile).filter(name=>/^dcb-records-before-import-.*\.json/.test(name)),[]);
   await command("script.evaluate",{target:{context:tab.context},expression:'document.getElementById("settingsDcRecords").scrollIntoView()',awaitPromise:false});
 
   // Verify a new options document independently of the previous in-memory UI.

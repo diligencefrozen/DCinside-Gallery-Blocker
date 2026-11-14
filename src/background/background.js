@@ -303,7 +303,7 @@ function getDcbFirefoxBootstrapFiles(sender) {
       files.push("src/shared/ip-network-fast-classifier.js", "src/content/core/critical-filter-bootstrap.js");
     }
     if (/^\/(?:mgallery\/|mini\/|person\/)?board\/(?:lists|view)\/?$/.test(url.pathname)) {
-      files.push("src/content/list/read-posts.js");
+      files.push("src/content/image/image-account-filter.js", "src/content/user/account-activity-blocker.js", "src/content/list/read-posts.js");
     }
     files.push("src/content/gallery/access-guard.js", "src/content/cleaner/cleaner-gall.js");
   } else if (url.hostname === "www.dcinside.com") {

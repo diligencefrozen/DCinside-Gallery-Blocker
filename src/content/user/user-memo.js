@@ -249,8 +249,8 @@
     return st;
   }
 
-  function cleanupEmptySlots() {
-    document.querySelectorAll(`.${SLOT_CLASS}`).forEach((slot) => {
+  function cleanupEmptySlots(root = document) {
+    root.querySelectorAll(`.${SLOT_CLASS}`).forEach((slot) => {
       if (slot.querySelector(`.${TRIGGER_CLASS}`)) return;
       slot.remove();
     });
@@ -725,27 +725,28 @@
       if (writer) writers.add(writer);
       el.remove();
     });
-    cleanupEmptySlots();
+    cleanupEmptySlots(root);
     cleanupEmptyWriterTools(writers);
   }
 
   function renderAll(root = document) {
+    const roots = (Array.isArray(root) ? root : [root])
+      .map(scope => scope?.nodeType === Node.TEXT_NODE ? scope.parentElement : scope).filter(Boolean);
     if (!enabled) {
-      removeInjectedUiInRoot(root);
+      roots.forEach(removeInjectedUiInRoot);
       return;
     }
-    if (root instanceof Element && root.matches(WRITER_SELECTOR)) {
-      removeWriterNikconWhitespace(root);
-    }
-    root.querySelectorAll?.(WRITER_SELECTOR).forEach(removeWriterNikconWhitespace);
+    const writers = [...new Set(roots.flatMap(scope => [
+      ...(scope instanceof Element && scope.matches(WRITER_SELECTOR) ? [scope] : []),
+      ...(scope.querySelectorAll?.(WRITER_SELECTOR) || [])
+    ]))];
+    writers.forEach(removeWriterNikconWhitespace);
     ensureStyle();
 
-    const element = root === document ? null : (root?.nodeType === Node.ELEMENT_NODE ? root : root?.parentElement);
-    if (element?.matches?.(WRITER_SELECTOR)) renderWriter(element);
-    root.querySelectorAll?.(WRITER_SELECTOR).forEach(renderWriter);
+    writers.forEach(renderWriter);
 
-    cleanupEmptySlots();
-    cleanupEmptyWriterTools();
+    roots.forEach(cleanupEmptySlots);
+    cleanupEmptyWriterTools(writers);
   }
 
   function queueRender(root = document) {
@@ -836,7 +837,8 @@
 
   try {
     globalThis.DCBUserMemo = Object.freeze({
-      refresh: (root = document) => renderAll(root)
+      refresh: (root = document) => renderAll(root),
+      refreshMany: (roots) => renderAll(roots)
     });
 
     document.addEventListener("dcb-user-memo:refresh", (event) => {
