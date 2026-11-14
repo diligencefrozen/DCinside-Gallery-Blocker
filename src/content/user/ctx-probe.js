@@ -915,7 +915,7 @@
     }
     const matching = stored.filter(value => value.startsWith("nick:") && nickname?.includes(value.slice(5).toLowerCase()));
     const tokens = [...new Set([...candidates, ...matching])];
-    const token = await DCBBlockTarget.choose(tokens, "차단 또는 해제할 조건 선택", new Set(stored.map(value => value.toLowerCase())));
+    const token = await DCBBlockTarget.choose(tokens, "차단 조건 선택", new Set(stored.map(value => value.toLowerCase())));
     if (token) sendInstantBlock(token, [token]);
   }
 
