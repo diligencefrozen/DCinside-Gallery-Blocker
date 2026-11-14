@@ -302,7 +302,22 @@
 .dcb-activity-badge { display:none; }
 :root.dcb-show-writer-activity .dcb-activity-badge {display:inline-block;float:right;margin-inline:4px;white-space:nowrap;color:inherit;opacity:.72;pointer-events:none;line-height:inherit}
 :root.dcb-show-writer-activity :is(.fr,.dcbpv-comment-actions) > .dcb-activity-badge {float:none}
+:root.dcb-show-writer-activity .dcb-activity-badge {pointer-events:auto}
+/* Keep the native table cells. Reserve one compact metadata column instead of
+   letting the floated badge push a long title onto another line. */
+:root.dcb-show-writer-activity td.gall_tit:has(> .dcb-activity-badge) {
+  position:relative;padding-inline-end:130px;white-space:nowrap;font-size:min(1em,12px);
+}
+:root.dcb-show-writer-activity td.gall_tit > .dcb-activity-badge {
+  position:absolute;inset-inline-end:6px;top:50%;transform:translateY(-50%);
+  float:none;margin:0;max-width:122px;overflow:hidden;text-overflow:ellipsis;
+}
+:root.dcb-show-writer-activity td.gall_tit > .dcb-activity-badge::after {font-size:10px;margin:0}
+:root.dcb-show-writer-activity td.gall_tit:has(> .dcb-activity-badge) > a:not(.reply_numbox) {
+  display:inline-block;max-width:calc(100% - 38px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle;
+}
 @media(max-width:540px){:root.dcb-show-writer-activity .dcb-activity-badge{display:none}}
+@media(max-width:540px){:root.dcb-show-writer-activity td.gall_tit:has(> .dcb-activity-badge){padding-inline-end:4px}}
 :root.dcb-show-writer-activity .dcb-activity-badge::after {
   content: attr(data-dcb-writer-activity);
   font-size: 11px;

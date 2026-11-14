@@ -100,7 +100,7 @@ for(const [engine,type] of Object.entries({chromium,firefox})) {
   test(`${engine}: closed preview releases budget waits and late requests`,{skip:!!baseline},async t=>{
     const {browser,page,errors}=await fixture(type);t.after(()=>browser.close());
     await page.evaluate(()=>{signalMode='budget';openPost(50);});
-    await page.waitForSelector('.dcb-activity-badge[title*="서버 요청 제한"]');
+    await page.waitForSelector('.dcb-activity-badge[title*="요청 예산 대기"]');
     await page.evaluate(()=>pv.closePreview());
     assert.deepEqual(await page.evaluate(()=>activityTest.state()),{queued:0,timer:false,targets:0});
     assert.equal(await page.evaluate(()=>signalCalls),1);
@@ -152,6 +152,7 @@ for(const [engine,type] of Object.entries({chromium,firefox})) {
     const {browser,page,errors}=await fixture(type);t.after(()=>browser.close());
     await page.evaluate(()=>openPost(2000,'unique'));
     await page.waitForFunction(()=>candidates.size===80);
+    await page.waitForFunction(()=>signalCalls>0);
     const before=await page.evaluate(()=>{
       const row=document.querySelector('.dcbpv-comment-item');
       window.savedReply=row.querySelector('[data-act=compose-reply]');

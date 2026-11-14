@@ -20,6 +20,8 @@ async function exercise(){
   await api.storage.local.set({userMemos:{"uid:fixture1":{memo:"기존"}}});
   el("memoImportFormat").value="text";
   el("memoImportFormat").dispatchEvent(new Event("change"));
+  el("recordsKind").value="auto";
+  el("recordsKind").dispatchEvent(new Event("change"));
   el("recordsPaste").value="fixture1-충돌\n192.0-샘플, !\n예시닉\nuid:testuser";
   el("recordsPaste").dispatchEvent(new Event("input"));
   await wait(()=>el("officialMemoPreview").textContent.includes("차단 2건"));
@@ -46,6 +48,22 @@ async function exercise(){
 }
 const root=path.resolve(process.env.DCB_EXTENSION_ROOT || path.join(__dirname,".."));
 const artifacts=path.join(__dirname,"../test-results");
+test("Chromium popup explains records import and opens the dedicated screen",async t=>{
+  const context=await chromium.launchPersistentContext("",{executablePath:chromium.executablePath(),viewport:{width:440,height:850},args:["--load-extension="+root,"--disable-extensions-except="+root]});
+  t.after(()=>context.close());
+  const worker=context.serviceWorkers()[0]||await context.waitForEvent("serviceworker");
+  const p=await context.newPage();
+  await p.goto("chrome-extension://"+new URL(worker.url()).hostname+"/src/ui/popup/popup.html");
+  const entry=p.locator('#openDcRecords');
+  if(!await entry.isVisible())await p.getByText('화면 · 편의',{exact:true}).click();
+  await entry.scrollIntoViewIfNeeded();
+  fs.mkdirSync(artifacts,{recursive:true});
+  await p.screenshot({path:path.join(artifacts,'records-popup.png')});
+  const opened=context.waitForEvent('page');await entry.click();
+  const options=await opened;await options.waitForLoadState();
+  assert.ok(options.url().endsWith('options.html#settingsDcRecords'));
+});
+
 test("Chromium installed records import writes both stores and selectively undoes",async t=>{
   const context=await chromium.launchPersistentContext("",{executablePath:chromium.executablePath(),args:["--load-extension="+root,"--disable-extensions-except="+root]});
   t.after(()=>context.close());

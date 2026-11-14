@@ -341,6 +341,8 @@
       badges.set(writer,badge);
       if (badge.dataset.activityOwner !== uid) badge.dataset.activityOwner = uid;
       if (badge.title !== description) badge.title = description;
+      const accessible = label + " · " + description;
+      if (badge.getAttribute("aria-label") !== accessible) badge.setAttribute("aria-label", accessible);
       if (badge.dataset.dcbWriterActivity !== label) badge.dataset.dcbWriterActivity = label;
       if (badge.parentElement !== host) host.prepend(badge);
     }
@@ -380,9 +382,12 @@
   document.addEventListener("focusin", showPendingStatus);
 
   function activityStatus(entry) {
-    if (entry.reason === "NO_TOKEN") return "활동량 · 세션 토큰 없음";
-    if (entry.reason === "BUDGET" || entry.reason === "COOLDOWN" || /^HTTP_(403|429|503)$/.test(entry.reason)) return "활동량 · 서버 요청 제한";
-    if (entry.reason) return "활동량 조회 실패 · " + entry.reason;
+    const next = Math.max(entry.retryAt || 0, guardRetryAt);
+    const retry = next > Date.now() ? " · 재조회 예정 " + new Date(next).toLocaleTimeString() : "";
+    if (entry.reason === "NO_TOKEN") return "활동량 · 세션 토큰 없음 · 원문 접속 후 작성자에 마우스를 올려 다시 확인";
+    if (entry.reason === "BUDGET") return "활동량 · 요청 예산 대기 (전체 탭 합산 10분당 12회)" + retry;
+    if (entry.reason === "COOLDOWN" || /^HTTP_(403|429|503)$/.test(entry.reason)) return "활동량 · 서버 요청 제한" + retry;
+    if (entry.reason) return "활동량 조회 실패 · " + entry.reason + retry;
     return entry.state === "checking" ? "활동량 조회 중" : "활동량 조회 대기";
   }
 

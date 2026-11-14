@@ -319,18 +319,15 @@
   }
 
   function extractIp(writer) {
-    let ip = writer.getAttribute("data-ip") || writer.getAttribute("data-memo-ip") || "";
-    if (ip && isIpLike(ip)) return ip;
-
-    const ipNode = writer.querySelector(".ip,.writer_ip") || writer.parentElement?.querySelector(".ip,.writer_ip");
-    ip = ipNode?.textContent || "";
-    if (ip && /(\d{1,3}(?:\.\d{1,3}){1,3})/.test(ip)) {
-      return ip.match(/(\d{1,3}(?:\.\d{1,3}){1,3})/)?.[1] || "";
+    const classifier = globalThis.DCBIpNetworkClassifier || globalThis.DCBFastIpNetworkClassifier;
+    if (classifier?.readWriterIp) return classifier.readWriterIp(writer);
+    // The memo feature can load before the classifier. Fail open unless the
+    // original writer explicitly supplies an IP; never scrape dates/nicknames.
+    for (const name of ["data-ip", "data-memo-ip"]) {
+      const value = String(writer.getAttribute(name) || "").trim();
+      if (isIpLike(value) && value.split(".").every(n => Number(n) <= 255)) return value;
     }
-
-    const text = (writer.textContent || "").trim();
-    const m = text.match(/(\d{1,3}(?:\.\d{1,3}){1,3})/);
-    return m ? m[1] : "";
+    return "";
   }
 
   function extractNickname(writer) {

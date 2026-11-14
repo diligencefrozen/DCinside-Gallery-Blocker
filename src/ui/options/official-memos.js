@@ -63,6 +63,7 @@
   }
   function parseRecords(text, scope, mode) {
     if (text.length > 4 * 1024 * 1024) throw Error("4MB 이하의 목록을 입력하세요.");
+    if (mode === "block" && scope !== "global") throw Error("차단 기록은 모든 갤러리에 적용됩니다.");
     const parsed = parseText(text, scope);
     const seen = new Set();
     const bad = new Set(parsed.badLines);
@@ -83,7 +84,17 @@
       else blocks.add(token);
       seen.add(token.toLowerCase());
     }
-    if (mode === "block" && parsed.entries.size) throw Error("메모 행이 포함되어 있습니다. 자동 분류 또는 메모를 선택하세요.");
+    if (mode === "block") {
+      // Explicit block-list mode disambiguates app-copied identifier-label rows.
+      // Descriptions are never interpreted as block identities or saved as memos.
+      for (const item of parsed.entries.values()) {
+        const token = item.type === "ip" ? item.value.split(".").slice(0,2).join(".") : item.value;
+        if (seen.has(token.toLowerCase())) parsed.duplicates++;
+        else blocks.add(token);
+        seen.add(token.toLowerCase());
+      }
+      parsed.entries.clear();
+    }
     return { ...parsed, blocks: [...blocks], badLines: [...bad], invalid: bad.size };
   }
   globalThis.DCBOfficialMemos = { parse, parseText, parseRecords };

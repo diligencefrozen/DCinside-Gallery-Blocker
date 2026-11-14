@@ -47,6 +47,7 @@ test('options preview preserves existing memos, commits gallery scope, and undoe
   await page.evaluate(()=>chrome.storage.local.set({userMemos:{'uid:fixtureuser':{memo:'기존'}}}));
   await page.locator('#settingsDcRecords').scrollIntoViewIfNeeded();
   const importFile=async()=>{
+    await page.locator('#memoImportFormat').selectOption('web');
     await page.locator('#officialMemoFile').setInputFiles({name:'dcbackup_PC_fixture.dcdata',mimeType:'application/octet-stream',buffer:Buffer.from(pc)});
     await page.waitForFunction(()=>!document.querySelector('#officialMemoApply').disabled);
   };

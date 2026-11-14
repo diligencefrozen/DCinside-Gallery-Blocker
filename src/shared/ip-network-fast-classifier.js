@@ -160,7 +160,7 @@
 
 // Only writer-owned evidence; ambiguous date-like .ip text fails open.
   function readWriterIp(writer) {
-    if (!writer?.getAttribute) return "";
+    if (!writer?.getAttribute || writer.closest?.(".dcb-user-memo-trigger,.dc-member-ip-chip,.dcb-activity-badge")) return "";
     const owner = ".gall_writer,.ub-writer,.writer_info,.user_info,.cmt_nickbox,[data-dcbpv-comment]";
     const valid = raw => {
       const value = String(raw || "").trim().replace(/^\((.*)\)$/, "$1");
@@ -172,7 +172,9 @@
       if (value) return value;
     }
     for (const node of writer.querySelectorAll(".ip,.writer_ip,[data-ip],[data-memo-ip]")) {
-      if (node.closest(owner) !== writer || node.closest("time,.date,.gall_date,.dcbpv-time")) continue;
+      // Derived badges are output, never independent identity evidence.
+      if (node.closest(".dcb-user-memo-trigger,.dc-member-ip-chip,.dcb-activity-badge") ||
+          node.closest(owner) !== writer || node.closest("time,.date,.gall_date,.dcbpv-time")) continue;
       const explicit = valid(node.getAttribute("data-ip") || node.getAttribute("data-memo-ip"));
       if (explicit) return explicit;
       const value = valid(node.textContent);
