@@ -362,11 +362,18 @@
   // Expose the transient queue state on demand, without constructing a badge
   // for every pending row during the initial scan.
   function showPendingStatus(event) {
-    if (!enabled || !FILTER()?.getSettings().display) return;
+    const filter = FILTER();
+    if (!enabled || !filter?.getSettings().display) return;
     const writer = event.target.closest?.(".gall_writer,.ub-writer");
     if (!writer) return;
     const uid = extractUid(writer), entry = uidQueue.get(uid.toLowerCase());
     const info = entry && targetForWriter(writer);
+    // Cookies can arrive after the first preview scan. Resume on user demand
+    // when NO_TOKEN is no longer fresh, without polling or bypassing a budget.
+    if (info && entry.reason === "NO_TOKEN" && !filter.peek(uid)) {
+      registerWriter(writer, filter, filter.getSettings());
+      void drainUidQueue();
+    }
     if (info) setBadge(writer, info, uid, "—", activityStatus(entry));
   }
   document.addEventListener("pointerover", showPendingStatus);
