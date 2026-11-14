@@ -580,11 +580,23 @@
     return btn;
   }
 
+  function triggerMatchesMemo(btn, saved, mode) {
+    const text = saved?.memo || '📝';
+    return btn.firstElementChild?.classList.contains('dcb-memo-value') &&
+      btn.firstElementChild.textContent === text &&
+      btn.dataset.fullMemo === (saved?.memo || '') &&
+      btn.dataset.dcbMemoMode === mode &&
+      btn.classList.contains('has-memo') === !!saved;
+  }
+
   function updateTrigger(btn, meta, writer) {
     const context = globalThis.DCBWriterLayout.detectContext(writer);
     const saved = memoMap[meta.key];
     const signature = JSON.stringify([meta.key, meta.uid, meta.ip, meta.nickname, context, saved?.memo, saved?.color]);
-    if (renderedTriggers.get(btn) === signature && btn.firstElementChild?.classList.contains("dcb-memo-value")) return;
+    const mode = globalThis.DCBWriterLayout.memoMode(writer, !!saved?.memo);
+    // A native/feature redraw can reuse the button with stale children. The
+    // model signature alone does not prove that the painted label is current.
+    if (renderedTriggers.get(btn) === signature && triggerMatchesMemo(btn, saved, mode)) return;
     renderedTriggers.set(btn, signature);
 
     btn.dataset.memoKey = meta.key;
@@ -593,7 +605,7 @@
     btn.dataset.memoNickname = meta.nickname || '';
     btn.dataset.loc = context;
 
-    btn.dataset.dcbMemoMode = globalThis.DCBWriterLayout.memoMode(writer, !!saved?.memo);
+    btn.dataset.dcbMemoMode = mode;
 
     btn.classList.toggle('has-memo', !!saved);
     btn.classList.remove('is-list');
@@ -782,6 +794,14 @@
     if (!enabled) return;
     const roots = new Set();
     for (const m of mutations) {
+      const target = m.target?.nodeType === Node.ELEMENT_NODE ? m.target : m.target?.parentElement;
+      const trigger = target?.closest?.(`.${TRIGGER_CLASS}`);
+      if (trigger && renderedTriggers.has(trigger)) {
+        const writer = trigger.closest(WRITER_SELECTOR);
+        const saved = memoMap[trigger.dataset.memoKey];
+        if (writer && !triggerMatchesMemo(trigger, saved, globalThis.DCBWriterLayout.memoMode(writer, !!saved?.memo))) roots.add(writer);
+        continue;
+      }
       if (isOurNode(m.target)) continue;
       if (m.type === "childList") {
         for (const n of m.addedNodes) {
@@ -801,7 +821,7 @@
     unsubscribeDomBus = globalThis.DCBDomMutationBus.subscribe(
       "user-memo",
       handleDomMutations,
-      { types: ["childList"] }
+      { types: ["childList", "characterData"], ignoreOwned: false }
     );
   }
 
