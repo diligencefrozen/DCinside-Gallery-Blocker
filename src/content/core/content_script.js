@@ -3732,18 +3732,26 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
   }
 
   function restorePreviewImages(root) {
-    const scroll = root.closest('.dcbpv-scroll') || root.querySelector('.dcbpv-scroll');
+    const roots = Array.isArray(root) ? root : [root];
+    const candidates = roots.flatMap(scope => [...scope.querySelectorAll(previewImageSelector)]);
+    if (!candidates.length) return;
+    const scroll = roots[0].closest('.dcbpv-scroll') || roots[0].querySelector('.dcbpv-scroll');
     if (!scroll) return;
     const bounds = scroll.getBoundingClientRect();
+    // Read geometry once per batch, before request hints or cached image swaps
+    // invalidate layout. Keep the eager budget shared across appended rows.
+    const visible = new Set(candidates.slice(0, 8).filter(img => {
+      const box = img.getBoundingClientRect();
+      return img.getClientRects().length && box.top < bounds.bottom && box.bottom >= bounds.top;
+    }));
     const snapshot = parkedImages?.expiresAt > Date.now() ? parkedImages : null;
     const samePost = snapshot?.data === currentPreviewData;
     const differentPost = snapshot && currentPreviewData &&
       previewCacheKey(snapshot.data.url) !== previewCacheKey(currentPreviewData.url);
     let checked = 0, eager = 0;
-    for (const img of root.querySelectorAll(previewImageSelector)) {
+    for (const img of candidates) {
       if (checked++ < 8 && eager < 3) {
-        const box = img.getBoundingClientRect();
-        if (img.getClientRects().length && box.top < bounds.bottom && box.bottom >= bounds.top) {
+        if (visible.has(img)) {
           if (img.loading !== 'eager') img.loading = 'eager';
           if (!eager && img.fetchPriority !== 'high') img.fetchPriority = 'high';
           eager++;
@@ -3788,8 +3796,8 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
       const scopes = pendingRows ? pendingRows.filter(row => row.isConnected) : [root];
       for (const scope of scopes) {
         normalizeDcMedia(scope, baseUrl);
-        restorePreviewImages(scope);
       }
+      restorePreviewImages(scopes);
       const overlay = root.closest("#" + OVERLAY_ID);
       const load = node => {
         if (node.matches(".dcbpv-movie-wrap")) loadPreviewMovie(node, articleUrl);
@@ -4428,7 +4436,11 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
       if (titleKw || bodyKw) replaceSectionWithNote(articleSection, filterNote("keyword-hide", (titleKw || bodyKw).label, "article"));
     }
 
-    (addedRows || overlay.querySelectorAll(".dcbpv-comment-item")).forEach((row, index) => {
+    const commentRows = [...(addedRows || overlay.querySelectorAll(".dcbpv-comment-item"))];
+    const needsCommentText = (conf.keywordBlockEnabled && blockTargets.comments) || (conf.keywordHideEnabled && hideTargets.comments);
+    // innerText can flush layout. Read every row before hiding any of them.
+    const commentTexts = needsCommentText ? commentRows.map(commentText) : [];
+    commentRows.forEach((row, index) => {
       const meta = previewWriterFromNode(row);
       if (conf.doryBlockEnabled !== false && commentLooksAutomated(row, { ...meta, nick: meta.nick || row.dataset.nick })) {
         markPreviewCommentBlocked(row, "dory");
@@ -4442,7 +4454,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
       if (conf.hideForeignIpEnabled && previewIsForeignNetwork(meta)) {
         markPreviewCommentBlocked(row, "foreign");
       }
-      const text = (conf.keywordBlockEnabled && blockTargets.comments) || (conf.keywordHideEnabled && hideTargets.comments) ? commentText(row) : "";
+      const text = commentTexts[index] || "";
       if (conf.keywordBlockEnabled && blockTargets.comments) {
         const kw = matchKeyword(text, blockKeywords);
         if (kw) {
@@ -4582,8 +4594,9 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     const count = models.filter(({ row, depth }) => depth === 0 && !row.classList.contains("dcbpv-filter-hidden")).length;
     const label = overlay.querySelector(".dcbpv-thread-count");
     if (label) {
-      label.textContent = count ? `스레드 ${count}개` : "";
-      label.hidden = !count;
+      const text = count ? `스레드 ${count}개` : "";
+      if (label.textContent !== text) label.textContent = text;
+      if (label.hidden !== !count) label.hidden = !count;
     }
   }
 
@@ -4743,11 +4756,13 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     if(remove.dataset.target!==id)remove.dataset.target=id;
     if(remove.disabled!==!!previewComposer?.submitting)remove.disabled=!!previewComposer?.submitting;
   }
-  function decoratePreviewReplyActions(overlay){
+  function decoratePreviewReplyActions(overlay, addedRows = null){
     const rows=[...overlay.querySelectorAll('.dcbpv-comment-item')];
     const counts=new Map(), owned=new Set(previewComposer?.owned || []);
     for(const row of rows){const id=row.dataset.dcbpvNativeId;counts.set(id,(counts.get(id)||0)+1);}
-    rows.forEach(row=>{
+    // Existing controls only need revisiting when an appended ID is duplicated.
+    const affected = addedRows ? new Set([...addedRows, ...rows.filter(row => counts.get(row.dataset.dcbpvNativeId) > 1)]) : rows;
+    affected.forEach(row=>{
       const meta=row.querySelector(':scope > .dcbpv-comment-meta');
       if(!meta)return;
       let actions=meta.querySelector(':scope > .dcbpv-comment-actions');
@@ -5071,7 +5086,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
       if (!more.isConnected || currentPreviewData !== data) return;
       const added = append(80);
       if (previewComposer?.ready) applyComposerMetadata(previewComposer, {dates:previewComposer.dates}, {newRows:true});
-      else decoratePreviewReplyActions(overlay);
+      else decoratePreviewReplyActions(overlay, added);
       for (const row of added) {
         row.style.visibility = "hidden";
         const time = row.querySelector(".dcbpv-time");

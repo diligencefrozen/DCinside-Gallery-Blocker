@@ -27,6 +27,14 @@ async function fixture(type, token = true, heavy = false) {
     window.signalMode = 'success';
     const listeners = [], sync = {dcbShowWriterActivity:true, dcbImageAccountRules:{enabled:false}, showUidBadge:false, showMemberIpInfo:false,userMemoEnabled:heavy};
     const local = {userMemos:{'uid:fixtureuser':{memo:'성능 검사 메모'}}};
+    if(heavy==='profile'){
+      Object.assign(sync,{userMemoEnabled:true,showUidBadge:true,showMemberIpInfo:true,keywordHideEnabled:true,hiddenKeywords:['숨김'],dcbImageAccountRules:{enabled:true}});
+      local.dcbImageAccountSignalCache={};
+      for(let i=0;i<100;i++){
+        local.userMemos['uid:fixture'+i]={memo:'성능 검사 메모 '+i};
+        local.dcbImageAccountSignalCache['fixture'+i]={checkedAt:Date.now(),posts:50,comments:100};
+      }
+    }
     const get = store => async (keys, cb) => {const result = {...keys,...store}; cb?.(result); return result;};
     window.chrome = {storage:{sync:{get:get(sync)},local:{get:get(local),set:async p=>Object.assign(local,p)},onChanged:{addListener:f=>listeners.push(f)}},runtime:{onMessage:{addListener(){}},sendMessage(m,cb){
       if(m.type==='dcb.activityCandidates'){m.uids.forEach(uid=>candidates.add(uid));cb?.({ok:true});}
@@ -59,6 +67,51 @@ async function fixture(type, token = true, heavy = false) {
 }
 
 for(const [engine,type] of Object.entries({chromium,firefox})) {
+  test(`${engine}: preview interaction profile`,{skip:!process.env.DCB_PREVIEW_INTERACTION_PROFILE},async t=>{
+    const {browser,page,errors}=await fixture(type,true,'profile');t.after(()=>browser.close());
+    const samples=[];
+    await page.evaluate(()=>{
+      window.rectReads=0;window.scrollReads=0;
+      const rect=Element.prototype.getBoundingClientRect;
+      Element.prototype.getBoundingClientRect=function(){rectReads++;if(this.matches('.dcbpv-scroll'))scrollReads++;return rect.call(this)};
+      const image='<img width="64" height="64" src="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2264%22 height=%2264%22%3E%3Crect width=%2264%22 height=%2264%22 fill=%22teal%22/%3E%3C/svg%3E">';
+      window.profileData=makePost(2000,'unique');
+      let i=0;profileData.commentsHTML=profileData.commentsHTML.replaceAll('익명화된 회귀 검사 댓글입니다.',()=>`${i++%5?'일반 댓글':'숨김'} ${image}`);
+    });
+    for(let run=0;run<3;run++){
+      const started=Date.now();
+      const open=await page.evaluate(()=>{const start=performance.now();pv.renderPreview(profileData);return performance.now()-start});
+      await page.waitForFunction(()=>document.querySelectorAll('.dcbpv-comment-item').length>=80);
+      const firstCommentsMs=Date.now()-started;
+      await page.waitForTimeout(350);
+      const cdp=engine==='chromium'?await page.context().newCDPSession(page):null;
+      if(cdp)await cdp.send('Performance.enable');
+      const before=cdp?Object.fromEntries((await cdp.send('Performance.getMetrics')).metrics.map(m=>[m.name,m.value])):null;
+      const sample=await page.evaluate(async()=>{
+        rectReads=scrollReads=0;const pages=[];
+        for(let i=0;i<3;i++){
+          const start=performance.now();document.querySelector('.dcbpv-comment-html > button').click();
+          const clickMs=performance.now()-start;
+          await new Promise(r=>setTimeout(r,250));
+          pages.push(clickMs);
+        }
+        const frames=[];let previous=performance.now();
+        await new Promise(resolve=>requestAnimationFrame(function tick(now){frames.push(now-previous);previous=now;document.querySelector('.dcbpv-scroll').scrollTop+=12;if(frames.length<30)requestAnimationFrame(tick);else resolve()}));
+        frames.sort((a,b)=>a-b);
+        return {pages,rectReads,scrollReads,p95FrameMs:frames[Math.floor(frames.length*.95)],rows:document.querySelectorAll('.dcbpv-comment-item').length,hidden:document.querySelectorAll('.dcbpv-comment-item.dcbpv-filter-hidden').length,iframes:document.querySelectorAll('iframe').length,requests:signalCalls};
+      });
+      const after=cdp?Object.fromEntries((await cdp.send('Performance.getMetrics')).metrics.map(m=>[m.name,m.value])):null;
+      if(cdp){sample.layoutMs=(after.LayoutDuration-before.LayoutDuration)*1000;sample.layouts=after.LayoutCount-before.LayoutCount;await cdp.detach();}
+      samples.push({run,openMs:open,firstCommentsMs,...sample});
+      assert.equal(sample.rows,320);assert.equal(sample.iframes,0);assert.equal(sample.requests,0);
+      assert.equal(sample.hidden,64,'keyword hiding remains applied to each appended page');
+      if(!baseline)assert.ok(sample.scrollReads<=6,'one viewport measurement per immediate/delayed media batch');
+      await page.evaluate(()=>pv.closePreview());
+      await page.waitForTimeout(100);
+    }
+    fs.writeFileSync(path.join(out,engine+'-interaction.json'),JSON.stringify({browser:browser.version(),samples},null,2));
+    assert.deepEqual(errors,[]);
+  });
   test(`${engine}: incremental memo work stays scoped to added comments`,async t=>{
     const {browser,page,errors}=await fixture(type,true,true);t.after(()=>browser.close());
     const results=[];
@@ -164,10 +217,14 @@ for(const [engine,type] of Object.entries({chromium,firefox})) {
         for(let i=0;i<5;i++){const start=performance.now();pv.decoratePreviewReplyActions(root);ms.push(performance.now()-start);}
         const mutations=observer.takeRecords().length;observer.disconnect();
         ms.sort((a,b)=>a-b);
-        return {count,medianMs:ms[2],maxMs:ms[4],mutations,sameReply:reply===root.querySelector('[data-act=compose-reply]')};
+        const sameReply=reply===root.querySelector('[data-act=compose-reply]');
+        const first=root.querySelector('.dcbpv-comment-item'),duplicate=first.cloneNode(true);
+        first.parentElement.appendChild(duplicate);
+        pv.decoratePreviewReplyActions(root,[duplicate]);
+        return {count,medianMs:ms[2],maxMs:ms[4],mutations,sameReply,duplicatesBlocked:!first.querySelector('[data-act=compose-reply]')&&!duplicate.querySelector('[data-act=compose-reply]')};
       },count);
       results.push(result);
-      if(!baseline){assert.equal(result.mutations,0);assert.equal(result.sameReply,true);}
+      if(!baseline){assert.equal(result.mutations,0);assert.equal(result.sameReply,true);assert.equal(result.duplicatesBlocked,true);}
     }
     fs.writeFileSync(path.join(out,engine+'-decoration.json'),JSON.stringify({browser:browser.version(),samples:5,results},null,2));
     // Normal rendering must keep a large comment list paged and the composer asleep.
