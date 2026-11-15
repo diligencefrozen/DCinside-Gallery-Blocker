@@ -68,10 +68,33 @@ async function fixture(type, token = true, heavy = false) {
 }
 
 for(const [engine,type] of Object.entries({chromium,firefox})) {
+  test(`${engine}: scrolling partial comments keeps the composer asleep`,async t=>{
+    const {browser,page,errors}=await fixture(type);t.after(()=>browser.close());
+    await page.evaluate(()=>openPost(160));
+    await page.waitForFunction(()=>document.querySelectorAll('.dcbpv-comment-item').length===80);
+    await page.evaluate(()=>{const scroll=document.querySelector('.dcbpv-scroll');scroll.scrollTop=scroll.scrollHeight});
+    await page.waitForFunction(()=>document.querySelectorAll('.dcbpv-comment-item').length>80);
+    await page.waitForTimeout(300);
+    assert.equal(await page.locator('.dcbpv-comment-item').count(),96,'automatic paging adds a small batch');
+    assert.equal(await page.locator('iframe').count(),0,'the provisional list bottom must not wake the native editor');
+    await page.locator('.dcbpv-comment-html > button').evaluate(button=>button.click());
+    assert.equal(await page.locator('.dcbpv-comment-item').count(),160,'explicit more preserves the 80-row page size');
+    await page.evaluate(()=>{const scroll=document.querySelector('.dcbpv-scroll');scroll.scrollTop=scroll.scrollHeight});
+    await page.waitForSelector('.dcbpv-composer iframe',{state:'attached'});
+    await page.evaluate(()=>{pv.closePreview();const data=makePost(2000);data.url=data.url.replace('no=1','no=2');pv.renderPreview(data)});
+    await page.waitForFunction(()=>document.querySelectorAll('.dcbpv-comment-item').length===80);
+    assert.equal(await page.locator('iframe').count(),0);
+    await page.locator('.dcbpv-reply-button').first().click();
+    await page.waitForSelector('.dcbpv-composer iframe',{state:'attached'});
+    await page.evaluate(()=>pv.closePreview());
+    assert.equal(await page.locator('iframe').count(),0);
+    assert.deepEqual(errors,[]);
+  });
   test(`${engine}: preview continuous wheel profile`,{skip:!process.env.DCB_PREVIEW_SCROLL_PROFILE},async t=>{
     const {browser,page,errors}=await fixture(type,true,'profile');t.after(()=>browser.close());
     const samples=[];
-    for(const variant of (process.env.DCB_PREVIEW_BLUR_AB?['normal','no-blur']:['normal','normal','normal'])){
+    const ab=process.env.DCB_PREVIEW_BLUR_AB;
+    for(const variant of (ab==='reverse'?['no-blur','normal']:ab?['normal','no-blur']:['normal','normal','normal'])){
       await page.evaluate(variant=>{
         window.wheelPost=makePost(2000,'unique');
         const image='<img width="64" height="64" src="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2264%22 height=%2264%22%3E%3Crect width=%2264%22 height=%2264%22 fill=%22teal%22/%3E%3C/svg%3E">';
@@ -101,7 +124,7 @@ for(const [engine,type] of Object.entries({chromium,firefox})) {
       await page.evaluate(()=>{pv.closePreview();document.getElementById('fixture-no-blur')?.remove()});
       await page.waitForTimeout(150);
     }
-    fs.writeFileSync(path.join(out,engine+'-wheel'+(process.env.DCB_PREVIEW_BLUR_AB?'-ab':'')+'.json'),JSON.stringify({browser:browser.version(),samples},null,2));
+    fs.writeFileSync(path.join(out,engine+'-wheel'+(ab==='reverse'?'-ab-reverse':ab?'-ab':'')+'.json'),JSON.stringify({browser:browser.version(),samples},null,2));
     assert.deepEqual(errors,[]);
   });
   test(`${engine}: preview interaction profile`,{skip:!process.env.DCB_PREVIEW_INTERACTION_PROFILE},async t=>{
