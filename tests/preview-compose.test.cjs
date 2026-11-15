@@ -359,7 +359,7 @@ const nativeDocument = require('./helpers/native-preview-document.cjs');
       reset(); responseMode=mode; await render(article('', String(50+index))); await open();
       await editor().locator('textarea[id^=memo_]').fill('preserved draft');
       await editor().locator('.repley_add').click();
-      await page.waitForFunction(()=>{const text=document.querySelector('.dcbpv-composer [role="status"]').textContent;return !!text && !/전송 중|작성 폼을 확인하는 중/.test(text)});
+      await page.waitForFunction(()=>{const text=document.querySelector('.dcbpv-composer [role="status"]').textContent;return !!text && !/전송 중|댓글 작성 도구를 준비하고 있어요/.test(text)});
       assert.equal(writes.length,1); assert.equal(await editor().locator('textarea[id^=memo_]').inputValue(),'preserved draft');
       assert.doesNotMatch(await page.locator('.dcbpv-composer [role="status"]').textContent(),/등록된 댓글을 확인/);
       assert.equal(await page.locator('.dcbpv-comments-title').textContent(),'댓글 2개');
@@ -606,7 +606,7 @@ const nativeDocument = require('./helpers/native-preview-document.cjs');
       await editor().locator(kind==='dccon'?'.tx_dccon':'.tx_txtcon').click();
       if(kind==='dccon')await editor().locator('.img_dccon').click();else{await editor().locator('#txtcon_input').fill('검증');await editor().locator('#btn_txtcon_submit').click();}
       responseMode=mode;await editor().locator('.repley_add').click();
-      await page.waitForFunction(()=>{const text=document.querySelector('.dcbpv-composer [role="status"]').textContent;return !!text&&!/전송 중|작성 폼을 확인하는 중/.test(text)});
+      await page.waitForFunction(()=>{const text=document.querySelector('.dcbpv-composer [role="status"]').textContent;return !!text&&!/전송 중|댓글 작성 도구를 준비하고 있어요/.test(text)});
       assert.equal(writes.length,1);assert.equal(writes[0]._GALLTYPE_,'MI');
       assert.equal(await editor().locator('#dcbpv-selection').isVisible(),true);
       assert.doesNotMatch(await page.locator('.dcbpv-composer [role="status"]').textContent(),/등록된 댓글을 확인/);

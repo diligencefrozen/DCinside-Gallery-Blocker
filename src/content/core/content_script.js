@@ -301,6 +301,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     const style = document.createElement("style");
     style.id = STYLE_ID;
     style.textContent = `
+      #${OVERLAY_ID}{--dcbpv-page:#fbfcfe;--dcbpv-surface:#f1f5f9;--dcbpv-line:#d8e0ea;--dcbpv-text:#253047;--dcbpv-muted:#526176;--dcbpv-link:#3158a6}
       #${OVERLAY_ID}{position:fixed;inset:0;z-index:2147483600;display:flex;align-items:center;justify-content:center;padding:22px;background:rgba(2,6,23,.58);backdrop-filter:blur(9px);font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color-scheme:light}
       #${OVERLAY_ID} *{box-sizing:border-box}
       #${OVERLAY_ID}.dcbpv-enter{animation:dcbpv-fade .16s ease-out}
@@ -439,6 +440,28 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
       #${OVERLAY_ID} .dcbpv-spinner{width:34px;height:34px;border-radius:50%;border:3px solid #dbeafe;border-top-color:#2563eb;margin:0 auto 14px;animation:dcbpv-spin .8s linear infinite}
       #${OVERLAY_ID} .dcbpv-inline-loading{display:flex;align-items:center;justify-content:center;gap:9px;min-height:62px;padding:14px;color:#64748b;font-size:13px}
       #${OVERLAY_ID} .dcbpv-inline-spinner{width:16px;height:16px;flex:0 0 auto;border-radius:50%;border:2px solid #dbeafe;border-top-color:#2563eb;animation:dcbpv-spin .8s linear infinite}
+      #${OVERLAY_ID} .dcbpv-status-card{display:flex;align-items:center;justify-content:flex-start;gap:16px;min-height:100px;margin:12px 0;padding:20px;border:1px solid var(--dcbpv-line);border-radius:12px;background:var(--dcbpv-surface);color:var(--dcbpv-text);font-size:14px;line-height:1.6;text-align:left}
+      #${OVERLAY_ID} .dcbpv-status-copy{min-width:0}
+      #${OVERLAY_ID} .dcbpv-status-copy strong{display:block;font-size:14px;font-weight:650;color:var(--dcbpv-text)}
+      #${OVERLAY_ID} .dcbpv-status-copy small{display:block;margin-top:3px;font-size:12px;color:var(--dcbpv-muted);line-height:1.6}
+      #${OVERLAY_ID} .dcbpv-status-dots{display:inline-flex;align-items:center;justify-content:center;gap:4px;flex:0 0 40px;height:40px;color:var(--dcbpv-link)}
+      #${OVERLAY_ID} .dcbpv-status-dots i{display:block;width:5px;height:5px;border-radius:50%;background:currentColor;animation:dcbpv-breathe 1.4s ease-in-out infinite}
+      #${OVERLAY_ID} .dcbpv-status-dots i:nth-child(2){animation-delay:.16s}#${OVERLAY_ID} .dcbpv-status-dots i:nth-child(3){animation-delay:.32s}
+      @keyframes dcbpv-breathe{0%,70%,100%{transform:translateY(0);opacity:.4}35%{transform:translateY(-3px);opacity:1}}
+      #${OVERLAY_ID} .dcbpv-status-symbol{flex:0 0 40px;text-align:center;font-size:22px;color:var(--dcbpv-muted)}
+      #${OVERLAY_ID} .dcbpv-compose-heading{position:relative}
+      #${OVERLAY_ID} .dcbpv-compose-progress{display:none;position:absolute;z-index:1;top:calc(100% + 8px);left:0;right:0;height:140px;align-items:center;justify-content:center;gap:12px;pointer-events:none;color:var(--dcbpv-muted);font-size:13px;font-weight:400}
+      #${OVERLAY_ID} .dcbpv-composer[data-preparing]:not(:has(.dcbpv-resume-input)) .dcbpv-compose-progress{display:flex}
+      #${OVERLAY_ID} .dcbpv-composer [role=status]{color:var(--dcbpv-muted);line-height:1.6}
+      #${OVERLAY_ID} .dcbpv-composer [role=status]:empty{display:none}
+      #${OVERLAY_ID} .dcbpv-comments-actions [data-act=compose]{min-height:34px!important;padding:6px 12px!important;border:1px solid var(--dcbpv-line)!important;border-radius:8px;background:var(--dcbpv-surface)!important;color:var(--dcbpv-link)!important;font-weight:650!important;text-decoration:none!important}
+      #${OVERLAY_ID} .dcbpv-comments-actions [data-act=compose]:hover{border-color:var(--dcbpv-link)!important}
+      #${OVERLAY_ID} .dcbpv-thread-count{color:var(--dcbpv-muted)}
+      #${OVERLAY_ID} .dcbpv-reply-button{min-height:28px;padding:4px 8px;border-radius:6px}
+      #${OVERLAY_ID} .dcbpv-reply-button:hover{background:var(--dcbpv-surface);color:var(--dcbpv-link)}
+      #${OVERLAY_ID} .dcbpv-comment-time,#${OVERLAY_ID} .dcbpv-time{color:var(--dcbpv-muted)}
+      #${OVERLAY_ID} .dcbpv-loading-panel .dcbpv-status-card{border:0;margin:0;max-width:100%;background:transparent}
+      #${OVERLAY_ID}[data-motion-paused] :is(.dcbpv-status-dots i,.dcbpv-spinner,.dcbpv-inline-spinner){animation-play-state:paused!important}
       #${OVERLAY_ID} .dcbpv-user-data-list{position:fixed!important;z-index:2147483640!important;min-width:156px!important;margin:0!important;padding:6px 0!important;list-style:none!important;border:1px solid #d8dde8!important;border-radius:10px!important;background:#fff!important;color:#111827!important;box-shadow:0 14px 38px rgba(15,23,42,.22)!important;font-size:12px!important;line-height:1.35!important;overflow:hidden!important}
       #${OVERLAY_ID} .dcbpv-user-data-list,#${OVERLAY_ID} .dcbpv-user-data-list *{box-sizing:border-box!important;background-image:none!important;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif!important;text-shadow:none!important}
       #${OVERLAY_ID} .dcbpv-user-data-list li{margin:0!important;padding:0!important;list-style:none!important;white-space:nowrap!important;background:transparent!important}
@@ -463,7 +486,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
       #${OVERLAY_ID} .dcbpv-copy{display:flex;gap:8px;margin-top:12px}.dcbpv-copy input{min-width:0;flex:1;border:1px solid #e5e7eb;border-radius:10px;padding:10px;background:#f8fafc}.dcbpv-copy button{border:1px solid #2563eb;border-radius:10px;padding:0 14px;background:#2563eb;color:#fff;cursor:pointer;font-weight:800}
       @keyframes dcbpv-fade{from{opacity:0}to{opacity:1}}@keyframes dcbpv-pop{from{transform:translateY(8px) scale(.985);opacity:.6}to{transform:none;opacity:1}}@keyframes dcbpv-spin{to{transform:rotate(360deg)}}
       @media(max-width:540px){#${OVERLAY_ID}{padding:8px}#${OVERLAY_ID} .dcbpv-panel{--dcbpv-thread-indent:20px;max-height:96dvh;border-radius:12px}#${OVERLAY_ID} .dcbpv-header{padding:18px 14px}#${OVERLAY_ID} .dcbpv-title{font-size:18px}#${OVERLAY_ID} .dcbpv-scroll{padding:20px 14px 8px}#${OVERLAY_ID} .dcbpv-actions{padding:10px 14px}#${OVERLAY_ID} .dcbpv-thread-count,#${OVERLAY_ID} .dcbpv-writer > .dcbpv-chip:nth-child(n+3){display:none}#${OVERLAY_ID} .dcbpv-comments-header{align-items:flex-start!important;gap:6px 10px!important}#${OVERLAY_ID} .dcbpv-comments-actions{margin-left:auto!important;gap:10px!important}#${OVERLAY_ID} .dcbpv-comments-actions :is(button,a){padding:4px 0!important}#${OVERLAY_ID} .dcbpv-comment-item{margin-left:calc(min(var(--dcb-thread-depth),2) * var(--dcbpv-thread-indent))}#${OVERLAY_ID} .dcbpv-comment-item[data-dcb-thread-depth="3"]::before{box-shadow:calc(-1 * var(--dcbpv-thread-indent)) 0 var(--dcbpv-line,#ced9eb)}#${OVERLAY_ID} .dcbpv-comment-item::before,#${OVERLAY_ID} .dcbpv-comment-item::after{left:-12px!important}#${OVERLAY_ID} .dcbpv-comment-item::after{width:8px!important}#${OVERLAY_ID} .dcbpv-movie-wrap iframe{height:360px!important}}
-      @media(prefers-reduced-motion:reduce){#${OVERLAY_ID},#${OVERLAY_ID} .dcbpv-panel{animation:none}#${OVERLAY_ID} button{transition:none}}
+      @media(prefers-reduced-motion:reduce){#${OVERLAY_ID},#${OVERLAY_ID} .dcbpv-panel{animation:none}#${OVERLAY_ID} button{transition:none}#${OVERLAY_ID} :is(.dcbpv-status-dots i,.dcbpv-spinner,.dcbpv-inline-spinner){animation:none!important;transform:none!important;opacity:1}}
 
       html:is(:has(#css-darkmode), [data-theme="dark"], :has(> body.dark)) #${OVERLAY_ID}{
         color-scheme:dark;
@@ -651,6 +674,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
   }
 
   function mountPreview(overlay){
+    overlay.toggleAttribute("data-motion-paused", document.hidden);
     const isNewSession = !previewScrollLock;
     if (!previewScrollLock) {
       previewReturnFocus = document.activeElement;
@@ -698,12 +722,8 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     currentPreviewData = null;
     overlay.innerHTML = `
       <section class="dcbpv-panel dcbpv-loading-panel" role="dialog" aria-modal="true" aria-label="게시글 미리보기 불러오는 중" tabindex="-1">
-        <div class="dcbpv-center" role="status" aria-live="polite">
-          <div>
-            <div class="dcbpv-spinner"></div>
-            <strong>게시글 불러오는 중...</strong>
-          </div>
-        </div>
+        <div class="dcbpv-center">${previewStatusCard("게시글을 불러오고 있어요", "잠시만 기다려 주세요. 준비되면 본문부터 보여드릴게요.")}</div>
+        <nav class="dcbpv-actions" aria-label="불러오기 작업"><button type="button" class="dcbpv-btn" data-act="close">닫기</button></nav>
       </section>`;
     mountPreview(overlay);
   }
@@ -4613,18 +4633,22 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     updatePreviewThreadDesign(overlay);
   }
 
+  function previewStatusCard(title, description, busy = true) {
+    return `<div class="dcbpv-status-card${busy ? " dcbpv-inline-loading" : ""}" role="status" aria-live="polite" aria-atomic="true">${busy ? `<span class="dcbpv-status-dots" aria-hidden="true"><i></i><i></i><i></i></span>` : `<span class="dcbpv-status-symbol" aria-hidden="true">ⓘ</span>`}<span class="dcbpv-status-copy"><strong>${escapeText(title)}</strong><small>${escapeText(description)}</small></span></div>`;
+  }
+
   function previewCommentHtml(data, commentsPending = false){
     const commentDebugLines = Array.isArray(data.commentDebug)
       ? data.commentDebug.slice(-4).map(commentDebugSummaryItem).filter(Boolean)
       : [];
 
     if (data.commentsHTML) {
-      return `${data.commentsHTML}${commentsPending ? `<div class="dcbpv-inline-loading" role="status" aria-live="polite"><span class="dcbpv-inline-spinner"></span><span>댓글을 확인하는 중...</span></div>` : ""}`;
+      return `${data.commentsHTML}${commentsPending ? previewStatusCard("새 댓글을 확인하고 있어요", "먼저 표시된 댓글은 계속 읽으실 수 있어요.") : ""}`;
     }
     if (commentsPending) {
-      return `<div class="dcbpv-inline-loading" role="status" aria-live="polite"><span class="dcbpv-inline-spinner"></span><span>댓글 불러오는 중...</span></div>`;
+      return previewStatusCard("댓글을 준비하고 있어요", "본문은 계속 읽으셔도 좋아요. 준비되면 여기에 표시됩니다.");
     }
-    return `<div class="dcbpv-empty">${data.commentError ? "댓글을 불러오지 못했습니다. 새로고침하거나 원문에서 확인해 주세요." : "표시할 댓글이 없습니다."}${previewCommentDebugEnabled(data.url) && commentDebugLines.length ? `<br><small>${escapeText(commentDebugLines.join(" | "))}</small>` : ""}</div>`;
+    return `${previewStatusCard(data.commentError ? "댓글을 불러오지 못했어요" : "아직 표시할 댓글이 없어요", data.commentError ? "위의 새로고침으로 다시 시도하거나, 원문에서 확인해 주세요." : "댓글 쓰기로 대화에 참여할 수 있어요.", false)}${previewCommentDebugEnabled(data.url) && commentDebugLines.length ? `<small>${escapeText(commentDebugLines.join(" | "))}</small>` : ""}`;
   }
 
   function composerMessage(result){
@@ -4669,7 +4693,8 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     const button=document.querySelector(`#${OVERLAY_ID} [data-act='compose']`);
     if(!button)return;
     const expanded=!!state&&!state.collapsed;
-    button.textContent=expanded?'댓글 입력창 닫기':'댓글 입력창 열기';
+    button.textContent=expanded?'입력창 접기':'댓글 쓰기';
+    button.setAttribute('aria-label',expanded?'댓글 입력창 닫기':'댓글 입력창 열기');
     button.setAttribute('aria-expanded',String(expanded));button.setAttribute('aria-controls','dcbpv-composer');
     if(state){state.form.hidden=!expanded;syncComposerDock(state);}
   }
@@ -4689,7 +4714,8 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
   function updateComposerStatus(state,text){
     if(previewComposer!==state)return;
     clearTimeout(state.statusTimer);
-    state.form.querySelector('[role=status]').textContent=text;
+    const status=state.form.querySelector('[role=status]');
+    if(status.textContent!==text)status.textContent=text;
     const nick=document.querySelector(`#${OVERLAY_ID} [data-dcbpv-native-id='${CSS.escape(state.target||'')}']`)?.dataset.nick;
     state.form.querySelector('[data-composer-target]').textContent=state.target?`↳ ${nick||`댓글 #${state.target}`}에게 답글`:'댓글 작성';
     state.form.querySelector('[data-act=compose-reply-cancel]').hidden=!state.target;
@@ -4944,13 +4970,13 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
       editorSnapshot:!saved.uncertain && saved.editor?.expiresAt>Date.now() ? saved.editor : null,
       ready:false,submitting:false,targets:[],owned:[],collapsed:false,token:crypto.randomUUID()};
     const form=state.form=document.createElement('div');form.className='dcbpv-composer';form.id='dcbpv-composer';form.dataset.preparing='';
-    form.innerHTML=`<div class="dcbpv-compose-heading"><strong data-composer-target>댓글 작성</strong><button class="dcbpv-btn" type="button" data-act="compose-reply-cancel" hidden>답글 취소</button></div>
+    form.innerHTML=`<div class="dcbpv-compose-heading"><strong data-composer-target>댓글 작성</strong><button class="dcbpv-btn" type="button" data-act="compose-reply-cancel" hidden>답글 취소</button><span class="dcbpv-compose-progress" aria-hidden="true"><span class="dcbpv-status-dots"><i></i><i></i><i></i></span><span>댓글 작성 도구를 준비하고 있어요</span></span></div>
       <div class="dcbpv-editor-placeholder" aria-hidden="true"></div>
-      <div class="dcbpv-compose-actions"><span data-composer-count></span><button class="dcbpv-btn" type="button" data-act="compose-cancel">접기</button><a target="_blank" rel="noopener noreferrer">원문에서 댓글 작성</a></div><p role="status" aria-live="polite"></p>`;
+      <div class="dcbpv-compose-actions"><span data-composer-count></span><button class="dcbpv-btn" type="button" data-act="compose-cancel">접기</button><a target="_blank" rel="noopener noreferrer">원문에서 댓글 작성</a></div><p role="status" aria-live="polite" aria-atomic="true"></p>`;
     form.querySelector('a').href=`${data.url.split('#')[0]}#focus_cmt`;
     document.querySelector(`#${OVERLAY_ID} .dcbpv-composer-slot`)?.replaceChildren(form);
     if(state.editorSnapshot)restoreComposerInput(state);
-    syncComposerToggle();updateComposerStatus(state,state.resumeInput?'':'작성 폼을 확인하는 중…');
+    syncComposerToggle();updateComposerStatus(state,state.resumeInput?'':'댓글 작성 도구를 준비하고 있어요. 잠시만 기다려 주세요.');
     const frame=state.frame=document.createElement('iframe');frame.dataset.dcbpvComposeFrame=state.token;frame.title='DCinside 댓글 작성 및 인증';
     frame.setAttribute('sandbox','allow-scripts allow-same-origin');frame.setAttribute('scrolling','no');frame.style.visibility='hidden';
     let finishLoading;
@@ -4997,7 +5023,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
         delete form.dataset.preparing;frame.hidden=true;frame.style.height='140px';
         if(state.resumeInput)state.resumeInput.parentElement.querySelector('button')?.remove();
         else showPreviewSavedDraft(state);
-        if(['작성 폼을 확인하는 중…','등록 도구를 불러오는 중…'].includes(form.querySelector('[role=status]').textContent))updateComposerStatus(state,composerMessage(null));
+        if(['댓글 작성 도구를 준비하고 있어요. 잠시만 기다려 주세요.','등록 도구를 불러오는 중…'].includes(form.querySelector('[role=status]').textContent))updateComposerStatus(state,composerMessage(null));
       }
     }
   }
@@ -5238,7 +5264,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     currentPreviewData = data;
 
     const deferRows = !commentsPending && data.commentsHTML?.length > 64000 && typeof IntersectionObserver === "function";
-    const commentEmptyHtml = deferRows ? "" : previewCommentHtml(data, commentsPending);
+    const commentEmptyHtml = deferRows ? previewStatusCard("댓글을 준비하고 있어요", "읽을 위치에 맞춰 댓글을 표시합니다.") : previewCommentHtml(data, commentsPending);
 
     overlay.dataset.dcbpvUrl = data.url;
     overlay.innerHTML = `
@@ -5506,6 +5532,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
   document.addEventListener("visibilitychange", () => {
     const data = currentPreviewData;
     const overlay = document.getElementById(OVERLAY_ID);
+    overlay?.toggleAttribute("data-motion-paused", document.hidden);
     if (document.hidden) {
       cancelScheduledPreview();
       previewComposerObserver?.disconnect();
