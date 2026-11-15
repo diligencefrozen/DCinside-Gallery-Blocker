@@ -31,21 +31,34 @@
   let guardRetryAt = 0;
   let rulesEpoch = 0;
   const uidQueue = new Map();
+  const writersByUid = new Map();
   const pendingRoots = new Set();
   const registeredUids = new Set(), newUids = new Set();
+  let candidateRetryTimer = null, candidateRetryDelay = 30000;
 
   function registerCandidates() {
-    if (!newUids.size) return;
+    if (!newUids.size || !enabled || document.hidden || candidateRetryTimer) return;
     const uids = [...newUids];
     newUids.clear();
-    chrome.runtime.sendMessage({type:"dcb.activityCandidates", uids}, result => {
-      if (chrome.runtime.lastError || !result?.ok) for (const uid of uids) registeredUids.delete(uid);
-    });
+    const epoch = rulesEpoch;
+    const finish = result => {
+      if (!enabled || epoch !== rulesEpoch) return;
+      if (chrome.runtime.lastError || !result?.ok) {
+        for (const uid of uids) newUids.add(uid);
+        if (!document.hidden && !candidateRetryTimer) {
+          candidateRetryTimer = setTimeout(() => { candidateRetryTimer = null; registerCandidates(); }, candidateRetryDelay);
+          candidateRetryDelay = Math.min(candidateRetryDelay * 2, 300000);
+        }
+      } else candidateRetryDelay = 30000;
+    };
+    try { chrome.runtime.sendMessage({type:"dcb.activityCandidates", uids}, finish); }
+    catch (_) { finish(null); }
   }
   chrome.runtime.onMessage?.addListener((message, sender, reply) => {
     if (message?.type !== "dcb.activityRecheck" || sender.id !== chrome.runtime.id) return;
     if (document.hidden || !enabled) { reply({inactive:true}); return; }
     FILTER().evaluate(message.uid, true).then(verdict => {
+      refreshUid(message.uid, verdict);
       reply({available:verdict.available, reason:verdict.reason, checkedAt:verdict.checkedAt, retryAt:verdict.retryAt});
 
     }, () => reply({available:false, reason:"UNAVAILABLE"}));
@@ -252,6 +265,7 @@
     if (!info) return;
     const uid = extractUid(writer);
     if (writer.dataset.dcbActivityUid && writer.dataset.dcbActivityUid !== uid) {
+      writersByUid.get(writer.dataset.dcbActivityUid.toLowerCase())?.delete(writer);
       delete writer.dataset.dcbActivityUid;
       delete writer.dataset.dcbWriterActivity;
     }
@@ -272,6 +286,20 @@
       registeredUids.add(uid.toLowerCase());
       newUids.add(uid.toLowerCase());
     }
+    const key = uid.toLowerCase();
+    if (!writersByUid.has(key)) writersByUid.set(key, new Set());
+    writersByUid.get(key).add(writer);
+    if (writer.dataset.dcbActivityUid !== uid) writer.dataset.dcbActivityUid = uid;
+    // Shared successful results cost no network request, even outside the viewport.
+    const cached = filter.peek?.(uid);
+    if (cached?.available) {
+      const entry = uidQueue.get(key) || {key, targets:new Map()};
+      entry.targets.set(target, {writer, info, uid});
+      applyVerdict(entry, cached, settings);
+      uidQueue.delete(key);
+      activityViewport?.unobserve(writer);
+      return;
+    }
     const settingAllowsActiveFilter = settings.enabled && settingAllows(settings, info.kind);
     if (settings.display && !settingAllowsActiveFilter && !seenInViewport.has(writer) && typeof IntersectionObserver === "function") {
       activityViewport ||= new IntersectionObserver(entries => {
@@ -288,7 +316,6 @@
       return;
     }
 
-    const key = uid.toLowerCase();
     let entry = uidQueue.get(key);
     if (!entry) {
       entry = { key, uid, targets: new Map(), state: "queued", retryAt: 0, failures: 0 };
@@ -296,22 +323,41 @@
     }
     entry.targets.set(target, { writer, info, uid });
 
-    const cached = filter.peek?.(uid);
-    if (cached?.available) {
-      applyVerdict(entry, cached, settings);
-      uidQueue.delete(key);
-    } else {
+    {
       if (cached && entry.state === "queued") deferEntry(entry, cached, false);
       if (!cached && entry.reason === "NO_TOKEN") {
         entry.reason = ""; entry.retryAt = 0; entry.state = "queued";
       }
-      if (settings.display && entry.reason) setBadge(writer, info, uid, "—", activityStatus(entry));
       if (entry.state === "queued" && guardRetryAt > Date.now()) entry.state = "deferred";
+      if (settings.display) setBadge(writer, info, uid, activityLabel(entry), activityStatus(entry));
       // Registration can encounter the same author hundreds of times in one
       // scan. The other rows already carry this queue state.
       if (settings.enabled && settingAllows(settings, info.kind) && target.dataset.dcbAccountActivityPeek !== uid) {
         setState(info, uid, entry.state, null, entry.state !== "unavailable" && settings.holdWhileChecking === true);
       }
+    }
+  }
+
+  function refreshUid(rawUid, verdict = null) {
+    if (!enabled || document.hidden) return;
+    const key = normalizeUid(rawUid).toLowerCase(), writers = writersByUid.get(key);
+    if (!writers) return;
+    const filter = FILTER(), settings = filter.getSettings();
+    const entry = uidQueue.get(key) || {key, targets:new Map()};
+    for (const writer of writers) {
+      if (!writer.isConnected || extractUid(writer).toLowerCase() !== key) { writers.delete(writer); continue; }
+      const info = targetForWriter(writer);
+      if (info) entry.targets.set(info.target, {writer, info, uid:extractUid(writer)});
+    }
+    if (!writers.size) writersByUid.delete(key);
+    const cached = filter.peek(key);
+    const result = cached?.available ? cached : verdict || cached;
+    if (result?.available) {
+      applyVerdict(entry, result, settings);
+      uidQueue.delete(key);
+    } else {
+      if (result && uidQueue.has(key)) deferEntry(entry, result, false);
+      for (const writer of writers) registerWriter(writer, filter, settings);
     }
   }
 
@@ -376,7 +422,8 @@
       registerWriter(writer, filter, filter.getSettings());
       void drainUidQueue();
     }
-    if (info) setBadge(writer, info, uid, "—", activityStatus(entry));
+    const pending = uidQueue.get(uid.toLowerCase());
+    if (info && pending) setBadge(writer, info, uid, activityLabel(pending), activityStatus(pending));
   }
   document.addEventListener("pointerover", showPendingStatus);
   document.addEventListener("focusin", showPendingStatus);
@@ -391,9 +438,16 @@
     return entry.state === "checking" ? "활동량 조회 중" : "활동량 조회 대기";
   }
 
+  function activityLabel(entry) {
+    if (entry.reason === "NO_TOKEN") return "세션 없음";
+    if (entry.reason === "BUDGET" || entry.reason === "COOLDOWN" || /^HTTP_(403|429|503)$/.test(entry.reason || "")) return "요청 대기";
+    if (entry.reason) return entry.state === "unavailable" ? "조회 불가" : "재시도 대기";
+    return entry.state === "checking" ? "조회 중" : "대기";
+  }
+
   function applyQueueState(entry, settings) {
     for (const { info, uid, writer } of liveTargets(entry, settings)) {
-      if (settings.display && entry.reason) setBadge(writer, info, uid, "—", activityStatus(entry));
+      if (settings.display) setBadge(writer, info, uid, activityLabel(entry), activityStatus(entry));
       if (!settings.enabled || !settingAllows(settings,info.kind) || info.target.dataset.dcbAccountActivityPeek === uid) continue;
       setState(info, uid, entry.state, null,
         entry.state !== "unavailable" && settings.holdWhileChecking === true);
@@ -630,10 +684,15 @@
           if (node.nodeType === Node.ELEMENT_NODE && !node.closest?.("[data-dcb-owned]")) immediate.add(node);
           queueIncrementalScan(node);
         }
-        if (activityViewport) for (const node of record.removedNodes || []) {
+        for (const node of record.removedNodes || []) {
           if (node.nodeType !== 1 || node.isConnected) continue;
-          activityViewport.unobserve(node);
-          node.querySelectorAll(".gall_writer,.ub-writer").forEach(writer=>activityViewport.unobserve(writer));
+          activityViewport?.unobserve(node);
+          for (const writer of writerNodesInScope(node)) {
+            activityViewport?.unobserve(writer);
+            const key = writer.dataset.dcbActivityUid?.toLowerCase(), writers = writersByUid.get(key);
+            writers?.delete(writer);
+            if (writers && !writers.size) writersByUid.delete(key);
+          }
         }
       }
       applyCachedRoots(immediate);
@@ -671,6 +730,10 @@
     cancelScheduledScan = null;
     pendingRoots.clear();
     uidQueue.clear();
+    writersByUid.clear();
+    clearTimeout(candidateRetryTimer);
+    candidateRetryTimer = null;
+    candidateRetryDelay = 30000;
     registeredUids.clear();
     newUids.clear();
     guardRetryAt = 0;
@@ -702,26 +765,19 @@
   document.addEventListener("visibilitychange", () => {
     if (!enabled) return;
     if (document.visibilityState !== "hidden") {
+      registerCandidates();
       scheduleScan(0);
       void drainUidQueue();
-    } else if (queueWakeTimer) {
-      clearTimeout(queueWakeTimer);
+    } else {
+      clearTimeout(candidateRetryTimer);
+      candidateRetryTimer = null;
+      if (queueWakeTimer) clearTimeout(queueWakeTimer);
       queueWakeTimer = null;
     }
   });
   window.addEventListener("dcb:account-activity-cache-changed", event => {
     if (!enabled || document.hidden) return;
-    const filter = FILTER(), settings = filter.getSettings();
-    if (settings.display && event.detail?.length) {
-      const changed = new Set(event.detail);
-      for (const writer of document.querySelectorAll("[data-dcb-activity-uid]")) {
-        const uid = writer.dataset.dcbActivityUid, key = uid.toLowerCase();
-        if (!changed.has(key)) continue;
-        const info = targetForWriter(writer), verdict = filter.peek(uid);
-        if (info && verdict?.available) applyVerdict({key, targets:new Map([[info.target,{writer,info,uid}]])},verdict,settings);
-        else if (info) registerWriter(writer,filter,settings);
-      }
-    }
+    for (const uid of event.detail || []) refreshUid(uid);
     if (uidQueue.size) void drainUidQueue();
   });
   document.addEventListener("dcb-preview-state", event => {

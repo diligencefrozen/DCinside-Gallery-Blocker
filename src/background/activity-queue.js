@@ -32,8 +32,10 @@
       if (typeof raw !== "string" || !/^[a-z\d._-]{2,64}$/i.test(raw)) continue;
       const uid = raw.toLowerCase(), previous = queue.get(uid);
       const cached = Object.hasOwn(cache,uid) ? cache[uid] : null;
+      const noToken = cached?.reason === "NO_TOKEN";
       const due = cached?.unavailable ? cached.expiresAt : Number(cached?.checkedAt) + refresh;
-      queue.set(uid, { uid, tabId, lastSeen: now, next: Math.max(previous?.next || now, Number(due) || 0), attempts: previous?.attempts || 0 });
+      const next = noToken ? Math.min(previous?.next || now, now + 60000) : Math.max(previous?.next || now, Number(due) || 0);
+      queue.set(uid, { uid, tabId, lastSeen: now, next, attempts: previous?.attempts || 0 });
     }
     await chrome.storage.local.set({ [key]: [...queue.values()] });
     await schedule(queue);
@@ -41,24 +43,45 @@
   async function wake() {
     if (!await enabled()) { await chrome.storage.local.remove(key); await chrome.alarms.clear(alarm); return; }
     const queue = await load(), now = Date.now();
+    // A visible page may have completed the lookup since registration. Reuse
+    // that shared cache before sending another request from the alarm queue.
+    const {dcbImageAccountSignalCache: cache = {}} = await chrome.storage.local.get("dcbImageAccountSignalCache");
+    for (const entry of queue.values()) {
+      const cached = Object.hasOwn(cache, entry.uid) ? cache[entry.uid] : null;
+      if (!cached || cached.reason === "NO_TOKEN") continue;
+      const deadline = cached.unavailable ? Number(cached.expiresAt) : Number(cached.checkedAt) + refresh;
+      if (deadline > now) entry.next = Math.max(entry.next, deadline);
+    }
+    await chrome.storage.local.set({[key]:[...queue.values()]});
     const due = [...queue.values()].filter(e => e.next <= now).sort((a,b) => a.next - b.next);
     if (!due.length) { await schedule(queue); return; }
     const tabs = await chrome.tabs.query({active:true, url:"https://gall.dcinside.com/*"});
+    const entry = due[0];
+    tabs.sort((a,b) => Number(b.id === entry.tabId) - Number(a.id === entry.tabId));
+    let tokenMissing = false;
     for (const tab of tabs) {
-      const entry = due.find(e => e.tabId === tab.id) || due[0];
       let result;
       try { result = await chrome.tabs.sendMessage(tab.id, {type:"dcb.activityRecheck", uid:entry.uid}, {frameId:0}); }
       catch { continue; }
       if (!result || result.inactive) continue;
+      // A tab without a session cannot speak for other visible gallery tabs.
+      // Trying another tab here does not issue a network call in the first tab.
+      if (result.reason === "NO_TOKEN") { tokenMissing = true; continue; }
       entry.attempts = result.available ? 0 : Math.min(entry.attempts + 1, 6);
       const delay = result.available ? refresh : Math.min(refresh, 60000 * 2 ** entry.attempts) + Math.random() * 15000;
       entry.next = Math.max(Number(result.retryAt) || 0, (result.available ? result.checkedAt || now : now) + delay);
-      if (["BUDGET","COOLDOWN","NO_TOKEN","HTTP_403","HTTP_429","HTTP_503"].includes(result.reason)) {
+      if (["BUDGET","COOLDOWN","HTTP_403","HTTP_429","HTTP_503"].includes(result.reason)) {
         for (const item of due) item.next = Math.max(item.next, entry.next);
       }
       await chrome.storage.local.set({ [key]: [...queue.values()] });
       await schedule(queue);
       return;
+    }
+    if (tokenMissing) {
+      // One sleeping deadline for the queue; do not spin through every UID.
+      for (const item of due) item.next = now + 60000;
+      await chrome.storage.local.set({[key]:[...queue.values()]});
+      await schedule(queue);
     }
     // No eligible tab. Registration or tab activation will rearm this deadline.
   }
