@@ -49,6 +49,7 @@ async function fixture(type, token = true, heavy = false) {
   await page.addStyleTag({content:read('src/content/appearance/writer-layout.css')});
   for(const file of ['shared/dom-mutation-bus','shared/keyword-matcher','content/user/writer-layout','content/image/image-account-filter','content/user/account-activity-blocker']) {
     let content = read('src/'+file+'.js');
+    if(heavy==='profile' && file.endsWith('writer-layout')) content=content.replace(/\}\)\(\);\s*$/,'const measuredFit=fitWriter;fitWriter=function(w){globalThis.previewFitCalls=(globalThis.previewFitCalls||0)+1;return measuredFit(w)};})();');
     if(file.endsWith('account-activity-blocker')) content = content.replace(/\}\)\(\);\s*$/, 'window.activityTest={state:()=>({queued:uidQueue.size,timer:!!queueWakeTimer,targets:[...uidQueue.values()].reduce((n,e)=>n+e.targets.size,0)})};})();');
     await page.addScriptTag({content});
   }
@@ -67,6 +68,42 @@ async function fixture(type, token = true, heavy = false) {
 }
 
 for(const [engine,type] of Object.entries({chromium,firefox})) {
+  test(`${engine}: preview continuous wheel profile`,{skip:!process.env.DCB_PREVIEW_SCROLL_PROFILE},async t=>{
+    const {browser,page,errors}=await fixture(type,true,'profile');t.after(()=>browser.close());
+    const samples=[];
+    for(const variant of (process.env.DCB_PREVIEW_BLUR_AB?['normal','no-blur']:['normal','normal','normal'])){
+      await page.evaluate(variant=>{
+        window.wheelPost=makePost(2000,'unique');
+        const image='<img width="64" height="64" src="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2264%22 height=%2264%22%3E%3Crect width=%2264%22 height=%2264%22 fill=%22teal%22/%3E%3C/svg%3E">';
+        wheelPost.commentsHTML=wheelPost.commentsHTML.replaceAll('익명화된 회귀 검사 댓글입니다.','댓글 '+image);
+        pv.renderPreview(wheelPost);
+        if(variant==='no-blur'){const st=document.createElement('style');st.id='fixture-no-blur';st.textContent='#dcb-preview-overlay,#dcb-preview-overlay::before{backdrop-filter:none!important}';document.head.append(st);}
+      },variant);
+      await page.waitForFunction(()=>document.querySelectorAll('.dcbpv-comment-item').length>=80);
+      await page.waitForTimeout(500);
+      await page.mouse.move(550,400);
+      await page.evaluate(()=>{
+        window.previewFitCalls=0;window.wheelStats={frames:[],longTasks:[],mutations:0};
+        const data=wheelStats;let last=performance.now();
+        const tick=now=>{data.frames.push(now-last);last=now;data.raf=requestAnimationFrame(tick)};data.raf=requestAnimationFrame(tick);
+        data.mo=new MutationObserver(rs=>data.mutations+=rs.length);data.mo.observe(document.querySelector('#dcb-preview-overlay'),{childList:true,subtree:true,attributes:true});
+        if(PerformanceObserver.supportedEntryTypes.includes('longtask')){data.po=new PerformanceObserver(es=>data.longTasks.push(...es.getEntries().map(e=>e.duration)));data.po.observe({type:'longtask'});}
+      });
+      for(let i=0;i<40;i++){await page.mouse.wheel(0,600);await page.waitForTimeout(30);}
+      await page.waitForTimeout(250);
+      const sample=await page.evaluate(()=>{
+        const data=wheelStats;cancelAnimationFrame(data.raf);data.mo.disconnect();data.po?.disconnect();
+        const frames=data.frames.sort((a,b)=>a-b),scroll=document.querySelector('.dcbpv-scroll');
+        return {p95:frames[Math.floor(frames.length*.95)],maxFrame:Math.max(...frames),slowFrames:frames.filter(x=>x>50).length,frames:frames.length,longTasks:data.longTasks,mutations:data.mutations,fitCalls:previewFitCalls,rows:document.querySelectorAll('.dcbpv-comment-item').length,scrollTop:scroll.scrollTop,iframes:document.querySelectorAll('iframe').length,requests:signalCalls};
+      });
+      samples.push({variant,...sample});
+      assert.ok(sample.scrollTop>10000,'wheel input advances through the preview');if(!baseline)assert.equal(sample.iframes,0);assert.equal(sample.requests,0);
+      await page.evaluate(()=>{pv.closePreview();document.getElementById('fixture-no-blur')?.remove()});
+      await page.waitForTimeout(150);
+    }
+    fs.writeFileSync(path.join(out,engine+'-wheel'+(process.env.DCB_PREVIEW_BLUR_AB?'-ab':'')+'.json'),JSON.stringify({browser:browser.version(),samples},null,2));
+    assert.deepEqual(errors,[]);
+  });
   test(`${engine}: preview interaction profile`,{skip:!process.env.DCB_PREVIEW_INTERACTION_PROFILE},async t=>{
     const {browser,page,errors}=await fixture(type,true,'profile');t.after(()=>browser.close());
     const samples=[];

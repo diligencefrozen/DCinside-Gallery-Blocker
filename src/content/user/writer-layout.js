@@ -174,6 +174,15 @@
   }
 
   function watch(parts, state) {
+    if (parts.context === "preview-comment") {
+      // This identity column wraps in CSS; it does not use the width fitter.
+      // Scroll/resize notifications for every comment provide no useful work.
+      if (state.boundary) unwatch(parts.writer, state);
+      state.boundary = null;
+      state.inView = true;
+      activeWriters.add(parts.writer);
+      return;
+    }
     const boundary = getBoundary(parts);
     if (!boundary || (state.boundary === boundary && activeWriters.has(parts.writer))) return;
     unwatch(parts.writer, state);

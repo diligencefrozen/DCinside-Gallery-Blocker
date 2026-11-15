@@ -4893,6 +4893,9 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     }
     previewComposerObserver = new IntersectionObserver(entries => {
       if (entries.some(entry => entry.isIntersecting) && overlay.isConnected && !document.hidden) {
+        // The bottom of a partial page is not the end of the thread. Scrolling
+        // through paged comments must not start the native article/editor iframe.
+        if (commentsObserver || currentPreviewData?.commentsPending || overlay.querySelector(".dcbpv-comment-html > button")) return;
         void openPreviewComposer(data);
       }
     }, { root: slot.closest(".dcbpv-scroll"), rootMargin: "200px 0px" });
@@ -5082,9 +5085,9 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     }
     append(Math.max(80, previousCount));
     if (!more.isConnected) return;
-    const next = () => {
+    const next = (limit = 80) => {
       if (!more.isConnected || currentPreviewData !== data) return;
-      const added = append(80);
+      const added = append(limit);
       if (previewComposer?.ready) applyComposerMetadata(previewComposer, {dates:previewComposer.dates}, {newRows:true});
       else decoratePreviewReplyActions(overlay, added);
       for (const row of added) {
@@ -5101,11 +5104,14 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
         added.forEach(row => row.style.removeProperty("visibility"));
       });
       emitPreviewContent(root, added);
+      if (!more.isConnected && !previewComposer) armPreviewComposer(data, overlay);
     };
-    more.onclick = next;
+    more.onclick = () => next();
     if (typeof IntersectionObserver === "function") {
       commentPageObserver = new IntersectionObserver(entries => {
-        if (!document.hidden && entries.some(entry => entry.isIntersecting)) next();
+        // Automatic paging shares a frame with wheel input and media decoding.
+        // Keep each automatic commit small; explicit "more" still adds 80.
+        if (!document.hidden && entries.some(entry => entry.isIntersecting)) next(16);
       }, { root: overlay.querySelector(".dcbpv-scroll"), rootMargin: "300px 0px" });
       commentPageObserver.observe(more);
     }
@@ -5135,6 +5141,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     settlePreviewMedia(commentRoot, data.fetchedUrl || data.url, data.url, trace);
     applyPreviewFeatureBridge(overlay, data, trace);
     emitPreviewContent(commentRoot);
+    if (!previewComposer) armPreviewComposer(data, overlay);
     return true;
   }
 
