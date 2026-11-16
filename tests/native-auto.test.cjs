@@ -75,12 +75,13 @@ for(const [name,type] of Object.entries({chromium,firefox}))test(name+' automati
   const html=fs.readFileSync('src/ui/options/options.html','utf8');const section=html.slice(html.indexOf('<section class="card" id="settingsDcRecords">'),html.indexOf('<section class="card support-card">'));
   await page.setContent('<style>[hidden]{display:none!important}</style>'+section);
   await page.evaluate(()=>{
-    window.mode='loading';window.removed=[];window.injections=0;
-    window.chrome={storage:{local:{get:async()=>({})}},tabs:{create:async()=>({id:42}),get:async()=>({id:42,status:mode==='loading'?'loading':'complete',url:'https://attacker.example/'}),remove:async id=>removed.push(id)},scripting:{executeScript:async()=>{injections++;throw Error('must not inject')}}};
+    window.mode='loading';window.removed=[];window.injections=0;window.createdCount=0;
+    window.chrome={storage:{local:{get:async()=>({})}},windows:{getCurrent:async()=>({id:1,type:'normal',incognito:false}),getAll:async()=>[{id:1,type:'normal',incognito:false}]},tabs:{create:async()=>{createdCount++;return{id:42,windowId:1,incognito:false};},get:async()=>({id:42,windowId:1,incognito:false,status:mode==='loading'?'loading':'complete',url:'https://attacker.example/'}),remove:async id=>removed.push(id)},scripting:{executeScript:async()=>{injections++;throw Error('must not inject')}}};
     window.getUserMemos=async()=>({});window.getStoredUidList=async()=>[];
   });
+  await page.addScriptTag({path:'src/ui/options/native-record-context.js'});
   await page.addScriptTag({path:'src/ui/options/dc-records-import.js'});
-  await page.locator('#recordsNativeAuto').click();await page.locator('#recordsNativeCancel').click();
+  await page.locator('#recordsNativeAuto').click();await page.waitForFunction(()=>createdCount===1);await page.locator('#recordsNativeCancel').click();
   await page.waitForFunction(()=>!document.querySelector('#recordsNativeAuto').disabled);
   assert.match(await page.locator('#recordsNativeProgressText').innerText(),/중지했습니다/);
   assert.equal(await page.evaluate(()=>injections),0);assert.deepEqual(await page.evaluate(()=>removed),[42]);

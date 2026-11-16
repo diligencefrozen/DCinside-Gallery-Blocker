@@ -5,10 +5,11 @@
   const status = el("officialMemoPreview"), list = el("officialMemoRows"), more = el("recordsMore");
   const apply = el("officialMemoApply"), undo = el("officialMemoUndo"), replace = el("officialMemoReplace");
   const scopeChoice = el("recordsScope"), reset = el("recordsReset");
+  const nativeContext = el("recordsNativeContext"), contextHelp = el("recordsNativeContextHelp");
   const nativeControls = ["recordsNativeAuto", "recordsNativeRetry"].map(el);
   let revision = 0, pending, labels = [], offset = 0, busy = false, inputTimer;
   let nativeSource = null;
-  let autoCancelled = false, autoTabId = null;
+  let autoCancelled = false, autoTabId = null, autoWindowId = null;
   function updateMode() {
     const text = format.value === "text", block = kind.value === "block";
     el("memoScopeLabel").hidden = !text;
@@ -138,7 +139,7 @@
     offset = 0;
     nextPage();
     const applicable = plan.rows.filter(row => row.status === "applicable").length;
-    status.textContent = "적용 가능 " + applicable + "건 · 보류 " + plan.held.length + "건 · 충돌 " + conflicts + "건 · 중복 " + duplicates +
+    status.textContent = (nativeSource.sourceContextLabel ? nativeSource.sourceContextLabel + " 기록 · " : "") + "적용 가능 " + applicable + "건 · 보류 " + plan.held.length + "건 · 충돌 " + conflicts + "건 · 중복 " + duplicates +
       "건 · 메모 " + plan.memos.length + "건 · 이용자 차단 " + plan.tokens.length + "건 · 차단 단어 " + plan.keywords.length + "건";
     el("recordsConfirmLabel").hidden = !(plan.tokens.length || plan.keywords.length);
     pending = { entries: new Map(plan.memos), blocks: plan.tokens, keywords: plan.keywords, nativeRecords: nativeSource.records };
@@ -157,14 +158,20 @@
     const check = () => { if (autoCancelled) throw Error("IMPORT_CANCELLED"); };
     const step = (value, message) => { check(); progress.value = value; label.textContent = message; };
     try {
-      step(5, "불러오는 중입니다. 잠시만 기다려 주세요. 디시 기록에 연결하고 있습니다…");
-      const tab = await chrome.tabs.create({url:"https://gall.dcinside.com/_js/crossDomainStorage.html",active:false});
+      step(5, "불러오는 중입니다. 잠시만 기다려 주세요. 기록을 읽을 창 모드를 확인하고 있습니다…");
+      const sourceContext = await DCBNativeRecordContext.resolve(nativeContext.value);
+      autoWindowId = sourceContext.ownedWindowId;
+      check();
+      step(10, sourceContext.label + "의 디시 기록에 연결하고 있습니다…");
+      const tab = await chrome.tabs.create({url:"https://gall.dcinside.com/_js/crossDomainStorage.html",active:false,windowId:sourceContext.windowId});
       autoTabId = tab.id;
+      DCBNativeRecordContext.verify(tab,sourceContext);
       const deadline = Date.now() + 15000;
       let ready = false;
       while (Date.now() < deadline) {
         check();
         const current = await chrome.tabs.get(autoTabId);
+        DCBNativeRecordContext.verify(current,sourceContext);
         if (current.status === "complete" && current.url === "https://gall.dcinside.com/_js/crossDomainStorage.html") {
           ready = true; break;
         }
@@ -177,20 +184,24 @@
         await new Promise(resolve => setTimeout(resolve, 100));
       }
       if (!ready) throw Error("디시 연결 시간이 초과되었습니다. 잠시 후 다시 불러오세요.");
-      step(30, "이 브라우저의 디시 차단·메모를 읽고 있습니다…");
-      const result = await chrome.scripting.executeScript({target:{tabId:autoTabId,frameIds:[0]},func:DCBNativeAuto.read,world:"ISOLATED"});
+      step(30, sourceContext.label + "의 디시 차단·메모를 읽고 있습니다…");
+      const result = await chrome.scripting.executeScript({target:{tabId:autoTabId,frameIds:[0]},func:DCBNativeAuto.read,args:[{incognito:sourceContext.incognito}],world:"ISOLATED"});
       if (result.some(item => item.error)) throw Error("디시 기록을 읽지 못했습니다. 브라우저의 사이트 접근 권한을 확인하세요.");
       const snapshot = result.find(item => item.frameId === 0)?.result;
       const current = await chrome.tabs.get(autoTabId);
+      DCBNativeRecordContext.verify(current,sourceContext);
+      if (typeof snapshot?.context?.incognito === "boolean" && snapshot.context.incognito!==sourceContext.incognito)
+        throw Error("읽은 사이트 기록의 창 모드가 선택과 다릅니다. 가져오기를 중지했습니다.");
       if (snapshot?.href !== current.url || current.url !== "https://gall.dcinside.com/_js/crossDomainStorage.html") throw Error("수집 중 디시 페이지가 이동했습니다. 다시 불러오세요.");
       step(40, "등록된 갤러리들의 차단·메모를 확인하고 있습니다…");
       const collected = await DCBNativeRecords.parse(snapshot, state => step(40 + Math.round(45 * state.completed / state.total),
         "등록 범위 " + state.completed + "/" + state.total + " 확인 · 갤러리 " + state.galleries + "개 · 기록 " + state.records + "건"));
+      collected.sourceContextLabel = sourceContext.label;
       step(90, "중복·충돌과 적용 범위를 확인하고 있습니다…");
       nativeSource = collected;
       await preview();
       if (!pending) throw Error("미리보기를 만들지 못했습니다. 기존 기록 상태를 확인한 뒤 다시 불러오세요.");
-      step(100, "불러오기 완료 · 갤러리 " + collected.coverage.galleries + "개 · 기록 " + collected.records.length + "건. " +
+      step(100, "불러오기 완료 · " + sourceContext.label + " 기록 · 갤러리 " + collected.coverage.galleries + "개 · 기록 " + collected.records.length + "건. " +
         (collected.coverage.complete ? "" : "일부 범위의 구조를 확인하지 못했습니다. ") + "아래 미리보기와 보류 사유를 확인해 주세요.");
     } catch (error) {
       nativeSource = null; pending = null;
@@ -198,12 +209,13 @@
       status.textContent = label.textContent;
     } finally {
       if (autoTabId !== null) { const owned = autoTabId; autoTabId = null; try { await chrome.tabs.remove(owned); } catch {} }
+      if (autoWindowId !== null) { const owned=autoWindowId;autoWindowId=null;try {await chrome.windows.remove(owned);} catch {} }
       field.setAttribute("aria-busy", "false"); el("recordsNativeCancel").hidden = true;
       busy = false; setControlsDisabled(false); updateButtons();
     }
   }
   function setControlsDisabled(value) {
-    [file, format, kind, scope, scopeChoice, paste, replace, confirm, reset, ...nativeControls].forEach(control => { control.disabled = value; });
+    [file, format, kind, scope, scopeChoice, paste, replace, confirm, reset, nativeContext, ...nativeControls].forEach(control => { control.disabled = value; });
   }
 
   async function commit(revert) {
@@ -243,11 +255,27 @@
   el("recordsNativeAuto").onclick = autoImportNative;
   el("recordsNativeRetry").onclick = autoImportNative;
   el("recordsNativeCancel").onclick = () => { autoCancelled = true; el("recordsNativeProgressText").textContent = "불러오기를 중지하는 중입니다…"; };
-  window.addEventListener("pagehide", () => { if (autoTabId !== null) void chrome.tabs.remove(autoTabId).catch(() => {}); });
+  window.addEventListener("pagehide", () => {
+    if (autoTabId !== null) void chrome.tabs.remove(autoTabId).catch(() => {});
+    if (autoWindowId !== null) void chrome.windows.remove(autoWindowId).catch(() => {});
+  });
+  async function updateContextHelp() {
+    try {
+      const own=await DCBNativeRecordContext.current();
+      const isPrivate=nativeContext.value==="private" || (nativeContext.value==="current"&&own.incognito);
+      contextHelp.textContent = "현재 옵션 창: " + DCBNativeRecordContext.label(own.incognito) + ". 일반/시크릿 사이트 기록은 서로 다르며 선택한 모드만 읽습니다." +
+        (isPrivate ? " 시크릿에서 가져와 저장한 기록도 일반 창에서 보이는 확장 저장소에 남습니다." : "");
+    } catch {contextHelp.textContent="읽을 창 모드를 확인하지 못했습니다. 자동 불러오기에서 확인 후 오류를 안내합니다.";}
+  }
+  nativeContext.addEventListener("change",()=>{
+    if(busy)return;
+    nativeSource=null;el("recordsNativeProgressField").hidden=true;void preview();void updateContextHelp();
+  });
   confirm.onchange = updateButtons;
   more.onclick = nextPage;
   apply.onclick = () => commit(false);
   undo.onclick = () => commit(true);
   chrome.storage.local.get("dcbRecordsImportUndo").then(data => { undo.hidden = !data.dcbRecordsImportUndo; });
   updateMode();
+  void updateContextHelp();
 })();

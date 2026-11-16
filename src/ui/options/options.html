@@ -1898,6 +1898,13 @@
   <section class="card" id="settingsDcRecords">
     <h2 id="dcRecordsImport">디시 기록 가져오기</h2>
     <p class="note">디시 차단·메모를 자동으로 불러오거나 백업 파일·복사한 목록을 옮깁니다. 미리보기를 확인한 뒤에만 저장됩니다.</p>
+    <label for="recordsNativeContext">자동 불러오기 대상</label>
+    <select id="recordsNativeContext" aria-describedby="recordsNativeContextHelp">
+      <option value="current">현재 옵션 창과 같은 모드</option>
+      <option value="regular">일반 창의 디시 기록</option>
+      <option value="private">시크릿/사생활 보호 창의 디시 기록</option>
+    </select>
+    <p class="note" id="recordsNativeContextHelp">일반 창과 시크릿 창의 사이트 기록은 서로 다릅니다. 선택한 모드의 기록만 읽습니다.</p>
     <button type="button" id="recordsNativeAuto">디시 차단·메모 자동 불러오기</button>
     <div class="dcb-records-step">
       <label for="memoImportFormat">1. 어디에서 가져오나요?</label>
@@ -1979,6 +1986,7 @@
 <script src="official-memos.js"></script>
 <script src="../../shared/dc-native-records.js"></script>
 <script src="../../content/dc-native-records-auto.js"></script>
+<script src="native-record-context.js"></script>
 <script src="../shared/writer-preferences.js"></script>
 <script src="options.js"></script>
 <script src="dc-records-import.js"></script>

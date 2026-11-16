@@ -31,7 +31,7 @@ for(const [name,type] of Object.entries({chromium,firefox}))test(name+' preview 
   const numbers=()=>page.locator('.dcbpv-article .dcbpv-photo-number em').allTextContents();
   await page.waitForFunction(()=>document.querySelectorAll('.dcbpv-photo-number').length===2);
   assert.deepEqual(await numbers(),['1','2']);
-  assert.equal(await page.locator('.dcbpv-article .num.img').count(),2,'native number markers are replaced rather than duplicated');
+  assert.equal(await page.locator('.dcbpv-article .num.img').count(),0,'native sprite classes never remain on the preview counters');
   assert.deepEqual(await page.locator('.dcbpv-photo-number').evaluateAll(nodes=>nodes.map(n=>n.getAttribute('aria-label'))),['사진 1/2','사진 2/2']);
   assert.equal(await page.locator('.dcbpv-comment-body .dcbpv-photo-number').count(),0);
   assert.equal(await page.locator('.dcbpv-photo .dcbpv-dccon').count(),0);

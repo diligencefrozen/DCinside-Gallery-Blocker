@@ -48,6 +48,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
   let previewPhotoRoot = null;
   let previewPhotoFrame = 0;
   let previewPhotoLoad = null;
+  let previewNavigator = null;
   let previewUserBlockMutationPending = 0;
   let previewUserBlockRerenderPending = false;
   let previewFilterRerenderTimer = 0;
@@ -358,12 +359,19 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
       #${OVERLAY_ID} .dcbpv-article :is(div,p,span,a,blockquote,ul,ol,li){max-width:100%;overflow-wrap:anywhere}
       #${OVERLAY_ID} .dcbpv-article pre{max-width:100%;white-space:pre-wrap;overflow-wrap:anywhere}
       #${OVERLAY_ID} .dcbpv-article table{display:block;max-width:100%;overflow-x:auto}
-      #${OVERLAY_ID} .dcbpv-photo{display:block;position:relative;width:fit-content;max-width:100%;margin:10px auto}
+      #${OVERLAY_ID} .dcbpv-photo{display:block!important;position:relative!important;float:none!important;width:fit-content!important;max-width:100%;height:auto!important;margin:10px auto!important;padding:0!important;transform:none!important}
       #${OVERLAY_ID} .dcbpv-photo > picture{display:block;max-width:100%}
       #${OVERLAY_ID} .dcbpv-photo > img,#${OVERLAY_ID} .dcbpv-photo > video,#${OVERLAY_ID} .dcbpv-photo > picture > img{margin:0 auto}
-      #${OVERLAY_ID} .dcbpv-photo-number{position:absolute!important;top:8px!important;left:8px!important;right:auto!important;bottom:auto!important;display:grid!important;place-items:center;z-index:2;float:none!important;min-width:24px;height:24px!important;margin:0!important;padding:0 6px!important;border:1px solid #ffffff73;border-radius:6px;background:#0f172ad9!important;color:#fff!important;pointer-events:none;box-shadow:0 1px 4px #0005}
-      #${OVERLAY_ID} .dcbpv-photo-number .imgnum{display:block!important;width:auto!important;height:auto!important;margin:0!important;padding:0!important;background:none!important;color:inherit!important;font:700 12px/1 system-ui!important;text-indent:0!important;white-space:normal!important}
-      #${OVERLAY_ID} .dcbpv-photo-number::before,#${OVERLAY_ID} .dcbpv-photo-number::after,#${OVERLAY_ID} .dcbpv-photo-number .imgnum::before,#${OVERLAY_ID} .dcbpv-photo-number .imgnum::after{content:none!important}
+      #${OVERLAY_ID} .dcbpv-photo-number{position:absolute!important;inset:8px auto auto 8px!important;display:grid!important;place-items:center;z-index:2;float:none!important;width:auto!important;min-width:24px;height:24px!important;margin:0!important;padding:0 6px!important;border:1px solid #ffffff73;border-radius:6px;background:#0f172ad9!important;color:#fff!important;pointer-events:none;box-shadow:0 1px 4px #0005;transform:none!important}
+      #${OVERLAY_ID} .dcbpv-photo-index{display:block!important;position:static!important;float:none!important;width:auto!important;height:auto!important;margin:0!important;padding:0!important;background:none!important;color:inherit!important;font:700 12px/1 system-ui!important;text-indent:0!important;white-space:normal!important;transform:none!important}
+      #${OVERLAY_ID} .dcbpv-photo-number::before,#${OVERLAY_ID} .dcbpv-photo-number::after,#${OVERLAY_ID} .dcbpv-photo-index::before,#${OVERLAY_ID} .dcbpv-photo-index::after{content:none!important}
+      #${OVERLAY_ID} .dcbpv-navigator{position:absolute;z-index:6;display:flex;flex-direction:column;gap:8px;width:44px;margin:0;padding:0;border:0;background:transparent}
+      #${OVERLAY_ID} .dcbpv-navigator[hidden],#${OVERLAY_ID} .dcbpv-navigator button[hidden],#${OVERLAY_ID} .dcbpv-navigator [hidden]{display:none!important}
+      #${OVERLAY_ID} .dcbpv-navigator button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;width:44px;min-height:44px;margin:0;padding:3px;border:1px solid #627ab4;border-radius:50%;background:#263761;color:#fff;font:700 12px/1.15 system-ui;box-shadow:0 3px 12px #0003;cursor:pointer}
+      #${OVERLAY_ID} .dcbpv-navigator button:first-child{font-size:25px}
+      #${OVERLAY_ID} .dcbpv-navigator button:hover{background:#3553a0}
+      #${OVERLAY_ID} .dcbpv-navigator .dcbpv-nav-count{max-width:38px;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+      #${OVERLAY_ID} .dcbpv-navigator.dcbpv-nav-compact{flex-direction:row;width:auto}
       #${OVERLAY_ID} .dcbpv-html img,#${OVERLAY_ID} .dcbpv-html video,#${OVERLAY_ID} .dcbpv-html iframe{max-width:100%!important;width:auto!important;height:auto!important;border:0;vertical-align:top;object-fit:contain}
       #${OVERLAY_ID} .dcbpv-html img,#${OVERLAY_ID} .dcbpv-html video{display:block;margin:10px auto;border-radius:10px}
       #${OVERLAY_ID} .dcbpv-html img.dcbpv-img-broken{min-height:80px;background:repeating-linear-gradient(45deg,#f8fafc,#f8fafc 8px,#eef2f7 8px,#eef2f7 16px);border:1px dashed #cbd5e1}
@@ -505,7 +513,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
       #${OVERLAY_ID} .dcbpv-copy{display:flex;gap:8px;margin-top:12px}.dcbpv-copy input{min-width:0;flex:1;border:1px solid #e5e7eb;border-radius:10px;padding:10px;background:#f8fafc}.dcbpv-copy button{border:1px solid #2563eb;border-radius:10px;padding:0 14px;background:#2563eb;color:#fff;cursor:pointer;font-weight:800}
       @keyframes dcbpv-fade{from{opacity:0}to{opacity:1}}@keyframes dcbpv-pop{from{transform:translateY(8px) scale(.985);opacity:.6}to{transform:none;opacity:1}}@keyframes dcbpv-spin{to{transform:rotate(360deg)}}
       @media(max-width:540px){#${OVERLAY_ID}{padding:8px}#${OVERLAY_ID} .dcbpv-panel{--dcbpv-thread-indent:20px;max-height:96dvh;border-radius:12px}#${OVERLAY_ID} .dcbpv-header{padding:18px 14px}#${OVERLAY_ID} .dcbpv-title{font-size:18px}#${OVERLAY_ID} .dcbpv-scroll{padding:20px 14px 8px}#${OVERLAY_ID} .dcbpv-actions{padding:10px 14px}#${OVERLAY_ID} .dcbpv-thread-count,#${OVERLAY_ID} .dcbpv-writer > .dcbpv-chip:nth-child(n+3){display:none}#${OVERLAY_ID} .dcbpv-comments-header{align-items:flex-start!important;gap:6px 10px!important}#${OVERLAY_ID} .dcbpv-comments-actions{margin-left:auto!important;gap:10px!important}#${OVERLAY_ID} .dcbpv-comments-actions :is(button,a){padding:4px 0!important}#${OVERLAY_ID} .dcbpv-comment-item{margin-left:calc(min(var(--dcb-thread-depth),2) * var(--dcbpv-thread-indent))}#${OVERLAY_ID} .dcbpv-comment-item[data-dcb-thread-depth="3"]::before{box-shadow:calc(-1 * var(--dcbpv-thread-indent)) 0 var(--dcbpv-line,#ced9eb)}#${OVERLAY_ID} .dcbpv-comment-item::before,#${OVERLAY_ID} .dcbpv-comment-item::after{left:-12px!important}#${OVERLAY_ID} .dcbpv-comment-item::after{width:8px!important}#${OVERLAY_ID} .dcbpv-movie-wrap iframe{height:360px!important}}
-      @media(prefers-reduced-motion:reduce){#${OVERLAY_ID},#${OVERLAY_ID} .dcbpv-panel{animation:none}#${OVERLAY_ID} button{transition:none}#${OVERLAY_ID} :is(.dcbpv-status-dots i,.dcbpv-spinner,.dcbpv-inline-spinner){animation:none!important;transform:none!important;opacity:1}}
+      @media(prefers-reduced-motion:reduce){#${OVERLAY_ID},#${OVERLAY_ID} .dcbpv-panel{animation:none}#${OVERLAY_ID} button{transition:none}#${OVERLAY_ID} .dcbpv-scroll{scroll-behavior:auto!important}#${OVERLAY_ID} :is(.dcbpv-status-dots i,.dcbpv-spinner,.dcbpv-inline-spinner){animation:none!important;transform:none!important;opacity:1}}
 
       html:is(:has(#css-darkmode), [data-theme="dark"], :has(> body.dark)) #${OVERLAY_ID}{
         color-scheme:dark;
@@ -581,6 +589,86 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     previewPhotoRoot = previewPhotoLoad = null;
   }
 
+  function disposePreviewNavigator(){
+    if (!previewNavigator) return;
+    const state = previewNavigator;
+    previewNavigator = null;
+    if (state.frame) cancelAnimationFrame(state.frame);
+    state.frame = 0;
+    state.scroll.removeEventListener("scroll",state.schedule);
+    window.removeEventListener("resize",state.schedule);
+    state.resize?.disconnect(); state.mutations.disconnect(); state.nav.remove();
+  }
+
+  function preparePreviewNavigator(overlay){
+    const scroll = overlay.querySelector(".dcbpv-scroll"), panel = overlay.querySelector(".dcbpv-panel");
+    if (!scroll || !panel) return;
+    if (previewNavigator?.scroll === scroll) {previewNavigator.schedule();return;}
+    disposePreviewNavigator();
+    const nav = document.createElement("nav");
+    nav.className = "dcbpv-navigator"; nav.dataset.dcbOwned = "preview-navigation";
+    nav.setAttribute("aria-label","미리보기 이동"); nav.hidden = true;
+    nav.innerHTML = '<button type="button" class="dcbpv-nav-top" aria-label="미리보기 맨 위로 이동" title="맨 위로 이동">↑</button><button type="button" class="dcbpv-nav-comments"><span>댓글</span><span class="dcbpv-nav-count" hidden></span></button>';
+    panel.append(nav);
+    const top = nav.firstElementChild, comments = nav.lastElementChild, count = comments.lastElementChild;
+    const state = {overlay,scroll,panel,nav,frame:0,watched:new WeakSet()};
+    scroll.id ||= "dcbpv-reading-scroll";
+    top.setAttribute("aria-controls",scroll.id);
+    const update = () => {
+      state.frame = 0;
+      if (previewNavigator !== state) return;
+      if (!overlay.isConnected || !scroll.isConnected) return disposePreviewNavigator();
+      const target = overlay.querySelector(".dcbpv-comments");
+      const total = currentPreviewData?.commentTotal;
+      const known = Number.isSafeInteger(total) && total >= 0;
+      const text = known ? total.toLocaleString("ko-KR") : "";
+      count.hidden = !known;
+      if (count.textContent !== text) count.textContent = text;
+      const label = known ? `미리보기 댓글로 이동 · 전체 ${text}개` : "미리보기 댓글로 이동";
+      comments.setAttribute("aria-label",label); comments.title = label;
+      comments.hidden = !target;
+      if (target) {target.id ||= "dcbpv-comments-section";comments.setAttribute("aria-controls",target.id);}
+      top.hidden = scroll.scrollTop < 120;
+      const reading = scroll.getBoundingClientRect(), shell = panel.getBoundingClientRect();
+      let bottom = reading.bottom;
+      const right = reading.left + scroll.clientWidth;
+      for (const blocker of overlay.querySelectorAll(".dcbpv-docked,.dcbpv-picker-open")) {
+        if (state.resize && !state.watched.has(blocker)) {state.watched.add(blocker);state.resize.observe(blocker);}
+        const rect = blocker.getBoundingClientRect();
+        if (!rect.width || !rect.height) continue;
+        if (blocker.classList.contains("dcbpv-picker-open")) {nav.hidden = true;return;}
+        if (rect.right > right - 108 && rect.left < right && rect.bottom > reading.top) bottom = Math.min(bottom,rect.top - 8);
+      }
+      const available = bottom - reading.top - 24;
+      nav.classList.toggle("dcbpv-nav-compact",available < 96);
+      nav.hidden = available < 44 || top.hidden && comments.hidden;
+      nav.style.right = Math.max(12,shell.right - right + 12) + "px";
+      nav.style.bottom = Math.max(12,shell.bottom - bottom + 12) + "px";
+    };
+    state.schedule = () => {if (!state.frame) state.frame = requestAnimationFrame(update);};
+    const move = (position,focus) => {
+      scroll.scrollTo({top:Math.max(0,position),behavior:matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth"});
+      if (focus) {if (!focus.matches("a,button,input,textarea,[tabindex]")) focus.tabIndex = -1;focus.focus({preventScroll:true});}
+    };
+    top.addEventListener("click",event => {event.preventDefault();event.stopPropagation();move(0,overlay.querySelector(".dcbpv-title a"));});
+    comments.addEventListener("click",event => {
+      event.preventDefault();event.stopPropagation();
+      const target = overlay.querySelector(".dcbpv-comments");
+      if (target) move(scroll.scrollTop + target.getBoundingClientRect().top - scroll.getBoundingClientRect().top - 12,target.querySelector(".dcbpv-comments-title"));
+    });
+    state.mutations = new MutationObserver(changes => {
+      if (changes.some(change => change.target.matches?.(".dcbpv-composer,.dcbpv-composer-slot,.dcbpv-comments-title,.dcbpv-header,.dcbpv-actions"))) state.schedule();
+    });
+    state.mutations.observe(panel,{subtree:true,childList:true,attributes:true,attributeFilter:["class","style"]});
+    if (typeof ResizeObserver === "function") {
+      state.resize = new ResizeObserver(state.schedule);
+      for (const node of [panel,scroll,overlay.querySelector(".dcbpv-header"),overlay.querySelector(".dcbpv-actions")]) if (node) state.resize.observe(node);
+    }
+    scroll.addEventListener("scroll",state.schedule,{passive:true});
+    window.addEventListener("resize",state.schedule,{passive:true});
+    previewNavigator = state; state.schedule();
+  }
+
   function emitPreviewContent(root, addedRows){
     document.dispatchEvent(new CustomEvent("dcb-preview-content", { detail: { root: root || null, addedRows } }));
   }
@@ -597,6 +685,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     disposePreviewVote();
     stopPreviewDcconObserver();
     stopPreviewPhotoObserver();
+    disposePreviewNavigator();
     previewMovieRequests.forEach((controller) => controller.abort());
     previewMovieRequests.clear();
     previewPollRequests.forEach((controller) => controller.abort());
@@ -2379,9 +2468,16 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
       ".gallview_head .gall_writer", ".view_head .gall_writer", ".gallview_head .ub-writer", ".view_head .ub-writer",
       ".gallview_head .btm", ".view_head .btm", ".btm", ".writer_info", ".user_info", ".gall_writer", ".ub-writer"
     ];
-    const direct = writerSelectors
-      .flatMap((selector) => Array.from((root || doc).querySelectorAll?.(selector) || []).concat(Array.from(doc.querySelectorAll(selector))))
-      .find((node, index, arr) => arr.indexOf(node) === index && !isCommentArea(node));
+    let direct = null;
+    // Stop at the first header match. Collecting every broad writer selector
+    // also walked all offscreen comments/sidebar members before first paint.
+    for (const selector of writerSelectors) {
+      for (const scope of root && root !== doc ? [root, doc] : [doc]) {
+        direct = [...scope.querySelectorAll(selector)].find(node => !isCommentArea(node));
+        if (direct) break;
+      }
+      if (direct) break;
+    }
 
     const date = asText(doc, ".gallview_head .gall_date,.view_head .gall_date,.gallview_head .date,.view_head .date,.gall_date")
       || asText(root, ".gall_date,.date,.regdate,.time");
@@ -2690,7 +2786,9 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     const parseStartedAt = previewNow();
     const doc = new DOMParser().parseFromString(html, "text/html");
     const baseUrl = fetchedUrl || originalUrl;
-    normalizeDcMedia(doc, baseUrl);
+    // Article/comment serialization normalizes and sanitizes its own clone.
+    // Mutating all media in the original document duplicates that work and
+    // eagerly processes sidebar images and deferred comments as well.
 
     const content = findBestContent(doc, mode);
     const root = content ? findArticleRoot(content, doc) : doc;
@@ -2716,6 +2814,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
       } : null;
     let commentsHTML = prepareComments ? "" : buildCommentsHTML(doc, root, baseUrl, items);
     const expectedComments = commentCountFromText(doc, root);
+    const commentTotal = previewNativeCommentTotal(doc, articleNo);
 
     // 디시 PC 문서는 댓글 수만 서버 HTML에 표시하고 실제 댓글 목록은 AJAX로 채우는 경우가 많다.
     // 특히 미니/인물 갤러리의 "전체 댓글 0개" UI 텍스트를 실제 댓글로 오인하지 않는다.
@@ -2733,7 +2832,8 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
       writerHTML,
       articleHTML: content ? articleHTMLFromElement(content, baseUrl) : "",
       commentsHTML,
-      commentTitle: commentCount || expectedComments ? `댓글 ${commentCount || expectedComments}개` : (commentsHTML ? "댓글" : "댓글 없음"),
+      commentTitle: commentTotal !== null ? `댓글 ${commentTotal.toLocaleString("ko-KR")}개` : commentCount || expectedComments ? `댓글 ${commentCount || expectedComments}개` : (commentsHTML ? "댓글" : "댓글 없음"),
+      commentTotal,
       counts: extractCounts(doc, root, title),
       gallId,
       articleNo,
@@ -2842,6 +2942,11 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     }
 
     const currentCounts = result.counts || {};
+    if (!(Number.isSafeInteger(result.commentTotal) && result.commentTotal >= 0) &&
+        Number.isSafeInteger(backup.commentTotal) && backup.commentTotal >= 0) {
+      result.commentTotal = backup.commentTotal;
+      result.commentTitle = `댓글 ${result.commentTotal.toLocaleString("ko-KR")}개`;
+    }
     const backupCounts = backup.counts || {};
     result.counts = {
       up: currentCounts.up && currentCounts.up !== "0" ? currentCounts.up : (backupCounts.up || currentCounts.up || "0"),
@@ -3035,6 +3140,27 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     const sort = previewCommentSortFromHtml(doc);
 
     return { id, no, cmtId, cmtNo, securityToken, galleryType, boardType, gallType, secretArticleKey, sort };
+  }
+
+  function previewNativeCommentTotal(doc, articleNo){
+    const parse = text => {
+      const value = String(text ?? "").trim();
+      if (!/^(?:\d+|\d{1,3}(?:,\d{3})+)$/.test(value)) return null;
+      const number = Number(value.replaceAll(",", ""));
+      return Number.isSafeInteger(number) && number >= 0 ? number : null;
+    };
+    const exact = /^\d+$/.test(String(articleNo)) ? doc.getElementById("comment_total_" + articleNo) : null;
+    if (exact) return parse(exact.textContent);
+    for (const header of doc.querySelectorAll(".comment_count")) {
+      const owner = header.closest(".comment_wrap,#comment_wrap,[id^='comment_wrap_'],.all-comment,#all-comment");
+      if (!owner) continue;
+      const ownerNo = owner.getAttribute("data-article-no") || owner.id.match(/^comment_wrap_(\d+)$/)?.[1];
+      if (ownerNo && String(articleNo) !== ownerNo) continue;
+      if ([...header.querySelectorAll('[id^="comment_total_"]')].some(node => node.id !== "comment_total_" + articleNo)) continue;
+      const total = header.textContent.match(/전체\s*댓글\s*([\d,]+)\s*개/);
+      if (total) return parse(total[1]);
+    }
+    return null;
   }
 
   function commentCountFromText(doc, root){
@@ -3251,6 +3377,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
   }
 
   function expectedCommentCountFromData(data){
+    if (Number.isSafeInteger(data?.commentTotal) && data.commentTotal >= 0) return data.commentTotal;
     const sample = [data?.commentTitle || "", htmlToPlain(data?.articleHTML || "")].join(" ");
     const found = sample.match(/댓글\s*([-+]?\d[\d,]*)/);
     return found?.[1] ? Number(found[1].replace(/,/g, "")) : 0;
@@ -3724,7 +3851,8 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
         if (endpointResult?.html) {
           data.commentsHTML = endpointResult.html;
           const count = actualCommentItemCountFromHtml(endpointResult.html);
-          data.commentTitle = `댓글${count ? ` ${count}개` : ""}`;
+          data.commentTitle = Number.isSafeInteger(data.commentTotal) && data.commentTotal >= 0
+            ? `댓글 ${data.commentTotal.toLocaleString("ko-KR")}개` : `댓글${count ? ` ${count}개` : ""}`;
         }
       }
 
@@ -3736,7 +3864,8 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
         if (frameResult?.html) {
           data.commentsHTML = frameResult.html;
           const count = actualCommentItemCountFromHtml(frameResult.html);
-          data.commentTitle = `댓글${count ? ` ${count}개` : ""}`;
+          data.commentTitle = Number.isSafeInteger(data.commentTotal) && data.commentTotal >= 0
+            ? `댓글 ${data.commentTotal.toLocaleString("ko-KR")}개` : `댓글${count ? ` ${count}개` : ""}`;
         }
       }
     } catch (commentError) {
@@ -3825,22 +3954,41 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
   }
 
   function numberPreviewArticlePhotos(article){
+    // Native markers sometimes wrap the image/link instead of being a sibling.
+    // Drop their sprite but unwrap media, so a site's positioning cannot move a
+    // second counter onto a photo or turn its wrapper into a numbered overlay.
+    article.querySelectorAll(".num.img").forEach(marker => {
+      if (marker.classList.contains("dcbpv-photo-number")) return;
+      marker.querySelectorAll(".imgnum").forEach(number => {
+        if (number.querySelector("img,video,picture,iframe,audio")) number.replaceWith(...number.childNodes);
+        else number.remove();
+      });
+      if (marker.querySelector("img,video,picture,iframe,audio")) marker.replaceWith(...marker.childNodes);
+      else marker.remove();
+    });
+    const owned = ".dcbpv-photo[data-dcb-owned='photo-number']";
+    // Repair old/serialized nested wrappers before assigning a single owner to
+    // each photo. A wrapper must contain only that media and its own badge.
+    article.querySelectorAll(owned).forEach(wrapper => {
+      const children = [...wrapper.children].filter(child => !child.classList.contains("dcbpv-photo-number"));
+      if (children.length === 1 && children[0].matches("img,picture,video.dcbpv-animated-media")) return;
+      wrapper.querySelectorAll(":scope > .dcbpv-photo-number").forEach(badge => badge.remove());
+      wrapper.replaceWith(...wrapper.childNodes);
+    });
     const photos = [], selected = new Set();
     for (const img of article.querySelectorAll("img,video.dcbpv-animated-media")) {
       const media = img.closest("picture") || img;
       if (!previewArticlePhoto(img) || selected.has(media)) continue;
       photos.push(img); selected.add(media);
     }
-    // Native numbers depend on a page sprite and cannot be displayed reliably
-    // in the isolated preview. Replace only their empty number markers.
-    article.querySelectorAll(".num.img").forEach(marker => {
-      if (!marker.classList.contains("dcbpv-photo-number") && marker.querySelector(".imgnum") && !marker.querySelector("img,video,iframe") && /^\d*$/.test(marker.textContent.trim())) marker.remove();
-    });
-    article.querySelectorAll(".dcbpv-photo[data-dcb-owned='photo-number']").forEach(wrapper => {
+    article.querySelectorAll(owned).forEach(wrapper => {
       const media = wrapper.querySelector(":scope > img,:scope > picture,:scope > video.dcbpv-animated-media");
       if (photos.length >= 2 && media && selected.has(media)) return;
-      wrapper.querySelector(":scope > .dcbpv-photo-number")?.remove();
+      wrapper.querySelectorAll(":scope > .dcbpv-photo-number").forEach(badge => badge.remove());
       wrapper.replaceWith(...wrapper.childNodes);
+    });
+    article.querySelectorAll(".dcbpv-photo-number").forEach(badge => {
+      if (!badge.parentElement?.matches(owned)) badge.remove();
     });
     if (photos.length < 2) return;
     photos.forEach((img,index) => {
@@ -3852,15 +4000,18 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
         media.before(wrapper); wrapper.append(media);
       }
       let badge = wrapper.querySelector(":scope > .dcbpv-photo-number");
+      wrapper.querySelectorAll(":scope > .dcbpv-photo-number").forEach(other => {if (other !== badge) other.remove();});
       if (!badge) {
         badge = article.ownerDocument.createElement("span");
-        badge.className = "num img dcbpv-photo-number"; badge.setAttribute("role","img");
+        badge.className = "dcbpv-photo-number"; badge.setAttribute("role","img");
         const number = article.ownerDocument.createElement("em"); number.setAttribute("aria-hidden","true");
         badge.append(number); wrapper.append(badge);
       }
+      if (badge.className !== "dcbpv-photo-number") badge.className = "dcbpv-photo-number";
       const position = String(index + 1), label = `사진 ${position}/${photos.length}`;
       if (badge.getAttribute("aria-label") !== label) badge.setAttribute("aria-label",label);
-      const number = badge.firstElementChild, className = "imgnum n" + position;
+      if (!badge.firstElementChild) {const number = article.ownerDocument.createElement("em");number.setAttribute("aria-hidden","true");badge.replaceChildren(number);}
+      const number = badge.firstElementChild, className = "dcbpv-photo-index";
       if (number.className !== className) number.className = className;
       if (number.textContent !== position) number.textContent = position;
     });
@@ -3997,6 +4148,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
       restorePreviewImages(scopes);
       if (!pendingRows) preparePreviewPhotoNumbers(root,baseUrl);
       const overlay = root.closest("#" + OVERLAY_ID);
+      if (overlay) preparePreviewNavigator(overlay);
       const load = node => {
         if (node.matches(".dcbpv-movie-wrap")) loadPreviewMovie(node, articleUrl);
         else loadPreviewPoll(node, articleUrl);
@@ -5369,6 +5521,8 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
 
     mergePreviewRecommendationCounts(data);
     currentPreviewData = data;
+    if (Number.isSafeInteger(composerResult?.total) && composerResult.total >= 0) data.commentTotal = composerResult.total;
+    if (Number.isSafeInteger(data.commentTotal) && data.commentTotal >= 0) data.commentTitle = `댓글 ${data.commentTotal.toLocaleString("ko-KR")}개`;
     const commentsSection = overlay.querySelector(".dcbpv-comments");
     const commentRoot = commentsSection?.querySelector(".dcbpv-comment-html");
     const commentTitle = commentsSection?.querySelector(".dcbpv-comments-title");

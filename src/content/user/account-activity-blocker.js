@@ -186,8 +186,40 @@
       .${NOTICE_CLASS} strong{display:block;color:#fff;font-size:13px;margin-bottom:2px}
       .${NOTICE_CLASS} small{display:block;color:#a5b4c7;font-size:11px;word-break:break-word}
       .${NOTICE_CLASS} button{margin-left:auto;flex:0 0 auto;border:0;border-radius:999px;background:#f8fafc;color:#111827;padding:8px 12px;font:800 11px/1 system-ui;cursor:pointer}
-      .dcb-activity-navigation-status{display:inline-flex;align-items:center;gap:5px;margin-left:6px;color:#4967bd;font:12px/1.4 system-ui;white-space:nowrap}
-      .dcb-activity-navigation-status button{border:1px solid #9aa9bd;border-radius:5px;padding:2px 5px;background:#f8fafc;color:#243b70;font:inherit;cursor:pointer}
+      .dcb-activity-navigation-status{
+        --dcb-activity-accent:#a9c7ff;
+        box-sizing:border-box!important;display:flex!important;flex-wrap:wrap!important;align-items:center!important;
+        position:static!important;float:none!important;clear:both!important;gap:10px!important;
+        width:100%!important;min-width:0!important;max-width:100%!important;margin:8px 0!important;padding:12px!important;
+        border:1px solid #3c5379!important;border-radius:10px!important;background:#17243a!important;color:#f1f5ff!important;
+        box-shadow:0 3px 10px #0b12201a!important;font:12px/1.5 system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif!important;
+        text-align:left!important;text-indent:0!important;white-space:normal!important;overflow-wrap:anywhere!important;
+        animation:dcbActivityCardEnter 180ms ease-out both!important;
+      }
+      .dcb-activity-navigation-status[data-state="unavailable"]{--dcb-activity-accent:#f2cc89;border-color:#76603c!important}
+      .dcb-activity-navigation-icon{
+        display:inline-flex!important;align-items:center!important;justify-content:center!important;flex:0 0 30px!important;
+        width:30px!important;height:30px!important;border-radius:9px!important;background:#ffffff0d!important;color:var(--dcb-activity-accent)!important;
+      }
+      .dcb-activity-navigation-icon svg{display:block!important;width:19px!important;height:19px!important}
+      .dcb-activity-navigation-copy{display:block!important;flex:1 1 0!important;min-width:0!important;white-space:normal!important}
+      .dcb-activity-navigation-title{display:block!important;margin:0!important;color:#f1f5ff!important;font:750 12px/1.5 system-ui,sans-serif!important}
+      .dcb-activity-navigation-detail{display:block!important;margin:3px 0 0!important;color:#bac8de!important;font:400 11px/1.6 system-ui,sans-serif!important;white-space:normal!important;overflow-wrap:anywhere!important}
+      .dcb-activity-navigation-actions{display:flex!important;flex:1 0 100%!important;flex-wrap:wrap!important;justify-content:flex-end!important;gap:6px!important;min-width:0!important;max-width:100%!important}
+      .dcb-activity-navigation-status button{
+        appearance:none!important;box-sizing:border-box!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;
+        min-width:0!important;max-width:100%!important;min-height:30px!important;margin:0!important;padding:5px 10px!important;
+        border:1px solid #526685!important;border-radius:6px!important;background:#23344f!important;color:#e7edfa!important;
+        font:650 11px/1.5 system-ui,sans-serif!important;white-space:normal!important;overflow-wrap:anywhere!important;text-align:center!important;cursor:pointer!important;
+        transition:background-color 140ms ease,border-color 140ms ease!important;
+      }
+      .dcb-activity-navigation-status button[data-action="bypass"]{background:#ecf2ff!important;border-color:#ecf2ff!important;color:#17243a!important}
+      .dcb-activity-navigation-status button:hover{border-color:#a9c7ff!important;background:#304563!important}
+      .dcb-activity-navigation-status button[data-action="bypass"]:hover{background:#d6e4ff!important}
+      .dcb-activity-navigation-status button:focus-visible{outline:3px solid #a9c7ff!important;outline-offset:2px!important}
+      @keyframes dcbActivityCardEnter{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:translateY(0)}}
+      @media(prefers-reduced-motion:reduce){.dcb-activity-navigation-status{animation:none!important}.dcb-activity-navigation-status button{transition:none!important}}
+      @media(prefers-color-scheme:dark){.dcb-activity-navigation-status{background:#111d30!important;box-shadow:none!important}}
     `;
     root.appendChild(style);
   }
@@ -259,7 +291,9 @@
   function clearNavigation(intent = navigationIntent) {
     if (!intent) return;
     intent.cancelled = true;
+    const restoreFocus = intent.label?.contains(document.activeElement);
     intent.label?.remove();
+    if (restoreFocus && intent.anchor.isConnected) intent.anchor.focus({preventScroll:true});
     if (intent.anchor.getAttribute("aria-busy") === "true") {
       if (intent.beforeBusy === null) intent.anchor.removeAttribute("aria-busy");
       else intent.anchor.setAttribute("aria-busy",intent.beforeBusy);
@@ -270,24 +304,45 @@
   function showNavigationStatus(intent, unavailable = false) {
     if (!currentNavigation(intent)) { if (navigationIntent === intent) clearNavigation(intent); return; }
     installStyle();
-    intent.label ||= document.createElement("span");
+    const restoreFocus = intent.label?.contains(document.activeElement);
+    intent.label ||= document.createElement("div");
     intent.label.className = "dcb-activity-navigation-status";
     intent.label.dataset.dcbOwned = "activity-navigation";
-    intent.label.setAttribute("role","status");
-    intent.label.replaceChildren(document.createTextNode(unavailable ? "활동 확인 불가" : "활동 확인 중…"));
+    intent.label.dataset.state = unavailable ? "unavailable" : "checking";
+    intent.label.setAttribute("role","group");
+    intent.label.setAttribute("aria-label","게시글 열기 전 활동 확인");
+    const icon = document.createElement("span");
+    icon.className = "dcb-activity-navigation-icon"; icon.setAttribute("aria-hidden","true");
+    const svg = document.createElementNS("http://www.w3.org/2000/svg","svg");
+    svg.setAttribute("viewBox","0 0 20 20");svg.setAttribute("fill","none");svg.setAttribute("stroke","currentColor");svg.setAttribute("stroke-width","1.7");svg.setAttribute("stroke-linecap","round");svg.setAttribute("focusable","false");
+    const circle = document.createElementNS("http://www.w3.org/2000/svg","circle");circle.setAttribute("cx","10");circle.setAttribute("cy","10");circle.setAttribute("r","7.5");
+    const path = document.createElementNS("http://www.w3.org/2000/svg","path");path.setAttribute("d",unavailable ? "M10 5.8v4.8M10 13.8h.01" : "M10 5.5v4.7l3 1.8");
+    svg.append(circle,path);icon.append(svg);
+    const copy = document.createElement("span");copy.className = "dcb-activity-navigation-copy";
+    copy.setAttribute("role","status");copy.setAttribute("aria-live","polite");copy.setAttribute("aria-atomic","true");
+    const title = document.createElement("strong");title.className = "dcb-activity-navigation-title";title.textContent = unavailable ? "활동 확인 불가" : "활동 확인 중…";
+    const detail = document.createElement("span");detail.className = "dcb-activity-navigation-detail";
+    detail.textContent = unavailable ? "활동 정보를 불러오지 못했어요. 잠시 후 제목을 다시 눌러 시도하거나, 확인 없이 열 수 있어요." : "게시글을 열기 전에 작성자의 활동 정보를 확인하고 있어요.";
+    copy.append(title,detail);
+    const actions = document.createElement("span");actions.className = "dcb-activity-navigation-actions";
     if (unavailable) {
       intent.state = "unavailable";
       if (intent.beforeBusy === null) intent.anchor.removeAttribute("aria-busy");
       else intent.anchor.setAttribute("aria-busy",intent.beforeBusy);
       const bypass = document.createElement("button");
       bypass.type = "button"; bypass.textContent = "확인 없이 열기";
+      bypass.dataset.action = "bypass";
       bypass.onclick = () => { void resumeNavigation(intent,true); };
-      intent.label.append(bypass);
+      actions.append(bypass);
     }
     const cancel = document.createElement("button"); cancel.type = "button"; cancel.textContent = "취소";
     cancel.onclick = () => clearNavigation(intent);
-    intent.label.append(cancel);
-    if (!intent.label.isConnected) intent.anchor.after(intent.label);
+    actions.append(cancel);
+    intent.label.replaceChildren(icon,copy,actions);
+    // A normal-flow block grows the native title cell instead of covering its
+    // source badge, reply count, author column or the following list row.
+    if (!intent.label.isConnected) (intent.anchor.closest("td.gall_tit,.gall_tit") || intent.anchor.parentElement)?.append(intent.label);
+    if (restoreFocus) actions.querySelector("button")?.focus({preventScroll:true});
   }
 
   async function resumeNavigation(intent, bypass = false) {
