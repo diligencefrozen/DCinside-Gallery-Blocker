@@ -621,6 +621,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
         if (body?.dataset.dcbpvOriginalHtml) {
           body.innerHTML = body.dataset.dcbpvOriginalHtml;
           delete body.dataset.dcbpvFiltered;
+          overlay.querySelector(".dcbpv-title a").textContent = data.title;
           emitPreviewContent(body);
           markRenderedPreviewRead(data, overlay);
         }
@@ -3874,18 +3875,23 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
   };
 
   function storageGet(area, defaults){
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       try {
-        chrome.storage[area].get(defaults, (value) => resolve(value || defaults));
-      } catch (_) {
-        resolve(defaults);
+        chrome.storage[area].get(defaults, (value) => {
+          if (chrome.runtime?.lastError) reject(new Error("Preview settings unavailable"));
+          else resolve(value || defaults);
+        });
+      } catch (error) {
+        reject(error);
       }
     });
   }
 
   async function previewSettings(){
     const [sync, local] = await Promise.all([
-      storageGet("sync", PREVIEW_FILTER_DEFAULTS),
+      globalThis.DCBRuntimeSettingsCache?.get
+        ? globalThis.DCBRuntimeSettingsCache.get(PREVIEW_FILTER_DEFAULTS)
+        : storageGet("sync", PREVIEW_FILTER_DEFAULTS),
       storageGet("local", { blockedUids: [] })
     ]);
 
@@ -3921,6 +3927,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
       (document.head || document.documentElement).appendChild(style);
     }
     style.textContent = `
+      #${OVERLAY_ID} [data-dcbpv-filter-pending]{opacity:0!important;pointer-events:none!important;transition:none!important}
       #${OVERLAY_ID} .dcbpv-filter-hidden{display:none!important}
       #${OVERLAY_ID} .dcbpv-filter-note{margin:10px 0;padding:8px 12px;border:1px solid #dbe4f1;border-radius:8px;background:#f6f8fd;color:#60718b;font-size:12px;font-weight:400;line-height:1.5}
       #${OVERLAY_ID} .dcbpv-filter-note.danger{border-color:rgba(239,68,68,.35);background:rgba(239,68,68,.06);color:#b91c1c}
@@ -4388,14 +4395,37 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     } catch (_) {}
   }
 
+  // Keep layout/text measurable, but do not expose content before async settings
+  // and user rules resolve. An older pass must never reveal a newer render.
+  const previewFilterPasses = new WeakMap();
   async function applyPreviewFeatureBridge(overlay, data, trace = activePreviewTrace, addedRows = null){
     if (!overlay || !data) return;
     const requestVersion = previewRequestVersion;
     const processStartedAt = previewNow();
     ensurePreviewFilterStyle();
+    const scopes = addedRows || [...overlay.querySelectorAll(".dcbpv-title,.dcbpv-article,.dcbpv-comment-html")];
+    const pass = {};
+    for (const scope of scopes) {
+      const inert = previewFilterPasses.get(scope)?.inert ?? scope.inert;
+      previewFilterPasses.set(scope, { pass, inert });
+      scope.setAttribute("data-dcbpv-filter-pending", "");
+      scope.inert = true;
+    }
+    const isCurrent = () => requestVersion === previewRequestVersion && currentPreviewData === data
+      && overlay.dataset.dcbpvUrl === data.url && overlay.isConnected
+      && scopes.every(scope => scope.isConnected && previewFilterPasses.get(scope)?.pass === pass);
+    const reveal = () => {
+      for (const scope of scopes) {
+        const state = previewFilterPasses.get(scope);
+        if (state?.pass !== pass) continue;
+        scope.inert = state.inert;
+        scope.removeAttribute("data-dcbpv-filter-pending");
+        previewFilterPasses.delete(scope);
+      }
+    };
+    try {
     const conf = await previewSettings();
-    if (requestVersion !== previewRequestVersion || currentPreviewData !== data
-      || overlay.dataset.dcbpvUrl !== data.url || !overlay.isConnected) return;
+    if (!isCurrent()) return;
 
     const articleSection = overlay.querySelector(".dcbpv-article")?.closest(".dcbpv-section");
     const commentsSection = overlay.querySelector(".dcbpv-comments");
@@ -4443,17 +4473,21 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     const titleText = data.title || "";
     const needsArticleText = !addedRows && ((conf.keywordBlockEnabled && blockTargets.viewBody) || (conf.keywordHideEnabled && hideTargets.viewBody));
     const articleText = needsArticleText ? overlay.querySelector(".dcbpv-article")?.innerText || "" : "";
+    const keywordLabel = keyword => keyword.pattern ? keyword.label : "사용자 지정 키워드";
+    const titleLink = overlay.querySelector(".dcbpv-title a");
 
     if (conf.keywordBlockEnabled) {
       const titleKw = blockTargets.viewTitle ? matchKeyword(titleText, blockKeywords) : null;
       const bodyKw = blockTargets.viewBody ? matchKeyword(articleText, blockKeywords) : null;
-      if (titleKw || bodyKw) replaceSectionWithNote(articleSection, filterNote("keyword-block", (titleKw || bodyKw).label));
+      if (titleKw && titleLink) titleLink.textContent = "키워드 설정으로 가린 게시글";
+      if (titleKw || bodyKw) replaceSectionWithNote(articleSection, filterNote("keyword-block", keywordLabel(titleKw || bodyKw)));
     }
 
     if (conf.keywordHideEnabled) {
       const titleKw = hideTargets.viewTitle ? matchKeyword(titleText, hideKeywords) : null;
       const bodyKw = hideTargets.viewBody ? matchKeyword(articleText, hideKeywords) : null;
-      if (titleKw || bodyKw) replaceSectionWithNote(articleSection, filterNote("keyword-hide", (titleKw || bodyKw).label, "article"));
+      if (titleKw && titleLink) titleLink.textContent = "키워드 설정으로 가린 게시글";
+      if (titleKw || bodyKw) replaceSectionWithNote(articleSection, filterNote("keyword-hide", keywordLabel(titleKw || bodyKw), "article"));
     }
 
     const commentRows = [...(addedRows || overlay.querySelectorAll(".dcbpv-comment-item"))];
@@ -4487,7 +4521,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
         if (kw) {
           row.dataset.dcbpvSoftKey = `comment-${row.dataset.dcbpvIndex || index}`;
           markPreviewCommentBlocked(row, "keyword-hide");
-          row.insertAdjacentHTML("afterend", filterNote("keyword-hide", kw.label, row.dataset.dcbpvSoftKey));
+          row.insertAdjacentHTML("afterend", filterNote("keyword-hide", keywordLabel(kw), row.dataset.dcbpvSoftKey));
         }
       }
       if (row.classList.contains("dcbpv-filter-hidden")) {
@@ -4500,6 +4534,18 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     updatePreviewThreadDesign(overlay);
     addPreviewPhase("processMs", processStartedAt, trace);
     if (lastPreviewTrace?.key === trace?.key) lastPreviewTrace = { ...trace };
+    reveal();
+    if (!addedRows) markRenderedPreviewRead(data, overlay);
+    } catch (_) {
+      if (!isCurrent()) return;
+      // A failed settings/filter pass must not fall back to displaying raw text.
+      for (const scope of scopes) {
+        const target = scope.matches(".dcbpv-title") ? scope.querySelector("a") : scope;
+        target?.replaceChildren(document.createTextNode("숨김 설정을 확인하지 못했어요. 미리보기를 새로고침해 주세요."));
+        scope.dataset.dcbpvFiltered = "1";
+      }
+      reveal();
+    }
   }
 
   // Presentation metadata only: preserve native relationships while serializing
@@ -5117,7 +5163,6 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
       if (previewComposer?.ready) applyComposerMetadata(previewComposer, {dates:previewComposer.dates}, {newRows:true});
       else decoratePreviewReplyActions(overlay, added);
       for (const row of added) {
-        row.style.visibility = "hidden";
         const time = row.querySelector(".dcbpv-time");
         if (time && !time.dataset.dcbpvFullTime) {
           time.dataset.dcbpvFullTime = time.title = time.textContent.trim();
@@ -5126,9 +5171,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
         row.querySelectorAll(".gall_writer,.ub-writer").forEach(writer => globalThis.DCBWriterLayout?.normalize(writer));
       }
       settlePreviewMedia(root, data.fetchedUrl || data.url, data.url, activePreviewTrace, added);
-      void applyPreviewFeatureBridge(overlay, data, activePreviewTrace, added).then(() => {
-        added.forEach(row => row.style.removeProperty("visibility"));
-      });
+      void applyPreviewFeatureBridge(overlay, data, activePreviewTrace, added);
       emitPreviewContent(root, added);
       if (!more.isConnected && !previewComposer) armPreviewComposer(data, overlay);
     };
@@ -5179,7 +5222,8 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
       const article = overlay.querySelector(".dcbpv-article");
       if (requestVersion !== previewRequestVersion || currentPreviewData !== data
         || !overlay.isConnected || overlay.dataset.dcbpvUrl !== data.url
-        || !article || article.dataset.dcbpvFiltered === "1" || !article.getClientRects().length) return;
+        || !article || article.hasAttribute("data-dcbpv-filter-pending")
+        || article.dataset.dcbpvFiltered === "1" || !article.getClientRects().length) return;
       try {
         chrome.runtime.sendMessage({ type: "dcb.readPosts.markPreview", url: data.url }, () => {
           void chrome.runtime.lastError;
@@ -5256,7 +5300,6 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
       existingOverlay.querySelector('.dcbpv-vote-member').textContent=data.counts.upMember?`(${data.counts.upMember})`:'';
       updatePreviewComments(data);
       settlePreviewMedia(article, data.fetchedUrl || data.url);
-      markRenderedPreviewRead(data, existingOverlay);
       return;
     }
     if (previewComposer && !composer) suspendPreviewComposer();
@@ -5329,7 +5372,6 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     emitPreviewState(true);
     emitPreviewContent(overlay);
     addPreviewPhase("renderMs", renderStartedAt, trace);
-    markRenderedPreviewRead(data, overlay);
     void preparePreviewRecommendation(data);
     if(!composer)armPreviewComposer(data, overlay);
     else syncComposerToggle();
