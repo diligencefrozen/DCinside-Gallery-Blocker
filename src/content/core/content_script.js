@@ -44,6 +44,10 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
   let currentPreviewData = null;
   let previewDcconObserver = null;
   let previewDcconTimer = 0;
+  let previewPhotoObserver = null;
+  let previewPhotoRoot = null;
+  let previewPhotoFrame = 0;
+  let previewPhotoLoad = null;
   let previewUserBlockMutationPending = 0;
   let previewUserBlockRerenderPending = false;
   let previewFilterRerenderTimer = 0;
@@ -51,6 +55,8 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
   const previewMovieRequests = new Set();
   const previewMovieSources = new WeakMap();
   const previewImageFallbacks = new WeakMap();
+  const previewVideoControls = new WeakMap();
+  let previewVideoId = 0;
   let parkedImages = null;
   let parkedImageTimer = 0;
   const previewPollRequests = new Set();
@@ -352,6 +358,12 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
       #${OVERLAY_ID} .dcbpv-article :is(div,p,span,a,blockquote,ul,ol,li){max-width:100%;overflow-wrap:anywhere}
       #${OVERLAY_ID} .dcbpv-article pre{max-width:100%;white-space:pre-wrap;overflow-wrap:anywhere}
       #${OVERLAY_ID} .dcbpv-article table{display:block;max-width:100%;overflow-x:auto}
+      #${OVERLAY_ID} .dcbpv-photo{display:block;position:relative;width:fit-content;max-width:100%;margin:10px auto}
+      #${OVERLAY_ID} .dcbpv-photo > picture{display:block;max-width:100%}
+      #${OVERLAY_ID} .dcbpv-photo > img,#${OVERLAY_ID} .dcbpv-photo > video,#${OVERLAY_ID} .dcbpv-photo > picture > img{margin:0 auto}
+      #${OVERLAY_ID} .dcbpv-photo-number{position:absolute!important;top:8px!important;left:8px!important;right:auto!important;bottom:auto!important;display:grid!important;place-items:center;z-index:2;float:none!important;min-width:24px;height:24px!important;margin:0!important;padding:0 6px!important;border:1px solid #ffffff73;border-radius:6px;background:#0f172ad9!important;color:#fff!important;pointer-events:none;box-shadow:0 1px 4px #0005}
+      #${OVERLAY_ID} .dcbpv-photo-number .imgnum{display:block!important;width:auto!important;height:auto!important;margin:0!important;padding:0!important;background:none!important;color:inherit!important;font:700 12px/1 system-ui!important;text-indent:0!important;white-space:normal!important}
+      #${OVERLAY_ID} .dcbpv-photo-number::before,#${OVERLAY_ID} .dcbpv-photo-number::after,#${OVERLAY_ID} .dcbpv-photo-number .imgnum::before,#${OVERLAY_ID} .dcbpv-photo-number .imgnum::after{content:none!important}
       #${OVERLAY_ID} .dcbpv-html img,#${OVERLAY_ID} .dcbpv-html video,#${OVERLAY_ID} .dcbpv-html iframe{max-width:100%!important;width:auto!important;height:auto!important;border:0;vertical-align:top;object-fit:contain}
       #${OVERLAY_ID} .dcbpv-html img,#${OVERLAY_ID} .dcbpv-html video{display:block;margin:10px auto;border-radius:10px}
       #${OVERLAY_ID} .dcbpv-html img.dcbpv-img-broken{min-height:80px;background:repeating-linear-gradient(45deg,#f8fafc,#f8fafc 8px,#eef2f7 8px,#eef2f7 16px);border:1px dashed #cbd5e1}
@@ -376,6 +388,13 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
       #${OVERLAY_ID} .dcbpv-movie-wrap{width:min(100%,720px);margin:14px auto;overflow:hidden;border:1px solid #e5e7eb;border-radius:10px;background:#000}
       #${OVERLAY_ID} .dcbpv-movie-wrap iframe{width:100%!important;height:440px!important;max-height:75dvh;margin:0;border-radius:0;min-height:0;transform:none}
       #${OVERLAY_ID} .dcbpv-movie-wrap video{width:100%!important;max-height:70dvh;margin:0;border-radius:0;background:#000}
+      #${OVERLAY_ID} .dcbpv-video-player{display:block;width:min(100%,720px);max-width:100%;margin:14px auto;overflow:hidden;border:1px solid var(--dcbpv-line);border-radius:10px;background:#000}
+      #${OVERLAY_ID} .dcbpv-movie-wrap > .dcbpv-video-player{width:100%;margin:0;border:0;border-radius:0}
+      #${OVERLAY_ID} .dcbpv-video-player > video{display:block;width:100%!important;max-width:100%!important;max-height:max(120px,min(52dvh,calc(94dvh - 280px)))!important;margin:0!important;border:0!important;border-radius:0!important;object-fit:contain;background:#000}
+      #${OVERLAY_ID} .dcbpv-video-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;min-height:42px;margin:0;padding:7px 10px;background:var(--dcbpv-surface);color:var(--dcbpv-text);font:12px/1.4 system-ui}
+      #${OVERLAY_ID} .dcbpv-video-toolbar button{flex:0 0 auto;min-height:30px;min-width:86px;height:auto;margin:0;padding:5px 10px;border:1px solid var(--dcbpv-line);border-radius:6px;background:var(--dcbpv-page);color:var(--dcbpv-text);font:600 13px/1.4 system-ui;cursor:pointer}
+      #${OVERLAY_ID} .dcbpv-video-toolbar [role=status]{flex:1 1 150px;min-width:0;overflow-wrap:anywhere}
+      #${OVERLAY_ID} .dcbpv-video-toolbar a{margin-left:auto;color:var(--dcbpv-link);text-decoration:underline;text-underline-offset:2px;white-space:nowrap}
       #${OVERLAY_ID} .dcbpv-movie-note{margin:0;padding:8px 12px;background:#f8fafc;color:#64748b;font-size:12px;line-height:1.5}
       #${OVERLAY_ID} .dcbpv-movie-note a{color:#2563eb;text-decoration:underline;text-underline-offset:2px}
       #${OVERLAY_ID} .dcbpv-dccon,#${OVERLAY_ID} img.dcbpv-dccon,#${OVERLAY_ID} video.dcbpv-dccon,#${OVERLAY_ID} img[src*="dccon.php"]{display:inline-block!important;max-width:min(120px,32vw)!important;height:auto!important;margin:4px!important;border-radius:6px;box-shadow:none}
@@ -553,6 +572,15 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     }
   }
 
+  function stopPreviewPhotoObserver(){
+    previewPhotoObserver?.disconnect();
+    previewPhotoObserver = null;
+    if (previewPhotoFrame) cancelAnimationFrame(previewPhotoFrame);
+    previewPhotoFrame = 0;
+    if (previewPhotoRoot && previewPhotoLoad) previewPhotoRoot.removeEventListener("load", previewPhotoLoad, true);
+    previewPhotoRoot = previewPhotoLoad = null;
+  }
+
   function emitPreviewContent(root, addedRows){
     document.dispatchEvent(new CustomEvent("dcb-preview-content", { detail: { root: root || null, addedRows } }));
   }
@@ -568,6 +596,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     previewComposerObserver = null;
     disposePreviewVote();
     stopPreviewDcconObserver();
+    stopPreviewPhotoObserver();
     previewMovieRequests.forEach((controller) => controller.abort());
     previewMovieRequests.clear();
     previewPollRequests.forEach((controller) => controller.abort());
@@ -577,6 +606,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
       previewFilterRerenderTimer = 0;
     }
     const overlay = document.getElementById(OVERLAY_ID);
+    overlay?.querySelectorAll(".dcbpv-video-player > video").forEach(video => video.pause());
     if (overlay && currentPreviewData) parkPreviewImages(overlay, currentPreviewData);
     (previewMediaSettleTimers.get(overlay) || []).forEach(clearTimeout);
     (previewMediaSettleTimers.get(overlay?.querySelector(".dcbpv-comment-html")) || []).forEach(clearTimeout);
@@ -1286,11 +1316,14 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
         }
         if (movies?.get(playerUrl.href) === media) movies.delete(playerUrl.href);
         useNativePlayer();
+        const controls = video.closest(".dcbpv-video-player");
+        if (controls) controls.replaceWith(video);
         video.replaceWith(frame);
         const note = wrapper.querySelector(".dcbpv-movie-note");
-        if (note) note.firstChild.textContent = "동영상 재생을 다시 시도하려면 ";
+        if (note) note.firstChild.textContent = `동영상 재생 오류${video.error?.code ? ` ${video.error.code}` : ""}. 원문에서 다시 시도하려면 `;
       });
       frame.replaceWith(video);
+      preparePreviewVideoControls(wrapper,articleUrl);
     } catch (_) {
       // The original player is the fallback for an unreadable media response.
     } finally {
@@ -1503,6 +1536,12 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     root.querySelectorAll("img").forEach((img) => {
       if (img.dataset.dcbpvMediaSettled === "1") return;
       img.dataset.dcbpvMediaSettled = "1";
+      // Tiny inline icons lose their size attributes in the sanitizer. Keep a
+      // bounded hint, except for lazy placeholders with a real photo source.
+      const iconWidth = Number(img.getAttribute("width")), iconHeight = Number(img.getAttribute("height"));
+      if (iconWidth > 0 && iconHeight > 0 && iconWidth <= 48 && iconHeight <= 48 &&
+          !img.closest(".imgwrap") && !["data-original","data-original-src","data-src"].some(name => img.hasAttribute(name)))
+        img.dataset.dcbpvPhotoIcon = "1";
       const currentSrc = img.getAttribute("src") || "";
       const explicitImageUrl = ["data-gif", "data-webp"]
         .flatMap((name) => mediaUrlsFromText(img.getAttribute(name)).map((url) => makeAbsolute(url, baseUrl)))
@@ -3722,6 +3761,142 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
 
   const previewImageSelector = '.dcbpv-article img, .dcbpv-comment-body img';
 
+  function previewArticlePhoto(img){
+    const src = img.getAttribute("src") || (img.tagName === "VIDEO" ? img.querySelector("source[src]")?.getAttribute("src") : "") || "";
+    if (!src || img.dataset.dcbpvPhotoIcon === "1" ||
+        img.closest(".dcbpv-dccon,.gall_writer,.ub-writer,.nickname,.dcbpv-writer,.dcbpv-comment-body,.dcbpv-comment-item,.dcbpv-movie-wrap,.dcbpv-youtube-wrap,.dcbpv-poll-wrap,.video_thumb,.movie_thumb,.video-thumbnail,.movie_thumbnail") ||
+        img.tagName === "IMG" && img.closest("video")) return false;
+    if (/(?:dccon\.php|(?:^|[\s_-])(?:dccon|emoji|emoticon|avatar|nickicon|icon|badge)(?:$|[\s_-]))/i.test(
+      `${img.className} ${src}`)) return false;
+    if (/(?:ytimg\.com|img\.youtube\.com)\/|\/(?:icons?|emoji|emoticons?|avatars?)\//i.test(src)) return false;
+    return !(img.complete && img.naturalWidth > 0 && img.naturalHeight > 0 && Math.max(img.naturalWidth,img.naturalHeight) <= 48);
+  }
+
+  function preparePreviewVideoControls(root,articleUrl){
+    for (const video of root.querySelectorAll("video")) {
+      if (video.matches(".dcbpv-dccon,.dcbpv-animated-media") || previewVideoControls.has(video)) continue;
+      if (!video.getAttribute("src") && !video.querySelector("source[src]")) continue;
+      video.controls = true;
+      video.playsInline = true;
+      video.setAttribute("webkit-playsinline", "");
+      let wrapper = video.parentElement;
+      if (!wrapper?.matches(".dcbpv-video-player[data-dcb-owned='video-controls']")) {
+        wrapper = document.createElement("div");
+        wrapper.className = "dcbpv-video-player"; wrapper.dataset.dcbOwned = "video-controls";
+        video.before(wrapper); wrapper.append(video);
+      }
+      let toolbar = wrapper.querySelector(":scope > .dcbpv-video-toolbar");
+      if (!toolbar) {
+        toolbar = document.createElement("div"); toolbar.className = "dcbpv-video-toolbar";
+        toolbar.innerHTML = '<button type="button" class="dcbpv-video-toggle"></button><span role="status" aria-live="polite"></span><a target="_blank" rel="noopener noreferrer">원문에서 보기</a>';
+        wrapper.prepend(toolbar);
+      }
+      const button = toolbar.querySelector("button"), status = toolbar.querySelector("[role='status']"), original = toolbar.querySelector("a");
+      video.id = `dcbpv-video-${++previewVideoId}`;
+      button.setAttribute("aria-controls",video.id);
+      // Reuse the already-validated original post link, never a media key URL.
+      const postLink = video.closest(`#${OVERLAY_ID}`)?.querySelector(".dcbpv-title a")?.href;
+      if (postLink) original.href = postLink;
+      else { original.removeAttribute("href"); original.hidden = true; }
+      const sync = () => {
+        const failed = !!video.error, playing = !video.paused && !video.ended;
+        const label = failed ? "동영상 다시 시도" : playing ? "동영상 일시정지" : "동영상 재생";
+        button.textContent = failed ? "↻ 다시 시도" : playing ? "❚❚ 일시정지" : video.ended ? "▶ 다시 재생" : "▶ 재생";
+        button.setAttribute("aria-label",label); button.setAttribute("aria-pressed",String(playing));
+        status.textContent = failed ? `동영상을 재생하지 못했습니다 (오류 ${video.error.code}).` :
+          playing ? video.readyState >= 3 ? "재생 중" : "동영상을 불러오는 중…" :
+          video.ended ? "재생이 끝났습니다." : video.readyState >= 1 ? "재생할 수 있습니다." : "재생을 준비하고 있습니다.";
+      };
+      button.addEventListener("click",async event => {
+        event.preventDefault();event.stopPropagation();
+        if (!video.paused && !video.ended) {video.pause();return;}
+        if (video.error) video.load();
+        try {await video.play();}
+        catch(error) {
+          if (!video.isConnected || error?.name === "AbortError" && video.paused) return;
+          status.textContent = error?.name === "NotAllowedError" ? "브라우저에서 동영상 재생을 허용하지 않았습니다. 원문에서 확인해 주세요." :
+            `동영상을 재생하지 못했습니다${video.error?.code ? ` (오류 ${video.error.code})` : ""}. 원문에서 확인해 주세요.`;
+          button.textContent = "↻ 다시 시도";button.setAttribute("aria-label","동영상 다시 시도");button.setAttribute("aria-pressed","false");
+        }
+      });
+      for (const event of ["loadedmetadata","canplay","play","playing","pause","waiting","ended","error"]) video.addEventListener(event,sync);
+      previewVideoControls.set(video,{wrapper,button,status});sync();
+    }
+  }
+
+  function numberPreviewArticlePhotos(article){
+    const photos = [], selected = new Set();
+    for (const img of article.querySelectorAll("img,video.dcbpv-animated-media")) {
+      const media = img.closest("picture") || img;
+      if (!previewArticlePhoto(img) || selected.has(media)) continue;
+      photos.push(img); selected.add(media);
+    }
+    // Native numbers depend on a page sprite and cannot be displayed reliably
+    // in the isolated preview. Replace only their empty number markers.
+    article.querySelectorAll(".num.img").forEach(marker => {
+      if (!marker.classList.contains("dcbpv-photo-number") && marker.querySelector(".imgnum") && !marker.querySelector("img,video,iframe") && /^\d*$/.test(marker.textContent.trim())) marker.remove();
+    });
+    article.querySelectorAll(".dcbpv-photo[data-dcb-owned='photo-number']").forEach(wrapper => {
+      const media = wrapper.querySelector(":scope > img,:scope > picture,:scope > video.dcbpv-animated-media");
+      if (photos.length >= 2 && media && selected.has(media)) return;
+      wrapper.querySelector(":scope > .dcbpv-photo-number")?.remove();
+      wrapper.replaceWith(...wrapper.childNodes);
+    });
+    if (photos.length < 2) return;
+    photos.forEach((img,index) => {
+      const media = img.closest("picture") || img;
+      let wrapper = media.parentElement;
+      if (!wrapper?.matches(".dcbpv-photo[data-dcb-owned='photo-number']")) {
+        wrapper = article.ownerDocument.createElement("span");
+        wrapper.className = "dcbpv-photo"; wrapper.dataset.dcbOwned = "photo-number";
+        media.before(wrapper); wrapper.append(media);
+      }
+      let badge = wrapper.querySelector(":scope > .dcbpv-photo-number");
+      if (!badge) {
+        badge = article.ownerDocument.createElement("span");
+        badge.className = "num img dcbpv-photo-number"; badge.setAttribute("role","img");
+        const number = article.ownerDocument.createElement("em"); number.setAttribute("aria-hidden","true");
+        badge.append(number); wrapper.append(badge);
+      }
+      const position = String(index + 1), label = `사진 ${position}/${photos.length}`;
+      if (badge.getAttribute("aria-label") !== label) badge.setAttribute("aria-label",label);
+      const number = badge.firstElementChild, className = "imgnum n" + position;
+      if (number.className !== className) number.className = className;
+      if (number.textContent !== position) number.textContent = position;
+    });
+  }
+
+  function preparePreviewPhotoNumbers(root,baseUrl){
+    const article = root.matches?.(".dcbpv-article") ? root : root.querySelector?.(".dcbpv-article");
+    if (!article) return;
+    if (previewPhotoRoot !== article) stopPreviewPhotoObserver();
+    previewPhotoRoot = article;
+    const observe = () => previewPhotoObserver.observe(article,{childList:true,subtree:true,attributes:true,
+      attributeFilter:["src","class","data-src","data-original","data-original-src","data-gif","data-mp4"]});
+    const run = () => {
+      previewPhotoFrame = 0;
+      if (!article.isConnected || previewPhotoRoot !== article) return stopPreviewPhotoObserver();
+      previewPhotoObserver?.disconnect();
+      normalizeDcMedia(article,baseUrl);
+      preparePreviewVideoControls(article,currentPreviewData?.url || baseUrl);
+      numberPreviewArticlePhotos(article);
+      observe();
+    };
+    const schedule = () => { if (!previewPhotoFrame) previewPhotoFrame = requestAnimationFrame(run); };
+    if (!previewPhotoObserver) {
+      previewPhotoObserver = new MutationObserver(changes => {
+        if (changes.some(change => change.type === "attributes" ? /^(?:IMG|VIDEO)$/.test(change.target.tagName) :
+          change.target.tagName === "VIDEO" || [...change.addedNodes,...change.removedNodes].some(node => node.nodeType === 1 &&
+            (node.matches("img,picture,video") || node.querySelector("img,video"))))) schedule();
+      });
+      previewPhotoLoad = event => { if (event.target.tagName === "IMG") schedule(); };
+      article.addEventListener("load",previewPhotoLoad,true);
+    }
+    previewPhotoObserver.disconnect();
+    numberPreviewArticlePhotos(article);
+    observe();
+  }
+
   function parkPreviewImages(overlay, data) {
     const images = new Map();
     let pixels = 0;
@@ -3817,8 +3992,10 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
       const scopes = pendingRows ? pendingRows.filter(row => row.isConnected) : [root];
       for (const scope of scopes) {
         normalizeDcMedia(scope, baseUrl);
+        preparePreviewVideoControls(scope,articleUrl);
       }
       restorePreviewImages(scopes);
+      if (!pendingRows) preparePreviewPhotoNumbers(root,baseUrl);
       const overlay = root.closest("#" + OVERLAY_ID);
       const load = node => {
         if (node.matches(".dcbpv-movie-wrap")) loadPreviewMovie(node, articleUrl);

@@ -90,7 +90,7 @@ async function until(check, description, timeout = 30_000) {
   await dc.locator('[data-dcb-text-detection-placeholder]').waitFor({ timeout: 10_000 });
   const hiddenCount = await dc.locator('[data-dcb-text-detection-hidden="1"]').count();
   assert.ok(hiddenCount > 0);
-  assert.equal(await dc.locator('[data-dcb-text-detection-placeholder]').first().getAttribute('data-dcb-text-detection-label'), '공격적 표현이 있는 댓글을 가렸습니다');
+  assert.equal(await dc.locator('[data-dcb-text-detection-placeholder]').first().getAttribute('data-dcb-text-detection-label'), 'AI가 공격적 표현 가능성을 감지해 댓글을 가렸어요');
   assert.equal(await worker.evaluate(() => typeof globalThis.DCBLocalInference?.analyze), "function");
 
   const cdp = await context.newCDPSession(dc);
@@ -135,6 +135,9 @@ async function until(check, description, timeout = 30_000) {
   assert.deepEqual(disabled.result.value, { ok: false, error: 'disabled' });
 
   // Verify the manifest-delivered author stylesheet alongside real storage updates.
+  // The native column fitter runs only for visible authors and uses rAF.
+  // Return from the options tab before inserting and measuring its controls.
+  await dc.bringToFront();
   await dc.evaluate(() => {
     document.body.insertAdjacentHTML('beforeend', `<div class="cmt_info"><div class="cmt_nickbox" style="width:133px;font:12px Arial">
       <span id="fixture-author" class="gall_writer ub-writer" data-uid="long_account_identifier_for_author_layout" data-nick="긴닉네임" data-ip="175.124">
@@ -149,26 +152,31 @@ async function until(check, description, timeout = 30_000) {
   await dc.locator('#fixture-author .dcb-uid-badge').waitFor();
   await dc.locator('#fixture-author .dc-member-ip-chip').waitFor();
   await until(async () => dc.locator('#fixture-comment').evaluate(node => parseFloat(getComputedStyle(node).fontSize) > 19), 'body font resized');
+  await until(async () => dc.locator('#fixture-author').evaluate(writer => !!writer.style.getPropertyValue('--dcb-writer-available')), 'visible author column fitted');
+  await dc.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   const authorLayout = await dc.locator('#fixture-author').evaluate(writer => {
     const bounds = writer.getBoundingClientRect();
     const tools = writer.querySelector('.dcb-writer-tools');
     const elements = writer.querySelectorAll('.nickname, .ip, .dc-member-ip-chip, .dcb-uid-badge, .dcb-user-memo-trigger');
     return {
-      columnWidth: writer.closest(".cmt_nickbox").getBoundingClientRect().width, width: bounds.width, wrap: getComputedStyle(tools).flexWrap,
+      columnWidth: writer.closest(".cmt_nickbox").getBoundingClientRect().width, width: bounds.width,
+      toolsVisible: [...tools.children].every(node => node.getBoundingClientRect().width > 0),
       withinColumn: [...elements].every(node => {
         const rect = node.getBoundingClientRect();
         return rect.left >= bounds.left - 1 && rect.right <= bounds.right + 1;
       }),
       authorFont: getComputedStyle(writer.querySelector('em')).fontSize,
-      ipFont: getComputedStyle(writer.querySelector('.ip')).fontSize
+      ipFont: getComputedStyle(writer.querySelector('.ip')).fontSize,
+      fittedWidth: writer.style.getPropertyValue('--dcb-writer-available'),
+      elements: [...elements].map(node => ({ className: node.className, bounds: node.getBoundingClientRect().toJSON() }))
     };
   });
   assert.equal(authorLayout.columnWidth, 133);
   assert.ok(authorLayout.width > 0 && authorLayout.width <= authorLayout.columnWidth);
   assert.ok(parseFloat(authorLayout.authorFont) > 0 && parseFloat(authorLayout.authorFont) <= 12);
   assert.equal(authorLayout.ipFont, "11px");
-  assert.equal(authorLayout.wrap, "wrap");
-  assert.ok(authorLayout.withinColumn);
+  assert.ok(authorLayout.toolsVisible);
+  assert.ok(authorLayout.withinColumn, JSON.stringify(authorLayout));
   assert.deepEqual(errors, [], `unexpected page errors: ${JSON.stringify(errors)}`);
   console.log(JSON.stringify({ ok: true, extensionId, installationDefaults: defaults, elapsedMs: Date.now() - start,
     hiddenCommentCount: hiddenCount, score, contentMessages: seen.length, sender: seen[0].sender,

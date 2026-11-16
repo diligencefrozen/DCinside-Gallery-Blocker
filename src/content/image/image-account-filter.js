@@ -150,10 +150,12 @@
       this.inflight = new Map();
       this.dirty = new Map();
       this.cacheWriteTimer = null;
+      this.cacheWritePromise = Promise.resolve();
+      this.initialized = false;
       this.cacheReadyPromise = null;
       this.cacheRevision = 0;
       this.settingsRevision = 0;
-      this.readyPromise = this.initialize();
+      this.readyPromise = this.initialize().finally(() => { this.initialized = true; });
     }
 
     async initialize() {
@@ -197,10 +199,16 @@
     scheduleCacheWrite(key, entry) {
       this.dirty.set(key, entry);
       if (this.cacheWriteTimer) return;
-      this.cacheWriteTimer = setTimeout(async () => {
-        this.cacheWriteTimer = null;
-        const pending = this.dirty;
-        this.dirty = new Map();
+      this.cacheWriteTimer = setTimeout(() => { void this.flushCache().catch(() => {}); }, 250);
+    }
+
+    async flushCache() {
+      clearTimeout(this.cacheWriteTimer);
+      this.cacheWriteTimer = null;
+      const pending = this.dirty;
+      this.dirty = new Map();
+      if (!pending.size) return this.cacheWritePromise;
+      const write = this.cacheWritePromise.then(async () => {
         try {
           // Coordinate same-origin gallery tabs and merge only this tab's changes.
           await navigator.locks.request("dcb-activity-cache", async () => {
@@ -214,8 +222,13 @@
             const recent = Object.entries(merged).sort((a,b) => b[1].checkedAt - a[1].checkedAt).slice(0, MAX_CACHE_ENTRIES);
             await chrome.storage.local.set({[CACHE_KEY]:Object.fromEntries(recent)});
           });
-        } catch (_) { /* The in-memory result remains available in this tab. */ }
-      }, 250);
+        } catch (error) {
+          for (const [uid,item] of pending) if (!this.dirty.has(uid)) this.dirty.set(uid,item);
+          throw error;
+        }
+      });
+      this.cacheWritePromise = write.catch(() => {});
+      return write;
     }
 
     cacheFresh(entry) {
@@ -337,6 +350,8 @@
           if (!entry.unavailable || !cached || cached.unavailable || !this.cacheFresh(cached)) {
             this.cache[key] = entry;
             this.scheduleCacheWrite(key, entry);
+            if (!entry.unavailable && this.settings.enabled && this.judge(uid,entry).shouldHide)
+              void this.flushCache().catch(() => {});
           }
           return this.judge(uid, entry);
         })
@@ -365,6 +380,7 @@
       await this.ensureCacheReady();
       clearTimeout(this.cacheWriteTimer);
       this.cacheWriteTimer = null;
+      await this.cacheWritePromise;
       this.dirty.clear();
       this.cache = {};
       await navigator.locks.request("dcb-activity-cache", () => chrome.storage.local.set({ [CACHE_KEY]: {} }));
@@ -409,6 +425,8 @@
     DEFAULT_SETTINGS,
     normalizeSettings,
     ready: () => service.readyPromise,
+    isReady: () => service.initialized,
+    flushCache: () => service.flushCache(),
     getSettings: () => ({ ...service.settings }),
     peek: (uid) => service.peek(uid),
     evaluate: (uid, refreshDisplay) => service.evaluate(uid, refreshDisplay),

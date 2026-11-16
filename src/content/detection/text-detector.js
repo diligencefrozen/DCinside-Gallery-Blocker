@@ -84,42 +84,79 @@
     style.textContent = `
       [${HIDDEN_ATTR}="1"] { display: none !important; }
       [${PLACEHOLDER_ATTR}="1"] {
+        --dcb-ai-bg: #f1f4ff;
+        --dcb-ai-border: #d3dcfc;
+        --dcb-ai-fg: #283b75;
+        --dcb-ai-muted: #59698b;
+        --dcb-ai-button: #fff;
         box-sizing: border-box !important;
         display: flex !important;
         align-items: center !important;
-        gap: 8px !important;
+        flex-wrap: wrap !important;
+        gap: 10px !important;
         min-width: 0 !important;
+        max-width: 100% !important;
         width: 100% !important;
-        margin: 2px 0 !important;
-        padding: 6px 8px !important;
-        border: 1px solid rgba(220, 38, 38, .28) !important;
-        border-radius: 7px !important;
-        background: rgba(254, 242, 242, .92) !important;
-        color: #7f1d1d !important;
+        margin: 4px 0 !important;
+        padding: 10px 12px !important;
+        border: 1px solid var(--dcb-ai-border) !important;
+        border-radius: 12px !important;
+        background: var(--dcb-ai-bg) !important;
+        color: var(--dcb-ai-fg) !important;
         font: 12px/1.45 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
         text-indent: 0 !important;
         white-space: normal !important;
         overflow-wrap: anywhere !important;
+        animation: dcbTextFilterEnter 220ms ease-out both !important;
       }
-      [${PLACEHOLDER_ATTR}="1"]::before {
-        content: attr(data-dcb-text-detection-label);
-        flex: 1 1 auto !important;
+      [${PLACEHOLDER_ATTR}="1"][data-dcb-text-detection-kind="post"] { margin: 12px 0 !important; padding: 16px !important; }
+      [${PLACEHOLDER_ATTR}="1"]:where([data-dcb-text-detection-mode="basic"],[data-dcb-text-detection-mode="unknown"]) { --dcb-ai-bg:#f3f5f8; --dcb-ai-border:#dce1e8; --dcb-ai-fg:#38465e; --dcb-ai-muted:#627087; }
+      [${PLACEHOLDER_ATTR}="1"] .dcb-text-detection-icon {
+        display: inline-flex !important; align-items:center !important; justify-content:center !important;
+        flex: 0 0 30px !important; width:30px !important; height:30px !important; border-radius:9px !important;
+        background:var(--dcb-ai-button) !important; color:var(--dcb-ai-fg) !important;
+      }
+      [${PLACEHOLDER_ATTR}="1"] .dcb-text-detection-icon svg { display:block !important; width:18px !important; height:18px !important; }
+      [${PLACEHOLDER_ATTR}="1"] .dcb-text-detection-copy {
+        display: block !important; flex: 1 1 140px !important;
         min-width: 0 !important;
-        font-weight: 700 !important;
       }
-      .dcb-text-detection-show {
+      [${PLACEHOLDER_ATTR}="1"] .dcb-text-detection-meta {
+        display:flex !important; flex-wrap:wrap !important; align-items:center !important; gap:6px !important;
+        color:var(--dcb-ai-muted) !important; font:500 10px/1.4 system-ui,sans-serif !important; margin:0 0 3px !important;
+      }
+      [${PLACEHOLDER_ATTR}="1"] .dcb-text-detection-badge {
+        display:inline-block !important; border:1px solid var(--dcb-ai-border) !important; border-radius:5px !important;
+        padding:1px 5px !important; color:var(--dcb-ai-fg) !important; background:var(--dcb-ai-button) !important;
+        font:800 10px/1.35 system-ui,sans-serif !important; letter-spacing:.15px !important;
+      }
+      [${PLACEHOLDER_ATTR}="1"] .dcb-text-detection-title { display:block !important; color:var(--dcb-ai-fg) !important; font:750 12px/1.5 system-ui,sans-serif !important; }
+      [${PLACEHOLDER_ATTR}="1"] .dcb-text-detection-detail { display:none !important; color:var(--dcb-ai-muted) !important; font:400 11px/1.5 system-ui,sans-serif !important; margin-top:4px !important; }
+      [${PLACEHOLDER_ATTR}="1"][data-dcb-text-detection-kind="post"] .dcb-text-detection-title {font-size:14px !important;}
+      [${PLACEHOLDER_ATTR}="1"][data-dcb-text-detection-kind="post"] .dcb-text-detection-detail {display:block !important;}
+      [${PLACEHOLDER_ATTR}="1"] .dcb-text-detection-show {
         appearance: none !important;
         flex: 0 0 auto !important;
-        margin: 0 !important;
-        padding: 3px 7px !important;
-        border: 1px solid rgba(185, 28, 28, .35) !important;
-        border-radius: 6px !important;
-        background: #fff !important;
-        color: #991b1b !important;
-        font: 700 11px/1.4 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+        min-height:32px !important; margin:0 0 0 auto !important; padding:6px 10px !important;
+        border:1px solid var(--dcb-ai-border) !important; border-radius:8px !important;
+        background:var(--dcb-ai-button) !important; color:var(--dcb-ai-fg) !important;
+        font:700 11px/1.4 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
         cursor: pointer !important;
+        transition:box-shadow 140ms ease,transform 140ms ease !important;
       }
-      .dcb-text-detection-show:hover { background: #fef2f2 !important; }
+      [${PLACEHOLDER_ATTR}="1"] .dcb-text-detection-show:hover {box-shadow:0 2px 7px #526bb326 !important;transform:translateY(-1px) !important;}
+      [${PLACEHOLDER_ATTR}="1"] .dcb-text-detection-show:focus-visible {outline:3px solid #6b85e8 !important;outline-offset:3px !important;}
+      @keyframes dcbTextFilterEnter {from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+      @media(prefers-reduced-motion:reduce){
+        [${PLACEHOLDER_ATTR}="1"]{animation:none !important;}
+        [${PLACEHOLDER_ATTR}="1"] .dcb-text-detection-show{transition:none !important;transform:none !important;}
+      }
+      @media(prefers-color-scheme:dark){
+        [${PLACEHOLDER_ATTR}="1"]{--dcb-ai-bg:#19243b;--dcb-ai-border:#3a4e7c;--dcb-ai-fg:#e0e7ff;--dcb-ai-muted:#b4c0dc;--dcb-ai-button:#253554;}
+      }
+      :is(html:has(#css-darkmode),html[data-theme="dark"],body.dark) [${PLACEHOLDER_ATTR}="1"]{
+        --dcb-ai-bg:#19243b;--dcb-ai-border:#3a4e7c;--dcb-ai-fg:#e0e7ff;--dcb-ai-muted:#b4c0dc;--dcb-ai-button:#253554;
+      }
     `;
     (document.head || document.documentElement).appendChild(style);
   }
@@ -217,23 +254,49 @@
     return !!record.input;
   }
 
-  function makePlaceholder(record) {
-    if (record.placeholder?.isConnected) return record.placeholder;
-    const placeholder = document.createElement('div');
+  function makePlaceholder(record, mode) {
+    const presentationMode = mode === 'model' ? 'model' : mode === 'basic' ? 'basic' : 'unknown';
+    if (record.placeholder?.isConnected && record.placeholder.dataset.dcbTextDetectionMode === presentationMode) return record.placeholder;
+    const placeholder = record.placeholder?.isConnected ? record.placeholder : document.createElement('div');
     placeholder.setAttribute(PLACEHOLDER_ATTR, '1');
     placeholder.dataset.dcbTextDetectionId = String(record.id);
-    const label = record.kind === 'post'
-      ? '공격적 표현이 있는 게시글을 가렸습니다'
-      : '공격적 표현이 있는 댓글을 가렸습니다';
+    placeholder.dataset.dcbTextDetectionKind = record.kind;
+    placeholder.dataset.dcbTextDetectionMode = presentationMode;
+    placeholder.dataset.dcbOwned = 'ai-text-filter';
+    const subject = record.kind === 'post' ? '게시글' : '댓글';
+    const ai = presentationMode === 'model', basic = presentationMode === 'basic';
+    const label = ai ? `AI가 공격적 표현 가능성을 감지해 ${subject}을 가렸어요` : `표현 필터가 ${subject}을 가렸어요`;
+    const detail = ai ? 'AI 판단은 틀릴 수 있어요. 원문을 직접 확인할 수 있습니다.'
+      : basic ? 'AI 모델을 사용할 수 없어 기본 표현 규칙으로 확인했어요.' : '공격적 표현 가능성을 감지했어요. 원문을 직접 확인할 수 있습니다.';
     placeholder.dataset.dcbTextDetectionLabel = label;
     placeholder.setAttribute('aria-label', label);
+    placeholder.setAttribute('role', 'note');
+    placeholder.title = detail;
+    const icon = document.createElement('span'); icon.className = 'dcb-text-detection-icon'; icon.setAttribute('aria-hidden','true');
+    const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
+    svg.setAttribute('viewBox','0 0 18 18'); svg.setAttribute('fill','currentColor'); svg.setAttribute('focusable','false');
+    const path = document.createElementNS('http://www.w3.org/2000/svg','path'); path.setAttribute('d','M9 1l2.3 5.7L17 9l-5.7 2.3L9 17l-2.3-5.7L1 9l5.7-2.3Z'); svg.append(path); icon.append(svg);
+    const copy = document.createElement('span'); copy.className = 'dcb-text-detection-copy';
+    const meta = document.createElement('span'); meta.className = 'dcb-text-detection-meta';
+    const badge = document.createElement('span'); badge.className = 'dcb-text-detection-badge';
+    badge.textContent = ai ? 'AI 필터' : basic ? '기본 표현 필터' : '표현 필터';
+    const local = document.createElement('span'); local.textContent = ai ? '기기 내 분석' : '기기 내 확인';
+    meta.append(badge,local);
+    const title = document.createElement('strong'); title.className = 'dcb-text-detection-title';
+    title.textContent = ai ? `AI가 가린 ${subject}` : `공격적 표현 감지로 가린 ${subject}`;
+    const description = document.createElement('small'); description.className = 'dcb-text-detection-detail';
+    description.id = `dcb-text-filter-detail-${record.id}`; description.textContent = detail;
+    copy.append(meta,title,description);
+    placeholder.setAttribute('aria-describedby',description.id);
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'dcb-text-detection-show';
     button.dataset.dcbTextDetectionAction = 'show';
-    button.textContent = '이번만 보기';
-    placeholder.append(button);
-    record.node.parentNode?.insertBefore(placeholder, record.node);
+    button.textContent = '원문 보기';
+    button.setAttribute('aria-label', `${subject} 원문 이번만 보기`);
+    button.title = '이 콘텐츠만 이번에 다시 표시합니다';
+    placeholder.replaceChildren(icon,copy,button);
+    if (!placeholder.isConnected) record.node.parentNode?.insertBefore(placeholder, record.node);
     record.placeholder = placeholder;
     return placeholder;
   }
@@ -245,7 +308,7 @@
     }
     if (!record.node.isConnected) return;
     ensureStyle();
-    makePlaceholder(record);
+    makePlaceholder(record, mode);
     record.node.setAttribute(HIDDEN_ATTR, '1');
   }
 

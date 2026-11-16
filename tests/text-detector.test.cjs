@@ -65,7 +65,7 @@ async function waitRequests(page, count) {
 
 async function respond(page, index, score = 0.95) {
   await page.evaluate(({ index, score }) => {
-    window.resolveRequest(index, { ok: true, results: window.requests[index].items.map(() => ({ score })) });
+    window.resolveRequest(index, { ok: true, mode: 'model', results: window.requests[index].items.map(() => ({ score })) });
   }, { index, score });
 }
 
@@ -101,7 +101,7 @@ test('is opt in and sends only bounded text from post and comment bodies', async
     await respond(page, 0);
     await page.waitForFunction((selector) => document.querySelectorAll(selector).length === 2, placeholderSelector);
     assert.deepEqual(await page.locator(placeholderSelector).evaluateAll(nodes => nodes.map(node => node.dataset.dcbTextDetectionLabel).sort()),
-      ['공격적 표현이 있는 게시글을 가렸습니다', '공격적 표현이 있는 댓글을 가렸습니다'].sort());
+      ['AI가 공격적 표현 가능성을 감지해 게시글을 가렸어요', 'AI가 공격적 표현 가능성을 감지해 댓글을 가렸어요'].sort());
     assert.equal(await page.locator('#comment').getAttribute('data-dcb-text-detection-hidden'), '1');
     assert.equal(await page.locator('#comment').evaluate((node) => getComputedStyle(node).display), 'none');
     await page.locator(`${placeholderSelector} button`).last().click();

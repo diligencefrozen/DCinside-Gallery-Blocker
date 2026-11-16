@@ -54,7 +54,7 @@ test('installed automatic import needs no existing DC page and closes its backgr
   await page.locator('#recordsNativeProgressField').waitFor({state:'visible'});
   await page.waitForFunction(()=>document.querySelector('#recordsNativeProgress').value===100&&!document.querySelector('#recordsNativeAuto').disabled);
   assert.match(await page.locator('#recordsNativeProgressText').innerText(),/불러오기 완료.*갤러리 3개.*15건/);
-  assert.equal(await page.locator('#recordsNativeManual').evaluate(n=>n.open),false);
+  assert.equal(await page.locator('#recordsNativeManual').count(),0);
   assert.deepEqual(await page.evaluate(async()=>(await chrome.tabs.query({})).map(t=>t.id)),ids);
   assert.deepEqual(await page.evaluate(()=>getUserMemos()),{});
   assert.equal(await page.locator('#officialMemoApply').isDisabled(),true);

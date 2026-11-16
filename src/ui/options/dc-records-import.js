@@ -5,10 +5,9 @@
   const status = el("officialMemoPreview"), list = el("officialMemoRows"), more = el("recordsMore");
   const apply = el("officialMemoApply"), undo = el("officialMemoUndo"), replace = el("officialMemoReplace");
   const scopeChoice = el("recordsScope"), reset = el("recordsReset");
-  const nativeTab = el("recordsNativeTab"), nativeStatus = el("recordsNativeStatus");
-  const nativeControls = ["recordsNativeAuto", "recordsNativeStart", "recordsNativeRefresh", "recordsNativeOpen", "recordsNativeFocus", "recordsNativeRead"].map(el);
+  const nativeControls = ["recordsNativeAuto", "recordsNativeRetry"].map(el);
   let revision = 0, pending, labels = [], offset = 0, busy = false, inputTimer;
-  let nativeSource = null, tabRevision = 0;
+  let nativeSource = null;
   let autoCancelled = false, autoTabId = null;
   function updateMode() {
     const text = format.value === "text", block = kind.value === "block";
@@ -146,54 +145,10 @@
     updateButtons();
   }
 
-  function validNativeUrl(value) {
-    try { const url = new URL(value); return ["https:", "http:"].includes(url.protocol) && url.hostname === "gall.dcinside.com"; }
-    catch { return false; }
-  }
-  function nativeTabLabel(tab) {
-    const url = new URL(tab.url), gallery = url.searchParams.get("id");
-    return (tab.title || "디시 페이지").slice(0, 100) + " · " + url.pathname + (gallery ? " · id=" + gallery : "");
-  }
-  async function refreshNativeTabs(preferredTabId) {
-    const version = ++tabRevision;
-    nativeSource = null;
-    if (!busy) el("recordsNativeProgressField").hidden = true;
-    await preview();
-    try {
-      const tabs = (await chrome.tabs.query({ url: ["https://gall.dcinside.com/*", "http://gall.dcinside.com/*"] })).filter(tab => validNativeUrl(tab.url));
-      // tabs.create resolves before navigation commits. URL-filtered query may
-      // omit the new tab until then; include only its verified DC destination.
-      if (typeof preferredTabId === "number" && !tabs.some(tab => tab.id === preferredTabId)) {
-        const created = await chrome.tabs.get(preferredTabId);
-        const destination = validNativeUrl(created.url) ? created.url : created.pendingUrl;
-        if (validNativeUrl(destination)) tabs.push({ ...created, url: destination });
-      }
-      if (version !== tabRevision) return;
-      const selected = typeof preferredTabId === "number" ? String(preferredTabId) : nativeTab.value;
-      const choices = tabs.map(tab => {
-        const option = document.createElement("option"); option.value = tab.id;
-        option.textContent = nativeTabLabel(tab);
-        return option;
-      });
-      if (tabs.length !== 1) {
-        const placeholder = document.createElement("option"); placeholder.value = "";
-        placeholder.textContent = tabs.length ? "목록 창을 연 디시 페이지를 선택하세요" : "열린 디시 PC 갤러리 페이지가 없습니다";
-        choices.unshift(placeholder);
-      }
-      nativeTab.replaceChildren(...choices);
-      if (tabs.some(tab => String(tab.id) === selected)) nativeTab.value = selected;
-      nativeStatus.textContent = tabs.length ? "디시 페이지로 이동 → 설정 → 차단 설정 또는 이용자 메모에서 목록 창 열기 → 이 화면으로 돌아와 목록 읽기 순서로 진행하세요." : "열린 디시 PC 갤러리 페이지가 없습니다. 디시 PC웹을 열어 설정 목록을 확인하세요.";
-    } catch (error) { nativeStatus.textContent = "페이지 조회 실패 · " + error.message; }
-  }
-  async function enterNative() {
-    format.value = "native"; paste.value = file.value = ""; nativeSource = null;
-    await preview(); await refreshNativeTabs();
-  }
   async function autoImportNative() {
     if (busy) return;
     busy = true; autoCancelled = false; nativeSource = null;
     format.value = "native"; paste.value = file.value = "";
-    el("recordsNativeManual").open = false;
     setControlsDisabled(true);
     await preview();
     const field = el("recordsNativeProgressField"), progress = el("recordsNativeProgress"), label = el("recordsNativeProgressText");
@@ -247,34 +202,8 @@
       busy = false; setControlsDisabled(false); updateButtons();
     }
   }
-  async function readNative() {
-    if (busy) return;
-    busy = true; nativeSource = null; setControlsDisabled(true); await preview();
-    nativeStatus.textContent = "열린 설정 목록을 읽는 중입니다…";
-    try {
-      if (!nativeTab.value) throw Error("먼저 목록을 확인할 디시 페이지를 선택하세요.");
-      const tabId = Number(nativeTab.value), before = await chrome.tabs.get(tabId);
-      if (!validNativeUrl(before.url)) throw Error("디시 PC 갤러리 출처를 확인할 수 없습니다.");
-      const results = await chrome.scripting.executeScript({ target: { tabId, frameIds: [0] }, func: DCBNativeCollector.collect, world: "ISOLATED" });
-      if (results.some(item => item.error)) throw Error("열린 목록을 읽지 못했습니다. 브라우저의 사이트 접근 권한을 확인하세요.");
-      const result = results.find(item => item.frameId === 0)?.result;
-      const after = await chrome.tabs.get(tabId);
-      if (before.url !== after.url || !validNativeUrl(after.url) || result?.href !== after.url) throw Error("페이지가 이동했습니다. 목록을 다시 확인한 뒤 읽으세요.");
-      if (result?.ok === false && result.issues?.some(issue => issue.code === "MODAL_NOT_OPEN")) {
-        nativeStatus.textContent = "목록 창 열기 필요 · 선택한 페이지: " + nativeTabLabel(after) +
-          " · ‘디시 페이지로 이동’을 누른 뒤 디시의 ‘설정 → 차단 설정’ 또는 ‘설정 → 이용자 메모’에서 목록 창을 여세요. 목록 창을 열어 둔 채 이 화면으로 돌아와 다시 읽으세요. 이용자 메모 목록은 갤러리 글목록 페이지에서 열 수 있습니다.";
-        return;
-      }
-      if (result?.ok === false || !Array.isArray(result?.records) || result.source !== "dc-native") throw Error(result?.issues?.[0]?.message || "지원하는 설정 목록을 확인하지 못했습니다.");
-      if (result.records.length > 10000 || JSON.stringify(result).length > 4194304) throw Error("한 번에 읽을 수 있는 목록 크기를 초과했습니다.");
-      nativeSource = result;
-      await preview();
-      nativeStatus.textContent = "현재 열린 목록 " + result.records.length + "건을 읽었습니다. 다른 범위·페이지는 포함되지 않을 수 있습니다. 아래 적용 가능·보류 사유를 확인하세요.";
-    } catch (error) { nativeStatus.textContent = "직접 읽기 실패 · " + error.message + " · 메모 백업 파일 또는 목록 붙여넣기를 이용할 수 있습니다."; }
-    finally { busy = false; setControlsDisabled(false); updateButtons(); }
-  }
   function setControlsDisabled(value) {
-    [file, format, kind, scope, scopeChoice, paste, replace, confirm, reset, nativeTab, ...nativeControls].forEach(control => { control.disabled = value; });
+    [file, format, kind, scope, scopeChoice, paste, replace, confirm, reset, ...nativeControls].forEach(control => { control.disabled = value; });
   }
 
   async function commit(revert) {
@@ -308,35 +237,13 @@
     clearTimeout(inputTimer); inputTimer = setTimeout(preview, 180);
   });
   file.addEventListener("change", () => { if (file.files.length) paste.value = ""; void preview(); });
-  format.addEventListener("change", () => {paste.value = file.value = ""; nativeSource = null; el("recordsNativeProgressField").hidden = true; void preview(); if (format.value === "native") void refreshNativeTabs();});
+  format.addEventListener("change", () => {paste.value = file.value = ""; nativeSource = null; el("recordsNativeProgressField").hidden = true; if (format.value === "native") void autoImportNative(); else void preview();});
   for (const control of [kind, scopeChoice]) control.addEventListener("change", preview);
   reset.onclick = () => {paste.value = file.value = ""; nativeSource = null; el("recordsNativeProgressField").hidden = true; void preview();};
-  el("recordsNativeStart").onclick = enterNative;
   el("recordsNativeAuto").onclick = autoImportNative;
+  el("recordsNativeRetry").onclick = autoImportNative;
   el("recordsNativeCancel").onclick = () => { autoCancelled = true; el("recordsNativeProgressText").textContent = "불러오기를 중지하는 중입니다…"; };
   window.addEventListener("pagehide", () => { if (autoTabId !== null) void chrome.tabs.remove(autoTabId).catch(() => {}); });
-  el("recordsNativeRefresh").onclick = () => refreshNativeTabs();
-  el("recordsNativeRead").onclick = readNative;
-  nativeTab.addEventListener("change", () => {
-    nativeSource = null; void preview();
-    nativeStatus.textContent = "선택한 페이지가 바뀌었습니다. 설정 목록을 확인한 뒤 다시 읽으세요.";
-  });
-  el("recordsNativeOpen").onclick = async () => {
-    try {
-      const tab = await chrome.tabs.create({ url: "https://gall.dcinside.com/board/lists/?id=programming" });
-      await refreshNativeTabs(tab.id);
-    }
-    catch (error) { nativeStatus.textContent = "페이지 열기 실패 · " + error.message; }
-  };
-  el("recordsNativeFocus").onclick = async () => {
-    try {
-      if (!nativeTab.value) throw Error("먼저 디시 페이지를 선택하세요.");
-      const tab = await chrome.tabs.get(Number(nativeTab.value));
-      if (!validNativeUrl(tab.url)) throw Error("디시 PC 갤러리 페이지가 아닙니다.");
-      await chrome.tabs.update(tab.id, { active: true });
-      await chrome.windows.update(tab.windowId, { focused: true });
-    } catch (error) { nativeStatus.textContent = "페이지 보기 실패 · " + error.message; }
-  };
   confirm.onchange = updateButtons;
   more.onclick = nextPage;
   apply.onclick = () => commit(false);

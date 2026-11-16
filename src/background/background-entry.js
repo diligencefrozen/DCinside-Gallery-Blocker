@@ -11,3 +11,4 @@ import "./preview-comment.js";
 import "./preview-vote.js";
 import "./background.js";
 import "./activity-queue.js";
+import "./activity-navigation.js";

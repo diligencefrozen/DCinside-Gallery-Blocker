@@ -85,12 +85,6 @@ async function exercise(autoLive=false){
     if(el('recordsNativeProgress').value!==100)throw Error('Automatic native read: '+el('recordsNativeProgressText').textContent+' '+JSON.stringify(diagnostics));
     if(JSON.stringify((await api.storage.local.get('userMemos')).userMemos)!==before)throw Error('Automatic preview changed extension data');
     if((await api.tabs.query({url:'https://gall.dcinside.com/_js/crossDomainStorage.html'})).length)throw Error('Automatic read left its source tab open');
-    const probe=await api.tabs.create({url:'https://gall.dcinside.com/_js/crossDomainStorage.html',active:false});
-    try {
-      await wait(async()=>{const tab=await api.tabs.get(probe.id);return tab.status==='complete'&&tab.url==='https://gall.dcinside.com/_js/crossDomainStorage.html';},400);
-      const results=await api.scripting.executeScript({target:{tabId:probe.id,frameIds:[0]},func:DCBNativeCollector.collect,world:'ISOLATED'});
-      if(!results[0]?.result?.issues?.some(issue=>issue.code==='MODAL_NOT_OPEN'))throw Error('Manual DOM collector did not return its result');
-    } finally {await api.tabs.remove(probe.id);}
   }
   return true;
 }

@@ -8,6 +8,8 @@
   const HIDDEN_CLASS = "dcb-account-activity-hidden";
   const PENDING_CLASS = "dcb-account-activity-pending";
   const NOTICE_CLASS = "dcb-account-activity-notice";
+  const IS_NATIVE_LIST = location.hostname === "gall.dcinside.com" && /^\/(?:mgallery\/|mini\/|person\/)?board\/lists/.test(location.pathname);
+  let navigationIntent = null;
   // Guard deferrals do not consume retries: they never reached the endpoint.
   // Actual lookup failures get at most two automatic retries in this document.
   const MAX_FAILURE_RETRIES = 2;
@@ -184,6 +186,8 @@
       .${NOTICE_CLASS} strong{display:block;color:#fff;font-size:13px;margin-bottom:2px}
       .${NOTICE_CLASS} small{display:block;color:#a5b4c7;font-size:11px;word-break:break-word}
       .${NOTICE_CLASS} button{margin-left:auto;flex:0 0 auto;border:0;border-radius:999px;background:#f8fafc;color:#111827;padding:8px 12px;font:800 11px/1 system-ui;cursor:pointer}
+      .dcb-activity-navigation-status{display:inline-flex;align-items:center;gap:5px;margin-left:6px;color:#4967bd;font:12px/1.4 system-ui;white-space:nowrap}
+      .dcb-activity-navigation-status button{border:1px solid #9aa9bd;border-radius:5px;padding:2px 5px;background:#f8fafc;color:#243b70;font:inherit;cursor:pointer}
     `;
     root.appendChild(style);
   }
@@ -245,6 +249,140 @@
 
   function settingAllows(settings, kind) {
     return kind === "comment" ? settings.blockComments !== false : settings.blockPosts !== false;
+  }
+
+  function currentNavigation(intent) {
+    return navigationIntent === intent && !intent.cancelled && intent.anchor.isConnected && intent.writer.isConnected &&
+      location.href === intent.sourceHref && intent.anchor.href === intent.url && extractUid(intent.writer).toLowerCase() === intent.uid.toLowerCase();
+  }
+
+  function clearNavigation(intent = navigationIntent) {
+    if (!intent) return;
+    intent.cancelled = true;
+    intent.label?.remove();
+    if (intent.anchor.getAttribute("aria-busy") === "true") {
+      if (intent.beforeBusy === null) intent.anchor.removeAttribute("aria-busy");
+      else intent.anchor.setAttribute("aria-busy",intent.beforeBusy);
+    }
+    if (navigationIntent === intent) navigationIntent = null;
+  }
+
+  function showNavigationStatus(intent, unavailable = false) {
+    if (!currentNavigation(intent)) { if (navigationIntent === intent) clearNavigation(intent); return; }
+    installStyle();
+    intent.label ||= document.createElement("span");
+    intent.label.className = "dcb-activity-navigation-status";
+    intent.label.dataset.dcbOwned = "activity-navigation";
+    intent.label.setAttribute("role","status");
+    intent.label.replaceChildren(document.createTextNode(unavailable ? "활동 확인 불가" : "활동 확인 중…"));
+    if (unavailable) {
+      intent.state = "unavailable";
+      if (intent.beforeBusy === null) intent.anchor.removeAttribute("aria-busy");
+      else intent.anchor.setAttribute("aria-busy",intent.beforeBusy);
+      const bypass = document.createElement("button");
+      bypass.type = "button"; bypass.textContent = "확인 없이 열기";
+      bypass.onclick = () => { void resumeNavigation(intent,true); };
+      intent.label.append(bypass);
+    }
+    const cancel = document.createElement("button"); cancel.type = "button"; cancel.textContent = "취소";
+    cancel.onclick = () => clearNavigation(intent);
+    intent.label.append(cancel);
+    if (!intent.label.isConnected) intent.anchor.after(intent.label);
+  }
+
+  async function resumeNavigation(intent, bypass = false) {
+    if (!currentNavigation(intent)) { if (navigationIntent === intent) clearNavigation(intent); return; }
+    try { await FILTER()?.flushCache?.(); } catch (_) { /* The verified verdict remains usable. */ }
+    if (!currentNavigation(intent)) { if (navigationIntent === intent) clearNavigation(intent); return; }
+    const settings = FILTER()?.getSettings(), latest = FILTER()?.peek(intent.uid);
+    if (!bypass && settings?.enabled && settings.blockPosts !== false && latest?.available && latest.shouldHide) {
+      setState(intent.info,intent.uid,"hidden",latest,false);clearNavigation(intent);return;
+    }
+    if (intent.newContext) {
+      // A setting change or a repeated bypass can resume the same intent while
+      // the first relay is awaiting its reply. Open that intent only once.
+      if (intent.opening) return;
+      intent.opening = true;
+      try {
+        const result = await new Promise((resolve,reject) => {
+          chrome.runtime.sendMessage({type:"dcb.activityOpen",url:intent.url,active:intent.active,newWindow:intent.newWindow}, response => {
+            if (chrome.runtime.lastError) reject(Error(chrome.runtime.lastError.message));
+            else resolve(response);
+          });
+        });
+        if (!result?.ok) throw Error("open failed");
+        clearNavigation(intent);
+      } catch (_) { intent.opening = false; showNavigationStatus(intent,true); }
+    } else {
+      const url = intent.url;
+      clearNavigation(intent);
+      location.assign(url);
+    }
+  }
+
+  async function verifyNavigation(intent) {
+    const filter = FILTER();
+    try {
+      await filter.ready();
+      if (!currentNavigation(intent)) { if (navigationIntent === intent) clearNavigation(intent); return; }
+      let settings = filter.getSettings();
+      if (!settings.enabled || settings.blockPosts === false) { await resumeNavigation(intent); return; }
+      const verdict = filter.peek(intent.uid) || await filter.evaluate(intent.uid);
+      if (!currentNavigation(intent)) { if (navigationIntent === intent) clearNavigation(intent); return; }
+      settings = filter.getSettings();
+      if (!settings.enabled || settings.blockPosts === false) { await resumeNavigation(intent); return; }
+      if (!verdict?.available) { showNavigationStatus(intent,true); return; }
+      if (verdict.shouldHide) {
+        setState(intent.info,intent.uid,"hidden",verdict,false);
+        clearNavigation(intent);
+        void filter.flushCache?.().catch(() => {});
+      } else await resumeNavigation(intent);
+    } catch (_) { showNavigationStatus(intent,true); }
+  }
+
+  function gateListNavigation(event) {
+    if (!IS_NATIVE_LIST || !event.isTrusted || (event.type === "click" ? event.button !== 0 : event.button !== 1)) return;
+    const anchor = event.target.closest?.("a[href]");
+    if (!anchor) return;
+    const row = anchor.closest(".gall_list tr,.gall_list li.ub-content,.gall_list li.gall_item");
+    const writer = row?.querySelector(".gall_writer,.ub-writer");
+    const uid = writer && extractUid(writer), filter = FILTER();
+    let destination;
+    try { destination = new URL(anchor.href,location.href); } catch { return; }
+    if (!row || !uid || !filter || destination.hostname !== "gall.dcinside.com" ||
+        !/^https?:$/.test(destination.protocol) || !/^\/(?:mgallery\/|mini\/|person\/)?board\/view\/?$/.test(destination.pathname) ||
+        !/^[a-z0-9_]{1,80}$/i.test(destination.searchParams.get("id") || "") || !/^\d{1,20}$/.test(destination.searchParams.get("no") || "")) {
+      clearNavigation(); return;
+    }
+    const settings = filter.getSettings(), snapshot = globalThis.DCBRuntimeSettingsCache?.peek?.({dcbImageAccountRules:null});
+    if ((snapshot?.dcbImageAccountRules && (snapshot.dcbImageAccountRules.enabled !== true || snapshot.dcbImageAccountRules.blockPosts === false)) ||
+        (filter.isReady?.() && (!settings.enabled || settings.blockPosts === false))) { clearNavigation(); return; }
+    if (navigationIntent?.anchor === anchor && navigationIntent.uid.toLowerCase() === uid.toLowerCase() && navigationIntent.url === destination.href && navigationIntent.state === "checking") {
+      event.preventDefault();event.stopImmediatePropagation();return;
+    }
+    const cached = filter.peek(uid);
+    if (cached?.available && !cached.shouldHide) { clearNavigation(); return; }
+    event.preventDefault(); event.stopImmediatePropagation();
+    if (navigationIntent?.anchor === anchor && navigationIntent.state === "checking") return;
+    clearNavigation();
+    const info = targetForWriter(writer) || {kind:"post",target:row,showNotice:false};
+    if (cached?.available && cached.shouldHide) { installStyle();setState(info,uid,"hidden",cached,false);return; }
+    const modified = event.ctrlKey || event.metaKey;
+    const intent = {anchor,writer,info,uid,url:destination.href,sourceHref:location.href,state:"checking",cancelled:false,beforeBusy:anchor.getAttribute("aria-busy"),
+      newContext:event.button===1 || modified || event.shiftKey || (anchor.target && !["_self","_top","_parent"].includes(anchor.target)),
+      active:event.shiftKey || (!modified && event.button!==1),newWindow:event.shiftKey && !modified && event.button!==1};
+    navigationIntent = intent;
+    anchor.setAttribute("aria-busy","true");
+    showNavigationStatus(intent);
+    void verifyNavigation(intent);
+  }
+
+  if (IS_NATIVE_LIST) {
+    document.addEventListener("click",gateListNavigation,true);
+    document.addEventListener("auxclick",gateListNavigation,true);
+    window.addEventListener("pagehide",()=>clearNavigation());
+    window.addEventListener("popstate",()=>clearNavigation());
+    window.addEventListener("hashchange",()=>clearNavigation());
   }
 
   const badges = new WeakMap();
@@ -632,7 +770,9 @@
       scanTimer = null;
       const run = () => { cancelScheduledScan = null; void scan(); };
       cancelScheduledScan?.();
-      if (globalThis.DCBStartupScheduler) {
+      const settings = FILTER()?.getSettings();
+      if (IS_NATIVE_LIST && settings?.enabled && settings.blockPosts !== false) run();
+      else if (globalThis.DCBStartupScheduler) {
         cancelScheduledScan = globalThis.DCBStartupScheduler.schedule("account-activity:scan", run, "idle");
       } else run();
     }, delay);
@@ -664,6 +804,8 @@
       root = root.closest(".gall_writer,.ub-writer");
       if (!root) return;
     }
+    const settings = FILTER()?.getSettings();
+    if (IS_NATIVE_LIST && settings?.enabled && settings.blockPosts !== false) { void scanScopes([root]); return; }
     pendingRoots.add(root);
     if (incrementalTimer) return;
     incrementalTimer = setTimeout(flushIncrementalScans, 80);
@@ -753,10 +895,13 @@
     installStyle();
     applyCachedRoots([document]);
     watch();
-    scheduleScan(0);
+    if (IS_NATIVE_LIST && settings.enabled && settings.blockPosts !== false) void scan();
+    else scheduleScan(0);
   }
 
   window.addEventListener("dcb:account-activity-rules-changed", () => {
+    const current = FILTER()?.getSettings();
+    if (navigationIntent && (!current?.enabled || current.blockPosts === false)) void resumeNavigation(navigationIntent);
     rulesEpoch += 1;
     stopWork();
     clearAll(true);

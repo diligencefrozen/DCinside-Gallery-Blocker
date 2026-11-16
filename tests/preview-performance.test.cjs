@@ -133,7 +133,7 @@ function articleUrl(id, no, suffix = '') {
         previewContentEvents: window.__previewContentEvents,
         title: contentShell?.querySelector('.dcbpv-title')?.textContent || '',
         imageLoading: contentShell?.querySelector('.dcbpv-article img')?.loading || '',
-        lowerImageLoading: contentShell?.querySelector('.dcbpv-article img:last-child')?.loading,
+        lowerImageLoading: [...contentShell?.querySelectorAll('.dcbpv-article img') || []].at(-1)?.loading,
         trace: window.previewPerfTest.previewPerformanceSnapshot().lastTrace
       };
     }, articleUrl('fixture', 201));
