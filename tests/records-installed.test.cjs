@@ -8,11 +8,11 @@ const {spawn}=require("node:child_process");
 const {setTimeout:delay}=require("node:timers/promises");
 const {chromium,firefox}=require("playwright");
 
-async function exercise(){
+async function exercise(autoLive=false){
   const api=globalThis.browser || chrome;
   if(document.readyState==="loading")await new Promise(resolve=>document.addEventListener("DOMContentLoaded",resolve,{once:true}));
-  const wait=async predicate=>{
-    for(let i=0;i<160;i++){if(await predicate())return;await new Promise(r=>setTimeout(r,50))}
+  const wait=async (predicate,attempts=160)=>{
+    for(let i=0;i<attempts;i++){if(await predicate())return;await new Promise(r=>setTimeout(r,50))}
     throw Error("Timed out waiting for records UI");
   };
   const el=id=>document.getElementById(id);
@@ -44,6 +44,54 @@ async function exercise(){
   if ((await api.storage.local.get("userMemos")).userMemos["uid:parallel"].memo!=="동시 편집") throw Error("Concurrent memo lost");
   const backup = parseBackupPayload({format:"dcb-records",version:1,userMemos:after.userMemos,blockedUids:tokens});
   if(Object.keys(backup.sync).length || backup.blockedUids.length !== 2) throw Error("Backup expanded scope");
+  // Exercise the same new native payload on both installed browser engines.
+  // All data is synthetic; this never reads or writes the real website.
+  await api.storage.sync.set({blockedKeywords:["기존 단어"],userBlockEnabled:false,keywordBlockEnabled:false,userMemoEnabled:false});
+  const nativeBlock=(targetType,value,extra={})=>({kind:"block",source:"dc-native",scope:"global",galleryId:"",galleryType:"",enabled:true,targetType,value,...extra});
+  const nativeRecords=[
+    nativeBlock("uid","nativeuser",{identityVerified:true,nativeTargetType:"id"}),
+    nativeBlock("nick","원본닉"),nativeBlock("ip","198.51"),nativeBlock("keyword","네이티브 단어"),
+    nativeBlock("uid","nativememo",{kind:"memo",identityVerified:true,memo:"원문 <>&\" ' 메모",color:"#123abc"}),
+    nativeBlock("keyword","갤러리 규칙",{scope:"gallery",galleryId:"example",galleryType:"M"}),
+    nativeBlock("keyword","디시에서 OFF",{enabled:false})
+  ];
+  const applied=await sendUserBlockMutation("dcb.recordsImport",{nativeRecords});
+  if(!applied.ok || applied.blockCount!==3 || applied.memoCount!==1 || applied.keywordCount!==1 || applied.heldCount!==2)
+    throw Error("Native import counts: "+JSON.stringify(applied));
+  const imported=await api.storage.local.get(["userMemos","dcbRecordsImportUndo"]);
+  if(imported.userMemos["uid:nativememo"].memo!=="원문 <>&\" ' 메모" || imported.userMemos["uid:nativememo"].color!=="#123abc")
+    throw Error("Native memo text/color changed");
+  const repeated=await sendUserBlockMutation("dcb.recordsImport",{nativeRecords});
+  if(!repeated.ok || repeated.blockCount+repeated.memoCount+repeated.keywordCount+repeated.nativeCount!==0 ||
+      (await api.storage.local.get("dcbRecordsImportUndo")).dcbRecordsImportUndo.id!==imported.dcbRecordsImportUndo.id)
+    throw Error("Native duplicate import replaced undo");
+  const settings=await api.storage.sync.get(["blockedKeywords","userBlockEnabled","keywordBlockEnabled","userMemoEnabled"]);
+  if(settings.blockedKeywords.join("|")!=="기존 단어|네이티브 단어" || settings.userBlockEnabled || settings.keywordBlockEnabled || settings.userMemoEnabled)
+    throw Error("Native import changed activation or promoted held rules");
+  const undoneNative=await sendUserBlockMutation("dcb.recordsUndo");
+  if(!undoneNative.ok || undoneNative.blockCount!==3 || undoneNative.memoCount!==1 || undoneNative.keywordCount!==1)
+    throw Error("Native undo counts: "+JSON.stringify(undoneNative));
+  if((await DCBUserBlockStore.getAllTokensReadOnly()).join("|")!=="testuser" ||
+      (await api.storage.sync.get("blockedKeywords")).blockedKeywords.join("|")!=="기존 단어" ||
+      (await api.storage.local.get("userMemos")).userMemos["uid:nativememo"])
+    throw Error("Native undo damaged existing records");
+  if(autoLive){
+    const before=JSON.stringify((await api.storage.local.get('userMemos')).userMemos);
+    const execute=chrome.scripting.executeScript.bind(chrome.scripting),diagnostics=[];
+    chrome.scripting.executeScript=async args=>{const result=await execute(args);diagnostics.push(result.map(item=>({frameId:item.frameId,href:item.result?.href,error:item.error?.message,kind:typeof item.result})));return result;};
+    el('recordsNativeAuto').click();
+    await wait(()=>!el('recordsNativeAuto').disabled,400);
+    chrome.scripting.executeScript=execute;
+    if(el('recordsNativeProgress').value!==100)throw Error('Automatic native read: '+el('recordsNativeProgressText').textContent+' '+JSON.stringify(diagnostics));
+    if(JSON.stringify((await api.storage.local.get('userMemos')).userMemos)!==before)throw Error('Automatic preview changed extension data');
+    if((await api.tabs.query({url:'https://gall.dcinside.com/_js/crossDomainStorage.html'})).length)throw Error('Automatic read left its source tab open');
+    const probe=await api.tabs.create({url:'https://gall.dcinside.com/_js/crossDomainStorage.html',active:false});
+    try {
+      await wait(async()=>{const tab=await api.tabs.get(probe.id);return tab.status==='complete'&&tab.url==='https://gall.dcinside.com/_js/crossDomainStorage.html';},400);
+      const results=await api.scripting.executeScript({target:{tabId:probe.id,frameIds:[0]},func:DCBNativeCollector.collect,world:'ISOLATED'});
+      if(!results[0]?.result?.issues?.some(issue=>issue.code==='MODAL_NOT_OPEN'))throw Error('Manual DOM collector did not return its result');
+    } finally {await api.tabs.remove(probe.id);}
+  }
   return true;
 }
 const root=path.resolve(process.env.DCB_EXTENSION_ROOT || path.join(__dirname,".."));
@@ -71,7 +119,7 @@ test("Chromium installed records import writes both stores and selectively undoe
   const p=await context.newPage();
   await p.goto("chrome-extension://"+new URL(worker.url()).hostname+"/src/ui/options/options.html#settingsDcRecords");
   const downloads=[];p.on('download',d=>downloads.push(d.suggestedFilename()));
-  assert.equal(await p.evaluate(exercise),true);
+  assert.equal(await p.evaluate(exercise,!!process.env.DCB_TEST_NATIVE_AUTO_LIVE),true);
   assert.deepEqual(downloads,[],"Import and undo must not trigger an automatic backup download");
   fs.mkdirSync(artifacts,{recursive:true});
   await p.locator("#settingsDcRecords").screenshot({path:path.join(artifacts,"records-chromium.png")});
@@ -113,7 +161,7 @@ test("Firefox installed records import writes both stores and selectively undoes
     if(!tab)await delay(100);
   }
   assert.ok(tab,"installed extension opened options");
-  const r=await command("script.evaluate",{target:{context:tab.context},expression:"("+exercise.toString()+")()",awaitPromise:true});
+  const r=await command("script.evaluate",{target:{context:tab.context},expression:"("+exercise.toString()+")("+Boolean(process.env.DCB_TEST_NATIVE_AUTO_LIVE)+")",awaitPromise:true});
   assert.equal(r.result?.value,true,r.exceptionDetails?.text);
   assert.deepEqual(fs.readdirSync(profile).filter(name=>/^dcb-records-before-import-.*\.json/.test(name)),[]);
   await command("script.evaluate",{target:{context:tab.context},expression:'document.getElementById("settingsDcRecords").scrollIntoView()',awaitPromise:false});

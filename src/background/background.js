@@ -452,13 +452,15 @@ const CRITICAL_FILTER_SYNC_DEFAULTS = Object.freeze({
 });
 const CRITICAL_FILTER_SYNC_KEYS = new Set(Object.keys(CRITICAL_FILTER_SYNC_DEFAULTS));
 
-let keywordSettingsWriteQueue = Promise.resolve();
+const recordsStartupRecovery = Promise.resolve().then(() => globalThis.DCBUserBlockStore?.recoverRecordsImport?.())
+  .catch(error => console.warn("[DCB] records import recovery pending", error));
+let keywordSettingsWriteQueue = recordsStartupRecovery;
 let keywordHotCacheWriteQueue = Promise.resolve();
 let dcbestFilterHotCacheWriteQueue = Promise.resolve();
 let criticalFilterHotCacheWriteQueue = Promise.resolve();
 let criticalFilterHotCacheTimer = null;
 
-let userBlockMutationQueue = Promise.resolve();
+let userBlockMutationQueue = recordsStartupRecovery;
 let updateNoticeMutationQueue = Promise.resolve();
 
 function queueUserBlockMutation(work, { internal = false } = {}) {
@@ -467,6 +469,13 @@ function queueUserBlockMutation(work, { internal = false } = {}) {
   }
   const job = userBlockMutationQueue.then(work, work);
   userBlockMutationQueue = job.catch(() => {});
+  return job;
+}
+
+function queueRecordsMutation(work) {
+  if (settingsTransactionsPending) return settingsMutationQueue.then(() => queueRecordsMutation(work));
+  const job = keywordSettingsWriteQueue.then(() => queueUserBlockMutation(work, { internal: true }));
+  keywordSettingsWriteQueue = job.catch(() => {});
   return job;
 }
 
@@ -620,6 +629,7 @@ function queueKeywordSettingsPatch(patch = {}) {
   if (settingsTransactionsPending) return settingsMutationQueue.then(() => queueKeywordSettingsPatch(patch));
   const safePatch = normalizeKeywordSettingsPatch(patch);
   const job = keywordSettingsWriteQueue.then(async () => {
+    await globalThis.DCBUserBlockStore?.recoverRecordsImport?.();
     if (!Object.keys(safePatch).length) return { ok: true };
     const categoryKeys = ["keywordBlockCategories", "keywordHideCategories"].filter(key => key in safePatch);
     if (categoryKeys.length) {
@@ -1846,6 +1856,11 @@ function scheduleDnrSync() {
 
 /* 저장소 변경 시에만 DNR 규칙을 다시 계산한다. 동적 규칙은 background 재기동 사이에도 유지된다. */
 chrome.storage.onChanged.addListener((c, area) => {
+  if (area === "sync" && c.blockedKeywords && !globalThis.DCBUserBlockStore.consumeRecordsKeywordChange?.(
+    c.blockedKeywords.oldValue, c.blockedKeywords.newValue)) {
+    void queueUserBlockMutation(() => globalThis.DCBUserBlockStore.invalidateKeywordImportOwnership(c.blockedKeywords.newValue))
+      .catch(error => console.warn("[DCB] keyword import ownership update failed", error));
+  }
   if (area === "sync" && c.userBlockEnabled) {
     updateUserBlockToggleContextMenu(c.userBlockEnabled.newValue !== false);
   }
@@ -3403,7 +3418,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (records && _sender.url?.split("#")[0] !== chrome.runtime.getURL("src/ui/options/options.html")) return;
   if (!records && !["dcb.memoPatch", "dcb.userBlockAdd", "dcb.userBlockSetAll", "dcb.userBlockClear"].includes(msg?.type)) return;
 
-  queueUserBlockMutation(() => mutateUserBlockList(msg))
+  (records ? queueRecordsMutation : queueUserBlockMutation)(() => mutateUserBlockList(msg))
     .then((result) => sendResponse(result))
     .catch((error) => {
       sendResponse({

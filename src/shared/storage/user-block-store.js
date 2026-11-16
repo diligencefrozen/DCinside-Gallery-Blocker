@@ -681,18 +681,179 @@
     return {ok:true};
   }
 
-  // Commit the memo map, changed v2 buckets and undo journal in one local write.
-  async function importRecords({ memos = [], tokens = [], replace = false }, undo = false) {
+  const RECORDS_TRANSACTION_KEY = "dcbRecordsImportPending";
+  const NATIVE_METADATA_KEY = "dcbNativeImportMetadata";
+  const KEYWORD_OWNERS_KEY = "dcbNativeKeywordOwners";
+  const ownKeywordChanges = [];
+  const keywordKey = value => String(value).normalize("NFKC").trim().replace(/\s+/g, " ").toLowerCase();
+  const sameValue = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+  function consumeRecordsKeywordChange(before = [], after = []) {
+    const index = ownKeywordChanges.findIndex(change => sameValue(change.before, before) && sameValue(change.after, after));
+    if (index < 0) return false;
+    ownKeywordChanges.splice(index, 1);
+    return true;
+  }
+
+  async function writeRecordsKeywords(before, after) {
+    const change = { before: before.slice(), after: after.slice() };
+    ownKeywordChanges.push(change);
+    try { await storageSet("sync", { blockedKeywords: after }); }
+    catch (error) {
+      const index = ownKeywordChanges.indexOf(change);
+      if (index >= 0) ownKeywordChanges.splice(index, 1);
+      throw error;
+    }
+  }
+
+  // This is deliberately stricter than the legacy paste importer. The native
+  // website's opaque identification code is not evidence of a member UID.
+  function planNativeRecords(records) {
+    if (!Array.isArray(records) || records.length > 20000 || JSON.stringify(records).length > 4194304)
+      throw Error("직접 가져오기 목록이 너무 크거나 형식이 올바르지 않습니다.");
+    const plan = { memos: [], tokens: [], keywords: [], rows: [], held: [], duplicates: 0, metadata: [] };
+    const seen = new Map();
+    for (const raw of records) {
+      const record = {
+        kind: raw?.kind, source: raw?.source, scope: raw?.scope,
+        galleryId: raw?.galleryId || "", galleryType: raw?.galleryType || "",
+        enabled: typeof raw?.enabled === "boolean" ? raw.enabled : null,
+        targetType: raw?.targetType === "word" ? "keyword" : raw?.targetType,
+        value: typeof raw?.value === "string" ? raw.value.trim() : "",
+        identityVerified: raw?.identityVerified === true
+      };
+      if (typeof raw?.nativeTargetType === "string" && raw.nativeTargetType.length <= 40)
+        record.nativeTargetType = raw.nativeTargetType;
+      if (raw?.nativeScopeModel === "gallery-id") record.nativeScopeModel = "gallery-id";
+      if (record.kind === "memo") {
+        record.memo = raw.memo;
+        record.color = raw.color;
+      }
+      let reason = "", token, memoKey, keyword;
+      if (record.source !== "dc-native" || !["block", "memo"].includes(record.kind) ||
+          !["global", "gallery"].includes(record.scope) || !record.value || record.value.length > 500 ||
+          typeof record.galleryId !== "string" || typeof record.galleryType !== "string" || record.galleryType.length > 40)
+        reason = "출처·범위·값 형식을 확인할 수 없음";
+      else if (record.scope === "gallery" && !/^[a-z0-9_]{1,80}$/i.test(record.galleryId))
+        reason = "갤러리 ID를 확인할 수 없음";
+      else if (record.scope === "global" && record.galleryId)
+        reason = "전체 범위에 갤러리 ID가 함께 있음";
+      else if (record.kind === "block" && record.scope === "gallery")
+        reason = "갤러리별 차단은 아직 지원하지 않습니다";
+      else if (record.kind === "memo" && record.scope === "gallery" && record.nativeScopeModel !== "gallery-id")
+        reason = "갤러리 종류를 포함한 메모 범위를 기존 저장 키로 보존할 수 없어 보류";
+      else if (record.kind === "block" && record.enabled !== true)
+        reason = record.enabled === false ? "디시에서 OFF인 규칙" : "디시 차단 활성 상태를 확인할 수 없음";
+      else if (record.targetType === "id") reason = "식별 코드와 회원 UID의 대응이 확인되지 않음";
+      else if (record.targetType === "uid" && (!record.identityVerified || !/^[a-z0-9._-]{2,64}$/i.test(record.value) ||
+          classifyToken(record.value) !== "uid" || normalizeToken(record.value) !== record.value))
+        reason = "회원 UID를 확실하게 확인할 수 없음";
+      else if (record.targetType === "ip" && (!/^\d{1,3}\.\d{1,3}$/.test(record.value) ||
+          !record.value.split(".").every(n => Number(n) <= 255)))
+        reason = "확장은 IP 앞 두 자리만 지원하며 전체 IP의 범위를 넓혀 가져오지 않음";
+      else if (record.kind === "memo" && (!["uid", "ip"].includes(record.targetType) ||
+          typeof record.memo !== "string" || !record.memo.trim() || record.memo.length > 80 ||
+          typeof record.color !== "string" || !/^#[a-f\d]{6}$/i.test(record.color)))
+        reason = "메모 식별자·본문·색상을 보존할 수 없음";
+      else if (record.kind === "block" && record.targetType === "nick" &&
+          (normalizeNick(record.value) !== record.value || /^(?:ㅇㅇ|익명|무명|유동|유동닉|anonymous)$/i.test(record.value)))
+        reason = "닉네임을 변형 없이 안전하게 구분할 수 없음";
+      else if (!["keyword", "uid", "nick", "ip"].includes(record.targetType))
+        reason = "지원하지 않는 차단 유형";
+      if (!reason) {
+        if (record.kind === "memo") memoKey = (record.scope === "global" ? "" : "gallery:" + record.galleryId + ":") + record.targetType + ":" + record.value;
+        else if (record.targetType === "keyword") keyword = record.value.normalize("NFKC").replace(/\s+/g, " ");
+        else token = record.targetType === "nick" ? "nick-exact:" + record.value : record.value;
+      }
+      const key = JSON.stringify([record.kind, record.scope, record.galleryId, record.galleryType, record.targetType,
+        keyword ? keywordKey(keyword) : token ? makeBlockKey(token) : record.value]);
+      const row = { record, key, status: reason ? "held" : "applicable", reason, token, memoKey, keyword };
+      if (reason) plan.held.push(row);
+      else if (seen.has(key)) {
+        plan.duplicates++;
+        row.status = "duplicate";
+        row.reason = sameValue(record, seen.get(key)) ? "수집 목록 내 중복" : "수집 목록 내 같은 식별자의 값 충돌: 첫 항목 유지";
+      } else {
+        seen.set(key, record);
+        plan.metadata.push([key, record]);
+        if (memoKey) plan.memos.push([memoKey, { ...record, type: record.targetType,
+          scope: record.scope === "global" ? "global" : record.galleryId,
+          uid: record.targetType === "uid" ? record.value : "", ip: record.targetType === "ip" ? record.value : "", nickname: "" }]);
+        if (token) plan.tokens.push(token);
+        if (keyword) plan.keywords.push(keyword);
+      }
+      plan.rows.push(row);
+    }
+    return plan;
+  }
+
+  // local and sync cannot share an atomic write. A durable pending record is
+  // written before touching sync; the final local write clears it atomically
+  // with buckets/memos/undo. A worker interrupted between those writes rolls
+  // back only the keyword delta, retaining unrelated edits.
+  async function recoverRecordsImport() {
+    const data = await storageGet("local", RECORDS_TRANSACTION_KEY);
+    const pending = data[RECORDS_TRANSACTION_KEY];
+    if (!pending) return false;
+    if (!Array.isArray(pending.added) || !Array.isArray(pending.removed)) throw Error("가져오기 복구 기록 형식 오류");
+    const { blockedKeywords = [] } = await storageGet("sync", { blockedKeywords: [] });
+    const added = new Set(pending.added.map(keywordKey));
+    const restored = blockedKeywords.filter(word => !added.has(keywordKey(word)));
+    const keys = new Set(restored.map(keywordKey));
+    for (const word of pending.removed) if (!keys.has(keywordKey(word))) {
+      restored.push(word); keys.add(keywordKey(word));
+    }
+    if (!sameValue(restored, blockedKeywords)) await writeRecordsKeywords(blockedKeywords, restored);
+    await storageSet("local", { [RECORDS_TRANSACTION_KEY]: null });
+    return true;
+  }
+
+  async function invalidateKeywordImportOwnership(keywords) {
+    const data = await storageGet("local", KEYWORD_OWNERS_KEY);
+    const owners = { ...data[KEYWORD_OWNERS_KEY] }, labels = new Set(Array.isArray(keywords) ? keywords : []);
+    let changed = false;
+    for (const [key, owner] of Object.entries(owners)) if (!labels.has(owner.label)) {
+      delete owners[key]; changed = true;
+    }
+    if (changed) await storageSet("local", { [KEYWORD_OWNERS_KEY]: owners });
+  }
+
+  async function commitRecordsPatch(patch, keywordChange) {
+    if (!keywordChange) return storageSet("local", patch);
+    const { before, after } = keywordChange;
+    const beforeKeys = new Set(before.map(keywordKey)), afterKeys = new Set(after.map(keywordKey));
+    await storageSet("local", { [RECORDS_TRANSACTION_KEY]: {
+      added: after.filter(word => !beforeKeys.has(keywordKey(word))),
+      removed: before.filter(word => !afterKeys.has(keywordKey(word)))
+    } });
+    try {
+      await writeRecordsKeywords(before, after);
+      await storageSet("local", { ...patch, [RECORDS_TRANSACTION_KEY]: null });
+    } catch (error) {
+      try { await recoverRecordsImport(); }
+      catch (recoveryError) { throw Error("저장 실패. 복구가 보류되어 다음 실행에서 재시도합니다: " + recoveryError.message); }
+      throw error;
+    }
+  }
+
+  // Existing paste/file imports keep their original payload and local commit.
+  // Native records pass through the same buckets/memo path after strict review.
+  async function importRecords({ memos = [], tokens = [], replace = false, nativeRecords }, undo = false) {
+    await recoverRecordsImport();
+    const native = !undo && nativeRecords !== undefined ? planNativeRecords(nativeRecords) : null;
+    if (native) { memos = native.memos; tokens = native.tokens; }
     await migrateLegacyToBuckets();
     const journalKey = "dcbRecordsImportUndo";
-    const state = await storageGet("local", ["userMemos", META_KEY, journalKey]);
-    const journal = undo ? state[journalKey] : { id: crypto.randomUUID(), memos: [], tokens: [] };
+    const state = await storageGet("local", ["userMemos", META_KEY, journalKey, NATIVE_METADATA_KEY, KEYWORD_OWNERS_KEY]);
+    const journal = undo ? state[journalKey] : { id: crypto.randomUUID(), memos: [], tokens: [], keywords: [], native: [] };
     if (!journal) throw Error("취소할 가져오기가 없습니다.");
     const list = normalizeList(undo ? journal.tokens : tokens);
     const keys = [...new Set(list.map(token => bucketKeyForBlockKey(makeBlockKey(token))))];
     const buckets = keys.length ? await storageGet("local", keys) : {};
     const patch = {};
-    let blockCount = 0, memoCount = 0;
+    const nativeByToken = new Map(native?.rows.filter(row => row.status === "applicable" && row.token)
+      .map(row => [makeBlockKey(row.token), row.record]));
+    let blockCount = 0, memoCount = 0, keywordCount = 0, nativeCount = 0;
     const stamp = now();
     for (const token of list) {
       const key = makeBlockKey(token);
@@ -703,7 +864,9 @@
         delete bucket[key];
       } else {
         if (Object.hasOwn(bucket, key)) continue;
-        bucket[key] = { token, type: classifyToken(token), createdAt: stamp, updatedAt: stamp, importId: journal.id };
+        const sourceRecord = nativeByToken.get(key);
+        bucket[key] = { token, type: classifyToken(token), createdAt: stamp, updatedAt: stamp, importId: journal.id,
+          ...(sourceRecord ? { nativeRecord: sourceRecord } : {}) };
         journal.tokens.push(token);
       }
       patch[bucketKey] = bucket;
@@ -723,6 +886,7 @@
       for (const [key, item] of memos) {
         if (!/^(?:gallery:[a-z0-9_]{1,80}:)?(?:ip|uid):/i.test(key) || !item?.memo) throw Error("메모 형식 오류");
         if (Object.hasOwn(current,key) && !replace) continue;
+        if (current[key] && Object.keys(item).every(field => sameValue(current[key][field], item[field]))) continue;
         const after = { ...item, importedAt: stamp, updatedAt: stamp };
         journal.memos.push({ key, before: current[key] ?? null, after });
         current[key] = after;
@@ -732,11 +896,53 @@
     if (memoCount) patch.userMemos = current;
     if (blockCount) patch[META_KEY] = { ...state[META_KEY], updatedAt: stamp,
       count: state[META_KEY].count + (undo ? -blockCount : blockCount) };
-    if (undo || memoCount || blockCount) {
-      patch[journalKey] = undo ? null : journal;
-      await storageSet("local", patch);
+    const metadata = { ...state[NATIVE_METADATA_KEY] };
+    if (undo) {
+      for (const { key, before, after } of journal.native || []) {
+        if (!sameValue(metadata[key], after)) continue;
+        if (before) metadata[key] = before;
+        else delete metadata[key];
+        nativeCount++;
+      }
+    } else if (native) {
+      for (const [key, record] of native.metadata) {
+        if (sameValue(metadata[key], record) || (Object.hasOwn(metadata, key) && !replace)) continue;
+        journal.native.push({ key, before: metadata[key] ?? null, after: record });
+        metadata[key] = record;
+        nativeCount++;
+      }
     }
-    return { ok: true, memoCount, blockCount };
+    if (nativeCount) patch[NATIVE_METADATA_KEY] = metadata;
+    let keywordChange;
+    if ((undo && journal.keywords?.length) || native?.keywords.length) {
+      const { blockedKeywords = [] } = await storageGet("sync", { blockedKeywords: [] });
+      if (!Array.isArray(blockedKeywords) || !blockedKeywords.every(word => typeof word === "string")) throw Error("기존 키워드 목록 형식 오류");
+      const after = blockedKeywords.slice(), keys = new Set(after.map(keywordKey));
+      const owners = { ...state[KEYWORD_OWNERS_KEY] };
+      if (undo) {
+        for (const word of journal.keywords) {
+          // Exact label match keeps a manually renamed keyword.
+          const index = after.indexOf(word);
+          const owner = owners[keywordKey(word)];
+          if (index >= 0 && owner?.importId === journal.id && owner.label === word) {
+            after.splice(index, 1); keywordCount++; delete owners[keywordKey(word)];
+          }
+        }
+      } else for (const word of native.keywords) {
+        if (keys.has(keywordKey(word))) continue;
+        after.push(word); keys.add(keywordKey(word)); journal.keywords.push(word); keywordCount++;
+        owners[keywordKey(word)] = { label: word, importId: journal.id };
+      }
+      if (keywordCount) {
+        keywordChange = { before: blockedKeywords, after };
+        patch[KEYWORD_OWNERS_KEY] = owners;
+      }
+    }
+    if (undo || memoCount || blockCount || keywordCount || nativeCount) {
+      patch[journalKey] = undo ? null : journal;
+      await commitRecordsPatch(patch, keywordChange);
+    }
+    return { ok: true, memoCount, blockCount, keywordCount, nativeCount, heldCount: native?.held.length || 0 };
   }
 
   async function clearAllTokens() {
@@ -785,6 +991,10 @@
     toggleToken,
     clearAllTokens,
     importRecords,
+    planNativeRecords,
+    recoverRecordsImport,
+    invalidateKeywordImportOwnership,
+    consumeRecordsKeywordChange,
     patchMemos,
     migrateLegacyToBuckets,
     getUsage,

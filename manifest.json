@@ -65,6 +65,23 @@
       ],
       "run_at": "document_start",
       "all_frames": false
+    },
+    {
+      "matches": [
+        "*://gall.dcinside.com/*"
+      ],
+      "js": [
+        "src/content/core/dc-outlink-off.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": false
+    },
+    {
+      "matches": ["*://gall.dcinside.com/*", "*://m.dcinside.com/*"],
+      "js": ["src/content/tools/scroll-top.js"],
+      "run_at": "document_end",
+      "all_frames": false
     }
   ]
 }

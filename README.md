@@ -38,6 +38,10 @@ Block unwanted galleries, posts, comments, users, keywords, images, and other di
 
 </div>
 
+Development changes for 7.3.52.2026: automatic records import opens its own background DC page, reads this browser's registered PC block and memo scopes, and shows progress before preview and merge. Gallery memo scopes are preserved; OFF blocks, gallery blocks and uncertain identities remain held for review. Existing file/paste import and undo remain available. A bottom-right top button handles long pages and scrollable lists and stays above refresh/floating controls. See the [current development report](docs/automatic-records-and-scroll-top.md).
+
+While enabled, the extension automatically keeps **DC's own external-link warning OFF on PC gallery pages**. This removes DC's notice before leaving its site. Browser Safe Browsing, certificate warnings and the extension's separate link protection remain unchanged. See [development evidence and limitations](docs/dc-native-records-development.md).
+
 ---
 
 ## Project Snapshot

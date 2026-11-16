@@ -4,7 +4,17 @@ const writer='<div class="gall_writer ub-writer" data-nick="ㅇㅇ" data-uid="" 
 for(const [engine,type] of Object.entries({chromium,firefox})) test(engine+' anonymous mini IP with memo enabled',async()=>{const b=await type.launch({headless:true,executablePath:type.executablePath()});try{const p=await b.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.message));
 await p.route('**/*',r=>r.fulfill({contentType:'text/html',body:`<html><body><table class="gall_list"><tbody><tr class="ub-content" data-no="1" id="list"><td class="gall_writer"><em>10.28</em><span class="ip">06.28</span></td></tr></tbody></table><div class="view_content_wrap" id="article"><div class="gallview_head">${writer}</div><div class="write_div">본문</div><ul class="cmt_list"><li id="parent"><span class="gall_writer"><em>익명</em><span class="ip">10.28 13:54</span></span><ul class="reply_list"><li id="reply"><span class="gall_writer" data-ip="8.8.8.8">해외</span></li></ul></li></ul></div></body></html>`}));
 await p.goto('https://gall.dcinside.com/mini/board/view/?id=nobirthgall&no=18059');
-await p.evaluate(()=>{window.listeners=[];window.settings={hideForeignIpEnabled:true,hideAnonymousEnabled:false,showMemberIpInfo:true,userMemoEnabled:true,userBlockEnabled:false,noticeBlockEnabled:false};window.chrome={runtime:{lastError:null,sendMessage:(m,f)=>f?.({ok:false})},storage:{local:{get:async defaults=>Object.fromEntries(Object.keys(defaults).map(k=>[k,k==="userMemos"?{}:{version:2,data:{sync:window.settings,tokens:[]}}]))},sync:{get:(d,f)=>f?.({...d,...window.settings})},onChanged:{addListener:f=>listeners.push(f)}}};window.DCBRuntimeSettingsCache={get:(d,f)=>f({...d,...window.settings}),onChanged:chrome.storage.onChanged};window.previewEnabled=true;window.PREVIEW_COMMENT_DEBUG=false;});
+await p.evaluate(()=>{
+ window.listeners=[];window.settings={hideForeignIpEnabled:true,hideAnonymousEnabled:false,showMemberIpInfo:true,userMemoEnabled:true,userBlockEnabled:false,noticeBlockEnabled:false};
+ // The real storage/cache APIs support both callbacks and Promise reads.
+ const read=(select)=>(defaults,callback)=>{const value=select(defaults);if(typeof callback==='function'){queueMicrotask(()=>callback(value));return;}return Promise.resolve(value);};
+ const readSettings=read(defaults=>({...defaults,...window.settings}));
+ window.chrome={runtime:{lastError:null,sendMessage:(m,f)=>f?.({ok:false})},storage:{
+  local:{get:read(defaults=>Object.fromEntries(Object.keys(defaults).map(k=>[k,k==="userMemos"?{}:{version:2,data:{sync:window.settings,tokens:[]}}])))},
+  sync:{get:readSettings},onChanged:{addListener:f=>listeners.push(f)}
+ }};
+ window.DCBRuntimeSettingsCache={get:readSettings,onChanged:chrome.storage.onChanged};window.previewEnabled=true;window.PREVIEW_COMMENT_DEBUG=false;
+});
 for(const file of ['src/shared/ip-network-fast-classifier.js','src/shared/ip-network-classifier.js','src/content/core/critical-filter-bootstrap.js','src/content/cleaner/cleaner-foreign-ip.js','src/content/user/member-ip-view.js','src/content/user/writer-layout.js','src/content/user/user-memo.js'])await p.addScriptTag({content:read(file)});
 // Generated badges must not become authoritative IP evidence on a rescan.
 await p.evaluate(()=>{

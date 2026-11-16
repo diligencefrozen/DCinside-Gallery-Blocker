@@ -1254,12 +1254,12 @@ function queueBlockedKeywordWrite(next) {
   blockedKeywordWritePending += 1;
 
   blockedKeywordWriteQueue = blockedKeywordWriteQueue.then(() => new Promise((resolve) => {
-    chrome.storage.sync.set({ blockedKeywords: snapshot }, () => {
-      const failed = !!chrome.runtime?.lastError;
+    chrome.runtime.sendMessage({ type: "dcb.keywordSettings.patch", patch: { blockedKeywords: snapshot } }, (response) => {
+      const failed = !!chrome.runtime?.lastError || !response?.ok;
       blockedKeywordWritePending = Math.max(0, blockedKeywordWritePending - 1);
 
       if (failed) {
-        console.warn("[DCB] blockedKeywords save failed:", chrome.runtime.lastError?.message || "unknown");
+        console.warn("[DCB] blockedKeywords save failed:", chrome.runtime.lastError?.message || response?.message || "unknown");
         blockedKeywordDeferredRefresh = true;
       }
 

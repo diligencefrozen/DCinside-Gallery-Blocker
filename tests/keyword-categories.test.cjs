@@ -106,7 +106,17 @@ test('an unpacked extension synchronizes categories, re-filters open pages and r
   await attached(gallery, '#row1[data-dcb-list-keyword="수동등록"]');
   const view = await context.newPage();
   await view.goto(board + 'view/?id=fixture&no=1');
-  await attached(view, '#dcb-keyword-article-overlay[data-block-key^="title:category:poll"]');
+  const articleOverlay = async (source, needle) => {
+    await view.waitForFunction(({ source, needle }) => {
+      try {
+        const key = JSON.parse(document.getElementById('dcb-keyword-article-overlay')?.dataset.blockKey);
+        return key[1] === source && key[2] === needle;
+      } catch { return false; }
+    }, { source, needle }, { timeout: 10000 });
+    const key = JSON.parse(await view.locator('#dcb-keyword-article-overlay').getAttribute('data-block-key'));
+    assert.deepEqual([JSON.parse(key[0]), key[1], key[2]], [['/board/view/', 'fixture', '1'], source, needle]);
+  };
+  await articleOverlay('title', 'category:poll');
   await attached(view, '#comment_li_1[data-dcb-keyword-match="투표"]');
   // Supply deterministic HTML to the preview's existing fetch bridge in its
   // isolated world. The context-menu handler, parsing and filters are real.
@@ -123,7 +133,7 @@ test('an unpacked extension synchronizes categories, re-filters open pages and r
   await attached(gallery, '.dcbpv-comment-item[data-dcbpv-blocked-label="투표"]');
   assert.equal(await gallery.locator('.dcbpv-filter-reveal').count(), 0);
   await options.evaluate(targets => chrome.storage.sync.set({ keywordBlockTargets: { ...targets, viewTitle: false, comments: false } }), targets);
-  await attached(view, '#dcb-keyword-article-overlay[data-block-key^="body:category:politics"]');
+  await articleOverlay('body', 'category:politics');
   await attached(view, '#comment_li_1:not([data-dcb-keyword-match])');
   await attached(gallery, '.dcbpv-comment-item[data-dcbpv-blocked-reason="keyword-hide"]');
   await attached(gallery, '.dcbpv-article .dcbpv-filter-chip[title="정치"]');
