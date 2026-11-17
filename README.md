@@ -42,6 +42,8 @@ Development changes for 7.3.52.2026: automatic records import opens its own back
 
 Activity filtering now checks an unknown author before opening a post from a gallery list. Low-activity posts stay hidden in the list, while lookup failures offer an explicit choice to open or cancel. Previews number multiple photos and keep portrait-video controls visible. Model-based hiding shows a clear on-device AI badge, with separate basic-rule labeling and reduced-motion support. Article comment shortcuts display the current post's native total and update with AJAX changes. See the [reading UI and validation report](docs/reading-activity-and-preview-update.md).
 
+Follow-up changes add top/comment navigation inside the preview, repair nested photo-number badges, reduce duplicate work before the first article frame, and place activity-check failures in a separate card. Native records import now explicitly selects normal/private source windows and verifies their mode. Imported private records persist in the extension's shared storage after applying. See the [follow-up validation report](docs/preview-navigation-and-private-import.md).
+
 While enabled, the extension automatically keeps **DC's own external-link warning OFF on PC gallery pages**. This removes DC's notice before leaving its site. Browser Safe Browsing, certificate warnings and the extension's separate link protection remain unchanged. See [development evidence and limitations](docs/dc-native-records-development.md).
 
 ---

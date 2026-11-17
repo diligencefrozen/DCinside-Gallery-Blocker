@@ -56,6 +56,6 @@ AI 변경은 표시만 바꾼다. 모델·판정 기준·네트워크 전송·�
 
 재현 명령은 `node --test --test-isolation=none tests/*.test.mjs`, `node --test --test-concurrency=1 --test-force-exit tests/*.test.cjs`, `node tests/extension-integration.cjs`, `node tests/preview-regression.cjs`다. 이 Windows 검사 환경에서는 Firefox DLL 사전 검사 오판을 피하기 위해 `PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=1`을 설정했다. 양쪽 실제 브라우저 프로세스 실행과 재생·상호작용은 별도로 성공했다.
 
-소스 실행은 ZIP을 풀고 루트 `manifest.json`이 있는 폴더를 Chrome 확장 관리의 압축해제 확장으로 로드하거나 Firefox `about:debugging`에서 임시 부가 기능으로 로드한다. 기존 개발 확장을 사용 중이라면 확장을 다시 로드하고 열려 있던 옵션·디시 페이지도 새로고침한다. 이전 ‘목록 창 열기 필요’ 안내는 현재 옵션 소스에 없다. 테스트 의존성이 없는 환경은 먼저 `npm ci`와 Playwright 브라우저 준비가 필요하다.
+소스 실행은 ZIP을 풀고 루트 `manifest.json`이 있는 폴더를 Chrome 확장 관리의 압축해제 확장으로 로드하거나 Firefox `about:debugging`에서 임시 부가 기능으로 로드한다. 기존 개발 확장을 사용 중이라면 확장을 다시 로드하고 열려 있던 옵션·디시 페이지도 새로고침한다. 이전 ‘목록 창 열기 필요’ 안내는 현재 옵션 소스에 없다. 테스트 의존성이 없는 환경은 먼저 `pnpm install --frozen-lockfile`과 Playwright 브라우저 준비가 필요하다. 후속 미리보기 이동·순번·시크릿 지원은 [최신 보고서](preview-navigation-and-private-import.md)에 기록했다.
 
 변경 코드는 활동량 서비스·목록 필터·새 background 이동 메시지, manifest 초기 전달, 미리보기 렌더러, 표현 감지 안내, 상단/댓글 이동, 옵션 가져오기 UI와 해당 회귀 검사에 있다. 기존 차단·메모 저장 모델과 outlink 구현에는 이번 단계에서 추가 변경하지 않았다.

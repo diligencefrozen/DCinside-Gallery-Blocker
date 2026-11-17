@@ -1103,34 +1103,43 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     const sourceIndex = children.indexOf(source);
     if (sourceIndex < 0) return;
 
-    const existingUrls = new Set();
-    source.querySelectorAll?.("iframe").forEach((iframe) => {
-      const media = previewYouTubeMediaFromFrame(iframe, baseUrl);
-      if (media) existingUrls.add(media.embedUrl);
-    });
-    const mediaNodes = children.filter((node) => {
-      if (node === source || isUtilityContainer(node) || isCommentArea(node)) return false;
-      const candidates = node.matches?.("iframe")
-        ? [node]
-        : node.matches?.(YOUTUBE_EMBED_CONTAINER_SELECTOR)
-          ? [node]
-          : [...(node.querySelectorAll?.("iframe") || [])];
-      const media = candidates.map((candidate) => candidate.matches?.("iframe")
-        ? previewYouTubeMediaFromFrame(candidate, baseUrl)
-        : previewYouTubeMediaFromElement(candidate, baseUrl)).find(Boolean);
-      if (!media || existingUrls.has(media.embedUrl)) return false;
-      existingUrls.add(media.embedUrl);
-      return true;
+    const selector = `iframe,${YOUTUBE_EMBED_CONTAINER_SELECTOR}`;
+    const mediaFrom = node => {
+      if (isUtilityContainer(node) || isCommentArea(node)) return null;
+      return node.matches("iframe") ? previewYouTubeMediaFromFrame(node, baseUrl) : previewYouTubeMediaFromElement(node, baseUrl);
+    };
+    const existingUrls = new Set([...source.querySelectorAll(selector)].map(mediaFrom).filter(Boolean).map(media => media.embedUrl));
+    const mediaNodes = children.flatMap((node) => {
+      if (node === source || isUtilityContainer(node) || isCommentArea(node)) return [];
+      // Source DOM is intentionally left unnormalized until serialization.
+      // Resolve explicit nested markers here, without scanning unrelated DOM
+      // or copying the sibling's non-media controls, captions or scripts.
+      const candidates = [...(node.matches(selector) ? [node] : []), ...node.querySelectorAll(selector)];
+      const embeds = [];
+      for (const candidate of candidates) {
+        const media = mediaFrom(candidate);
+        if (!media || existingUrls.has(media.embedUrl)) continue;
+        existingUrls.add(media.embedUrl);
+        embeds.push(media);
+      }
+      return embeds.length ? [{ node, embeds }] : [];
     });
     if (!mediaNodes.length) return;
 
     const factory = clone.ownerDocument || document;
-    const before = mediaNodes.filter((node) => children.indexOf(node) < sourceIndex).reverse();
-    const after = mediaNodes.filter((node) => children.indexOf(node) > sourceIndex);
-    [...before, ...after].forEach((node) => {
+    const before = mediaNodes.filter(({node}) => children.indexOf(node) < sourceIndex).reverse();
+    const after = mediaNodes.filter(({node}) => children.indexOf(node) > sourceIndex);
+    [...before, ...after].forEach(({node, embeds}) => {
       const holder = factory.createElement("div");
       holder.className = "dcbpv-adjacent-youtube";
-      holder.appendChild(node.cloneNode(true));
+      for (const media of embeds) {
+        const iframe = factory.createElement("iframe");
+        iframe.className = "dcbpv-youtube-frame";
+        iframe.dataset.dcbpvYoutubeSource = "1";
+        iframe.src = media.embedUrl;
+        iframe.title = "YouTube 동영상 플레이어";
+        holder.append(iframe);
+      }
       if (children.indexOf(node) < sourceIndex) clone.prepend(holder);
       else clone.appendChild(holder);
     });
