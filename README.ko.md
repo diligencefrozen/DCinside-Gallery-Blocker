@@ -11,29 +11,64 @@
 
 [English](README.md)
 
-<p>
+
+<p align="center">
   <a href="https://chromewebstore.google.com/detail/fnfmdbldnhadkadklplhcjcojjiaopgg">
-    <img src="https://img.shields.io/badge/Install-Chrome%20Web%20Store-4285F4?logo=googlechrome&logoColor=white&style=for-the-badge" alt="Chrome 웹 스토어에서 설치">
+    <img src="https://img.shields.io/badge/Chrome%20웹%20스토어-설치-4285F4?logo=googlechrome&logoColor=white&style=for-the-badge" alt="Chrome 웹 스토어 설치">
   </a>
   <a href="https://addons.mozilla.org/ko/firefox/addon/dcinside-gallery-blocker/">
-    <img src="https://img.shields.io/badge/Install-Firefox%20Add--ons-FF7139?logo=firefoxbrowser&logoColor=white&style=for-the-badge" alt="Firefox Add-ons에서 설치">
+    <img src="https://img.shields.io/badge/Firefox%20부가%20기능-설치-FF7139?logo=firefoxbrowser&logoColor=white&style=for-the-badge" alt="Firefox 부가 기능 설치">
   </a>
 </p>
 
-<p>
-  <a href="https://chromewebstore.google.com/detail/fnfmdbldnhadkadklplhcjcojjiaopgg">
-    <img src="https://img.shields.io/chrome-web-store/v/fnfmdbldnhadkadklplhcjcojjiaopgg?label=Chrome%20Web%20Store&style=for-the-badge" alt="Chrome 웹 스토어 버전">
-  </a>
-  <a href="https://chromewebstore.google.com/detail/fnfmdbldnhadkadklplhcjcojjiaopgg">
-    <img src="https://img.shields.io/chrome-web-store/users/fnfmdbldnhadkadklplhcjcojjiaopgg?label=Users&style=for-the-badge" alt="Chrome 웹 스토어 사용자 수">
-  </a>
-  <a href="https://chromewebstore.google.com/detail/fnfmdbldnhadkadklplhcjcojjiaopgg">
-    <img src="https://img.shields.io/chrome-web-store/stars/fnfmdbldnhadkadklplhcjcojjiaopgg?label=Rating&style=for-the-badge" alt="Chrome 웹 스토어 평점">
-  </a>
-  <a href="https://addons.mozilla.org/ko/firefox/addon/dcinside-gallery-blocker/">
-    <img src="https://img.shields.io/amo/v/dcinside-gallery-blocker?label=Firefox%20Add-ons&style=for-the-badge" alt="Firefox Add-ons 버전">
-  </a>
-</p>
+<table align="center">
+  <thead>
+    <tr>
+      <th align="center">브라우저</th>
+      <th align="center">버전</th>
+      <th align="center">사용자 수</th>
+      <th align="center">평점</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td align="center"><strong>Chrome</strong></td>
+      <td align="center">
+        <a href="https://chromewebstore.google.com/detail/fnfmdbldnhadkadklplhcjcojjiaopgg">
+          <img src="https://img.shields.io/chrome-web-store/v/fnfmdbldnhadkadklplhcjcojjiaopgg?style=flat-square" alt="Chrome 버전">
+        </a>
+      </td>
+      <td align="center">
+        <a href="https://chromewebstore.google.com/detail/fnfmdbldnhadkadklplhcjcojjiaopgg">
+          <img src="https://img.shields.io/chrome-web-store/users/fnfmdbldnhadkadklplhcjcojjiaopgg?style=flat-square" alt="Chrome 사용자 수">
+        </a>
+      </td>
+      <td align="center">
+        <a href="https://chromewebstore.google.com/detail/fnfmdbldnhadkadklplhcjcojjiaopgg">
+          <img src="https://img.shields.io/chrome-web-store/stars/fnfmdbldnhadkadklplhcjcojjiaopgg?style=flat-square" alt="Chrome 평점">
+        </a>
+      </td>
+    </tr>
+    <tr>
+      <td align="center"><strong>Firefox</strong></td>
+      <td align="center">
+        <a href="https://addons.mozilla.org/ko/firefox/addon/dcinside-gallery-blocker/">
+          <img src="https://img.shields.io/amo/v/dcinside-gallery-blocker?style=flat-square" alt="Firefox 버전">
+        </a>
+      </td>
+      <td align="center">
+        <a href="https://addons.mozilla.org/ko/firefox/addon/dcinside-gallery-blocker/">
+          <img src="https://img.shields.io/amo/users/dcinside-gallery-blocker?style=flat-square" alt="Firefox 사용자 수">
+        </a>
+      </td>
+      <td align="center">
+        <a href="https://addons.mozilla.org/ko/firefox/addon/dcinside-gallery-blocker/">
+          <img src="https://img.shields.io/amo/rating/dcinside-gallery-blocker?style=flat-square" alt="Firefox 평점">
+        </a>
+      </td>
+    </tr>
+  </tbody>
+</table>
 
 </div>
 
