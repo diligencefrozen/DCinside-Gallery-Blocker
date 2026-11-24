@@ -12,29 +12,65 @@ Block unwanted galleries, posts, comments, users, keywords, images, and other di
 
 [한국어](README.ko.md)
 
-<p>
+
+<p align="center">
   <a href="https://chromewebstore.google.com/detail/fnfmdbldnhadkadklplhcjcojjiaopgg">
-    <img src="https://img.shields.io/badge/Install-Chrome%20Web%20Store-4285F4?logo=googlechrome&logoColor=white&style=for-the-badge" alt="Install from the Chrome Web Store">
+    <img src="https://img.shields.io/badge/Chrome_Web_Store-Install-4285F4?logo=googlechrome&logoColor=white&style=for-the-badge">
   </a>
   <a href="https://addons.mozilla.org/ko/firefox/addon/dcinside-gallery-blocker/">
-    <img src="https://img.shields.io/badge/Install-Firefox%20Add--ons-FF7139?logo=firefoxbrowser&logoColor=white&style=for-the-badge" alt="Install from Firefox Add-ons">
+    <img src="https://img.shields.io/badge/Firefox_Add--ons-Install-FF7139?logo=firefoxbrowser&logoColor=white&style=for-the-badge">
   </a>
 </p>
 
-<p>
-  <a href="https://chromewebstore.google.com/detail/fnfmdbldnhadkadklplhcjcojjiaopgg">
-    <img src="https://img.shields.io/chrome-web-store/v/fnfmdbldnhadkadklplhcjcojjiaopgg?label=Chrome%20Web%20Store&style=for-the-badge" alt="Chrome Web Store Version">
-  </a>
-  <a href="https://chromewebstore.google.com/detail/fnfmdbldnhadkadklplhcjcojjiaopgg">
-    <img src="https://img.shields.io/chrome-web-store/users/fnfmdbldnhadkadklplhcjcojjiaopgg?label=Users&style=for-the-badge" alt="Chrome Web Store Users">
-  </a>
-  <a href="https://chromewebstore.google.com/detail/fnfmdbldnhadkadklplhcjcojjiaopgg">
-    <img src="https://img.shields.io/chrome-web-store/stars/fnfmdbldnhadkadklplhcjcojjiaopgg?label=Rating&style=for-the-badge" alt="Chrome Web Store Rating">
-  </a>
-  <a href="https://addons.mozilla.org/ko/firefox/addon/dcinside-gallery-blocker/">
-    <img src="https://img.shields.io/amo/v/dcinside-gallery-blocker?label=Firefox%20Add-ons&style=for-the-badge" alt="Firefox Add-ons Version">
-  </a>
-</p>
+<table align="center">
+  <thead>
+    <tr>
+      <th align="center">Browser</th>
+      <th align="center">Version</th>
+      <th align="center">Users</th>
+      <th align="center">Rating</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td align="center"><strong>Chrome</strong></td>
+      <td align="center">
+        <a href="https://chromewebstore.google.com/detail/fnfmdbldnhadkadklplhcjcojjiaopgg">
+          <img src="https://img.shields.io/chrome-web-store/v/fnfmdbldnhadkadklplhcjcojjiaopgg?style=flat-square">
+        </a>
+      </td>
+      <td align="center">
+        <a href="https://chromewebstore.google.com/detail/fnfmdbldnhadkadklplhcjcojjiaopgg">
+          <img src="https://img.shields.io/chrome-web-store/users/fnfmdbldnhadkadklplhcjcojjiaopgg?style=flat-square">
+        </a>
+      </td>
+      <td align="center">
+        <a href="https://chromewebstore.google.com/detail/fnfmdbldnhadkadklplhcjcojjiaopgg">
+          <img src="https://img.shields.io/chrome-web-store/stars/fnfmdbldnhadkadklplhcjcojjiaopgg?style=flat-square">
+        </a>
+      </td>
+    </tr>
+    <tr>
+      <td align="center"><strong>Firefox</strong></td>
+      <td align="center">
+        <a href="https://addons.mozilla.org/ko/firefox/addon/dcinside-gallery-blocker/">
+          <img src="https://img.shields.io/amo/v/dcinside-gallery-blocker?style=flat-square">
+        </a>
+      </td>
+      <td align="center">
+        <a href="https://addons.mozilla.org/ko/firefox/addon/dcinside-gallery-blocker/">
+          <img src="https://img.shields.io/amo/users/dcinside-gallery-blocker?style=flat-square">
+        </a>
+      </td>
+      <td align="center">
+        <a href="https://addons.mozilla.org/ko/firefox/addon/dcinside-gallery-blocker/">
+          <img src="https://img.shields.io/amo/rating/dcinside-gallery-blocker?style=flat-square">
+        </a>
+      </td>
+    </tr>
+  </tbody>
+</table>
+
 
 </div>
 
