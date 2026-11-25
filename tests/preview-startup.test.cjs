@@ -5,7 +5,7 @@ const baseline=process.env.DCB_STARTUP_BASELINE;
 const source=baseline?execFileSync('git',['show',baseline+':src/content/core/content_script.js'],{encoding:'utf8',maxBuffer:4*1024*1024}):fs.readFileSync('src/content/core/content_script.js','utf8');
 const preview=source.slice(source.indexOf('(function dcBlockPostPreview(){'))
   .replace('function normalizeDcMedia(root, baseUrl){','function normalizeDcMedia(root, baseUrl){if(root.nodeType===9)window.documentMediaVisits+=root.querySelectorAll("img,video,iframe").length;')
-  .replace(/\}\)\(\);\s*$/,'window.startupTest={openPreview,closePreview,parseDesktopFallback,previewPerformanceSnapshot};})();');
+  .replace(/\}\)\(\);\s*$/,'window.startupTest={openPreview,closePreview,parseDesktopFallback,parseMobilePreview,previewPerformanceSnapshot,mountCommentPage};})();');
 const articleUrl='https://gall.dcinside.com/board/view/?id=fixture&no=17';
 const image='https://dcimg.dcinside.com/article-photo.svg';
 const nativeHtml=count=>`<!doctype html><html><head><meta property="og:title" content="시작 검사"></head><body>
@@ -74,7 +74,46 @@ for(const [engine,type]of Object.entries({chromium,firefox}))test(engine+' first
         read('<div class="comment_wrap"><div class="comment_count">전체 댓글 <span id="comment_total_17">조회 중</span>개</div></div>')];
     },articleUrl);
     assert.deepEqual(totals.map(row=>row[0]),[0,1234,null,42,null]);assert.equal(totals[0][1],'댓글 0개');assert.equal(totals[1][1],'댓글 1,234개');
+    const mobile=await page.evaluate(async ({url,html})=>{
+      const mobileUrl='https://m.dcinside.com/board/fixture/17';
+      const header='<div class="ginfo2"><a class="btn-commentgo" href="#comment_box"><b class="point-red">27</b></a></div>';
+      const box='<div id="comment_box"><div class="all-comment-tit"><span class="tit"><i class="ct">[1,234]</i></span></div><input id="reple_totalCnt" value="4"></div>';
+      const read=(body,source=mobileUrl)=>startupTest.parseMobilePreview(body,url,source).commentTotal;
+      const fallback=startupTest.parseDesktopFallback('<span id="comment_total_17">0</span><form id="_view_form_"><input id="no" value="17"><input id="id" value="fixture"><input id="comment_cnt" value="27"></form>',url);
+      reads=0;window.nativeFixture=html.replace('<body>','<body>'+header);
+      await startupTest.openPreview(url,{force:true});
+      const labels=()=>[document.querySelector('.dcbpv-comments-title').textContent,document.querySelector('.dcbpv-nav-count').textContent];
+      await new Promise(resolve=>requestAnimationFrame(resolve));
+      const cold=labels();startupTest.closePreview();await startupTest.openPreview(url);
+      await new Promise(resolve=>requestAnimationFrame(resolve));const warm=labels();startupTest.closePreview();
+      return {counts:[read(header+box),read(box),read(box.replace('[1,234]','?')),read(header.replace('27','0')),read(header,mobileUrl+'8'),read('<input id="no" value="18">'+header)],fallback:fallback.commentTotal,cold,warm,reads};
+    },{url:articleUrl,html:nativeHtml(2)});
+    assert.deepEqual(mobile,{counts:[27,1234,4,0,null,null],fallback:27,cold:['댓글 27개','27'],warm:['댓글 27개','27'],reads:1});
   }
+  // Measure DOM parsing on a cached reopen independently of network and paint.
+  const paging=await page.evaluate(({html,url})=>{
+    const data=startupTest.parseDesktopFallback(html,url);
+    const descriptor=Object.getOwnPropertyDescriptor(Element.prototype,'innerHTML');
+    let parsedRows=0;
+    Object.defineProperty(Element.prototype,'innerHTML',{...descriptor,set(value){
+      if(this.tagName==='TEMPLATE') parsedRows+=(value.match(/data-dcbpv-comment="1"/g)||[]).length;
+      descriptor.set.call(this,value);
+    }});
+    try {
+      const root=document.createElement('div'),times=[];
+      // A detached fixture can't auto-page or schedule work between samples.
+      for(let i=0;i<6;i++){
+        parsedRows=0;
+        const start=performance.now();
+        startupTest.mountCommentPage(root,data.commentsHTML,root,data,0);
+        times.push(performance.now()-start);
+      }
+      return {parsedRows,mounted:root.querySelectorAll('.dcbpv-comment-item').length,medianMs:times.slice(1).sort((a,b)=>a-b)[2]};
+    }finally{Object.defineProperty(Element.prototype,'innerHTML',descriptor);}
+  },{url:articleUrl,html:nativeHtml(500)});
+  assert.equal(paging.mounted,80);
+  if(!baseline)assert.equal(paging.parsedRows,80);
+  console.log(JSON.stringify({engine,baseline:baseline||'working',cachedCommentPage:paging}));
   assert.deepEqual(errors,[]);fs.writeFileSync(`${out}/${engine}${process.env.DCB_STARTUP_PROFILE?'-profile':''}.json`,JSON.stringify(samples,null,2));
   console.log(JSON.stringify({engine,baseline:baseline||'working',samples:samples.map(({sample,firstArticleFrameMs,documentMediaVisits,longTaskMaxMs,trace})=>({sample,firstArticleFrameMs,documentMediaVisits,longTaskMaxMs,parseMs:trace?.parseMs,renderMs:trace?.renderMs}))}));
 });

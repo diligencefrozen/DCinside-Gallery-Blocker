@@ -19,6 +19,17 @@ for(const [engine,type]of Object.entries({chromium,firefox}))test(engine+' previ
   assert.equal(await page.locator('.dcbpv-scroll').evaluate(node=>getComputedStyle(node).scrollBehavior),'auto','reduced motion overrides a site smooth-scroll rule');
   assert.equal(await top.isVisible(),false);assert.equal(await comments.locator('.dcbpv-nav-count').textContent(),'1,234');
   assert.equal(await comments.getAttribute('aria-label'),'미리보기 댓글로 이동 · 전체 1,234개');
+  const sleepState=await page.evaluate(()=>{
+    const nav=navTest.state();
+    Object.defineProperty(document,'hidden',{configurable:true,value:true});
+    document.dispatchEvent(new Event('visibilitychange'));
+    window.dispatchEvent(new Event('resize'));
+    const idle=nav.suspended && nav.frame===0;
+    delete document.hidden;
+    document.dispatchEvent(new Event('visibilitychange'));
+    return {idle,resumed:!nav.suspended && navTest.state()===nav};
+  });
+  assert.deepEqual(sleepState,{idle:true,resumed:true});
   const clear=async()=>{
     const rect=await nav.evaluate(node=>{const r=node.getBoundingClientRect(),scroll=document.querySelector('.dcbpv-scroll'),s=scroll.getBoundingClientRect(),header=document.querySelector('.dcbpv-header').getBoundingClientRect(),footer=document.querySelector('.dcbpv-actions').getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,contentRight:s.left+scroll.clientWidth,scrollTop:s.top,headerBottom:header.bottom,footerTop:footer.top}});
     assert.ok(rect.top>=Math.max(rect.scrollTop,rect.headerBottom)+7,JSON.stringify(rect));assert.ok(rect.right<=rect.contentRight-7,JSON.stringify(rect));assert.ok(rect.bottom<=rect.footerTop-7,JSON.stringify(rect));

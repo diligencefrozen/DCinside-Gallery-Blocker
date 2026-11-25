@@ -26,6 +26,12 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
   const PREVIEW_THROTTLE_STATUSES = new Set([403, 429, 503]);
 
   const cache = new Map();
+  // Only extension-generated comment lists are indexed. The offsets refer to
+  // sanitized HTML, never to live rows with filters, media players or editors.
+  const commentRowIndexes = new Map();
+  const COMMENT_PAGE_THRESHOLD = 64000;
+  const COMMENT_INDEX_BYTE_LIMIT = 4 * 1024 * 1024;
+  let commentIndexBytes = 0;
   // Drafts and lightweight editor settings live only in this tab. Credentials stay in the native form.
   const previewDrafts = new Map();
   let previewComposer = null;
@@ -601,9 +607,14 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
   }
 
   function preparePreviewNavigator(overlay){
+    if (document.hidden) return;
     const scroll = overlay.querySelector(".dcbpv-scroll"), panel = overlay.querySelector(".dcbpv-panel");
     if (!scroll || !panel) return;
-    if (previewNavigator?.scroll === scroll) {previewNavigator.schedule();return;}
+    if (previewNavigator?.scroll === scroll) {
+      if (previewNavigator.suspended) previewNavigator.observe();
+      previewNavigator.schedule();
+      return;
+    }
     disposePreviewNavigator();
     const nav = document.createElement("nav");
     nav.className = "dcbpv-navigator"; nav.dataset.dcbOwned = "preview-navigation";
@@ -661,7 +672,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
       nav.style.right = placement.right + "px";
       nav.style.bottom = bottom + "px";
     };
-    state.schedule = () => {if (!state.frame) state.frame = requestAnimationFrame(update);};
+    state.schedule = () => {if (!state.frame && !state.suspended) state.frame = requestAnimationFrame(update);};
     state.invalidateBounds = () => {placement = null; state.schedule();};
     const move = (position,focus) => {
       scroll.scrollTo({top:Math.max(0,position),behavior:matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth"});
@@ -676,11 +687,22 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     state.mutations = new MutationObserver(changes => {
       if (changes.some(change => change.target.matches?.(".dcbpv-composer,.dcbpv-composer-slot,.dcbpv-comments-title,.dcbpv-header,.dcbpv-actions"))) state.invalidateBounds();
     });
-    state.mutations.observe(panel,{subtree:true,childList:true,attributes:true,attributeFilter:["class","style"]});
-    if (typeof ResizeObserver === "function") {
-      state.resize = new ResizeObserver(state.invalidateBounds);
-      for (const node of [panel,scroll,overlay.querySelector(".dcbpv-header"),overlay.querySelector(".dcbpv-actions")]) if (node) state.resize.observe(node);
-    }
+    if (typeof ResizeObserver === "function") state.resize = new ResizeObserver(state.invalidateBounds);
+    state.observe = () => {
+      state.suspended = false;
+      placement = null;
+      state.mutations.observe(panel,{subtree:true,childList:true,attributes:true,attributeFilter:["class","style"]});
+      for (const node of [panel,scroll,overlay.querySelector(".dcbpv-header"),overlay.querySelector(".dcbpv-actions")]) if (node) state.resize?.observe(node);
+    };
+    state.suspend = () => {
+      state.suspended = true;
+      state.resize?.disconnect();
+      state.mutations.disconnect();
+      state.watched = new WeakSet();
+      if (state.frame) cancelAnimationFrame(state.frame);
+      state.frame = 0;
+    };
+    state.observe();
     scroll.addEventListener("scroll",state.schedule,{passive:true});
     window.addEventListener("resize",state.invalidateBounds,{passive:true});
     previewNavigator = state; state.schedule();
@@ -2583,7 +2605,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
   }
 
   function collectCommentItems(doc, root){
-    const sources = [root, doc].filter(Boolean);
+    const sources = root && root !== doc ? [root, doc] : [doc];
     const found = [];
     const seen = new Set();
     const add = (node) => {
@@ -2628,10 +2650,29 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     return `<div class="dcbpv-comment-item${depthClass}${deletedClass}${doryClass}" data-dcbpv-comment="1" data-nick="${escapeText(nick)}" data-uid="${escapeText(meta.uid)}" data-ip="${escapeText(meta.ip)}"${packageAttr}${threadAttr}>${previewCommentMetaHTML({nick, uid:meta.uid, ip:meta.ip}, date)}<div class="dcbpv-comment-body">${body}</div></div>`;
   }
 
+  function serializeCommentRows(rows){
+    const prefix = '<div class="dcbpv-comment-list">';
+    const html = prefix + rows.join("") + "</div>";
+    if (rows.length <= 80 || html.length < COMMENT_PAGE_THRESHOLD) return html;
+    const bytes = html.length * 2 + (rows.length + 1) * 4;
+    if (bytes > COMMENT_INDEX_BYTE_LIMIT || commentRowIndexes.has(html)) return html;
+    while (commentIndexBytes + bytes > COMMENT_INDEX_BYTE_LIMIT || commentRowIndexes.size >= 8) {
+      const oldest = commentRowIndexes.keys().next().value;
+      commentIndexBytes -= commentRowIndexes.get(oldest).bytes;
+      commentRowIndexes.delete(oldest);
+    }
+    const offsets = new Uint32Array(rows.length + 1);
+    offsets[0] = prefix.length;
+    for (let i = 0; i < rows.length; i++) offsets[i + 1] = offsets[i] + rows[i].length;
+    commentRowIndexes.set(html, {offsets, bytes});
+    commentIndexBytes += bytes;
+    return html;
+  }
+
   function buildCommentsHTML(doc, root, baseUrl, items = collectCommentItems(doc, root)){
     if (items.length) {
       const rows = items.map((item) => previewCommentRowHTML(item, baseUrl)).filter(Boolean);
-      if (rows.length) return `<div class="dcbpv-comment-list">${rows.join("")}</div>`;
+      if (rows.length) return serializeCommentRows(rows);
     }
 
     const box = pickCommentElement(doc, root);
@@ -2650,7 +2691,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     const fallbackItems = collectCommentItems(clone, clone);
     if (fallbackItems.length) {
       const fallbackRows = fallbackItems.map((item) => previewCommentRowHTML(item, baseUrl)).filter(Boolean);
-      if (fallbackRows.length) return `<div class="dcbpv-comment-list">${fallbackRows.join("")}</div>`;
+      if (fallbackRows.length) return serializeCommentRows(fallbackRows);
     }
     return clone.innerHTML.trim();
   }
@@ -2759,13 +2800,14 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     const writerHTML = buildWriterHTML(doc, root, baseUrl);
     const articleNo = articleNumberFrom(originalUrl, doc);
     const gallId = galleryIdFrom(originalUrl);
-    const items = collectCommentItems(doc, root);
-    const commentCount = items.length;
-    const prepareComments = deferComments && commentCount > 48
+    // On long threads even identifying and validating each row delays the
+    // article. Defer that walk until the reader approaches the comments.
+    const largeThread = deferComments && doc.querySelectorAll("li[id^='comment_li_'],.cmt_info,.comment_info,.reply_info,li.reply_item,.comment_item,.comment-item,.cmt_item,[data-comment-id],[data-comment-no]").length > 48;
+    const prepareComments = largeThread
       ? async signal => {
         const rows = [];
         let deadline = performance.now() + 8;
-        for (const item of items) {
+        for (const item of collectCommentItems(doc, root)) {
           if (performance.now() >= deadline) {
             await waitMs(0, signal);
             deadline = performance.now() + 8;
@@ -2773,11 +2815,13 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
           const html = previewCommentRowHTML(item, baseUrl);
           if (html) rows.push(html);
         }
-        return rows.length ? `<div class="dcbpv-comment-list">${rows.join("")}</div>` : buildCommentsHTML(doc, root, baseUrl, []);
+        return rows.length ? serializeCommentRows(rows) : buildCommentsHTML(doc, root, baseUrl, []);
       } : null;
-    let commentsHTML = prepareComments ? "" : buildCommentsHTML(doc, root, baseUrl, items);
-    const expectedComments = commentCountFromText(doc, root);
-    const commentTotal = previewNativeCommentTotal(doc, articleNo);
+    let commentsHTML = prepareComments ? "" : buildCommentsHTML(doc, root, baseUrl);
+    const commentTotal = mode === "mobile"
+      ? previewMobileCommentTotal(doc, originalUrl, baseUrl)
+      : previewNativeCommentTotal(doc, articleNo, gallId);
+    const expectedComments = commentTotal ?? commentCountFromText(doc, root);
 
     // 디시 PC 문서는 댓글 수만 서버 HTML에 표시하고 실제 댓글 목록은 AJAX로 채우는 경우가 많다.
     // 특히 미니/인물 갤러리의 "전체 댓글 0개" UI 텍스트를 실제 댓글로 오인하지 않는다.
@@ -2795,8 +2839,9 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
       writerHTML,
       articleHTML: content ? articleHTMLFromElement(content, baseUrl) : "",
       commentsHTML,
-      commentTitle: commentTotal !== null ? `댓글 ${commentTotal.toLocaleString("ko-KR")}개` : commentCount || expectedComments ? `댓글 ${commentCount || expectedComments}개` : (commentsHTML ? "댓글" : "댓글 없음"),
+      commentTitle: previewCommentTitle(commentTotal),
       commentTotal,
+      expectedComments,
       counts: extractCounts(doc, root, title),
       gallId,
       articleNo,
@@ -2847,7 +2892,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
   }
 
   function previewYouTubeIframePresent(html, baseUrl){
-    if (!html) return false;
+    if (!/<iframe\b/i.test(html || "")) return false;
     try {
       const doc = new DOMParser().parseFromString(String(html), "text/html");
       return [...doc.querySelectorAll("iframe")].some((iframe) => !!previewYouTubeMediaFromFrame(iframe, baseUrl));
@@ -2901,15 +2946,14 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     if (!result.commentsHTML && !result.prepareComments && (backup.commentsHTML || backup.prepareComments)) {
       result.commentsHTML = backup.commentsHTML;
       result.prepareComments = backup.prepareComments;
-      result.commentTitle = backup.commentTitle;
     }
 
     const currentCounts = result.counts || {};
     if (!(Number.isSafeInteger(result.commentTotal) && result.commentTotal >= 0) &&
         Number.isSafeInteger(backup.commentTotal) && backup.commentTotal >= 0) {
       result.commentTotal = backup.commentTotal;
-      result.commentTitle = `댓글 ${result.commentTotal.toLocaleString("ko-KR")}개`;
     }
+    result.commentTitle = previewCommentTitle(result.commentTotal);
     const backupCounts = backup.counts || {};
     result.counts = {
       up: currentCounts.up && currentCounts.up !== "0" ? currentCounts.up : (backupCounts.up || currentCounts.up || "0"),
@@ -3105,15 +3149,41 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     return { id, no, cmtId, cmtNo, securityToken, galleryType, boardType, gallType, secretArticleKey, sort };
   }
 
-  function previewNativeCommentTotal(doc, articleNo){
-    const parse = text => {
-      const value = String(text ?? "").trim();
-      if (!/^(?:\d+|\d{1,3}(?:,\d{3})+)$/.test(value)) return null;
-      const number = Number(value.replaceAll(",", ""));
-      return Number.isSafeInteger(number) && number >= 0 ? number : null;
-    };
+  function parsePreviewCommentTotal(text){
+    const value = String(text ?? "").trim();
+    if (!/^(?:\d+|\d{1,3}(?:,\d{3})+)$/.test(value)) return null;
+    const number = Number(value.replaceAll(",", ""));
+    return Number.isSafeInteger(number) ? number : null;
+  }
+
+  function previewCommentTitle(total){
+    return Number.isSafeInteger(total) && total >= 0 ? `댓글 ${total.toLocaleString("ko-KR")}개` : "댓글";
+  }
+
+  function previewMobileCommentTotal(doc, originalUrl, fetchedUrl){
+    const expected = toMobileUrl(originalUrl);
+    const source = new URL(fetchedUrl);
+    if (source.origin + source.pathname.replace(/\/$/, "") !== expected) return null;
+    const gallery = doc.querySelector("input#id")?.value, no = doc.querySelector("input#no")?.value;
+    if ((gallery && gallery !== galleryIdFrom(originalUrl)) || (no && no !== articleNumberFrom(originalUrl))) return null;
+    const header = doc.querySelector('.ginfo2 .btn-commentgo[href="#comment_box"] .point-red');
+    const box = doc.getElementById("comment_box");
+    const badge = box?.querySelector(".all-comment-tit .tit .ct")?.textContent.trim().match(/^\[([^\]]+)\]$/);
+    return parsePreviewCommentTotal(header?.textContent) ?? parsePreviewCommentTotal(badge?.[1])
+      ?? parsePreviewCommentTotal(box?.querySelector("input#reple_totalCnt")?.value);
+  }
+
+  function previewNativeCommentTotal(doc, articleNo, gallId){
     const exact = /^\d+$/.test(String(articleNo)) ? doc.getElementById("comment_total_" + articleNo) : null;
-    if (exact) return parse(exact.textContent);
+    const count = parsePreviewCommentTotal(exact?.textContent);
+    if (count > 0) return count;
+    const form = doc.getElementById("_view_form_");
+    const formGallery = form?.querySelector("input#id")?.value;
+    if (form?.querySelector("input#no")?.value === articleNo && (!formGallery || formGallery === gallId)) {
+      const initial = parsePreviewCommentTotal(form.querySelector("input#comment_cnt")?.value);
+      if (initial !== null) return initial;
+    }
+    if (exact) return count;
     for (const header of doc.querySelectorAll(".comment_count")) {
       const owner = header.closest(".comment_wrap,#comment_wrap,[id^='comment_wrap_'],.all-comment,#all-comment");
       if (!owner) continue;
@@ -3121,7 +3191,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
       if (ownerNo && String(articleNo) !== ownerNo) continue;
       if ([...header.querySelectorAll('[id^="comment_total_"]')].some(node => node.id !== "comment_total_" + articleNo)) continue;
       const total = header.textContent.match(/전체\s*댓글\s*([\d,]+)\s*개/);
-      if (total) return parse(total[1]);
+      if (total) return parsePreviewCommentTotal(total[1]);
     }
     return null;
   }
@@ -3244,7 +3314,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
       const threadAttr = previewNativeThreadAttributes(record);
       return `<div class="dcbpv-comment-item${replyClass}${deletedClass}${doryClass}" data-dcbpv-comment="1" data-nick="${escapeText(nick)}" data-uid="${escapeText(meta.uid)}" data-ip="${escapeText(meta.ip)}"${packageAttr}${threadAttr}>${previewCommentMetaHTML({nick, uid:meta.uid, ip:meta.ip}, date)}<div class="dcbpv-comment-body">${body}</div></div>`;
     }).filter(Boolean);
-    return rows.length ? `<div class="dcbpv-comment-list">${rows.join("")}</div>` : "";
+    return rows.length ? serializeCommentRows(rows) : "";
   }
 
   function commentDataToHtml(payload, baseUrl){
@@ -3260,8 +3330,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     return buildCommentsHTML(doc, doc, baseUrl);
   }
 
-  function commentResponseToHtml(text, baseUrl){
-    const payload = parseLooseJson(text);
+  function commentResponseToHtml(text, baseUrl, payload){
     const fromJson = commentDataToHtml(payload, baseUrl);
     if (fromJson) return fromJson;
 
@@ -3331,6 +3400,8 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
 
   function actualCommentItemCountFromHtml(html){
     if (!html) return 0;
+    const indexed = commentRowIndexes.get(html);
+    if (indexed) return indexed.offsets.length - 1;
     try {
       const doc = new DOMParser().parseFromString(`<div>${html}</div>`, "text/html");
       return doc.querySelectorAll(".dcbpv-comment-item,[data-dcbpv-comment='1']").length;
@@ -3341,6 +3412,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
 
   function expectedCommentCountFromData(data){
     if (Number.isSafeInteger(data?.commentTotal) && data.commentTotal >= 0) return data.commentTotal;
+    if (data?.expectedComments > 0) return data.expectedComments;
     const sample = [data?.commentTitle || "", htmlToPlain(data?.articleHTML || "")].join(" ");
     const found = sample.match(/댓글\s*([-+]?\d[\d,]*)/);
     return found?.[1] ? Number(found[1].replace(/,/g, "")) : 0;
@@ -3561,6 +3633,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     const bodies = commentRequestBodies(info);
     const debug = [];
     let lastError = null;
+    let reportedTotal = null;
 
     previewCommentLog(articleUrl, "start", {
       galleryType: info.galleryType,
@@ -3610,7 +3683,10 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
         }
       }
 
-      const html = commentResponseToHtml(response.text, response.finalUrl || endpoint);
+      const payload = parseLooseJson(response.text);
+      const html = commentResponseToHtml(response.text, response.finalUrl || endpoint, payload);
+      const total = parsePreviewCommentTotal(payload?.total_cnt);
+      if (total !== null) reportedTotal = total;
       const item = {
         method,
         endpoint,
@@ -3623,7 +3699,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
       };
       debug.push(item);
       previewCommentLog(articleUrl, html ? "success" : "miss", item);
-      return html;
+      return { html, total, debug };
     };
 
     let postAttempts = 0;
@@ -3633,8 +3709,8 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
         if (postAttempts >= PREVIEW_COMMENT_MAX_POST_ATTEMPTS) break postLoop;
         postAttempts += 1;
         try {
-          const html = await tryRequest("POST", endpoint, body);
-          if (html) return { html, debug };
+          const result = await tryRequest("POST", endpoint, body);
+          if (result.html || result.total === 0) return result;
         } catch (error) {
           if (signal?.aborted || error?.name === 'AbortError') throw error;
           lastError = error;
@@ -3660,8 +3736,8 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
         if (getAttempts >= PREVIEW_COMMENT_MAX_GET_ATTEMPTS) break getLoop;
         getAttempts += 1;
         try {
-          const html = await tryRequest("GET", endpoint, body);
-          if (html) return { html, debug };
+          const result = await tryRequest("GET", endpoint, body);
+          if (result.html || result.total === 0) return result;
         } catch (error) {
           if (signal?.aborted || error?.name === 'AbortError') throw error;
           lastError = error;
@@ -3676,11 +3752,11 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
       }
     }
 
-    if (lastError) {
+    if (lastError && reportedTotal === null) {
       lastError.commentDebug = debug;
       throw lastError;
     }
-    return { html: "", debug };
+    return { html: "", total: reportedTotal, debug };
   }
 
   function waitForCommentViewport(signal) {
@@ -3719,6 +3795,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     let data = null;
     let desktopCandidate = null;
     let mobileError = null;
+    let mobileTotal = null;
 
     if (mobileUrl) {
       try {
@@ -3734,6 +3811,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
           data = desktopCandidate;
         } else {
           data = parsePreviewDocument(mobileResponse.text, url, finalMobileUrl, "mobile", !!onArticleReady);
+          mobileTotal = data.commentTotal;
         }
       } catch (error) {
         if (signal.aborted) throw new DOMException("Aborted", "AbortError");
@@ -3781,9 +3859,15 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
       }
     }
 
+    // A body/media fallback can replace the article, including its placeholder PC total.
+    if (mobileTotal !== null) {
+      data.commentTotal = mobileTotal;
+      data.commentTitle = previewCommentTitle(mobileTotal);
+    }
+
     // Embedded comments are already final. Only paint a partial preview when
     // a separate comments read could delay the article.
-    if ((data?.prepareComments || !data?.commentsHTML) && data && !isWeakPreviewData(data) && onArticleReady) {
+    if ((data?.prepareComments || !data?.commentsHTML && mobileTotal !== 0) && data && !isWeakPreviewData(data) && onArticleReady) {
       if (!cached?.commentsPending) {
         const snapshot = { ...data, commentsPending: true };
         delete snapshot.prepareComments;
@@ -3796,12 +3880,11 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
       data.commentsHTML = await data.prepareComments(signal);
       delete data.prepareComments;
     }
-    const needsComments = actualCommentItemCountFromHtml(data?.commentsHTML) === 0;
+    const needsComments = mobileTotal !== 0 && actualCommentItemCountFromHtml(data?.commentsHTML) === 0;
 
     try {
       const galleryType = previewGalleryTypeFromUrl(url);
-      const expectedComments = expectedCommentCountFromData(data);
-      const needsRenderedFrame = needsComments && (galleryType === "mini" || galleryType === "person") && expectedComments > 0;
+      const needsRenderedFrame = needsComments && (galleryType === "mini" || galleryType === "person") && expectedCommentCountFromData(data) > 0;
 
       // 미리보기 자체의 AJAX를 먼저 사용한다. 숨겨진 실제 디시 페이지를 띄우면
       // 그 페이지의 스크립트가 본문/댓글 요청을 추가로 발생시켜 같은 세션의
@@ -3811,11 +3894,12 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
         const articleDoc = new DOMParser().parseFromString(commentSourceHtml, "text/html");
         const endpointResult = await fetchCommentsFromEndpoint(url, articleDoc, signal, cacheMode);
         if (endpointResult?.debug) data.commentDebug = [...(data.commentDebug || []), ...endpointResult.debug];
+        if (mobileTotal === null && Number.isSafeInteger(endpointResult?.total)) {
+          data.commentTotal = endpointResult.total;
+          data.commentTitle = previewCommentTitle(data.commentTotal);
+        }
         if (endpointResult?.html) {
           data.commentsHTML = endpointResult.html;
-          const count = actualCommentItemCountFromHtml(endpointResult.html);
-          data.commentTitle = Number.isSafeInteger(data.commentTotal) && data.commentTotal >= 0
-            ? `댓글 ${data.commentTotal.toLocaleString("ko-KR")}개` : `댓글${count ? ` ${count}개` : ""}`;
         }
       }
 
@@ -3826,9 +3910,6 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
         if (frameResult?.debug?.length) data.commentDebug = [...(data.commentDebug || []), ...frameResult.debug];
         if (frameResult?.html) {
           data.commentsHTML = frameResult.html;
-          const count = actualCommentItemCountFromHtml(frameResult.html);
-          data.commentTitle = Number.isSafeInteger(data.commentTotal) && data.commentTotal >= 0
-            ? `댓글 ${data.commentTotal.toLocaleString("ko-KR")}개` : `댓글${count ? ` ${count}개` : ""}`;
         }
       }
     } catch (commentError) {
@@ -3837,11 +3918,12 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
       if (commentError?.commentDebug) data.commentDebug = [...(data.commentDebug || []), ...commentError.commentDebug];
     }
 
-    if (isWeakPreviewData(data) && !data.commentsHTML) {
+    const weakArticle = isWeakPreviewData(data);
+    if (weakArticle && !data.commentsHTML) {
       throw new Error("본문/댓글 영역을 정확히 찾지 못했습니다. 디시 페이지 구조가 바뀌었거나 접근이 제한된 글일 수 있습니다.");
     }
 
-    if (isWeakPreviewData(data) && data.commentsHTML) {
+    if (weakArticle && data.commentsHTML) {
       data.articleUnavailable = true;
       data.articleHTML = data.articleHTML || `<div class="dcbpv-empty">본문 영역을 표시할 수 없습니다.</div>`;
     }
@@ -3981,6 +4063,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
   }
 
   function preparePreviewPhotoNumbers(root,baseUrl){
+    if (document.hidden) return;
     const article = root.matches?.(".dcbpv-article") ? root : root.querySelector?.(".dcbpv-article");
     if (!article) return;
     if (previewPhotoRoot !== article) stopPreviewPhotoObserver();
@@ -4101,7 +4184,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     timers.splice(0).forEach((id) => clearTimeout(id));
 
     const run = () => {
-      if (!document.documentElement.contains(root)) return;
+      if (document.hidden || !document.documentElement.contains(root)) return;
       const imageStartedAt = previewNow();
       const scopes = pendingRows ? pendingRows.filter(row => row.isConnected) : [root];
       for (const scope of scopes) {
@@ -5416,15 +5499,20 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
   function mountCommentPage(root, html, overlay, data, previousCount) {
     commentPageObserver?.disconnect();
     commentPageObserver = null;
-    if (html.length < 64000) { root.innerHTML = html; return; }
+    if (html.length < COMMENT_PAGE_THRESHOLD) { root.innerHTML = html; return; }
     const template = document.createElement("template");
-    template.innerHTML = html;
-    const list = template.content.firstElementChild;
-    if (!list?.matches(".dcbpv-comment-list") || template.content.childElementCount !== 1 || list.children.length <= 80) {
-      root.replaceChildren(template.content);
-      return;
+    const offsets = commentRowIndexes.get(html)?.offsets;
+    let list;
+    if (!offsets) {
+      template.innerHTML = html;
+      list = template.content.firstElementChild;
+      if (!list?.matches(".dcbpv-comment-list") || template.content.childElementCount !== 1 || list.children.length <= 80) {
+        root.replaceChildren(template.content);
+        return;
+      }
     }
-    const visible = list.cloneNode(false);
+    const visible = list ? list.cloneNode(false) : document.createElement("div");
+    if (!list) visible.className = "dcbpv-comment-list";
     const more = document.createElement("button");
     more.type = "button";
     more.className = "dcbpv-btn";
@@ -5433,14 +5521,16 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     let index = 0;
     function append(limit) {
       const fragment = document.createDocumentFragment(), added = [];
-      while (list.firstElementChild && added.length < limit) {
-        const row = list.firstElementChild;
+      if (offsets) template.innerHTML = html.slice(offsets[index], offsets[Math.min(index + limit, offsets.length - 1)]);
+      const source = list || template.content;
+      while (source.firstElementChild && added.length < limit) {
+        const row = source.firstElementChild;
         row.dataset.dcbpvIndex = String(index++);
         added.push(row);
         fragment.append(row);
       }
       visible.append(fragment);
-      if (!list.firstElementChild) {
+      if (offsets ? index >= offsets.length - 1 : !list.firstElementChild) {
         commentPageObserver?.disconnect();
         commentPageObserver = null;
         more.remove();
@@ -5600,7 +5690,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     const overlay = resetPreviewSurface() || previewOverlay();
     currentPreviewData = data;
 
-    const deferRows = !commentsPending && data.commentsHTML?.length > 64000 && typeof IntersectionObserver === "function";
+    const deferRows = !commentsPending && data.commentsHTML?.length >= COMMENT_PAGE_THRESHOLD && typeof IntersectionObserver === "function";
     const commentEmptyHtml = deferRows ? previewStatusCard("댓글을 준비하고 있어요", "읽을 위치에 맞춰 댓글을 표시합니다.") : previewCommentHtml(data, commentsPending);
 
     overlay.dataset.dcbpvUrl = data.url;
@@ -5871,6 +5961,8 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     overlay?.toggleAttribute("data-motion-paused", document.hidden);
     if (document.hidden) {
       cancelScheduledPreview();
+      stopPreviewPhotoObserver();
+      previewNavigator?.suspend();
       previewComposerObserver?.disconnect();
       mediaObserver?.disconnect();
       mediaObserver = null;

@@ -8,7 +8,7 @@ const assert=require('node:assert/strict');const fs=require('node:fs');const {ch
   window.chrome={runtime:{lastError:null,sendMessage(message,done){messages.push(message);if(message.type==='dcb.fetchText')window.pendingRead=done;else done({ok:false});}},storage:{sync:{get:(d,f)=>f(d)},local:{get:(d,f)=>f(d)},onChanged:{addListener(){}}}};
  });
  const source=fs.readFileSync('src/content/core/content_script.js','utf8');
- await page.addScriptTag({content:source.slice(source.indexOf('(function dcBlockPostPreview(){')).replace(/\}\)\(\);\s*$/,'window.lifecycle={renderPreview,closePreview,fetchText,fetchTextDirect,fetchCommentsFromEndpoint,writePreviewCache,readPreviewCache,previewMayContainDynamicYouTube,decoratePreviewReplyActions};})();')});
+ await page.addScriptTag({content:source.slice(source.indexOf('(function dcBlockPostPreview(){')).replace(/\}\)\(\);\s*$/,'window.lifecycle={renderPreview,closePreview,fetchText,fetchTextDirect,fetchCommentsFromEndpoint,writePreviewCache,readPreviewCache,previewMayContainDynamicYouTube,decoratePreviewReplyActions,serializeCommentRows};})();')});
  await page.evaluate(()=>lifecycle.renderPreview({url:'https://gall.dcinside.com/board/view/?id=test&no=1',title:'test',articleHTML:'<p>body</p>',commentsHTML:'',counts:{up:'3',upMember:'2',down:'1'}}));
  await page.locator('[data-act=share]').click();await page.keyboard.press('Escape');
  assert.equal(await page.locator('#dcb-preview-share').count(),0);assert.equal(await page.locator('#dcb-preview-overlay').count(),1);
@@ -28,6 +28,12 @@ const assert=require('node:assert/strict');const fs=require('node:fs');const {ch
   try{await lifecycle.fetchCommentsFromEndpoint('https://gall.dcinside.com/board/view/?id=test&no=2',new DOMParser().parseFromString('<html/>','text/html'),new AbortController().signal,'default');}catch(_){}
   return attempts;
  },status),1);
+ for(const count of [0,27])assert.deepEqual(await page.evaluate(async total=>{
+   let attempts=0;
+   chrome.runtime.sendMessage=(m,done)=>{attempts++;done({ok:true,status:200,text:JSON.stringify({total_cnt:total,comments:total?[{no:'2',name:'작성자',memo:'댓글 하나'}]:[]})});};
+   const result=await lifecycle.fetchCommentsFromEndpoint(location.origin+'/board/view/?id=test&no=2',new DOMParser().parseFromString('<html/>','text/html'),new AbortController().signal,'default');
+   return [attempts,result.total];
+ },count),[1,count]);
  assert.deepEqual(await page.evaluate(()=>{
   const url='https://gall.dcinside.com/board/view/?id=test&no=5';
   const data={url,articleHTML:'<p>body</p>',rawHtml:'x'.repeat(1000000)+'<div data-youtube-id="12345678901">',desktopRawHtml:'secret source'};
@@ -40,8 +46,8 @@ const assert=require('node:assert/strict');const fs=require('node:fs');const {ch
  }),['2']);
  await page.evaluate(()=>{
    lifecycle.closePreview();
-   const rows=Array.from({length:500},(_,i)=>`<div class="dcbpv-comment-item" data-dcbpv-native-id="${i+1}"><div class="dcbpv-comment-meta"></div><div class="dcbpv-comment-body">Fixture comment ${i}</div></div>`).join('');
-   lifecycle.renderPreview({url:location.origin+'/board/view/?id=test&no=8',title:'large',articleHTML:'<p>일반 본문</p>'.repeat(140),counts:{},commentsHTML:'<div class="dcbpv-comment-list">'+rows+'</div>'});
+   const rows=Array.from({length:500},(_,i)=>`<div class="dcbpv-comment-item" data-dcbpv-native-id="${i+1}"><div class="dcbpv-comment-meta"></div><div class="dcbpv-comment-body">Fixture comment ${i}</div></div>`);
+   lifecycle.renderPreview({url:location.origin+'/board/view/?id=test&no=8',title:'large',articleHTML:'<p>일반 본문</p>'.repeat(140),counts:{},commentsHTML:lifecycle.serializeCommentRows(rows)});
  });
  assert.equal(await page.locator('.dcbpv-comment-item').count(),0);
  assert.equal(await page.locator('.dcbpv-composer iframe').count(),0);
@@ -50,6 +56,7 @@ const assert=require('node:assert/strict');const fs=require('node:fs');const {ch
  await page.evaluate(()=>{window.firstRow=document.querySelector('.dcbpv-comment-item');});
  for(let i=0;i<6;i++)await page.locator('.dcbpv-comment-html > button').evaluate(btn=>btn.click());
  assert.equal(await page.locator('.dcbpv-comment-item').count(),500);
+ assert.deepEqual(await page.locator('.dcbpv-comment-item').evaluateAll(rows=>rows.map(row=>Number(row.dataset.dcbpvNativeId))),Array.from({length:500},(_,i)=>i+1));
  assert.equal(await page.evaluate(()=>firstRow===document.querySelector('.dcbpv-comment-item')),true);
  await page.evaluate(()=>lifecycle.closePreview());assert.deepEqual(errors,[]);
  console.log('Preview lifecycle passed: share Esc/focus, direct/background abort, no restricted retries, compact cache/YouTube marker, duplicate/deleted IDs.');
