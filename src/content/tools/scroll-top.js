@@ -25,6 +25,7 @@
     let active = document.scrollingElement, frame = 0, timer = 0, dirty = true, candidates = [], movingUntil = 0;
     const root = () => document.scrollingElement || document.documentElement;
     const isView = () => location.hostname === "m.dcinside.com" || /^\/(?:mgallery\/|mini\/|person\/)?board\/view(?:\/|$)/.test(location.pathname);
+    const updatedTotals = new WeakSet();
     function commentTarget() {
       if (!isView()) return null;
       const no = new URL(location.href).searchParams.get("no");
@@ -54,10 +55,26 @@
       };
       const no = new URL(location.href).searchParams.get("no") || target.getAttribute("data-article-no") || target.id.match(/^comment_wrap_(\d+)$/)?.[1];
       const own = node => node.closest(".comment_wrap, #comment_wrap, [id^=comment_wrap_]") === target && !node.closest("#dcb-preview-overlay, .dcbpv-overlay, [data-dcb-owned]");
-      const named = [...target.querySelectorAll('[id^="comment_total_"]')].filter(own);
+      const byId = no && document.getElementById("comment_total_" + no);
+      const named = byId && own(byId) ? [byId] : [...target.querySelectorAll('[id^="comment_total_"]')].filter(own);
       if (no) {
         const exact = named.find(node => node.id === "comment_total_" + no);
-        if (exact) return parse(exact.textContent);
+        if (exact) {
+          const count = parse(exact.textContent);
+          // Native comment.js writes total_cnt here, including a confirmed zero.
+          // The initial article HTML can already contain "0" before that write.
+          const loaded = target.classList.contains("show") && target.dataset.articleNo === no && target.hasAttribute("data-comment-cnt");
+          if (count === 0 && !updatedTotals.has(exact) && !loaded) {
+            const form = document.getElementById("_view_form_");
+            if (form?.elements.namedItem("gallery_no")?.value === no && !form.closest("[data-dcb-owned],#dcb-preview-overlay")) {
+              // The article response includes its count even on empty threads
+              // where the site never requests a separate comment list.
+              return parse(form.elements.namedItem("comment_cnt")?.value);
+            }
+            return null;
+          }
+          return count;
+        }
         // A named count for another article must not become this one's total.
         if (named.length) return null;
       } else if (named.length === 1) return parse(named[0].textContent);
@@ -152,6 +169,13 @@
     document.addEventListener("transitionend", () => {dirty=true;schedule();},true);
     const observer = new MutationObserver(changes => {
       if (changes.every(change => change.target === host || host.contains(change.target))) return;
+      let totalsOnly = true;
+      for (const change of changes) {
+        const node = change.target.nodeType === Node.TEXT_NODE ? change.target.parentElement : change.target;
+        if (node?.id?.startsWith("comment_total_") && change.type !== "attributes") updatedTotals.add(node);
+        else totalsOnly = false;
+      }
+      if (totalsOnly) { schedule(); return; }
       dirty = true;
       const floating = node => node instanceof HTMLElement && node!==host && ["fixed","sticky"].includes(getComputedStyle(node).position);
       if (changes.some(change => floating(change.target) || [...change.addedNodes].slice(0,8).some(floating))) {
@@ -159,7 +183,7 @@
       }
       if (!timer) timer = setTimeout(() => {timer=0;schedule();},100);
     });
-    observer.observe(document.body,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:["style","class","hidden"]});
+    observer.observe(document.body,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:["style","class","hidden","data-article-no","data-comment-cnt"]});
     schedule();
   };
   if (document.body) init(); else document.addEventListener("DOMContentLoaded",init,{once:true});

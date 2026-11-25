@@ -60,7 +60,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
   let previewVideoId = 0;
   let parkedImages = null;
   let parkedImageTimer = 0;
-  const previewPollRequests = new Set();
+
   let previewRequestVersion = 0;
   let previewReturnFocus = null;
   let previewScrollLock = null;
@@ -596,7 +596,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     if (state.frame) cancelAnimationFrame(state.frame);
     state.frame = 0;
     state.scroll.removeEventListener("scroll",state.schedule);
-    window.removeEventListener("resize",state.schedule);
+    window.removeEventListener("resize",state.invalidateBounds);
     state.resize?.disconnect(); state.mutations.disconnect(); state.nav.remove();
   }
 
@@ -612,6 +612,7 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     panel.append(nav);
     const top = nav.firstElementChild, comments = nav.lastElementChild, count = comments.lastElementChild;
     const state = {overlay,scroll,panel,nav,frame:0,watched:new WeakSet()};
+    let placement;
     scroll.id ||= "dcbpv-reading-scroll";
     top.setAttribute("aria-controls",scroll.id);
     const update = () => {
@@ -629,23 +630,39 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
       comments.hidden = !target;
       if (target) {target.id ||= "dcbpv-comments-section";comments.setAttribute("aria-controls",target.id);}
       top.hidden = scroll.scrollTop < 120;
-      const reading = scroll.getBoundingClientRect(), shell = panel.getBoundingClientRect();
-      let bottom = reading.bottom;
-      const right = reading.left + scroll.clientWidth;
-      for (const blocker of overlay.querySelectorAll(".dcbpv-docked,.dcbpv-picker-open")) {
-        if (state.resize && !state.watched.has(blocker)) {state.watched.add(blocker);state.resize.observe(blocker);}
-        const rect = blocker.getBoundingClientRect();
-        if (!rect.width || !rect.height) continue;
-        if (blocker.classList.contains("dcbpv-picker-open")) {nav.hidden = true;return;}
-        if (rect.right > right - 108 && rect.left < right && rect.bottom > reading.top) bottom = Math.min(bottom,rect.top - 8);
+      // Scrolling moves the contents inside this fixed panel, not the viewport
+      // itself. Re-measure when its layout changes or a dock needs collision checks.
+      const blockers = overlay.querySelectorAll(".dcbpv-docked,.dcbpv-picker-open");
+      if (!placement || !state.resize) {
+        // The scroll and navigation elements share the positioned panel.
+        // Local offsets are stable even during the panel's entrance animation.
+        placement = {
+          right: Math.max(12, panel.clientWidth - scroll.offsetLeft - scroll.clientWidth + 12),
+          bottom: Math.max(12, panel.clientHeight - scroll.offsetTop - scroll.offsetHeight + 12),
+          available: scroll.offsetHeight - 24
+        };
       }
-      const available = bottom - reading.top - 24;
+      let {bottom, available} = placement;
+      if (blockers.length) {
+        const reading = scroll.getBoundingClientRect(), right = reading.left + scroll.clientWidth;
+        let edge = reading.bottom;
+        for (const blocker of blockers) {
+          if (state.resize && !state.watched.has(blocker)) {state.watched.add(blocker);state.resize.observe(blocker);}
+          const rect = blocker.getBoundingClientRect();
+          if (!rect.width || !rect.height) continue;
+          if (blocker.classList.contains("dcbpv-picker-open")) {nav.hidden = true;return;}
+          if (rect.right > right - 108 && rect.left < right && rect.bottom > reading.top) edge = Math.min(edge,rect.top - 8);
+        }
+        bottom += reading.bottom - edge;
+        available -= reading.bottom - edge;
+      }
       nav.classList.toggle("dcbpv-nav-compact",available < 96);
       nav.hidden = available < 44 || top.hidden && comments.hidden;
-      nav.style.right = Math.max(12,shell.right - right + 12) + "px";
-      nav.style.bottom = Math.max(12,shell.bottom - bottom + 12) + "px";
+      nav.style.right = placement.right + "px";
+      nav.style.bottom = bottom + "px";
     };
     state.schedule = () => {if (!state.frame) state.frame = requestAnimationFrame(update);};
+    state.invalidateBounds = () => {placement = null; state.schedule();};
     const move = (position,focus) => {
       scroll.scrollTo({top:Math.max(0,position),behavior:matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth"});
       if (focus) {if (!focus.matches("a,button,input,textarea,[tabindex]")) focus.tabIndex = -1;focus.focus({preventScroll:true});}
@@ -657,15 +674,15 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
       if (target) move(scroll.scrollTop + target.getBoundingClientRect().top - scroll.getBoundingClientRect().top - 12,target.querySelector(".dcbpv-comments-title"));
     });
     state.mutations = new MutationObserver(changes => {
-      if (changes.some(change => change.target.matches?.(".dcbpv-composer,.dcbpv-composer-slot,.dcbpv-comments-title,.dcbpv-header,.dcbpv-actions"))) state.schedule();
+      if (changes.some(change => change.target.matches?.(".dcbpv-composer,.dcbpv-composer-slot,.dcbpv-comments-title,.dcbpv-header,.dcbpv-actions"))) state.invalidateBounds();
     });
     state.mutations.observe(panel,{subtree:true,childList:true,attributes:true,attributeFilter:["class","style"]});
     if (typeof ResizeObserver === "function") {
-      state.resize = new ResizeObserver(state.schedule);
+      state.resize = new ResizeObserver(state.invalidateBounds);
       for (const node of [panel,scroll,overlay.querySelector(".dcbpv-header"),overlay.querySelector(".dcbpv-actions")]) if (node) state.resize.observe(node);
     }
     scroll.addEventListener("scroll",state.schedule,{passive:true});
-    window.addEventListener("resize",state.schedule,{passive:true});
+    window.addEventListener("resize",state.invalidateBounds,{passive:true});
     previewNavigator = state; state.schedule();
   }
 
@@ -688,8 +705,6 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     disposePreviewNavigator();
     previewMovieRequests.forEach((controller) => controller.abort());
     previewMovieRequests.clear();
-    previewPollRequests.forEach((controller) => controller.abort());
-    previewPollRequests.clear();
     if (previewFilterRerenderTimer) {
       clearTimeout(previewFilterRerenderTimer);
       previewFilterRerenderTimer = 0;
@@ -1467,74 +1482,13 @@ globalThis.DCBRuntimeSettingsCache.get({ previewEnabled: true }, (settings) => {
     return pollUrl;
   }
 
-  function waitForPreviewPollLoad(iframe, timeout = 8000){
-    try {
-      const doc = iframe.contentDocument;
-      const href = iframe.contentWindow?.location?.href || "";
-      if (doc?.readyState === "complete" && href && href !== "about:blank") return Promise.resolve(true);
-    } catch (_) {}
-
-    return new Promise((resolve) => {
-      let done = false;
-      const finish = (value) => {
-        if (done) return;
-        done = true;
-        clearTimeout(timer);
-        iframe.removeEventListener("load", onLoad);
-        resolve(value);
-      };
-      const onLoad = () => finish(true);
-      const timer = setTimeout(() => finish(false), timeout);
-      iframe.addEventListener("load", onLoad, { once: true });
-    });
-  }
-
-  async function loadPreviewPoll(iframe, articleUrl){
-    if (!iframe || iframe.dataset.dcbpvPollRequested === "1" || iframe.dataset.dcbpvPollHydrated === "1") return;
-    const pollUrl = dcPollFrameUrl(iframe, articleUrl || location.href);
-    if (!pollUrl) return;
-
-    let referrer;
-    try {
-      referrer = new URL(articleUrl || location.href, location.href);
-      if (pollUrl.origin !== location.origin || referrer.origin !== location.origin) return;
-    } catch (_) { return; }
-
+  function loadPreviewPoll(iframe, articleUrl){
+    if (iframe.dataset.dcbpvPollRequested || !dcPollFrameUrl(iframe, articleUrl)) return;
     iframe.dataset.dcbpvPollRequested = "1";
-    const controller = new AbortController();
-    previewPollRequests.add(controller);
-    const timer = setTimeout(() => controller.abort(), 10000);
-    try {
-      const [response, loaded] = await Promise.all([
-        fetch(pollUrl.href, {
-          credentials: "include",
-          referrer: referrer.href,
-          referrerPolicy: "unsafe-url",
-          cache: "no-store",
-          signal: controller.signal
-        }),
-        waitForPreviewPollLoad(iframe)
-      ]);
-      if (!loaded || !response.ok || !iframe.isConnected || controller.signal.aborted) return;
-      const html = await response.text();
-      if (!html || !iframe.isConnected || controller.signal.aborted) return;
-
-      // The native poll page builds vote tokens from the article request context. Rehydrate the
-      // already loaded same-origin frame with HTML fetched using the original article as Referer.
-      const doc = iframe.contentDocument;
-      if (!doc) return;
-      iframe.dataset.dcbpvPollHydrating = "1";
-      doc.open("text/html", "replace");
-      doc.write(html);
-      doc.close();
-      iframe.dataset.dcbpvPollHydrated = "1";
-    } catch (_) {
-      // Keep DCInside's directly loaded poll iframe as the fallback.
-    } finally {
-      delete iframe.dataset.dcbpvPollHydrating;
-      clearTimeout(timer);
-      previewPollRequests.delete(controller);
-    }
+    iframe.dataset.dcbpvPollArticle = articleUrl;
+    // The native frame owns its document, script realm and result navigations.
+    // It also reads the marker at startup if navigation is still in progress.
+    try { iframe.contentDocument?.dispatchEvent(new Event("dcb-preview-poll-open")); } catch (_) {}
   }
 
   const PREVIEW_ANIMATED_MEDIA_CLASS = "dcbpv-animated-media";

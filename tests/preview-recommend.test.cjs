@@ -53,7 +53,7 @@ function native(url,config){
         return route.fulfill({body:response==='success'?(fields.get('mode')==='U'?'true||12||3||true':'true||2||false'):response});
       }
       if(url.pathname.startsWith('/kcaptcha/')){images.push(url);return route.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="130" height="40"><text y="20">fixture</text></svg>'});}
-      if(url.pathname==='/board/poll/vote')return route.fulfill({contentType:'text/html',body:'<!doctype html><button id="poll-native">투표하기</button><script>document.body.dataset.ready="1"</script>'});
+      if(url.pathname==='/board/poll/vote')return route.fulfill({contentType:'text/html; charset=utf-8',body:'<!doctype html><button id="poll-native">투표하기</button><script>document.body.dataset.ready="1"</script>'});
       if(url.pathname.endsWith('/view/')){
         if(request.resourceType()==='fetch'){reads++;if(getDelay)await new Promise(resolve=>setTimeout(resolve,getDelay));}
         return route.fulfill({contentType:'text/html',body:config.fallback&&request.resourceType()==='document'?'<html><body></body></html>':native(url.href,config)});

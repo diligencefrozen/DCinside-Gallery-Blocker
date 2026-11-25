@@ -19,6 +19,7 @@ const delayNum = document.getElementById("delayNum");
 const delayRange = document.getElementById("delayRange");
 const openOptionsBtn = document.getElementById("openOptions");
 const compactListToggle = document.getElementById("compactListEnabled");
+const contentCenteringToggle = document.getElementById("contentCenteringEnabled");
 const dcDarkModeToggle = document.getElementById("dcDarkMode");
 const dcThemeStatus = document.getElementById("dcThemeStatus");
 const quickGalleryPanel = document.getElementById("quickGalleryPanel");
@@ -149,6 +150,7 @@ const DEFAULTS = {
 
   userMemoEnabled: false,
   compactListEnabled: false,
+  contentCenteringEnabled: false,
   blockedIds: [],
 
   dcbFontFamily: "Noto Sans KR",
@@ -1605,7 +1607,7 @@ function applyPopupSettings(conf = {}, { refreshAsync = true } = {}) {
     doryBlockEnabled,
     noticeBlockEnabled,
     userMemoEnabled,
-    compactListEnabled
+    compactListEnabled, contentCenteringEnabled
   } = conf;
 
   setChecked(toggle, getGalleryBlockEnabled({ galleryBlockEnabled, enabled }));
@@ -1665,6 +1667,7 @@ function applyPopupSettings(conf = {}, { refreshAsync = true } = {}) {
   setChecked(noticeBlockToggle, noticeBlockEnabled);
   setChecked(userMemoEnabledToggle, userMemoEnabled);
   setChecked(compactListToggle, compactListEnabled);
+  setChecked(contentCenteringToggle, contentCenteringEnabled === true);
   setChecked(dcDarkModeToggle, false);
   clearLegacyDcThemePreference();
   if (refreshAsync) {
@@ -2093,6 +2096,9 @@ if (noticeBlockToggle) {
 if (userMemoEnabledToggle) {
   userMemoEnabledToggle.onchange = (e) => chrome.storage.sync.set({ userMemoEnabled: !!e.target.checked });
 }
+contentCenteringToggle?.addEventListener("change", () => {
+  chrome.storage.sync.set({ contentCenteringEnabled: contentCenteringToggle.checked });
+});
 if (compactListToggle) {
   compactListToggle.onchange = (e) => chrome.storage.sync.set({ compactListEnabled: !!e.target.checked });
 }
@@ -2238,6 +2244,7 @@ chrome.storage.onChanged.addListener((c, a) => {
     if (c.noticeBlockEnabled) setChecked(noticeBlockToggle, c.noticeBlockEnabled.newValue);
     if (c.userMemoEnabled) setChecked(userMemoEnabledToggle, c.userMemoEnabled.newValue);
     if (c.compactListEnabled) setChecked(compactListToggle, c.compactListEnabled.newValue);
+    if (c.contentCenteringEnabled) setChecked(contentCenteringToggle, c.contentCenteringEnabled.newValue === true);
   }
 
   if (a === "local" && (c.quickBlockButtonPosition || c.quickBlockButtonPositionSavedAt)) {

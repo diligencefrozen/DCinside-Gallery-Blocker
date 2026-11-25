@@ -199,7 +199,7 @@ const BACKUP_KEYS = [
   "hideMainEnabled", "hideGallEnabled", "hideSearchEnabled",
   "enabled", "galleryBlockEnabled", "builtinDcbestBlockEnabled", "blockMode", "quickBlockButtonPosition", "quickBlockButtonPositionSavedAt", "autoRefreshEnabled",
   "autoRefreshInterval", "delay", "showUidBadge", "showMemberIpInfo", "linkWarnEnabled", "hideDCGray",
-  "previewEnabled", "readPostsHighlightEnabled", "hideAnonymousEnabled", "hideForeignIpEnabled", "gamemecaBlockEnabled", "doryBlockEnabled", "noticeBlockEnabled", "compactListEnabled",
+  "previewEnabled", "readPostsHighlightEnabled", "hideAnonymousEnabled", "hideForeignIpEnabled", "gamemecaBlockEnabled", "doryBlockEnabled", "noticeBlockEnabled", "compactListEnabled", "contentCenteringEnabled",
   "userMemoEnabled", "userMemos",
   IMAGE_BLOCK_CONFIG_KEY, IMAGE_BLOCK_RECORD_KEY, IMAGE_BLOCK_AUTHOR_TARGET_KEY, IMAGE_ACCOUNT_RULE_KEY,
   DCCON_BLOCK_STATE_KEY,
@@ -246,6 +246,7 @@ const BACKUP_DEFAULTS = {
   doryBlockEnabled: true,
   noticeBlockEnabled: true,
   compactListEnabled: false,
+  contentCenteringEnabled: false,
   userMemoEnabled: false,
   userMemos: {},
   [IMAGE_BLOCK_CONFIG_KEY]: IMAGE_BLOCK_CONFIG_DEFAULT,
@@ -334,6 +335,7 @@ const toggleHideSearchEl = document.getElementById("toggleHideSearch");
 const toggleUidBadgeEl = document.getElementById("toggleUidBadge");
 const showMemberIpInfoEl = document.getElementById("showMemberIpInfo");
 const compactListEnabledEl = document.getElementById("compactListEnabled");
+const contentCenteringEl = document.getElementById("contentCenteringEnabled");
 const userMemoEnabledEl = document.getElementById("userMemoEnabled");
 
 const previewEnabledEl = document.getElementById("previewEnabled");
@@ -2147,6 +2149,9 @@ if (showMemberIpInfoEl) {
   });
 }
 
+contentCenteringEl?.addEventListener("change", () => {
+  chrome.storage.sync.set({ contentCenteringEnabled: contentCenteringEl.checked });
+});
 if (compactListEnabledEl) {
   compactListEnabledEl.addEventListener("change", (e) => {
     chrome.storage.sync.set({ compactListEnabled: !!e.target.checked });
@@ -2413,6 +2418,7 @@ function applyOptionsSettings(conf = {}, { refreshAsync = true } = {}) {
   setChecked(toggleUidBadgeEl, showUidBadge);
   setChecked(showMemberIpInfoEl, showMemberIpInfo);
   setChecked(compactListEnabledEl, compactListEnabled);
+  setChecked(contentCenteringEl, conf.contentCenteringEnabled === true);
   setChecked(userMemoEnabledEl, userMemoEnabled);
 
   if (hideCommentEl) hideCommentEl.checked = !!hideComment;
@@ -2559,6 +2565,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
     if (changes.showUidBadge) setChecked(toggleUidBadgeEl, changes.showUidBadge.newValue);
     if (changes.showMemberIpInfo) setChecked(showMemberIpInfoEl, changes.showMemberIpInfo.newValue);
     if (changes.compactListEnabled) setChecked(compactListEnabledEl, changes.compactListEnabled.newValue);
+    if (changes.contentCenteringEnabled) setChecked(contentCenteringEl, changes.contentCenteringEnabled.newValue === true);
     if (changes.userMemoEnabled) setChecked(userMemoEnabledEl, changes.userMemoEnabled.newValue);
 
     if (changes.hideComment && hideCommentEl) {

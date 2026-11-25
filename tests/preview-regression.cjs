@@ -18,6 +18,7 @@ let browser;
   browser = await chromium.launch({ headless: true, ...(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : {}) });
   const context = await browser.newContext();
   const page = await context.newPage();
+  await page.addInitScript({path:'src/content/core/preview-poll.js'});
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.route('**/*', (route) => route.fulfill({ contentType: 'text/html', body: '<!doctype html><html><head></head><body><button id="origin">원래 게시글</button></body></html>' }));
@@ -328,18 +329,14 @@ let browser;
     articleHTML: '<p><iframe name="pollFrame" width="459" height="437" src="https://gall.dcinside.com/board/poll/vote?no=2337944" referrerpolicy="unsafe-url" scrolling="no"></iframe></p>',
     commentsHTML: '<div class="dcbpv-comment-list"></div>'
   };
-  const pollResult = await page.evaluate(async ({ fixture, article }) => {
-    const realFetch = window.fetch;
-    const requests = [];
-    window.fetch = async (url, options = {}) => {
-      requests.push({ url: String(url), referrer: options.referrer || '' });
-      return new Response(`<!doctype html><html><body><div class="vote"><button id="poll-hydrated" type="button">투표하기</button></div><script>document.body.dataset.pollScript = 'ready';</script></body></html>`, {
-        status: 200,
-        headers: { 'content-type': 'text/html' }
-      });
-    };
-    window.previewTest.renderPreview(fixture);
-    await new Promise((resolve) => setTimeout(resolve, 350));
+  let pollRequest;
+  await page.route('**/board/poll/vote?*', route => {
+    pollRequest = route.request();
+    return route.fulfill({contentType:'text/html',body:'<!doctype html><div class="vote"><button id="poll-hydrated">투표하기</button></div><script>document.body.dataset.pollScript="ready"</script>'});
+  });
+  await page.evaluate(fixture => window.previewTest.renderPreview(fixture), pollData);
+  await page.waitForSelector('iframe[data-dcbpv-poll-ready="1"]');
+  const pollResult = await page.evaluate(() => {
     const frame = document.querySelector('#dcb-preview-overlay iframe.dcbpv-poll-frame');
     const rect = frame?.getBoundingClientRect();
     let innerReady = false;
@@ -349,25 +346,23 @@ let browser;
       scriptReady = frame?.contentDocument?.body?.dataset?.pollScript === 'ready';
     } catch (_) {}
     const result = {
-      requests,
       scrolling: frame?.getAttribute('scrolling') || '',
       referrerPolicy: frame?.referrerPolicy || '',
-      hydrated: frame?.dataset?.dcbpvPollHydrated === '1',
+      ready: frame?.dataset?.dcbpvPollReady === '1',
       width: rect?.width || 0,
       height: rect?.height || 0,
       aspectRatio: frame ? getComputedStyle(frame).aspectRatio : '',
       innerReady,
       scriptReady
     };
-    window.fetch = realFetch;
     return result;
-  }, { fixture: pollData, article: articleUrl });
-  assert.equal(pollResult.requests[0]?.referrer, articleUrl, 'poll HTML is fetched with the original article as Referer');
-  assert.match(pollResult.requests[0]?.url || '', /\/board\/poll\/vote\?no=2337944/);
+  });
+  assert.equal(pollRequest?.headers().referer, articleUrl, 'poll HTML is fetched with the original article as Referer');
+  assert.match(pollRequest?.url() || '', /\/board\/poll\/vote\?no=2337944/);
   assert.equal(pollResult.scrolling, 'auto', 'poll iframe keeps controls reachable instead of clipping a fixed no-scroll frame');
   assert.equal(pollResult.referrerPolicy, 'unsafe-url');
-  assert.equal(pollResult.hydrated, true, 'poll iframe is rehydrated with the article-referrer response');
-  assert.equal(pollResult.innerReady, true, 'rehydrated poll content remains interactive HTML');
+  assert.equal(pollResult.ready, true, 'native poll navigation completes with the article referrer');
+  assert.equal(pollResult.innerReady, true, 'native poll controls remain interactive');
   assert.equal(pollResult.scriptReady, true, 'the native poll script context executes inside the same-origin frame');
   assert.ok(pollResult.height > pollResult.width * 0.7, 'poll iframe preserves its tall vote layout instead of being forced to 16:9');
   assert.equal(pollResult.aspectRatio, 'auto', 'poll iframe opts out of generic media aspect ratio');

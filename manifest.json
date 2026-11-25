@@ -78,6 +78,13 @@
       "all_frames": false
     },
     {
+      "matches": ["https://gall.dcinside.com/board/poll/vote?*"],
+      "js": ["src/content/core/preview-poll.js"],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": true
+    },
+    {
       "matches": ["*://gall.dcinside.com/*", "*://m.dcinside.com/*"],
       "js": ["src/content/tools/scroll-top.js"],
       "run_at": "document_end",
@@ -92,7 +99,8 @@
       ],
       "js": [
         "src/shared/block-stats.js", "src/shared/runtime-settings-cache.js", "src/shared/dom-mutation-bus.js",
-        "src/content/image/image-account-filter.js", "src/content/user/account-activity-blocker.js"
+        "src/content/image/image-account-filter.js", "src/content/user/account-activity-blocker.js",
+        "src/content/appearance/content-centering.js"
       ],
       "run_at": "document_start",
       "all_frames": false

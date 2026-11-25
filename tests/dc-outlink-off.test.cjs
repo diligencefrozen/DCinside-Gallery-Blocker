@@ -31,7 +31,7 @@ for (const [name, engine] of [["Chromium", chromium], ["Firefox", firefox]]) {
     const page = await context.newPage();
     await page.addInitScript({ content: source });
     await page.route("https://gall.dcinside.com/**", route => route.fulfill({ contentType: "text/html", body: site }));
-    await page.route("https://example.com/**", route => route.fulfill({ contentType: "text/html", body: "arrived" }));
+    await context.route("https://example.com/**", route => route.fulfill({ contentType: "text/html", body: "arrived" }));
     await page.goto("https://gall.dcinside.com/board/view/?id=fixture&no=1");
     await page.waitForFunction(() => document.documentElement.dataset.dcbOutlinkState === "off");
     assert.equal(await page.locator("#settings").isVisible(), false, "no settings popup was opened");

@@ -56,6 +56,29 @@ for(const [name,type]of Object.entries({chromium,firefox}))test(name+' article c
   await page.locator('#comment_wrap_18490 #comment_total_18490').evaluate(node=>node.firstChild.data='집계 중');
   await page.waitForFunction(()=>document.querySelector('#dcb-site-scroll-top').shadowRoot.querySelector('.comments').getAttribute('aria-label')==='댓글로 이동');
   assert.equal(await comments.textContent(),'댓글');
+  await page.locator('#comment_wrap_18490').evaluate(node=>{
+    node.classList.remove('show');
+    node.removeAttribute('data-comment-cnt');
+    node.querySelector('.comment_count').innerHTML='<span id="comment_total_18490">0</span>';
+  });
+  await page.waitForTimeout(180);
+  assert.equal(await comments.textContent(),'댓글','An unresolved initial zero leaves the shortcut usable');
+  await page.evaluate(()=>{
+    const form=document.createElement('form');form.id='_view_form_';
+    form.innerHTML='<input name="gallery_no" value="18489"><input name="comment_cnt" value="3">';
+    document.body.append(form);
+  });
+  await page.waitForTimeout(180);
+  assert.equal(await comments.textContent(),'댓글','A different article cannot confirm this count');
+  await page.evaluate(()=>{
+    document.querySelector('#_view_form_ [name=gallery_no]').value='18490';
+    window.dispatchEvent(new Event('popstate'));
+  });
+  await page.waitForFunction(()=>document.querySelector('#dcb-site-scroll-top').shadowRoot.querySelector('.comments-count').textContent==='3');
+  for (const value of ['27','128','0']) {
+    await page.locator('#comment_wrap_18490 #comment_total_18490').evaluate((node,value)=>node.textContent=value,value);
+    await page.waitForFunction(value=>document.querySelector('#dcb-site-scroll-top').shadowRoot.querySelector('.comments-count').textContent===value,value);
+  }
   await page.locator('#comment_wrap_18490 .comment_count').evaluate(node=>node.innerHTML='전체 댓글 <span>1,234</span>개');
   await page.waitForFunction(()=>document.querySelector('#dcb-site-scroll-top').shadowRoot.querySelector('.comments').getAttribute('aria-label')==='댓글로 이동 · 전체 1,234개');
   await page.locator('#comment_wrap_18490 .comment_count').evaluate(node=>node.innerHTML='전체 댓글 <span id="comment_total_5520429">7</span>개');
