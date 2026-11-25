@@ -47,6 +47,7 @@ let lastSettingsEpochAt = 0;
 let dnrSyncQueued = false;
 let dnrSyncRunning = false;
 let readPostsWriteQueue = Promise.resolve();
+let pendingReadBatch = null;
 const READ_POSTS_KEY = "dcbReadPosts";
 const READ_POST_FRESHNESS_MS = 60_000;
 
@@ -79,15 +80,26 @@ function readPostPreviewSenderAllowed(sender) {
 }
 
 function markReadIdentity(identity) {
+  if (pendingReadBatch) {
+    pendingReadBatch.identities.add(identity);
+    return pendingReadBatch.job;
+  }
+  const identities = new Set([identity]);
   const job = readPostsWriteQueue.then(async () => {
+    pendingReadBatch = null;
     const stored = await chrome.storage.local.get({ [READ_POSTS_KEY]: {} });
     const record = stored[READ_POSTS_KEY];
-    let history = record && typeof record === "object" && !Array.isArray(record) ? { ...record } : {};
+    let history = record && typeof record === "object" && !Array.isArray(record) ? record : {};
     const stamp = Date.now();
-    const previous = history[identity];
-    // Opening/refreshing the same preview repeatedly need not rewrite history.
-    if (Number.isFinite(previous) && stamp >= previous && stamp - previous < READ_POST_FRESHNESS_MS) return { ok: true };
-    history[identity] = stamp;
+    let changed = false;
+    for (const key of identities) {
+      const previous = history[key];
+      if (Number.isFinite(previous) && stamp >= previous && stamp - previous < READ_POST_FRESHNESS_MS) continue;
+      if (!changed) history = { ...history };
+      history[key] = stamp;
+      changed = true;
+    }
+    if (!changed) return { ok: true };
     // Trim in occasional batches instead of sorting on every navigation.
     if (Object.keys(history).length > 5500) {
       history = Object.fromEntries(Object.entries(history)
@@ -97,6 +109,7 @@ function markReadIdentity(identity) {
     await chrome.storage.local.set({ [READ_POSTS_KEY]: history });
     return { ok: true };
   });
+  pendingReadBatch = { identities, job };
   readPostsWriteQueue = job.catch(() => {});
   return job;
 }

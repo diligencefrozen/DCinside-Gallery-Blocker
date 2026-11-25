@@ -10,6 +10,25 @@ for(const [name,type]of Object.entries({chromium,firefox}))test(name+' top butto
   await page.evaluate(()=>scrollTo(0,1200));await host.waitFor({state:'visible'});
   async function above(selector){const a=await host.boundingBox(),b=await page.locator(selector).boundingBox();assert.ok(a.y+a.height+8<=b.y,JSON.stringify({a,b}));}
   await above('#dcb-auto-refresh-countdown');await above('#dcb-gallery-quick-block-floating');
+  const previewScroll=await page.evaluate(async()=>{
+    const overlay=document.createElement('section');
+    overlay.id='dcb-preview-overlay';
+    overlay.innerHTML='<main style="height:220px;overflow:auto"><p style="height:1200px">미리보기</p></main>';
+    document.body.append(overlay);
+    await new Promise(resolve=>setTimeout(resolve,200));
+    const panel=overlay.firstElementChild;
+    let probes=0;
+    const probe=document.elementsFromPoint.bind(document);
+    document.elementsFromPoint=(...args)=>{probes++;return probe(...args);};
+    panel.scrollTop=500;
+    panel.firstElementChild.append('댓글');
+    await new Promise(resolve=>setTimeout(resolve,200));
+    const nativeTarget=document.querySelector('#dcb-site-scroll-top')._scrollTarget===document.scrollingElement;
+    delete document.elementsFromPoint;
+    overlay.remove();
+    return {probes,nativeTarget};
+  });
+  assert.deepEqual(previewScroll,{probes:0,nativeTarget:true});
   await page.getByRole('button',{name:'새로고침',exact:true}).click();assert.equal(await page.evaluate(()=>refreshClicks),1);
   await page.evaluate(()=>{const node=document.createElement('div');node.id='extra';node.style.cssText='position:fixed;right:10px;bottom:120px;height:54px;width:120px';document.body.append(node)});
   await page.waitForFunction(()=>parseFloat(document.querySelector('#dcb-site-scroll-top').style.bottom)>=184);await above('#extra');

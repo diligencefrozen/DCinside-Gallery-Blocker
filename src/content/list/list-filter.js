@@ -42,9 +42,12 @@
 
   function titleText(node) {
     if (!node) return "";
-    const copy = node.cloneNode(true);
-    copy.querySelectorAll(".reply_numbox,.reply_num,.num,script,style,[data-dcb-keyword-soft-placeholder]").forEach((child) => child.remove());
-    return copy.textContent.replace(/\s+/g, " ").trim();
+    const excluded = ".reply_numbox,.reply_num,.num,script,style,[data-dcb-keyword-soft-placeholder]";
+    if (node.firstElementChild && node.querySelector(excluded)) {
+      node = node.cloneNode(true);
+      node.querySelectorAll(excluded).forEach(child => child.remove());
+    }
+    return node.textContent.replace(/\s+/g, " ").trim();
   }
 
   function mainCard(candidate) {
@@ -104,13 +107,13 @@
     };
   }
 
-  function collect(root = document) {
-    const elements = new Set();
+  function collectEntries(root = document, entries = new Map()) {
     const scope = root?.nodeType === Node.TEXT_NODE ? root.parentElement : root;
-    if (!scope?.querySelectorAll) return [];
+    if (!scope?.querySelectorAll) return entries;
     const add = (candidate) => {
+      if (entries.has(candidate)) return;
       const entry = read(candidate);
-      if (entry) elements.add(entry.element);
+      if (entry) entries.set(entry.element, entry);
     };
     if (scope instanceof Element) {
       const enclosing = scope.closest(ROW_SELECTOR)
@@ -120,7 +123,11 @@
       if (scope.matches(CANDIDATE_SELECTOR)) add(scope);
     }
     scope.querySelectorAll(CANDIDATE_SELECTOR).forEach(add);
-    return [...elements];
+    return entries;
+  }
+
+  function collect(root) {
+    return [...collectEntries(root).keys()];
   }
 
   function galleryEnabled() {
@@ -157,7 +164,10 @@
   }
 
   function evaluate(element) {
-    const entry = read(element);
+    applyEntry(element, read(element));
+  }
+
+  function applyEntry(element, entry) {
     if (!entry || !entry.element.isConnected) {
       if (element?.hasAttribute?.(HIDDEN_ATTR)) setHidden(element, null);
       return;
@@ -177,15 +187,16 @@
 
   function processPending() {
     timer = 0;
-    const roots = [...pendingRoots];
+    const roots = new Set(pendingRoots);
     pendingRoots.clear();
-    const entries = new Set();
+    const entries = new Map();
     for (const root of roots) {
       if (root !== document && !root.isConnected) continue;
-      if (roots.some((other) => other !== root && other.contains?.(root))) continue;
-      collect(root).forEach((entry) => entries.add(entry));
+      let ancestor = root.parentNode;
+      while (ancestor && !roots.has(ancestor)) ancestor = ancestor.parentNode;
+      if (!ancestor) collectEntries(root, entries);
     }
-    entries.forEach(evaluate);
+    entries.forEach((entry, element) => applyEntry(element, entry));
   }
 
   function schedule(root) {
@@ -298,7 +309,7 @@
     keywords = categories.concat(matcher.prepareKeywords(settings.blockedKeywords));
   }
 
-  globalThis.DCBListFilter = Object.freeze({ collect, read, evaluate, selector: CANDIDATE_SELECTOR });
+  globalThis.DCBListFilter = Object.freeze({ collect, collectEntries, read, evaluate, selector: CANDIDATE_SELECTOR });
   (globalThis.DCBRuntimeSettingsCache?.onChanged || chrome.storage.onChanged).addListener((changes, area) => {
     if (area === "sync" && Object.keys(DEFAULTS).some((key) => key in changes)) loadSettings();
   });

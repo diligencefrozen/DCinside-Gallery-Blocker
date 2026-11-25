@@ -126,14 +126,17 @@
     try { Promise.resolve(api.runtime.sendMessage({ type: "dcb.readPosts.mark" })).catch(() => {}); } catch (_) {}
   }
 
-  function refreshHighlightSetting() {
+  function refreshHighlightSetting(restore) {
     if (highlightHydration) return highlightHydration;
     if (!api.storage.sync) {
       highlightEnabled = true;
       return Promise.resolve();
     }
     const revision = highlightRevision;
-    highlightHydration = api.storage.sync.get({ [HIGHLIGHT_KEY]: true }).then((stored) => {
+    // The initial page shares the already hydrated settings snapshot. A
+    // restored tab may have missed changes while suspended, so reread sync.
+    const source = (!restore && globalThis.DCBRuntimeSettingsCache) || api.storage.sync;
+    highlightHydration = source.get({ [HIGHLIGHT_KEY]: true }).then((stored) => {
       // A setting changed in another UI must win over an older get() response.
       if (revision === highlightRevision) highlightEnabled = stored?.[HIGHLIGHT_KEY] !== false;
     }).catch(() => {
@@ -184,16 +187,16 @@
     ? new Promise(resolve => document.addEventListener("DOMContentLoaded", resolve, { once: true }))
     : Promise.resolve();
   let refreshing = null;
-  function refreshDisplay() {
+  function refreshDisplay(restore = false) {
     if (!refreshing) {
-      refreshing = Promise.all([refreshSnapshot(), refreshHighlightSetting(), domReady])
+      refreshing = Promise.all([refreshSnapshot(), refreshHighlightSetting(restore), domReady])
         .then(() => reconcile()).finally(() => { refreshing = null; });
     }
   }
 
   window.addEventListener("pageshow", (event) => {
     if (!event.persisted) return;
-    refreshDisplay();
+    refreshDisplay(true);
     recordVisit();
   });
   refreshDisplay();

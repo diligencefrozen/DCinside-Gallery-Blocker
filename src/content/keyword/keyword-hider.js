@@ -260,20 +260,11 @@
     row.removeAttribute(ITEM_ID_ATTR);
   }
 
-  function getListRows() {
-    return listFilter.collect(document);
-  }
-
-  function getListRowText(row) {
-    return listFilter.read(row)?.title || "";
-  }
-
-  function getListKey(row, keyword) {
+  function getListKey(row, keyword, entry) {
     const no = row.getAttribute("data-no") || row.querySelector(".gall_num")?.textContent?.trim() || "";
-    const href = listFilter.read(row)?.detailUrl || row.querySelector(".gall_tit a[href]")?.getAttribute("href") || "";
-    const fallback = normalizeText(getListRowText(row)).slice(0, 120);
-
-    return `list:${keyword.needle}:${no || href || fallback}`;
+    const identity = no || entry.detailUrl || row.querySelector(".gall_tit a[href]")?.getAttribute("href")
+      || normalizeText(entry.title).slice(0, 120);
+    return `list:${keyword.needle}:${identity}`;
   }
 
   function insertListPlaceholder(row, keyword, key) {
@@ -347,7 +338,7 @@
   function hideListRows() {
     if (!targets.listTitle) return;
 
-    getListRows().forEach(hideListRow);
+    listFilter.collectEntries(document).forEach(hideListRow);
   }
 
   function getArticleTitleText() {
@@ -491,12 +482,12 @@
     if (!element) return out;
     const closest = element.closest?.(selector);
     if (closest) out.push(closest);
-    if (element.matches?.(selector)) out.push(element);
     element.querySelectorAll?.(selector).forEach((node) => out.push(node));
-    return out.filter((node, index, list) => list.indexOf(node) === index);
+    return out;
   }
 
-  function hideListRow(row) {
+  function hideListRow(entry) {
+    const row = entry.element;
     if (!targets.listTitle || !row || row.hasAttribute(PLACEHOLDER_ATTR) || isBlockedByAnonymousFilter(row)) return;
 
     // 실베의 게시글 <tr>은 목록 페이지와 상세 하단 목록 모두 dcbest-source-filter가 담당한다.
@@ -508,8 +499,8 @@
       return;
     }
 
-    const keyword = findKeyword(getListRowText(row));
-    const key = keyword ? getListKey(row, keyword) : "";
+    const keyword = findKeyword(entry.title);
+    const key = keyword ? getListKey(row, keyword, entry) : "";
     const id = row.getAttribute(ITEM_ID_ATTR);
     const placeholder = row.previousElementSibling;
     const ownPlaceholder = id && placeholder?.getAttribute("data-dcb-soft-for") === id ? placeholder : null;
@@ -554,12 +545,12 @@
       return true;
     });
 
-    const rows = new Set();
+    const rows = new Map();
     const comments = new Set();
     let articleTouched = false;
     for (const root of minimal) {
-      listFilter.collect(root).forEach((node) => rows.add(node));
-      collectScoped(root, COMMENT_ITEM_SELECTOR).forEach((node) => comments.add(node));
+      if (targets.listTitle) listFilter.collectEntries(root, rows);
+      if (targets.comments) collectScoped(root, COMMENT_ITEM_SELECTOR).forEach((node) => comments.add(node));
       const element = root?.nodeType === Node.ELEMENT_NODE ? root : root?.parentElement;
       if (element?.closest?.(".write_div,.writing_view_box,.write_view,#dgn_content_de,.gallview_head,.view_head") ||
           element?.querySelector?.(".write_div,.writing_view_box,.write_view,#dgn_content_de,.gallview_head,.view_head")) {

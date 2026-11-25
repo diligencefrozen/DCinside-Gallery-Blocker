@@ -194,7 +194,6 @@ test('content-side observer incrementally recovers dynamic blocker markers', () 
   assert.match(statsSource, /attributes: \[\.\.\.RECOVERY_ATTRIBUTE_FILTER\]/);
   assert.match(statsSource, /DCBDomMutationBus.subscribe/);
   assert.match(statsSource, /scanRecoveryMarkers\(root\)/);
-  assert.match(statsSource, /scanActivatedStyleRecovery\(root\)/);
   assert.match(statsSource, /\.dcb-selective-dccon-hidden[\s\S]{0,120}category: "dccon"/);
   assert.match(statsSource, /const MAX_PENDING_ROOTS = 80/);
   assert.match(statsSource, /pendingFullScan = true/);

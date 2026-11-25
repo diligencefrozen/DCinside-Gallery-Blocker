@@ -284,25 +284,11 @@
     return String(style.textContent || "").trim() ? style : null;
   }
 
-  function scanStyleRecovery(root = document) {
+  function scanStyleRecovery(root = document, activeRules = STYLE_RECOVERY_RULES.filter(activeStyleNode)) {
     if (!root) return;
 
-    for (const rule of STYLE_RECOVERY_RULES) {
-      if (!activeStyleNode(rule)) continue;
+    for (const rule of activeRules) {
       scanStyleRule(rule, root);
-    }
-  }
-
-  function scanActivatedStyleRecovery(root) {
-    if (!root) return;
-
-    for (const rule of STYLE_RECOVERY_RULES) {
-      const isStyle = root instanceof Element && root.id === rule.styleId;
-      if (!isStyle && !root.querySelector?.(`#${rule.styleId}`)) continue;
-      if (!activeStyleNode(rule)) continue;
-
-      // 스타일 삽입 자체는 차단 대상의 조상이 아니므로, 활성화된 규칙만 문서에서 한 번 복구한다.
-      scanStyleRule(rule, document);
     }
   }
 
@@ -331,12 +317,20 @@
     pendingRoots.clear();
     if (!roots.length) return;
 
+    const activeStyles = new Map();
+    for (const rule of STYLE_RECOVERY_RULES) {
+      const style = activeStyleNode(rule);
+      if (style) activeStyles.set(rule, style);
+    }
     for (const root of roots) {
       registrations.forEach((registration) => scanRegistration(registration, root));
       scanRecoveryMarkers(root);
-      scanStyleRecovery(root);
-      // 전체 루트에서는 위 scanStyleRecovery가 이미 모든 활성 스타일 대상을 훑었다.
-      if (root !== document && root !== document.documentElement) scanActivatedStyleRecovery(root);
+      scanStyleRecovery(root, activeStyles.keys());
+      if (root !== document && root !== document.documentElement) {
+        for (const [rule, style] of activeStyles) {
+          if (root.contains(style)) scanStyleRule(rule, document);
+        }
+      }
     }
   }
 
@@ -354,21 +348,21 @@
     scanTimer = setTimeout(flushScans, SCAN_DELAY_MS);
   }
 
-  function relevantAttributeMutation(record) {
+  function relevantAttributeMutation(record, activeRules) {
     const target = record?.target;
     if (!(target instanceof Element)) return false;
     if (target.matches?.(RECOVERY_SELECTOR)) return true;
     if (target.matches?.('.dcbpv-comment-item.dcbpv-filter-hidden[data-dcbpv-blocked-reason]')) return true;
     if (STYLE_RECOVERY_RULES.some((rule) => target.id === rule.styleId)) return true;
-    return STYLE_RECOVERY_RULES.some((rule) => (
-      !!activeStyleNode(rule) && target.matches?.(rule.selector)
-    ));
+    return activeRules.some(rule => target.matches?.(rule.selector));
   }
 
   function handleRecoveryMutations(records) {
+    let activeRules;
     for (const record of records) {
       if (record.type === "attributes") {
-        if (relevantAttributeMutation(record)) scheduleScan(record.target);
+        activeRules ||= STYLE_RECOVERY_RULES.filter(activeStyleNode);
+        if (relevantAttributeMutation(record, activeRules)) scheduleScan(record.target);
         continue;
       }
       if (

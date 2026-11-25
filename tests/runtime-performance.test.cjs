@@ -128,3 +128,75 @@ test('list startup scans 500 rows once and preserves newer history on restore', 
     assert.equal(await page.evaluate(()=>scans), 2);
   } finally { await browser.close(); }
 });
+
+test('bulk list updates read each title once and share recovery style lookups', async t => {
+  const baseline = process.env.DCB_LIST_BASELINE;
+  const script = path => baseline
+    ? require('node:child_process').execFileSync('git', ['show', baseline + ':' + path], {encoding:'utf8'})
+    : source(path);
+  const browser = await chromium.launch();
+  t.after(() => browser.close());
+  const page = await browser.newPage();
+  await page.setContent('<table class="gall_list"><tbody></tbody></table>');
+  await page.evaluate(() => {
+    window.subscriptions = new Map();
+    window.DCBDomMutationBus = {subscribe(id, handler) { subscriptions.set(id,handler); return () => {}; }};
+    window.chrome = {runtime:{onMessage:{addListener(){}},sendMessage(_msg,cb){cb?.({ok:true});}}, storage:{onChanged:{addListener(){}}}};
+    window.DCBRuntimeSettingsCache = {get(defaults, cb) { cb({...defaults,blockedIds:['example']}); }};
+    window.DCBKeywordMatcher = {prepareCategories:()=>[],prepareKeywords:()=>[],findKeyword:()=>null};
+  });
+  for (const path of ['src/shared/block-stats.js','src/content/list/list-filter.js']) await page.addScriptTag({content:script(path)});
+  const result = await page.evaluate(async () => {
+    await new Promise(requestAnimationFrame);
+    const body=document.querySelector('tbody');
+    body.innerHTML=Array.from({length:500},(_,i)=>'<tr data-no="'+i+'"><td class="gall_tit"><a href="https://gall.dcinside.com/board/view/?id=example&no='+i+'">제목</a></td></tr>').join('');
+    const rows=[...body.rows], records=rows.map(row=>({type:'childList',target:body,addedNodes:[row],removedNodes:[]}));
+    let reads=0, styleLookups=0, containsCalls=0;
+    const query=Element.prototype.querySelector, contains=Node.prototype.contains, byId=document.getElementById.bind(document);
+    Element.prototype.querySelector=function(selector){if(selector==='.gall_subject') reads++;return query.call(this,selector);};
+    Node.prototype.contains=function(node){containsCalls++;return contains.call(this,node);};
+    document.getElementById=id=>{if(id.startsWith('dcb-hide-'))styleLookups++;return byId(id);};
+    const started=performance.now();
+    subscriptions.get('list-filter')(records);
+    await new Promise(requestAnimationFrame);
+    subscriptions.get('block-stats')(rows.map(target=>({type:'attributes',target})));
+    return {reads,containsCalls,styleLookups,ms:Math.round(performance.now()-started),hidden:body.querySelectorAll('[data-dcb-list-hidden="galleries"]').length};
+  });
+  console.log({baseline:baseline||'working',...result});
+  assert.equal(result.hidden,500);
+  if (!baseline) {
+    assert.equal(result.reads,500);
+    assert.ok(result.containsCalls<1000);
+    assert.ok(result.styleLookups<=4);
+  }
+  await page.evaluate(()=>{
+    const list=document.createElement('ul');
+    list.innerHTML='<li id="comment_li_1">기존 댓글</li>';
+    const container=document.createElement('div');
+    container.innerHTML='<style id="dcb-hide-comment-style">.cmt_list{display:none}</style>';
+    document.body.append(list,container);
+    subscriptions.get('block-stats')([{type:'childList',target:document.body,addedNodes:[container]}]);
+  });
+  await page.waitForFunction(()=>DCBBlockStats.snapshot().byCategory.comments===1);
+});
+
+test('queued read marks share storage writes and recover after a failed write', async () => {
+  const background=source('src/background/background.js');
+  const script=background.slice(background.indexOf('let readPostsWriteQueue'),background.indexOf('chrome.runtime.onMessage.addListener'));
+  let stored={}, reads=0, writes=0, fail=false;
+  const context={chrome:{storage:{local:{
+    async get(){reads++;return {dcbReadPosts:structuredClone(stored)};},
+    async set(data){writes++;if(fail)throw Error('storage unavailable');stored=data.dcbReadPosts;}
+  }}}};
+  vm.runInNewContext(script,context);
+  const mark=context.markReadIdentity;
+  await Promise.all(Array.from({length:50},(_,i)=>mark('gallery:fixture:'+i)));
+  assert.deepEqual([reads,writes,Object.keys(stored).length],[1,1,50]);
+  await mark('gallery:fixture:1');
+  assert.equal(writes,1);
+  fail=true;
+  await assert.rejects(mark('gallery:fixture:50'),/storage unavailable/);
+  fail=false;
+  await mark('gallery:fixture:50');
+  assert.equal(Object.keys(stored).length,51);
+});

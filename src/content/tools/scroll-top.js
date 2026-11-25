@@ -90,7 +90,7 @@
     function update() {
       frame = 0;
       const page = root();
-      const activeRect = active?.getBoundingClientRect?.();
+      const activeRect = active !== page && active?.getBoundingClientRect?.();
       if (!active?.isConnected || (active !== page && (!activeRect || activeRect.height < 100 || activeRect.bottom <= 0 || activeRect.top >= innerHeight))) active = page;
       let target = active;
       const far = node => node.scrollTop > Math.min(400, Math.max(160, (node === page ? innerHeight : node.clientHeight) * .65));
@@ -155,6 +155,7 @@
       target.scrollIntoView({block:"start",behavior:matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth"});
     });
     document.addEventListener("scroll", event => {
+      if (event.target.closest?.("#dcb-preview-overlay")) return;
       const target = event.target === document ? root() : event.target;
       if (target instanceof HTMLElement && (target === root() || (target.clientHeight >= 160 && target.scrollHeight > target.clientHeight + 160))) active = target;
       schedule();
@@ -163,22 +164,38 @@
     window.addEventListener("popstate", schedule);
     document.addEventListener("dcb-auto-refresh-ui-change", () => {dirty=true;schedule();});
     document.addEventListener("transitionrun", event => {
-      if (event.target===host || host.contains(event.target)) return;
+      if (event.target===host || host.contains(event.target) || event.target.closest?.("#dcb-preview-overlay")) return;
       if (candidates.some(node=>node===event.target || node.contains(event.target))) {movingUntil=performance.now()+1000;schedule();}
     },true);
-    document.addEventListener("transitionend", () => {dirty=true;schedule();},true);
+    document.addEventListener("transitionend", event => {
+      if (event.target.closest?.("#dcb-preview-overlay")) return;
+      dirty=true;schedule();
+    },true);
     const observer = new MutationObserver(changes => {
-      if (changes.every(change => change.target === host || host.contains(change.target))) return;
+      const nativeChanges = changes.filter(change => {
+        const node = change.target.nodeType === Node.TEXT_NODE ? change.target.parentElement : change.target;
+        return node && node !== host && !node.closest?.("#dcb-preview-overlay");
+      });
+      if (!nativeChanges.length) return;
       let totalsOnly = true;
-      for (const change of changes) {
+      for (const change of nativeChanges) {
         const node = change.target.nodeType === Node.TEXT_NODE ? change.target.parentElement : change.target;
         if (node?.id?.startsWith("comment_total_") && change.type !== "attributes") updatedTotals.add(node);
         else totalsOnly = false;
       }
       if (totalsOnly) { schedule(); return; }
       dirty = true;
-      const floating = node => node instanceof HTMLElement && node!==host && ["fixed","sticky"].includes(getComputedStyle(node).position);
-      if (changes.some(change => floating(change.target) || [...change.addedNodes].slice(0,8).some(floating))) {
+      const checked = new Set();
+      const floating = node => {
+        if (!(node instanceof HTMLElement) || node===host || checked.has(node)) return false;
+        checked.add(node);
+        return ["fixed","sticky"].includes(getComputedStyle(node).position);
+      };
+      if (nativeChanges.some(change => {
+        if (floating(change.target)) return true;
+        for (let i=0; i<Math.min(8,change.addedNodes.length); i++) if (floating(change.addedNodes[i])) return true;
+        return false;
+      })) {
         clearTimeout(timer);timer=0;schedule();return;
       }
       if (!timer) timer = setTimeout(() => {timer=0;schedule();},100);
